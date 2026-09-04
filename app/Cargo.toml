@@ -1,0 +1,21 @@
+[package]
+name = "lucidpane"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "lucidpane"
+path = "src/main.rs"
+
+[dependencies]
+desktop-compositor.workspace = true
+desktop-core.workspace = true
+desktop-shell.workspace = true
+desktop-storage.workspace = true
+desktop-window.workspace = true
+notify.workspace = true
+
+[lints]
+workspace = true

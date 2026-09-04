@@ -1,0 +1,13 @@
+[package]
+name = "desktop-storage"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+desktop-core.workspace = true
+rusqlite.workspace = true
+
+[lints]
+workspace = true

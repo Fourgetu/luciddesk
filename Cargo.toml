@@ -1,0 +1,66 @@
+[workspace]
+members = [
+    "app",
+    "crates/desktop-core",
+    "crates/desktop-compositor",
+    "crates/desktop-shell",
+    "crates/desktop-storage",
+    "crates/desktop-window",
+]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.95"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+desktop-core = { path = "crates/desktop-core" }
+desktop-compositor = { path = "crates/desktop-compositor" }
+desktop-shell = { path = "crates/desktop-shell" }
+desktop-storage = { path = "crates/desktop-storage" }
+desktop-window = { path = "crates/desktop-window" }
+notify = "8.2.0"
+rusqlite = { version = "0.37.0", features = ["bundled"] }
+windows-window = "0.100.0"
+windows-numerics = "0.3.1"
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Controls",
+    "Win32_UI_Controls_Dialogs",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+    "Win32_UI_WindowsAndMessaging",
+] }
+windows = { version = "0.62.2", features = [
+    "Foundation",
+    "Foundation_Numerics",
+    "System",
+    "UI",
+    "UI_Composition",
+    "UI_Composition_Desktop",
+    "Win32_Foundation",
+    "Win32_Graphics_Dwm",
+    "Win32_System_WinRT",
+    "Win32_System_WinRT_Composition",
+    "Win32_System_Com",
+    "Win32_System_Ole",
+    "Win32_System_SystemServices",
+    "Win32_UI_Controls",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"
