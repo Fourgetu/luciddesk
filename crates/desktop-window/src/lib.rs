@@ -1,7 +1,9 @@
 mod host;
+mod native_frame;
 mod surface;
 
 pub use host::{DesktopHost, DesktopHostError, ShellOwnedDesktopHost};
+pub use native_frame::{NativeFrame, NativeFrameEvent};
 pub use surface::{
     DesktopItemSurface, DesktopSurfaceEvent, DesktopSurfaceItem, DesktopSurfaceRenderModel,
     MonitorDescriptor, PixelRect, SharedDesktopSurfaceModel, enumerate_monitors,

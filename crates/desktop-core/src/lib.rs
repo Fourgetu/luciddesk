@@ -267,8 +267,14 @@ pub enum PanelIcon {
     Custom(PathBuf),
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PanelTheme { #[default] System, Light, Dark }
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Panel {
+    theme: PanelTheme,
+    always_on_top: bool,
+    auto_hide: bool,
     id: PanelId,
     title: String,
     source: PanelSource,
@@ -290,6 +296,9 @@ impl Panel {
             icon: PanelIcon::Automatic,
             rect,
             collapsed: false,
+            auto_hide: false,
+            theme: PanelTheme::System,
+            always_on_top: false,
             locked: false,
             backdrop: Backdrop::DEFAULT,
             items: Vec::new(),
@@ -324,6 +333,24 @@ impl Panel {
     #[must_use]
     pub const fn collapsed(&self) -> bool {
         self.collapsed
+    }
+
+    #[must_use]
+    pub const fn auto_hide(&self) -> bool {
+        self.auto_hide
+    }
+
+    #[must_use]
+    pub const fn always_on_top(&self) -> bool { self.always_on_top }
+
+    #[must_use]
+    pub const fn theme(&self) -> PanelTheme { self.theme }
+    pub const fn set_theme(&mut self, theme: PanelTheme) { self.theme = theme; }
+
+    pub const fn set_always_on_top(&mut self, enabled: bool) { self.always_on_top = enabled; }
+
+    pub const fn set_auto_hide(&mut self, enabled: bool) {
+        self.auto_hide = enabled;
     }
 
     #[must_use]

@@ -15,7 +15,13 @@ desktop-core.workspace = true
 desktop-shell.workspace = true
 desktop-storage.workspace = true
 desktop-window.workspace = true
+desktop-hook.workspace = true
 notify.workspace = true
+windows = { workspace = true, features = ["UI_ViewManagement"] }
+windows-core = "0.62.2"
+windows-sys.workspace = true
+windows-window.workspace = true
+windows-numerics.workspace = true
 
 [lints]
 workspace = true

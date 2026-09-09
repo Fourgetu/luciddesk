@@ -1,4 +1,10 @@
 pub use desktop_core::ShellIdentity;
+mod native_layout;
+mod native_menu;
+pub use native_layout::{
+    NativeDesktopSnapshot, move_native_desktop_items, native_desktop_snapshot,
+};
+pub use native_menu::show_desktop_item_menu;
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::ffi::{OsStr, c_void};
@@ -171,6 +177,21 @@ pub fn known_folder_path(folder: KnownFolder) -> Result<PathBuf, ShellError> {
 ///
 /// Returns a COM or Shell error when the Desktop Folder cannot be enumerated.
 pub fn enumerate_desktop_namespace(owner: isize) -> Result<Vec<DesktopShellItem>, ShellError> {
+    enumerate_desktop_items(owner, true)
+}
+
+/// Enumerates desktop references without invoking synchronous legacy icon extraction.
+///
+/// # Errors
+/// Returns a Shell error when the Desktop namespace cannot be enumerated.
+pub fn enumerate_desktop_references(owner: isize) -> Result<Vec<DesktopShellItem>, ShellError> {
+    enumerate_desktop_items(owner, false)
+}
+
+fn enumerate_desktop_items(
+    owner: isize,
+    load_icons: bool,
+) -> Result<Vec<DesktopShellItem>, ShellError> {
     let desktop = unsafe { SHGetDesktopFolder() }?;
     let mut enumerator = None;
     let flags = u32::try_from(SHCONTF_FOLDERS.0 | SHCONTF_NONFOLDERS.0).unwrap_or_default();
@@ -203,7 +224,7 @@ pub fn enumerate_desktop_namespace(owner: isize) -> Result<Vec<DesktopShellItem>
         else {
             continue;
         };
-        if let Ok(item) = desktop_shell_item(&shell_item) {
+        if let Ok(item) = desktop_shell_item(&shell_item, load_icons) {
             items.push(item);
         }
     }
@@ -223,7 +244,7 @@ pub fn enumerate_desktop_namespace(owner: isize) -> Result<Vec<DesktopShellItem>
     Ok(items)
 }
 
-fn desktop_shell_item(item: &IShellItem) -> Result<DesktopShellItem, ShellError> {
+fn desktop_shell_item(item: &IShellItem, load_icon: bool) -> Result<DesktopShellItem, ShellError> {
     let display_name = shell_item_name(item, SIGDN_NORMALDISPLAY)?;
     let identity = shell_item_name(item, SIGDN_FILESYSPATH)
         .ok()
@@ -277,7 +298,9 @@ fn desktop_shell_item(item: &IShellItem) -> Result<DesktopShellItem, ShellError>
         display_name,
         attributes,
         modified,
-        system_icon: system_icon_for_shell_item(item),
+        system_icon: load_icon
+            .then(|| system_icon_for_shell_item(item))
+            .flatten(),
     })
 }
 
@@ -773,6 +796,29 @@ pub fn system_icon_for_path(path: &Path) -> Option<SystemIcon> {
 /// Returns an error when `ShellExecuteW` rejects the operation.
 pub fn open_path(owner: isize, path: &Path) -> Result<(), ShellError> {
     open_shell_name(owner, path.as_os_str())
+}
+
+/// Decode filesystem and virtual desktop items from an OLE drag without moving files.
+/// # Errors
+/// Rejects non-Shell data or an oversized drag.
+pub fn drag_shell_identities(data: &windows::Win32::System::Com::IDataObject) -> windows::core::Result<Vec<ShellIdentity>> {
+    use windows::Win32::UI::Shell::{IShellItemArray, SHCreateShellItemArrayFromDataObject, SIGDN_DESKTOPABSOLUTEPARSING};
+    unsafe {
+        let items: IShellItemArray = SHCreateShellItemArrayFromDataObject(data)?;
+        let count = items.GetCount()?;
+        if count > 512 { return Err(windows::core::Error::from_hresult(windows::Win32::Foundation::E_INVALIDARG)); }
+        let mut identities = Vec::new();
+        for index in 0..count {
+            let shell_item = items.GetItemAt(index)?;
+            let mut entry = desktop_shell_item(&shell_item, false).map_err(|e| windows::core::Error::new(windows::Win32::Foundation::E_FAIL, e.to_string()))?;
+            if let Ok(parsing_name) = shell_item_name(&shell_item, SIGDN_DESKTOPABSOLUTEPARSING)
+                && parsing_name.starts_with("::{") {
+                entry.identity = ShellIdentity::Namespace { parsing_name };
+            }
+            identities.push(entry.identity);
+        }
+        Ok(identities)
+    }
 }
 
 /// Opens a filesystem or virtual Shell identity using the current Shell association.

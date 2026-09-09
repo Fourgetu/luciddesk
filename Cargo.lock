@@ -32,10 +32,22 @@ name = "desktop-core"
 version = "0.1.0"
 
 [[package]]
+name = "desktop-hook"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "windows",
+ "windows-core 0.62.2",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "desktop-shell"
 version = "0.1.0"
 dependencies = [
  "desktop-core",
+ "desktop-hook",
+ "desktop-window",
  "windows",
  "windows-sys 0.61.2",
 ]
@@ -177,10 +189,16 @@ version = "0.1.0"
 dependencies = [
  "desktop-compositor",
  "desktop-core",
+ "desktop-hook",
  "desktop-shell",
  "desktop-storage",
  "desktop-window",
  "notify",
+ "windows",
+ "windows-core 0.62.2",
+ "windows-numerics",
+ "windows-sys 0.61.2",
+ "windows-window",
 ]
 
 [[package]]

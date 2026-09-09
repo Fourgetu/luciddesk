@@ -1,5 +1,12 @@
 # DesktopFramesPlus 与 MiniFences 技术路线调研及 LucidPane 借鉴建议
 
+> **2026-09-07 更正：本文的“保留接管与稀疏图标表面路线”建议已撤回。**
+> 用户明确要求保留原生桌面外观和交互，只增加分组框。隐藏 Explorer 后重绘全部图标，
+> 即使使用系统图标资源，也不满足该要求。下文保留为历史调研，不能继续作为默认实现依据。
+> 当前默认使用无图标绘制的 `NativeFrame`，原生位置操作通过公开的桌面 Shell `IFolderView2`
+> 接口进行，不读写 Explorer 进程内存。接口来源：[Microsoft 原生桌面图标位置示例](https://devblogs.microsoft.com/oldnewthing/20130318-00/?p=4933)。
+> 框中心从窗口 region 中扣除，保留原生鼠标输入；整块背景填充仍需另行实现，不能用覆盖层染暗图标。
+
 > 调研日期：2026-09-05
 > DesktopFramesPlus 基线：`ef0edc14ecd7f32323a7a9708bb38596963c16bb`
 > MiniFences 基线：`22128adb3ed29d04626ba903f7b077b61794baa5`

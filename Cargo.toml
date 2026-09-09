@@ -6,6 +6,7 @@ members = [
     "crates/desktop-shell",
     "crates/desktop-storage",
     "crates/desktop-window",
+    "crates/desktop-hook",
 ]
 resolver = "3"
 
@@ -20,6 +21,7 @@ desktop-compositor = { path = "crates/desktop-compositor" }
 desktop-shell = { path = "crates/desktop-shell" }
 desktop-storage = { path = "crates/desktop-storage" }
 desktop-window = { path = "crates/desktop-window" }
+desktop-hook = { path = "crates/desktop-hook" }
 notify = "8.2.0"
 rusqlite = { version = "0.37.0", features = ["bundled"] }
 windows-window = "0.100.0"
@@ -39,6 +41,7 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 windows = { version = "0.62.2", features = [
+    "Win32_Storage_FileSystem",
     "Foundation",
     "Foundation_Numerics",
     "System",
@@ -47,10 +50,21 @@ windows = { version = "0.62.2", features = [
     "UI_Composition_Desktop",
     "Win32_Foundation",
     "Win32_Graphics_Dwm",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_DirectComposition",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Direct2D",
+    "Win32_Graphics_Direct2D_Common",
+    "Win32_Graphics_DirectWrite",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Imaging",
+    "Win32_Graphics_Gdi",
     "Win32_System_WinRT",
     "Win32_System_WinRT_Composition",
     "Win32_System_Com",
     "Win32_System_Ole",
+    "Win32_System_Variant",
     "Win32_System_SystemServices",
     "Win32_UI_Controls",
     "Win32_UI_Shell",

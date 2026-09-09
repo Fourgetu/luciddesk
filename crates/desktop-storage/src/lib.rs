@@ -7,7 +7,7 @@ use std::error::Error;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-const SCHEMA_VERSION: i64 = 5;
+const SCHEMA_VERSION: i64 = 8;
 
 pub struct WorkspaceStore {
     connection: Connection,
@@ -78,6 +78,26 @@ impl WorkspaceStore {
         for panel in &mut panels {
             let panel_id = i64::try_from(panel.id().get())
                 .map_err(|_| StoreError::InvalidData("panel id exceeds SQLite range".into()))?;
+            let auto_hide = self
+                .connection
+                .query_row(
+                    "SELECT auto_hide FROM panel_behavior WHERE panel_id = ?1",
+                    [panel_id],
+                    |row| row.get::<_, bool>(0),
+                )
+                .optional()?
+                .unwrap_or(false);
+            panel.set_auto_hide(auto_hide);
+            let theme = self.connection.query_row("SELECT theme FROM panel_theme WHERE panel_id = ?1", [panel_id], |row| row.get::<_, String>(0)).optional()?;
+            panel.set_theme(match theme.as_deref() {
+                Some("light") => desktop_core::PanelTheme::Light,
+                Some("dark") => desktop_core::PanelTheme::Dark,
+                _ => desktop_core::PanelTheme::System,
+            });
+            panel.set_always_on_top(self.connection.query_row(
+                "SELECT always_on_top FROM panel_layer WHERE panel_id = ?1", [panel_id],
+                |row| row.get::<_, bool>(0),
+            ).optional()?.unwrap_or(false));
             let mut item_statement = self
                 .connection
                 .prepare("SELECT path FROM panel_items WHERE panel_id = ?1 ORDER BY item_order")?;
@@ -111,6 +131,7 @@ impl WorkspaceStore {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn migrate(connection: &Connection) -> Result<(), StoreError> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS metadata (
@@ -131,6 +152,18 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
              backdrop_kind TEXT NOT NULL,
              opacity REAL,
              icon_path TEXT
+         );
+         CREATE TABLE IF NOT EXISTS panel_theme (
+             panel_id INTEGER PRIMARY KEY REFERENCES panels(id) ON DELETE CASCADE,
+             theme TEXT NOT NULL DEFAULT 'system'
+         );
+         CREATE TABLE IF NOT EXISTS panel_layer (
+             panel_id INTEGER PRIMARY KEY REFERENCES panels(id) ON DELETE CASCADE,
+             always_on_top INTEGER NOT NULL DEFAULT 0
+         );
+         CREATE TABLE IF NOT EXISTS panel_behavior (
+             panel_id INTEGER PRIMARY KEY REFERENCES panels(id) ON DELETE CASCADE,
+             auto_hide INTEGER NOT NULL DEFAULT 0
          );
          CREATE TABLE IF NOT EXISTS panel_items (
              panel_id INTEGER NOT NULL REFERENCES panels(id) ON DELETE CASCADE,
@@ -201,13 +234,17 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
                 [],
             )?;
         }
-        Some("5") => {}
+        Some("5" | "6" | "7" | "8") => {}
         Some(value) => {
             return Err(StoreError::InvalidData(format!(
                 "unsupported schema version {value}"
             )));
         }
     }
+    connection.execute(
+        "UPDATE metadata SET value = ?1 WHERE key = 'schema_version'",
+        [SCHEMA_VERSION.to_string()],
+    )?;
     Ok(())
 }
 
@@ -242,6 +279,12 @@ fn insert_panel(transaction: &Transaction<'_>, panel: &Panel) -> Result<(), Stor
             icon_path,
         ],
     )?;
+    transaction.execute(
+        "INSERT INTO panel_behavior(panel_id, auto_hide) VALUES (?1, ?2)",
+        params![id, panel.auto_hide()],
+    )?;
+    transaction.execute("INSERT INTO panel_layer(panel_id, always_on_top) VALUES (?1, ?2)", params![id, panel.always_on_top()])?;
+    transaction.execute("INSERT INTO panel_theme(panel_id, theme) VALUES (?1, ?2)", params![id, match panel.theme() {desktop_core::PanelTheme::System => "system", desktop_core::PanelTheme::Light => "light", desktop_core::PanelTheme::Dark => "dark"}])?;
     Ok(())
 }
 
@@ -552,7 +595,7 @@ impl From<rusqlite::Error> for StoreError {
 
 #[cfg(test)]
 mod tests {
-    use super::WorkspaceStore;
+    use super::{SCHEMA_VERSION, WorkspaceStore};
     use desktop_core::{
         Backdrop, DesktopItem, DesktopPlacement, GridPosition, Panel, PanelIcon, PanelId,
         PanelSource, RectDip, ShellIdentity, Workspace,
@@ -572,6 +615,9 @@ mod tests {
         );
         panel.set_backdrop(Backdrop::Translucent { opacity: 0.72 });
         panel.set_collapsed(true);
+        panel.set_auto_hide(true);
+        panel.set_always_on_top(true);
+        panel.set_theme(desktop_core::PanelTheme::Light);
         panel.set_icon(PanelIcon::Custom(PathBuf::from(r"D:\Icons\downloads.ico")));
         panel.add_item(PathBuf::from(r"C:\Users\Test\Desktop\Editor.lnk"));
         panel.add_item(PathBuf::from(r"C:\Users\Test\Desktop\Notes.txt"));
@@ -593,6 +639,63 @@ mod tests {
         let loaded = store.load_workspace().unwrap();
 
         assert_eq!(loaded, workspace);
+    }
+
+    #[test]
+    fn theme_choices_round_trip_and_old_workspace_defaults_to_system() {
+        let mut store = WorkspaceStore::open_in_memory().unwrap();
+        let panel = Panel::new(PanelId::new(1), "Pane", PanelSource::DesktopCollection, RectDip::default());
+        let mut workspace = Workspace::from_panels(vec![panel]).unwrap();
+        for theme in [desktop_core::PanelTheme::System, desktop_core::PanelTheme::Light, desktop_core::PanelTheme::Dark] {
+            workspace.panel_mut(PanelId::new(1)).unwrap().set_theme(theme);
+            workspace.panel_mut(PanelId::new(1)).unwrap().set_backdrop(Backdrop::MicaAlt);
+            store.save_workspace(&workspace).unwrap();
+            assert_eq!(store.load_workspace().unwrap(), workspace);
+        }
+        store.connection.execute_batch("DROP TABLE panel_theme; UPDATE metadata SET value = '7' WHERE key = 'schema_version';").unwrap();
+        super::migrate(&store.connection).unwrap();
+        assert_eq!(store.load_workspace().unwrap().panel(PanelId::new(1)).unwrap().theme(), desktop_core::PanelTheme::System);
+    }
+
+    #[test]
+    fn version_six_defaults_to_desktop_layer() {
+        let mut store = WorkspaceStore::open_in_memory().unwrap();
+        let panel = Panel::new(PanelId::new(1), "Pane", PanelSource::DesktopCollection, RectDip::default());
+        store.save_workspace(&Workspace::from_panels(vec![panel]).unwrap()).unwrap();
+        store.connection.execute_batch("DROP TABLE panel_layer; UPDATE metadata SET value = '6' WHERE key = 'schema_version';").unwrap();
+        super::migrate(&store.connection).unwrap();
+        assert!(!store.load_workspace().unwrap().panel(PanelId::new(1)).unwrap().always_on_top());
+    }
+
+    #[test]
+    fn version_five_defaults_auto_hide_off_and_persists_changes() {
+        let mut store = WorkspaceStore::open_in_memory().unwrap();
+        let workspace = Workspace::from_panels(vec![Panel::new(
+            PanelId::new(1),
+            "Test",
+            PanelSource::DesktopCollection,
+            RectDip::new(0.0, 0.0, 400.0, 300.0),
+        )])
+        .unwrap();
+        store.save_workspace(&workspace).unwrap();
+        store.connection.execute_batch("DROP TABLE panel_behavior; UPDATE metadata SET value = '5' WHERE key = 'schema_version';").unwrap();
+        let mut store = WorkspaceStore::from_connection(store.connection).unwrap();
+        let mut loaded = store.load_workspace().unwrap();
+        assert!(!loaded.panel(PanelId::new(1)).unwrap().auto_hide());
+        loaded
+            .panel_mut(PanelId::new(1))
+            .unwrap()
+            .set_auto_hide(true);
+        store.save_workspace(&loaded).unwrap();
+        store.save_workspace(&loaded).unwrap();
+        assert!(
+            store
+                .load_workspace()
+                .unwrap()
+                .panel(PanelId::new(1))
+                .unwrap()
+                .auto_hide()
+        );
     }
 
     #[test]
@@ -761,6 +864,6 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, "5");
+        assert_eq!(version, SCHEMA_VERSION.to_string());
     }
 }

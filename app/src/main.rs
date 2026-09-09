@@ -1,4 +1,9 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![windows_subsystem = "windows"]
+
+mod native_desktop;
+mod hook_desktop;
+mod hook_material;
+mod preview;
 
 use desktop_compositor::MaterialController;
 use desktop_core::{
@@ -34,6 +39,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 #[allow(clippy::too_many_lines)]
 fn main() -> Result<(), String> {
+    // Capture monitor metrics in the same coordinate space used by the window renderer.
+    // windows-window otherwise initializes DPI awareness only when the first HWND is created.
+    unsafe {
+        windows_sys::Win32::UI::HiDpi::SetProcessDpiAwarenessContext(
+            windows_sys::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+        );
+    }
     let arguments: Vec<_> = std::env::args_os().skip(1).collect();
     if run_restore_guard_if_requested(&arguments)? {
         return Ok(());
@@ -51,8 +63,39 @@ fn main() -> Result<(), String> {
         fs::create_dir_all(parent)
             .map_err(|error| format!("failed to create application data directory: {error}"))?;
     }
+    if options.mode == LaunchMode::Preview {
+        return preview::run(
+            &database_path.with_file_name("preview.db"),
+            options.folder.as_deref(),
+            options.title,
+        );
+    }
+    if options.mode == LaunchMode::HybridDesktop {
+        return preview::run_hybrid(&database_path.with_file_name("hook-desktop.db"), options.title)
+            .inspect_err(|error| desktop_window::NativeFrame::show_error(error));
+    }
+    if options.mode == LaunchMode::RedrawnDesktop {
+        if options.folder.is_some() {
+            return Err("桌面模式不接受文件夹路径，请使用 --preview".into());
+        }
+        return preview::run_desktop(
+            &database_path.with_file_name("redrawn-desktop.db"),
+            options.title,
+        );
+    }
     let takeover_marker_path = shell_takeover_marker_path(&database_path);
     recover_stale_shell_takeover(&takeover_marker_path)?;
+    if options.mode == LaunchMode::HookDesktop {
+        if options.folder.is_some() { return Err("原生 Hook 模式不接受文件夹参数".into()); }
+        return hook_desktop::run(&database_path.with_file_name("hook-desktop.db"), options.title)
+            .inspect_err(|error| desktop_window::NativeFrame::show_error(error));
+    }
+    if options.folder.is_none() && options.mode == LaunchMode::NativeDesktop {
+        return native_desktop::run(
+            &database_path.with_file_name("native-frames.db"),
+            options.title,
+        );
+    }
     let mut store = WorkspaceStore::open(&database_path)
         .map_err(|error| format!("failed to open workspace: {error}"))?;
     let mut workspace = store
@@ -1501,6 +1544,11 @@ fn run_restore_guard_if_requested(arguments: &[OsString]) -> Result<bool, String
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum LaunchMode {
     #[default]
+    RedrawnDesktop,
+    Preview,
+    NativeDesktop,
+    HookDesktop,
+    HybridDesktop,
     ManagedDesktop,
     Manual,
 }
@@ -1535,11 +1583,19 @@ fn parse_options(arguments: impl IntoIterator<Item = OsString>) -> Result<AppOpt
                 options.icon = Some(path);
             }
             Some("--managed-desktop") => options.mode = LaunchMode::ManagedDesktop,
+            Some("--desktop") => options.mode = LaunchMode::RedrawnDesktop,
+            Some("--native-desktop") => options.mode = LaunchMode::NativeDesktop,
+            Some("--hook-desktop") => options.mode = LaunchMode::HookDesktop,
+            Some("--hybrid-desktop") => options.mode = LaunchMode::HybridDesktop,
+            Some("--preview") => options.mode = LaunchMode::Preview,
             Some("--manual") => options.mode = LaunchMode::Manual,
             Some(value) if value.starts_with('-') => {
                 return Err(format!("unknown option: {value}"));
             }
-            _ if options.folder.is_none() => options.folder = Some(PathBuf::from(argument)),
+            _ if options.folder.is_none() => {
+                options.folder = Some(PathBuf::from(argument));
+                options.mode = LaunchMode::Preview;
+            }
             _ => return Err("only one portal folder can be supplied".to_string()),
         }
     }
@@ -1576,14 +1632,24 @@ mod tests {
                 folder: Some(PathBuf::from(r"D:\Projects")),
                 title: Some("Work".into()),
                 icon: None,
-                mode: LaunchMode::ManagedDesktop,
+                mode: LaunchMode::Preview,
             }
         );
     }
 
     #[test]
-    fn command_line_defaults_to_managed_desktop_and_allows_manual_fallback() {
-        assert_eq!(parse_options([]).unwrap().mode, LaunchMode::ManagedDesktop);
+    fn command_line_defaults_to_redrawn_desktop_with_explicit_preview_fallback() {
+        assert_eq!(parse_options([]).unwrap().mode, LaunchMode::RedrawnDesktop);
+        assert_eq!(
+            parse_options([OsString::from("--preview")]).unwrap().mode,
+            LaunchMode::Preview
+        );
+        assert_eq!(
+            parse_options([OsString::from("--managed-desktop")])
+                .unwrap()
+                .mode,
+            LaunchMode::ManagedDesktop
+        );
         assert_eq!(
             parse_options([OsString::from("--manual")]).unwrap().mode,
             LaunchMode::Manual
