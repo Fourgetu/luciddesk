@@ -3,6 +3,8 @@
 use desktop_hook::geometry::GeometrySession;
 use std::sync::atomic::{AtomicUsize, Ordering};
 static NAME_MODE: AtomicUsize = AtomicUsize::new(0);
+#[path = "support/drop_capture.rs"]
+mod drop_capture;
 use std::ptr::{null, null_mut};
 use windows_sys::Win32::Foundation::{HWND, POINT, RECT};
 use windows_sys::Win32::Graphics::Gdi::{
@@ -668,6 +670,62 @@ fn main() -> Result<(), String> {
                     assert!(marker.top >= bounds.bottom - 8 && marker.bottom <= bounds.bottom + 8, "Column insertion mark retained hidden gaps");
                 }
                 drop(session);
+                // Reproduce Shell's canonical "before hidden 80" for the gap
+                // after visible 79. The native marker/index must stay intact;
+                // only its rendered position follows the compact boundary.
+                for hidden in [vec![57, 58, 80], vec![13, 14, 80], vec![0, 79, 80]] {
+                    let capture = drop_capture::Capture::attach(view);
+                    let mut expected = Vec::new();
+                    for &item in &hidden {
+                        let rank = (0..item).filter(|i| !hidden.contains(i)).count();
+                        let mark = LVINSERTMARK { cbSize: std::mem::size_of::<LVINSERTMARK>() as u32, iItem: rank as i32, dwFlags: 0, ..Default::default() };
+                        SendMessageW(view, LVM_SETINSERTMARK, 0, (&raw const mark) as isize);
+                        let mut r = RECT::default();
+                        SendMessageW(view, LVM_GETINSERTMARKRECT, 0, (&raw mut r) as isize);
+                        let next = (item..81).find(|i| !hidden.contains(i));
+                        let canonical = next.map_or((80, true), |i| (i, false));
+                        let compact_mark = LVINSERTMARK {
+                            iItem: if next.is_some() { rank as i32 } else { (81 - hidden.len() - 1) as i32 },
+                            dwFlags: if canonical.1 { LVIM_AFTER } else { 0 }, ..mark
+                        };
+                        SendMessageW(view, LVM_SETINSERTMARK, 0, (&raw const compact_mark) as isize);
+                        let mut committed_rect = RECT::default();
+                        SendMessageW(view, LVM_GETINSERTMARKRECT, 0, (&raw mut committed_rect) as isize);
+                        expected.push((item, coordinates(r), canonical, coordinates(committed_rect)));
+                    }
+                    let session = GeometrySession::attach(view as isize)?;
+                    session.begin_positions();
+                    let mut rank = 0;
+                    for item in 0..81 {
+                        let slot = if hidden.contains(&item) { usize::try_from(item).unwrap() } else { let slot = rank; rank += 1; slot };
+                        session.set_position(item, native[slot])?;
+                    }
+                    session.commit_scene(&[], hidden.iter().map(|i| (*i, desktop_hook::protocol::HIDDEN_ITEM as usize - 1)).collect())?;
+                    let identities: Vec<_> = (0..81).map(|item| desktop_hook::protocol::ItemPosition {
+                        item, name_hash: desktop_hook::protocol::name_hash("Native icon".encode_utf16()),
+                        reserved: if hidden.contains(&item) { desktop_hook::protocol::HIDDEN_ITEM } else { 0 },
+                        ..Default::default()
+                    }).collect();
+                    session.identities(&identities, 0);
+                    for (item, expected, canonical, committed_rect) in expected {
+                        let mark = LVINSERTMARK { cbSize: std::mem::size_of::<LVINSERTMARK>() as u32, iItem: item, dwFlags: 0, ..Default::default() };
+                        SendMessageW(view, LVM_SETINSERTMARK, 0, (&raw const mark) as isize);
+                        let mut actual = RECT::default();
+                        SendMessageW(view, LVM_GETINSERTMARKRECT, 0, (&raw mut actual) as isize);
+                        assert_eq!(coordinates(actual), expected, "Hidden marker anchor {item} retained a native gap with hidden={hidden:?}");
+                        let mut retained = mark;
+                        SendMessageW(view, windows_sys::Win32::UI::Controls::LVM_GETINSERTMARK, 0, (&raw mut retained) as isize);
+                        assert_eq!((retained.iItem, retained.dwFlags & LVIM_AFTER), (item, 0), "Marker rendering changed Shell's drop target");
+                        let result = capture.drop_at(637, 1336);
+                        assert_eq!((result.0, result.1), canonical, "Drop still targeted hidden anchor {item}");
+                        assert_eq!((result.2, result.3), (637, 1336), "Drop changed pointer coordinates");
+                        SendMessageW(view, LVM_GETINSERTMARKRECT, 0, (&raw mut actual) as isize);
+                        assert_eq!(coordinates(actual), committed_rect, "Canonical Drop marker left a hidden gap");
+                    }
+                    drop(session);
+                    drop(capture);
+                }
+                println!("PASS: hidden insertion anchors and actual OLE proxy Drop agree at leading, middle, column-wrap and trailing boundaries; pointer unchanged");
             }
             Ok(())
         })();

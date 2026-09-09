@@ -63,6 +63,10 @@ impl IDropTarget_Impl for Target_Impl {
         point: &POINTL,
         effect: *mut DROPEFFECT,
     ) -> Result<()> {
+        // Shell may canonicalize our preview back onto a hidden identity.
+        // Resolve the cached mark through the same visible order before Drop;
+        // never synthesize a DragOver or change the OLE pointer coordinates.
+        normalize_drop_mark(self.view);
         let before = drop_snapshot(self.view);
         // DragOver already resolved the native insertion identity. Keep its
         // cached target, source state and effect when releasing. A synthetic
@@ -71,6 +75,18 @@ impl IDropTarget_Impl for Target_Impl {
         // One record per release: no per-frame disk I/O and no file names.
         log_drop(*point, *point, &before, &drop_snapshot(self.view), &result);
         result
+    }
+}
+
+fn normalize_drop_mark(view: isize) {
+    let mut mark = LVINSERTMARK {
+        cbSize: std::mem::size_of::<LVINSERTMARK>() as u32,
+        iItem: -1,
+        ..Default::default()
+    };
+    unsafe { SendMessageW(view as _, LVM_GETINSERTMARK, 0, (&raw mut mark) as isize); }
+    if super::insertion::normalize_mark(&mut mark) {
+        unsafe { SendMessageW(view as _, LVM_SETINSERTMARK, 0, (&raw const mark) as isize); }
     }
 }
 

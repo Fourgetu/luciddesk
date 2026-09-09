@@ -147,7 +147,12 @@ unsafe extern "system" fn insert_rect(this: *mut c_void, rect: *mut RECT) -> i32
         ..Default::default()
     };
     unsafe { SendMessageW(view, windows_sys::Win32::UI::Controls::LVM_GETINSERTMARK, 0, (&raw mut mark) as isize); }
-    if let Some((destination, object)) = target(mark.iItem).filter(|(_, object)| *object != 0) {
+    let marker_target = target(mark.iItem).map(|(destination, object)| {
+        let destination = insertion::hidden_marker_anchor(mark.iItem,
+            mark.dwFlags & windows_sys::Win32::UI::Controls::LVIM_AFTER != 0).unwrap_or(destination);
+        (destination, object)
+    });
+    if let Some((destination, object)) = marker_target.filter(|(_, object)| *object != 0) {
         let get_position: GetPosition = unsafe { std::mem::transmute(ORIGINAL_POSITION.load(Ordering::Acquire)) };
         let mut baseline = POINT::default();
         if bypass(|| unsafe { get_position(object as _, mark.iItem, -1, &raw mut baseline) }) != 0 {
@@ -172,7 +177,11 @@ unsafe extern "system" fn insert_hit(this: *mut c_void, x: i32, y: i32, mark: *m
     // already be -1 for an unrelated visible gap. Resolve the input cell first,
     // then let native code apply its source/no-op rules in one coordinate space.
     if let Some(point) = insertion::native_point(POINT { x, y }) {
-        return bypass(|| unsafe { original(this, point.x, point.y, mark) });
+        let result = bypass(|| unsafe { original(this, point.x, point.y, mark) });
+        if result != 0 && !mark.is_null() {
+            insertion::normalize_mark(unsafe { &mut *mark });
+        }
+        return result;
     }
     // Retain the existing mapping for the separate native-pane experiment.
     let ok = bypass(|| unsafe { original(this, x, y, mark) });

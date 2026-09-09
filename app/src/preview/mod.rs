@@ -499,7 +499,7 @@ fn handle(state: &Rc<RefCell<Preview>>, id: PanelId, event: Event) -> Result<boo
                         &mut *rect,
                         &peers,
                         work.as_ref(),
-                        (12.0 * scale).round() as i32,
+                        5, // Screen rectangles use physical pixels: keep a 5px gap at every DPI.
                         (14.0 * scale).round() as i32,
                     );
                 }
