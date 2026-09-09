@@ -5,6 +5,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 static NAME_MODE: AtomicUsize = AtomicUsize::new(0);
 #[path = "support/drop_capture.rs"]
 mod drop_capture;
+#[path = "support/query_meter.rs"]
+mod query_meter;
+#[path = "support/selection_probe.rs"]
+mod selection_probe;
 use std::ptr::{null, null_mut};
 use windows_sys::Win32::Foundation::{HWND, POINT, RECT};
 use windows_sys::Win32::Graphics::Gdi::{
@@ -482,6 +486,15 @@ fn main() -> Result<(), String> {
                 3,
                 "Compacted icon did not own its new hit target"
             );
+            selection_probe::check(view, 3, moved);
+            selection_probe::check(view, 3, rect(view, 3, LVIR_LABEL));
+            selection_probe::drag(view, 3, moved);
+            selection_probe::drag(view, 3, rect(view, 3, LVIR_LABEL));
+            {
+                let _contents = selection_probe::restrict_to_contents(view);
+                selection_probe::drag(view, 3, moved);
+                selection_probe::drag(view, 3, rect(view, 3, LVIR_LABEL));
+            }
             let select = LVITEMW {
                 stateMask: LVIS_SELECTED,
                 state: LVIS_SELECTED,
@@ -506,6 +519,25 @@ fn main() -> Result<(), String> {
                 "Hidden item accepted direct selection"
             );
             session.menu_selection(true);
+            use windows_sys::Win32::UI::Controls::{LVM_GETNEXTITEM, LVNI_FOCUSED};
+            assert_eq!(SendMessageW(view, LVM_GETSELECTEDCOUNT, 0, 0), 0,
+                "Pane menu entry must relinquish the desktop selection");
+            assert_eq!(SendMessageW(view, LVM_GETNEXTITEM, usize::MAX, LVNI_FOCUSED as isize), -1,
+                "Pane menu entry must relinquish the desktop item focus");
+            {
+                use windows_sys::Win32::UI::Controls::{NMLVDISPINFOW, LVN_BEGINLABELEDITW};
+                let mut edit = NMLVDISPINFOW::default();
+                edit.hdr.hwndFrom = view;
+                edit.hdr.code = LVN_BEGINLABELEDITW;
+                edit.item.iItem = 2;
+                assert_eq!(SendMessageW(parent, WM_NOTIFY, 0, (&raw const edit) as isize), 1,
+                    "Hidden-item rename must not create an editor in the desktop slot");
+                assert!(session.take_rename_request());
+                assert!(!session.take_rename_request(), "Rename intent must be consumed once");
+                edit.item.iItem = 3;
+                SendMessageW(parent, WM_NOTIFY, 0, (&raw const edit) as isize);
+                assert!(!session.take_rename_request(), "Visible desktop rename must remain native");
+            }
             SendMessageW(view, LVM_SETITEMSTATE, 2, (&raw const select) as isize);
             assert_ne!(
                 SendMessageW(view, LVM_GETITEMSTATE, 2, LVIS_SELECTED as isize),
@@ -513,6 +545,10 @@ fn main() -> Result<(), String> {
                 "Shell menu could not select its hidden target"
             );
             session.menu_selection(false);
+            assert_eq!(SendMessageW(view, LVM_GETSELECTEDCOUNT, 0, 0), 0,
+                "Menu exit must not restore old desktop selection");
+            assert_eq!(SendMessageW(view, LVM_GETNEXTITEM, usize::MAX, LVNI_FOCUSED as isize), -1,
+                "Menu exit must clear temporary item focus");
             assert_eq!(
                 SendMessageW(view, LVM_GETITEMSTATE, 2, LVIS_SELECTED as isize),
                 0,
@@ -561,9 +597,12 @@ fn main() -> Result<(), String> {
                 })
                 .collect();
             session.identities(&names, 0);
+            let _ = hit(view, POINT { x: 20, y: 20 }); // Warm before same-count identity invalidation.
             NAME_MODE.store(2, Ordering::Relaxed);
             windows_sys::Win32::Graphics::Gdi::InvalidateRect(view, null(), 0);
             windows_sys::Win32::Graphics::Gdi::UpdateWindow(view);
+            assert_eq!(SendMessageW(view, LVM_GETITEMSTATE, 3, LVIS_SELECTED as isize), 0,
+                "Reorder left the newly hidden index selected before any new selection event");
             let newly_hidden = rect(view, 3, LVIR_ICON);
             assert_eq!(
                 hit(
@@ -648,6 +687,42 @@ fn main() -> Result<(), String> {
                     }
                 }
                 println!("PASS: all 79 visible icons and labels hit correctly, including collected-item old slots; {:?} total", hit_start.elapsed());
+                let meter = query_meter::Meter::attach(view);
+                let centers: Vec<_> = (0..81).filter(|i| *i != 59 && *i != 60).map(|item| {
+                    let r = rect(view, item, LVIR_ICON);
+                    (item, POINT { x: i32::midpoint(r.left, r.right), y: i32::midpoint(r.top, r.bottom) })
+                }).collect();
+                let _ = hit(view, centers[0].1);
+                meter.reset();
+                let mut timings = Vec::new();
+                for _ in 0..20 {
+                    let start = std::time::Instant::now();
+                    for &(item, point) in &centers { assert_eq!(hit(view, point).0, item as isize); }
+                    timings.push(start.elapsed());
+                }
+                timings.sort();
+                println!("PERF: 1580 warm icon hits, geometry queries={}, 79-hit batch median={:?} p95={:?}", meter.count(), timings[10], timings[18]);
+                assert_eq!(meter.count(), 0, "Warm hit path queried native geometry again");
+                let select = LVITEMW { stateMask: LVIS_SELECTED, state: LVIS_SELECTED, ..Default::default() };
+                SendMessageW(view, LVM_SETITEMSTATE, 3, (&raw const select) as isize);
+                meter.reset();
+                assert_eq!(hit(view, centers[3].1).0, 3);
+                assert!(meter.count() > 0, "Selection did not invalidate cached text geometry");
+                meter.reset();
+                assert_eq!(hit(view, centers[3].1).0, 3);
+                assert_eq!(meter.count(), 0);
+                let dirty = rect(view, 3, LVIR_BOUNDS);
+                ValidateRect(view, null());
+                windows_sys::Win32::Graphics::Gdi::InvalidateRect(view, &raw const dirty, 0);
+                meter.reset();
+                SendMessageW(view, windows_sys::Win32::UI::WindowsAndMessaging::WM_PAINT, 0, 0);
+                assert!(meter.count() > 0, "First paint did not build native damage geometry");
+                windows_sys::Win32::Graphics::Gdi::InvalidateRect(view, &raw const dirty, 0);
+                meter.reset();
+                SendMessageW(view, windows_sys::Win32::UI::WindowsAndMessaging::WM_PAINT, 0, 0);
+                println!("PERF: repeated local paint geometry queries={}", meter.count());
+                assert_eq!(meter.count(), 0, "Stable local paint re-queried every native icon");
+                drop(meter);
                 println!("81 items: native last={},{} visible last={},{} bounds={:?}", native[80].x,native[80].y,last.x,last.y,coordinates(bounds));
                 for rank in [58usize, 62, 75] {
                     let cursor = POINT { x: native[rank].x + 60, y: native[rank].y + 20 };
@@ -721,6 +796,12 @@ fn main() -> Result<(), String> {
                         assert_eq!((result.2, result.3), (637, 1336), "Drop changed pointer coordinates");
                         SendMessageW(view, LVM_GETINSERTMARKRECT, 0, (&raw mut actual) as isize);
                         assert_eq!(coordinates(actual), committed_rect, "Canonical Drop marker left a hidden gap");
+                        let meter = query_meter::Meter::attach(view);
+                        meter.reset();
+                        for _ in 0..20 { SendMessageW(view, LVM_GETINSERTMARKRECT, 0, (&raw mut actual) as isize); }
+                        assert_eq!(meter.count(), 0, "Stable insertion boundary rebuilt the native order");
+                        assert_eq!(coordinates(actual), committed_rect);
+                        drop(meter);
                     }
                     drop(session);
                     drop(capture);

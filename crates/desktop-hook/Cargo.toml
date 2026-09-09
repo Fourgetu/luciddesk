@@ -8,6 +8,10 @@ license.workspace = true
 [lib]
 crate-type = ["rlib", "cdylib"]
 
+[features]
+drag-trace = []
+input-trace = []
+
 [dependencies]
 windows = { workspace = true, features = ["Win32_System_Ole", "Win32_System_Com", "Win32_System_SystemServices"] }
 windows-core = "0.62.2"

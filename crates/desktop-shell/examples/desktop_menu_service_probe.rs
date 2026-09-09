@@ -29,6 +29,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let provider: IServiceProvider = dispatch.cast()?;
         let browser: IShellBrowser = provider.QueryService(&SID_STopLevelBrowser)?;
         let view = browser.QueryActiveShellView()?;
+        if std::env::args().any(|arg| arg == "--benchmark-snapshot") {
+            for sample in 0..3 {
+                let start = std::time::Instant::now();
+                let snapshot = desktop_shell::native_desktop_snapshot()?;
+                println!("sample={sample} items={} snapshot_ms={:.3}", snapshot.items.len(), start.elapsed().as_secs_f64()*1000.0);
+            }
+            return Ok(());
+        }
+        if std::env::args().any(|arg| arg == "--benchmark-resolve") {
+            use windows::Win32::UI::Shell::{IFolderView2, SVGIO_ALLVIEW, SIGDN_DESKTOPABSOLUTEPARSING};
+            let folder: IFolderView2 = view.cast()?;
+            let count = folder.ItemCount(SVGIO_ALLVIEW)?;
+            for expected in [0, count / 2, count - 1].into_iter().filter(|i| *i >= 0 && *i < count) {
+                let item = menu_selection::item_at(&folder, expected)?;
+                let name = item.GetDisplayName(SIGDN_DESKTOPABSOLUTEPARSING)?;
+                let value = name.to_string();
+                windows::Win32::System::Com::CoTaskMemFree(Some(name.0.cast()));
+                let value = value?;
+                let start = std::time::Instant::now();
+                assert_eq!(menu_selection::find(&folder, &item)?, Some(expected));
+                let scan = start.elapsed();
+                menu_selection::update_hints(std::iter::once((value.clone(), expected)));
+                let start = std::time::Instant::now();
+                assert_eq!(menu_selection::resolve(&folder, &value)?, expected);
+                println!("index={expected}/{count} full_scan_ms={:.3} validated_hint_ms={:.3}", scan.as_secs_f64()*1000.0, start.elapsed().as_secs_f64()*1000.0);
+                menu_selection::update_hints(std::iter::once((value.clone(), (expected + 1) % count)));
+                assert_eq!(menu_selection::resolve(&folder, &value)?, expected, "Stale hint must fall back to exact Shell identity");
+            }
+            println!("PASS: live first/middle/last identities and stale-index fallback; no selection or menu changes");
+            return Ok(());
+        }
         if std::env::args().any(|arg| arg == "--refresh-view") {
             println!("desktop_view_refresh={:?}", view.Refresh());
         }
@@ -145,8 +176,10 @@ fn show_at(
             )
         })?;
         return desktop_shell::show_desktop_item_menu(
+            windows::Win32::Foundation::HWND::default(),
             &desktop_shell::ShellIdentity::Namespace { parsing_name },
             point,
+            desktop_shell::MenuInvocation::Mouse,
         );
     }
     unsafe {

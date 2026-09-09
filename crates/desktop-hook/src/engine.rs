@@ -31,8 +31,9 @@ use windows_sys::Win32::UI::Controls::{
 use windows_sys::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     GWL_STYLE, GetWindowLongW, GetWindowThreadProcessId, IsWindow, KillTimer, RemovePropW,
-    SendMessageW, SetPropW, SetTimer, WM_CAPTURECHANGED, WM_COPYDATA, WM_DISPLAYCHANGE, WM_KEYUP,
-    WM_LBUTTONUP, WM_NCDESTROY, WM_TIMER,
+    SendMessageW, SetPropW, SetTimer, WM_CAPTURECHANGED, WM_COPYDATA, WM_DISPLAYCHANGE,
+    WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONUP,
+    WM_RBUTTONDOWN, WM_RBUTTONDBLCLK, WM_MBUTTONDOWN, WM_NCDESTROY, WM_TIMER,
 };
 
 const SUBCLASS: usize = MAGIC;
@@ -202,6 +203,41 @@ unsafe extern "system" fn subclass(
             let state = slot.as_mut()?;
             if state.hwnd != hwnd {
                 return None;
+            }
+            // Signal user intent, not selection notifications: Shell menus also
+            // select a hidden desktop item programmatically. No synchronous pane
+            // calls, item scans or mouse-move traffic on the desktop input path.
+            if matches!(msg, WM_LBUTTONDOWN | WM_LBUTTONDBLCLK | WM_RBUTTONDOWN | WM_RBUTTONDBLCLK | WM_MBUTTONDOWN)
+                || (msg == WM_KEYDOWN && lp & (1 << 30) == 0)
+            {
+                if let Some(geometry) = &state.geometry
+                    && !geometry.menu_active()
+                {
+                    unsafe {
+                        windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW(
+                            state.owner, crate::protocol::DESKTOP_INPUT_MESSAGE,
+                            hwnd as usize,
+                            windows_sys::Win32::UI::WindowsAndMessaging::GetMessageTime() as isize,
+                        );
+                    }
+                }
+            }
+            if msg == crate::protocol::clear_selection_message() && wp as HWND == state.owner {
+                // A queued request may arrive after the user has returned to the
+                // desktop. Never clear their newer desktop selection in that case.
+                unsafe {
+                    let mut owner_pid = 0;
+                    let mut foreground_pid = 0;
+                    GetWindowThreadProcessId(state.owner, &raw mut owner_pid);
+                    GetWindowThreadProcessId(
+                        windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow(),
+                        &raw mut foreground_pid);
+                    if owner_pid != 0 && owner_pid == foreground_pid
+                        && let Some(geometry) = &state.geometry {
+                        geometry.clear_desktop_selection();
+                    }
+                }
+                return Some(0);
             }
             if msg == attach_message() || msg == crate::protocol::geometry_attach_message() {
                 return Some(if state.owner == wp as HWND {
@@ -398,11 +434,19 @@ fn apply_layout(state: &mut State, batch: &crate::protocol::LayoutBatch) -> isiz
 fn dispatch(state: &mut State, request: &Request) -> isize {
     unsafe {
         match request.command {
-            QUERY => OK,
+              QUERY => OK,
+              crate::protocol::CLEAR_DESKTOP_SELECTION => {
+                  if let Some(geometry) = &state.geometry {
+                      geometry.clear_desktop_selection();
+                      OK
+                  } else { REJECTED }
+              }
             crate::protocol::MENU_SELECTION_BEGIN | crate::protocol::MENU_SELECTION_END => {
                 if let Some(geometry) = &state.geometry {
                     geometry.menu_selection(request.command == crate::protocol::MENU_SELECTION_BEGIN);
-                    OK
+                    if request.command == crate::protocol::MENU_SELECTION_END && geometry.take_rename_request() {
+                        crate::protocol::RENAME_REQUESTED
+                    } else { OK }
                 } else { REJECTED }
             }
             crate::protocol::QUERY_SHELL_GENERATION => state.shell_changes as isize,

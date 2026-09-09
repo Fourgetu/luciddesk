@@ -16,6 +16,7 @@ mod label;
 mod layout;
 pub(crate) mod menu;
 mod render;
+mod rename;
 mod shell_menu;
 mod snap;
 mod theme;
@@ -81,6 +82,7 @@ pub struct GroupModel {
     pub items: Vec<Item>,
     pub icon_size: f32,
     pub selected: Option<usize>,
+    pub renaming: Option<ShellIdentity>,
     pub scroll: usize,
     pub collapsed: bool,
     pub loading: bool,
@@ -138,9 +140,12 @@ enum Loaded {
     Image(String, assets::Pixels),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum Event {
+    PaneItemFocus,
     MenuSelection(bool),
+    ItemMenuEnded(ShellIdentity),
+    RenameItem(ShellIdentity),
     Ready,
     Refresh,
     ToggleAutoHide,
@@ -332,6 +337,7 @@ fn create_view(state: &Rc<RefCell<Preview>>, id: PanelId) -> Result<(), String> 
             .as_ref()
             .map_or(48.0, |s| s.icon_size),
         selected: None,
+        renaming: None,
         scroll: 0,
         collapsed: panel.collapsed(),
         loading: id == PanelId::new(1),
@@ -412,6 +418,44 @@ fn save(state: &mut Preview) -> Result<(), String> {
 
 #[allow(clippy::too_many_lines)]
 fn handle(state: &Rc<RefCell<Preview>>, id: PanelId, event: Event) -> Result<bool, String> {
+    if let Event::PaneItemFocus = event {
+        hybrid::clear_desktop_selection(&state.borrow())?;
+        return Ok(false);
+    }
+    if let Event::MenuSelection(allow) = event {
+        hybrid::menu(&state.borrow(), allow)?;
+        return Ok(false);
+    }
+    if let Event::ItemMenuEnded(identity) = event {
+        let requested = hybrid::menu(&state.borrow(), false)?;
+        if requested {
+            let target = {
+                let s = state.borrow();
+                s.views.iter().find(|v| v.id == id).and_then(|v| {
+                    let model = v.model.borrow();
+                    model.items.iter().find(|item| item.identity == identity)
+                        .map(|item| (v.window.hwnd().cast(), item.identity.clone(), item.label.clone(), v.model.clone()))
+                })
+            };
+            if let Some((owner, identity, title, model)) = target {
+                rename::show(owner, &identity, &title, model)?;
+            }
+        }
+        return Ok(false);
+    }
+    if let Event::RenameItem(identity) = event {
+        hybrid::clear_desktop_selection(&state.borrow())?;
+        let target = {
+            let s = state.borrow();
+            s.views.iter().find(|v| v.id == id).and_then(|v| {
+                let model = v.model.borrow();
+                model.items.iter().find(|i| i.identity == identity)
+                    .map(|i| (v.window.hwnd().cast(), i.label.clone(), v.model.clone()))
+            })
+        };
+        if let Some((owner, label, model)) = target { rename::show(owner, &identity, &label, model)?; }
+        return Ok(false);
+    }
     if matches!(event, Event::New) {
         let next = {
             let mut s = state.borrow_mut();
@@ -444,7 +488,7 @@ fn handle(state: &Rc<RefCell<Preview>>, id: PanelId, event: Event) -> Result<boo
     }
     let mut s = state.borrow_mut();
     match event {
-        Event::MenuSelection(allow) => hybrid::menu(&s, allow)?,
+        Event::PaneItemFocus | Event::MenuSelection(_) | Event::ItemMenuEnded(_) | Event::RenameItem(_) => unreachable!("Handled before borrowing Preview"),
         Event::Theme(theme) => {
             let old = s.workspace.clone();
             s.workspace.panel_mut(id).ok_or("分组不存在")?.set_theme(theme);
@@ -884,7 +928,7 @@ mod tests {
             desktop: false, managed: true, hovered_item: None, hovered_button: None,
             focused: false, auto_hide: false, reveal: 1.0, backdrop: desktop_core::Backdrop::Mica,
             native_material: false, title: "Layer test".into(), items: vec![], icon_size: 48.0,
-            spacing: (88.0, 96.0), selected: None, scroll: 0, collapsed: false, loading: false,
+            spacing: (88.0, 96.0), selected: None, renaming: None, scroll: 0, collapsed: false, loading: false,
         }));
         let pane = window::create(RectDip::new(40.0, 40.0, 200.0, 160.0), Rc::clone(&model), |_| false).unwrap();
         assert!(model.borrow().native_material, "System wallpaper brush was unavailable");

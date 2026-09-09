@@ -1,10 +1,12 @@
 pub use desktop_core::ShellIdentity;
 mod native_layout;
 mod native_menu;
+mod rename;
+pub use rename::rename_shell_identity;
 pub use native_layout::{
-    NativeDesktopSnapshot, move_native_desktop_items, native_desktop_snapshot,
+    NativeDesktopSnapshot, move_native_desktop_items, native_desktop_snapshot, native_desktop_snapshot_background,
 };
-pub use native_menu::show_desktop_item_menu;
+pub use native_menu::{MenuInvocation, show_desktop_item_menu};
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::ffi::{OsStr, c_void};

@@ -152,6 +152,9 @@ where
                 }
                 WM_SETFOCUS | WM_KILLFOCUS => {
                     model.borrow_mut().focused = message == WM_SETFOCUS;
+                    if message == WM_SETFOCUS && !desktop && model.borrow().selected.is_some() {
+                        event(Event::PaneItemFocus);
+                    }
                     invalidate(hwnd); Some(0)
                 }
                 WM_SETTINGCHANGE | WM_THEMECHANGED => {
@@ -186,7 +189,7 @@ where
                 }
                 WM_TIMER if wparam == 3 => {
                     let (enabled, collapsed) = { let m = model.borrow(); (m.auto_hide, m.collapsed) };
-                    if !enabled || menu_active.get() { hover_state = None; return Some(0); }
+                    if !enabled || menu_active.get() || super::rename::active(hwnd) { hover_state = None; return Some(0); }
                     // Do not fold a pane while it owns a drag or a resize operation.
                     if drag.is_some() || unsafe { windows_sys::Win32::UI::Input::KeyboardAndMouse::GetCapture() } == hwnd {
                         hover_state = None; return Some(0);
@@ -411,6 +414,7 @@ where
                             )
                         };
                         model.borrow_mut().selected = selected;
+                        if !desktop && selected.is_some() { event(Event::PaneItemFocus); }
                         drag = selected.map(|index| (index, p, false));
                         drag_identity=selected.map(|index|model.borrow().items[index].identity.clone());
                         unsafe {
@@ -534,6 +538,11 @@ where
                     invalidate(hwnd);
                     Some(0)
                 }
+                WM_KEYDOWN if wparam == 0x71 => {
+                    let identity = { let m = model.borrow(); m.selected.and_then(|i| m.items.get(i)).map(|i| i.identity.clone()) };
+                    if let Some(identity) = identity { event(Event::RenameItem(identity)); }
+                    Some(0)
+                }
                 WM_KEYDOWN if wparam == usize::from(VK_ESCAPE) => {
                     if drag.take().is_some() {
                         drag_image = None;
@@ -569,6 +578,7 @@ where
                         }
                     }
                     drop(m);
+                    if !desktop { event(Event::PaneItemFocus); }
                     invalidate(hwnd);
                     Some(0)
                 }
@@ -589,8 +599,8 @@ where
                         if lparam == -1 {unsafe {GetCursorPos(&raw mut anchor);}}
                         invalidate(hwnd);
                         event(Event::MenuSelection(true));
-                        let result=super::shell_menu::show(hwnd,&identity,anchor);
-                        event(Event::MenuSelection(false));
+                        let result=super::shell_menu::show(hwnd,&identity,anchor,lparam == -1);
+                        event(Event::ItemMenuEnded(identity));
                         if let Err(message)=result {error(&message);}
                         // Inventory polling detects rename/delete; dismissing a menu must not
                         // discard every image and trigger a visible reload.

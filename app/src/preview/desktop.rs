@@ -131,6 +131,7 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
             items: items_for(&state.borrow(), id),
             icon_size,
             selected: None,
+            renaming: None,
             scroll: 0,
             collapsed: false,
             loading: true,

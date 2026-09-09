@@ -10,7 +10,7 @@ macro_rules! trace {
         }
     };
 }
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::ffi::c_void;
 use std::time::{Duration, Instant};
 use windows_sys::Win32::Foundation::HWND;
@@ -18,6 +18,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetClassNameW, GetWindowThreadProcessId, IsWindowVisible,
 };
 thread_local! { static POPUPS: RefCell<Vec<HWND>> = const { RefCell::new(Vec::new()) }; }
+thread_local! { static FIRST_VISIBLE: Cell<Option<Instant>> = const { Cell::new(None) }; }
 
 type Hook = *mut c_void;
 type Callback = unsafe extern "system" fn(Hook, u32, HWND, i32, i32, u32, u32);
@@ -43,6 +44,7 @@ pub struct Observer {
 impl Observer {
     pub fn new(process: u32, thread: u32) -> windows::core::Result<Self> {
         POPUPS.with(|popups| popups.borrow_mut().clear());
+        FIRST_VISIBLE.set(None);
         trace!("menu_observer_process={process}, thread={thread}");
         let mut result = Self {
             hooks: Vec::new(),
@@ -67,6 +69,10 @@ impl Observer {
             result.hooks.push(hook);
         }
         Ok(result)
+    }
+
+    pub fn first_visible(&self) -> Option<Instant> {
+        FIRST_VISIBLE.get()
     }
 
     pub fn wait_for_close(&self) -> windows::core::Result<()> {
@@ -181,6 +187,9 @@ unsafe extern "system" fn on_event(
         // Classic menus may follow the compact popup via "Show more options".
         // Track their SHOW / MENUPOPUPSTART events through the same close barrier.
         if matches!(event, 0x8002 | 6) && is_menu_class(&name) {
+            if FIRST_VISIBLE.get().is_none() {
+                FIRST_VISIBLE.set(Some(Instant::now()));
+            }
             POPUPS.with(|popups| {
                 let mut popups = popups.borrow_mut();
                 if !popups.contains(&hwnd) {

@@ -52,8 +52,10 @@ impl IDropTarget_Impl for Target_Impl {
     }
     fn DragLeave(&self) -> Result<()> {
         let result = unsafe { self.original.DragLeave() };
-        let last = self.last_point.get();
-        append_trace(&format!("DragLeave over_calls={} last={},{} result={result:?}", self.over_count.get(), last.x, last.y));
+        if cfg!(feature = "drag-trace") {
+            let last = self.last_point.get();
+            append_trace(&format!("DragLeave over_calls={} last={},{} result={result:?}", self.over_count.get(), last.x, last.y));
+        }
         result
     }
     fn Drop(
@@ -67,13 +69,14 @@ impl IDropTarget_Impl for Target_Impl {
         // Resolve the cached mark through the same visible order before Drop;
         // never synthesize a DragOver or change the OLE pointer coordinates.
         normalize_drop_mark(self.view);
-        let before = drop_snapshot(self.view);
+        let before = cfg!(feature = "drag-trace").then(|| drop_snapshot(self.view));
         // DragOver already resolved the native insertion identity. Keep its
         // cached target, source state and effect when releasing. A synthetic
         // DragOver in another coordinate space can discard that target entirely.
         let result = unsafe { self.original.Drop(data.as_ref(), keys, *point, effect) };
+        super::cache::layout_changed();
         // One record per release: no per-frame disk I/O and no file names.
-        log_drop(*point, *point, &before, &drop_snapshot(self.view), &result);
+        if let Some(before) = before { log_drop(*point, *point, &before, &drop_snapshot(self.view), &result); }
         result
     }
 }

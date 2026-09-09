@@ -527,6 +527,7 @@ impl Renderer {
                             None,
                         );
                     }
+                    if model.renaming.as_ref() == Some(&item.identity) { continue; }
                     if model.managed && model.dark
                         && let Some((bitmap, _, padding, height)) =
                             self.native_labels.get(&label_key)
@@ -657,6 +658,7 @@ mod tests {
             }],
             icon_size: 48.0,
             selected: None,
+            renaming: None,
             scroll: 0,
             collapsed: false,
             loading: false,

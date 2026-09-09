@@ -27,6 +27,18 @@ pub struct NativeDesktopSnapshot {
 /// # Errors
 /// Returns an error when Explorer's desktop COM view cannot be reached.
 pub fn native_desktop_snapshot() -> Result<NativeDesktopSnapshot, String> {
+    capture_desktop_snapshot(false)
+}
+
+/// Read-only inventory for a worker STA. Yields between batches so Explorer can
+/// service mouse input while the controller performs its periodic audit.
+/// # Errors
+/// Returns an error when Explorer's desktop COM view cannot be reached.
+pub fn native_desktop_snapshot_background() -> Result<NativeDesktopSnapshot, String> {
+    capture_desktop_snapshot(true)
+}
+
+fn capture_desktop_snapshot(paced: bool) -> Result<NativeDesktopSnapshot, String> {
     unsafe {
         let capture = || -> windows::core::Result<NativeDesktopSnapshot> {
             let shell: IShellWindows = CoCreateInstance(&ShellWindows, None, CLSCTX_ALL)?;
@@ -54,6 +66,9 @@ pub fn native_desktop_snapshot() -> Result<NativeDesktopSnapshot, String> {
             let mut items = Vec::new();
             let mut view_indices = Vec::new();
             for index in 0..folder.ItemCount(SVGIO_ALLVIEW)? {
+                if paced && index > 0 && index % 8 == 0 {
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
                 let pidl = Pidl(folder.Item(index)?);
                 let position = folder.GetItemPosition(pidl.0)?;
                 let item: windows::Win32::UI::Shell::IShellItem =
@@ -80,7 +95,15 @@ pub fn native_desktop_snapshot() -> Result<NativeDesktopSnapshot, String> {
                 view_indices,
             })
         };
-        capture().map_err(|error| format!("读取原生桌面布局失败：{error}"))
+        let snapshot = capture().map_err(|error| format!("读取原生桌面布局失败：{error}"))?;
+        super::native_menu::update_hints(snapshot.items.iter().zip(&snapshot.view_indices).map(|((item, _, _), &index)| {
+            let name = match &item.identity {
+                desktop_core::ShellIdentity::FileSystem { path, .. } => path.to_string_lossy().into_owned(),
+                desktop_core::ShellIdentity::Namespace { parsing_name } => parsing_name.clone(),
+            };
+            (name, index)
+        }));
+        Ok(snapshot)
     }
 }
 

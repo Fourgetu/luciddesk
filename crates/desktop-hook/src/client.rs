@@ -313,6 +313,20 @@ impl HookSession {
         }
     }
 
+    /// Queue selection cleanup without blocking pane input or painting.
+    /// # Errors
+    /// Returns an error if the notification could not be registered or queued.
+    pub fn post_clear_desktop_selection(&self) -> Result<(), String> {
+        let message = crate::protocol::clear_selection_message();
+        if message == 0 || unsafe {
+              windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW(
+                  self.view, message, self.owner as usize, 0)
+        } == 0 {
+            return Err(format!("无法通知桌面清除选择：{}", std::io::Error::last_os_error()));
+        }
+        Ok(())
+    }
+
     /// Replaces this session's work areas and verifies the control accepted them.
     /// # Errors
     /// Fails for invalid areas or a rejected native layout change.

@@ -18,11 +18,15 @@ pub(super) struct Session {
     generation: isize,
     last_scan: Instant,
     last_reconcile: Instant,
+    audit: Option<mpsc::Receiver<Result<NativeDesktopSnapshot, String>>>,
     last_tick: Instant,
+    last_sync: Instant,
     published: RefCell<Vec<(i32, i32, i32, String, u32)>>,
     sender: mpsc::Sender<Loaded>,
     requested: std::collections::HashSet<String>,
     menu_active: Cell<bool>,
+    last_pane_input: Cell<Option<u32>>,
+    pending_desktop_input: Rc<Cell<Option<u32>>>,
     mouse_down: bool,
     drag: Option<(ShellIdentity, POINT)>,
     drops: Vec<super::drop_target::Registration>,
@@ -55,12 +59,27 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
     let view = desktop_hook::desktop_view()?;
     let dirty=Rc::new(Cell::new(false));
     let notify=Rc::clone(&dirty);
+    let input_state = Rc::new(RefCell::new(std::rc::Weak::<RefCell<Preview>>::new()));
+    let input_receiver = Rc::clone(&input_state);
+    let pending_desktop_input = Rc::new(Cell::new(None));
+    let pending_input = Rc::clone(&pending_desktop_input);
     let controller = windows_window::Window::new("LucidPane Hybrid Controller")
         .size(1, 1)
         .style(WS_POPUP)
         .ex_style(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)
-        .on_message(move|_,message,_,_|{
-            if message==SCENE_DIRTY_MESSAGE {notify.set(true);Some(0)}else{None}
+        .on_message(move|_,message,wparam,lparam|{
+            if message==SCENE_DIRTY_MESSAGE {notify.set(true);Some(0)}
+            else if message == DESKTOP_INPUT_MESSAGE {
+                if wparam as isize == view {
+                    pending_input.set(Some(lparam as u32));
+                    if let Some(state) = input_receiver.borrow().upgrade() {
+                        if let Ok(s) = state.try_borrow() {
+                            clear_pane_selection_on_desktop_input(&s);
+                        }
+                    }
+                }
+                Some(0)
+            } else {None}
         })
         .create()
         .map_err(|e| e.to_string())?;
@@ -105,11 +124,15 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
         generation: -1,
         last_scan: Instant::now(),
         last_reconcile: Instant::now(),
+        audit: None,
         last_tick: Instant::now(),
+        last_sync: Instant::now(),
         published: RefCell::new(Vec::new()),
         sender,
         requested: Default::default(),
         menu_active: Cell::new(false),
+        last_pane_input: Cell::new(None),
+        pending_desktop_input,
         mouse_down: false,
         drag: None,
         drops: Vec::new(),
@@ -127,6 +150,7 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
         receiver,
         desktop: None,
     }));
+    *input_state.borrow_mut() = Rc::downgrade(&state);
     refresh(&mut state.borrow_mut())?;
     let ids: Vec<_> = state
         .borrow()
@@ -363,7 +387,10 @@ pub(super) fn sync(s: &mut Preview) -> Result<(), String> {
             refresh(s)?;
         }
         match publish(s) {
-            Ok(()) => return Ok(()),
+            Ok(()) => {
+                s.hybrid.as_mut().unwrap().last_sync = Instant::now();
+                return Ok(());
+            }
             Err(error) => {
                 last_error = error;
                 refresh(s)?;
@@ -469,19 +496,59 @@ fn audit_hits(h: &Session, batch: &[(i32, i32, i32, String, u32)]) {
     }
 }
 
-pub(super) fn menu(s: &Preview, allow: bool) -> Result<(), String> {
+pub(super) fn clear_desktop_selection(s: &Preview) -> Result<(), String> {
     if let Some(h) = &s.hybrid {
-        h.hook.request(&Request::new(if allow {
+        h.last_pane_input.set(Some(unsafe { GetMessageTime() } as u32));
+        h.hook.post_clear_desktop_selection()?;
+    }
+    Ok(())
+}
+
+fn desktop_input_is_newer(input: u32, pane_input: Option<u32>) -> bool {
+    // GetMessageTime wraps every 49.7 days. Equal ticks conservatively preserve
+    // the pane's choice; compare event times, never foreground activation order.
+    pane_input.is_none_or(|pane| input.wrapping_sub(pane) as i32 > 0)
+}
+
+fn clear_pane_selection_on_desktop_input(s: &Preview) {
+    let Some(h) = &s.hybrid else { return; };
+    let Some(input) = h.pending_desktop_input.take() else { return; };
+    // The first native press can arrive before Explorer activates its desktop.
+    // Ordering protects a newer pane selection without discarding that press.
+    if h.menu_active.get() || !desktop_input_is_newer(input, h.last_pane_input.get()) {
+        return;
+    }
+    for view in &s.views {
+        let Ok(mut model) = view.model.try_borrow_mut() else {
+            // A nested paint/COM callback may still borrow the model. Keep the
+            // event for the existing UI tick instead of silently losing it.
+            h.pending_desktop_input.set(Some(input));
+            continue;
+        };
+        let changed = model.selected.take().is_some() || model.focused;
+        model.focused = false;
+        if changed {
+            unsafe { InvalidateRect(view.window.hwnd().cast(), std::ptr::null(), 0); }
+        }
+    }
+}
+
+pub(super) fn menu(s: &Preview, allow: bool) -> Result<bool, String> {
+    if let Some(h) = &s.hybrid {
+        if allow { h.last_pane_input.set(Some(unsafe { GetMessageTime() } as u32)); }
+        let result = h.hook.request(&Request::new(if allow {
             MENU_SELECTION_BEGIN
         } else {
             MENU_SELECTION_END
         }))?;
         h.menu_active.set(allow);
+        return Ok(result == RENAME_REQUESTED);
     }
-    Ok(())
+    Ok(false)
 }
 
 pub(super) fn tick(s: &mut Preview) -> Result<(), String> {
+    clear_pane_selection_on_desktop_input(s);
     let h = s.hybrid.as_ref().unwrap();
     if h.retry_after.is_some_and(|deadline| Instant::now() < deadline) {
         return Ok(());
@@ -518,20 +585,24 @@ fn tick_once(s: &mut Preview) -> Result<(), String> {
         return Ok(());
     }
     h.last_tick = Instant::now();
-    if h.dirty.replace(false) { refresh(s)?; }
+    let mut urgent = h.dirty.replace(false);
+    if urgent { refresh(s)?; }
     let mut changed = false;
     while let Ok(Loaded::Image(key, image)) = s.receiver.try_recv() {
         s.images.insert(key, Arc::new(image));
         changed = true;
     }
     if changed {
+        urgent = true;
         for v in &s.views {
             v.model.borrow_mut().loading = false;
         }
         refresh_views(s);
     }
+    let was_down = s.hybrid.as_ref().unwrap().mouse_down;
     poll_drag(s)?;
     let h = s.hybrid.as_mut().unwrap();
+    urgent |= was_down && !h.mouse_down;
     if h.last_scan.elapsed() > Duration::from_millis(500) && !h.mouse_down {
         h.last_scan = Instant::now();
         if h.hook.request(&Request::new(QUERY))? != OK {
@@ -539,13 +610,67 @@ fn tick_once(s: &mut Preview) -> Result<(), String> {
         }
         // Explorer can reorder its owner-data model without changing item count or
         // sending the public sort messages. Reconcile identities even in that case.
-        if h.hook.request(&Request::new(QUERY_SHELL_GENERATION))? != h.generation
-            || h.last_reconcile.elapsed() > Duration::from_secs(1)
-        {
+        if h.hook.request(&Request::new(QUERY_SHELL_GENERATION))? != h.generation {
             refresh(s)?;
+            urgent = true;
+        } else if h.last_reconcile.elapsed() > Duration::from_secs(1) && h.audit.is_none() {
+            let (sender, receiver) = mpsc::channel();
+            std::thread::Builder::new().name("desktop-audit".into()).spawn(move || {
+                let result = desktop_shell::ShellApartment::initialize_sta()
+                    .map_err(|error| error.to_string())
+                    .and_then(|_apartment| desktop_shell::native_desktop_snapshot_background());
+                let _ = sender.send(result);
+            }).map_err(|error| format!("无法启动桌面检查：{error}"))?;
+            h.audit = Some(receiver);
         }
     }
-    sync(s)
+    let h = s.hybrid.as_mut().unwrap();
+    if !h.mouse_down {
+        let audit = h.audit.as_ref().map(mpsc::Receiver::try_recv);
+        match audit {
+            Some(Ok(result)) => {
+                h.audit = None;
+                let snapshot = result?;
+                let unchanged = same_inventory(&h.snapshot, &snapshot) && baseline_matches(h)?;
+                h.last_reconcile = Instant::now();
+                if !unchanged {
+                    // Worker snapshots are only change detectors. Never publish a
+                    // possibly stale worker layout: retain the validated refresh.
+                    refresh(s)?;
+                    urgent = true;
+                } else {
+                    // Preserve the periodic re-publish that repairs internal
+                    // Explorer presentation resets, without re-reading metadata.
+                    h.published.borrow_mut().clear();
+                    urgent = true;
+                }
+            }
+            Some(Err(mpsc::TryRecvError::Disconnected)) => {
+                h.audit = None;
+                return Err("桌面检查线程已退出".into());
+            }
+            _ => {}
+        }
+    }
+    // Explicit user operations still call sync immediately. Only repeated timer
+    // checks are coalesced; dirty scenes and release updates are never delayed.
+    if sync_due(urgent, s.hybrid.as_ref().unwrap().last_sync.elapsed()) { sync(s) } else { Ok(()) }
+}
+
+fn sync_due(urgent: bool, elapsed: Duration) -> bool {
+    urgent || elapsed >= Duration::from_millis(100)
+}
+
+fn baseline_matches(h: &Session) -> Result<bool, String> {
+    if h.baseline.len() != h.snapshot.view_indices.len() { return Ok(false); }
+    for (&index, point) in h.snapshot.view_indices.iter().zip(&h.baseline) {
+        let mut query = Request::new(QUERY_ORIGINAL_POSITION);
+        query.item = index;
+        if h.hook.request(&query)? != point.x as isize { return Ok(false); }
+        query.x = 1;
+        if h.hook.request(&query)? != point.y as isize { return Ok(false); }
+    }
+    Ok(true)
 }
 
 fn valid_inventory(snapshot: &NativeDesktopSnapshot) -> bool {
@@ -668,6 +793,28 @@ pub(super) fn release(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn desktop_press_order_survives_activation_races_and_rejects_stale_input() {
+        // A first desktop press follows pane input even while the pane is still
+        // foreground. No activation state participates in this decision.
+        assert!(desktop_input_is_newer(120, Some(100)));
+        assert!(desktop_input_is_newer(120, None));
+        // The same notification delivered after a new pane choice is stale.
+        assert!(!desktop_input_is_newer(120, Some(140)));
+        assert!(!desktop_input_is_newer(120, Some(120)));
+        // Windows message timestamps wrap without changing event order.
+        assert!(desktop_input_is_newer(10, Some(u32::MAX - 10)));
+        assert!(!desktop_input_is_newer(u32::MAX - 10, Some(10)));
+    }
+
+    #[test]
+    fn duplicate_ticks_coalesce_but_dirty_and_release_updates_are_immediate() {
+        for elapsed in [0, 20, 40, 60, 80] {
+            assert!(!sync_due(false, Duration::from_millis(elapsed)));
+            assert!(sync_due(true, Duration::from_millis(elapsed)));
+        }
+        assert!(sync_due(false, Duration::from_millis(100)));
+    }
     #[test]
     fn same_count_reorder_is_detected_and_membership_follows_identity() {
         let make = |name: &str| {

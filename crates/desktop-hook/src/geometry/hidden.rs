@@ -13,6 +13,7 @@ use windows_sys::Win32::{
 };
 thread_local! {
     pub(super) static MENU: Cell<bool> = const { Cell::new(false) };
+    pub(super) static RENAME_REQUESTED: Cell<bool> = const { Cell::new(false) };
     static CLEANING: Cell<bool> = const { Cell::new(false) };
 }
 
@@ -33,6 +34,7 @@ pub(super) fn invalidate_indices() {
             state.identities.expected.clear();
             state.identities.current_hidden.clear();
             state.identities.notified = false;
+            state.cache.layout_changed();
         }
     });
 }
@@ -53,6 +55,7 @@ pub(super) fn set_identities(items: &[crate::protocol::ItemPosition], owner: isi
         .collect();
     STATE.with(|s| {
         if let Some(s) = s.borrow_mut().as_mut() {
+            s.cache.layout_changed();
             s.identities = Identities {
                 expected: items.iter().map(|i| (i.item, i.name_hash)).collect(),
                 unique_hidden,
@@ -152,6 +155,7 @@ pub(super) fn refresh_identities(view: HWND) {
         if names == cache.expected {
             return;
         }
+        state.cache.layout_changed();
         let mut counts = BTreeMap::new();
         for hash in names.values() {
             *counts.entry(*hash).or_insert(0usize) += 1;
@@ -206,6 +210,9 @@ pub(super) fn refresh_identities(view: HWND) {
             }
         }
     });
+    // A same-count reorder can turn a selected visible index into a hidden one.
+    // Clean up only after releasing STATE: querying native state re-enters us.
+    clear_selection(view);
 }
 pub(super) fn is_hidden(item: i32) -> bool {
     STATE.with(|s| {
@@ -235,6 +242,15 @@ pub(super) fn clear_selection(view: HWND) {
         })
     });
     for item in hidden {
+        // A no-op state write still enters the native selection machinery. In
+        // particular, do not send these while it is processing a visible press.
+        let selected = unsafe {
+            SendMessageW(view, LVM_GETITEMSTATE, item as usize,
+                (LVIS_SELECTED | LVIS_FOCUSED) as isize)
+        };
+        if selected == 0 {
+            continue;
+        }
         let state = LVITEMW {
             stateMask: LVIS_SELECTED | LVIS_FOCUSED,
             ..Default::default()
@@ -256,8 +272,22 @@ pub(super) unsafe fn notification(header: &NMHDR, lp: isize) -> Option<isize> {
             .as_ref()
             .is_some_and(|s| s.view == header.hwndFrom)
     });
+    if ours && MENU.get() && [LVN_BEGINLABELEDITW, LVN_BEGINLABELEDITA].contains(&header.code) {
+        // Both notification encodings have the same item-index prefix. Do not read text.
+        let edit = unsafe { &*(lp as *const NMLVDISPINFOW) };
+        if is_hidden(edit.item.iItem) {
+            RENAME_REQUESTED.set(true);
+            return Some(1); // Shell must not create an editor at the hidden desktop slot.
+        }
+    }
     if !ours || MENU.get() || CLEANING.get() {
         return None;
+    }
+    if header.code == LVN_ITEMCHANGING || header.code == LVN_ITEMCHANGED {
+        let change = unsafe { &*(lp as *const NMLISTVIEW) };
+        super::cache::geometry_changed((change.iItem >= 0).then_some(change.iItem));
+    } else if header.code == LVN_ODSTATECHANGED {
+        super::cache::geometry_changed(None);
     }
     if header.code == LVN_ITEMCHANGING {
         let change = unsafe { &*(lp as *const NMLISTVIEW) };
@@ -265,7 +295,17 @@ pub(super) unsafe fn notification(header: &NMHDR, lp: isize) -> Option<isize> {
             return Some(1);
         }
     }
-    if header.code == LVN_ITEMCHANGED || header.code == LVN_ODSTATECHANGED {
+    let hidden_selected = if header.code == LVN_ITEMCHANGED {
+        let change = unsafe { &*(lp as *const NMLISTVIEW) };
+        change.uChanged & LVIF_STATE != 0
+            && change.uNewState & (LVIS_SELECTED | LVIS_FOCUSED) != 0
+            && (change.iItem < 0 || is_hidden(change.iItem))
+    } else if header.code == LVN_ODSTATECHANGED {
+        let change = unsafe { &*(lp as *const NMLVODSTATECHANGE) };
+        change.uNewState & (LVIS_SELECTED | LVIS_FOCUSED) != 0
+            && (change.iFrom..=change.iTo).any(is_hidden)
+    } else { false };
+    if hidden_selected {
         clear_selection(header.hwndFrom);
     }
     None

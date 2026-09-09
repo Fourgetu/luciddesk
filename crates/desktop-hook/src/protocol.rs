@@ -5,6 +5,8 @@ pub const VERSION: u32 = 1;
 pub const MAGIC: usize = 0x4c50_484b;
 pub const MAX_AREAS: usize = 16;
 pub const OK: isize = 0x4c50;
+/// Menu completed with a request to rename a hidden pane item in the controller.
+pub const RENAME_REQUESTED: isize = OK + 1;
 pub const REJECTED: isize = -1;
 pub const QUERY: u32 = 1;
 pub const SET_AREAS: u32 = 2;
@@ -29,9 +31,22 @@ pub const MENU_SELECTION_END: u32 = 19;
 pub const QUERY_MOVE_REQUESTS: u32 = 20;
 pub const QUERY_DROP_PROXY: u32 = 21;
 pub const QUERY_INSERTION_TARGET: u32 = 22;
+/// Pane input relinquishes the desktop's selected and keyboard-focused items.
+pub const CLEAR_DESKTOP_SELECTION: u32 = 23;
+/// Pointer-free queued notification; unlike WM_COPYDATA it never waits on Explorer.
+pub fn clear_selection_message() -> u32 {
+    static MESSAGE: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+    *MESSAGE.get_or_init(|| unsafe {
+        RegisterWindowMessageW(windows_sys::w!("LucidPane.ClearDesktopSelection.v1"))
+    })
+}
 /// Item remains in Shell inventory, but has no desktop presentation or input target.
 pub const HIDDEN_ITEM: u32 = u32::MAX;
 pub const SCENE_DIRTY_MESSAGE: u32 = 0x8000 + 0x4a0;
+/// A real desktop input gesture; wParam is the ListView HWND, lParam is its
+/// GetMessageTime tick (u32). Receivers must reject events older than pane input.
+pub const DESKTOP_INPUT_MESSAGE: u32 = 0x8000 + 0x4a1;
+
 pub const LAYOUT_MAGIC: usize = MAGIC + 2;
 pub const MAX_LAYOUT_ITEMS: usize = 512;
 pub const TEXTURE_MAGIC: usize = MAGIC + 3;
@@ -194,7 +209,7 @@ impl Request {
     #[must_use]
     pub fn valid(&self) -> bool {
         self.version == VERSION
-            && (QUERY..=QUERY_INSERTION_TARGET).contains(&self.command)
+            && (QUERY..=CLEAR_DESKTOP_SELECTION).contains(&self.command)
             && self.count as usize <= MAX_AREAS
             && (self.command != SET_AREAS
                 || (self.count > 0 && self.areas[..self.count as usize].iter().all(|a| a.valid())))

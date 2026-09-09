@@ -23,14 +23,14 @@ use windows_sys::Win32::System::LibraryLoader::{
 };
 use windows_sys::Win32::System::Threading::GetCurrentThreadId;
 use windows_sys::Win32::UI::Controls::{
-    LVHITTESTINFO, LVIR_BOUNDS, LVIR_ICON, LVIR_LABEL, LVM_DELETEALLITEMS, LVM_DELETEITEM,
-    LVM_GETITEMCOUNT, LVM_GETITEMPOSITION, LVM_GETITEMRECT, LVM_HITTEST, LVM_INSERTITEMW,
-    LVM_SETITEMCOUNT, LVS_ICON, LVS_OWNERDATA, LVS_TYPEMASK,
+    LVHITTESTINFO, LVHT_EX_ONCONTENTS, LVIR_BOUNDS, LVIR_ICON, LVIR_LABEL,
+    LVM_GETITEMCOUNT, LVM_GETITEMPOSITION, LVM_GETITEMRECT, LVM_HITTEST,
+    LVS_ICON, LVS_OWNERDATA, LVS_TYPEMASK,
 };
 use windows_sys::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     GCLP_WNDPROC, GWL_STYLE, GetClassLongPtrW, GetClassNameW, GetWindowLongW,
-    GetWindowThreadProcessId, SendMessageW, WM_NCDESTROY, WM_PAINT,
+    GetWindowThreadProcessId, SendMessageW,
 };
 
 #[path = "geometry_profile.rs"]
@@ -38,6 +38,9 @@ mod profile;
 mod hidden;
 mod drop_target;
 mod insertion;
+mod cache;
+#[cfg(feature = "input-trace")]
+mod input_trace;
 
 unsafe extern "system" {
     fn MH_Initialize() -> i32;
@@ -83,6 +86,7 @@ struct State {
     surface: crate::pane_surface::Surface,
     clip: Option<(windows_sys::Win32::Graphics::Gdi::HDC, i32)>,
     identities: hidden::Identities,
+    cache: cache::Cache,
 }
 thread_local! {
     static STATE: RefCell<Option<State>> = const { RefCell::new(None) };
@@ -322,14 +326,21 @@ unsafe extern "system" fn parent_subclass(
         return unsafe { DefSubclassProc(hwnd, msg, wp, lp) };
     }
     let header = unsafe { &*(lp as *const NMHDR) };
-    if let Some(result) = unsafe { hidden::notification(header, lp) } { return result; }
+    if let Some(result) = unsafe { hidden::notification(header, lp) } {
+        #[cfg(feature = "input-trace")]
+        unsafe { input_trace::notification(header, lp, result); }
+        return result;
+    }
     let ours = STATE.with(|s| {
         s.borrow()
             .as_ref()
                 .is_some_and(|s| s.view == header.hwndFrom && (!s.panes.is_empty() || !s.members.is_empty() || s.identities.active))
     });
     if !ours || header.code != NM_CUSTOMDRAW {
-        return unsafe { DefSubclassProc(hwnd, msg, wp, lp) };
+        let result = unsafe { DefSubclassProc(hwnd, msg, wp, lp) };
+        #[cfg(feature = "input-trace")]
+        unsafe { input_trace::notification(header, lp, result); }
+        return result;
     }
     let draw = unsafe { &*(lp as *const NMLVCUSTOMDRAW) };
     let stage = draw.nmcd.dwDrawStage;
@@ -337,7 +348,8 @@ unsafe extern "system" fn parent_subclass(
         restore_item_clip();
         return CDRF_SKIPDEFAULT as isize;
     }
-    if stage == CDDS_ITEMPREPAINT {
+    let needs_clip = STATE.with(|s| s.borrow().as_ref().is_some_and(|s| !s.panes.is_empty()));
+    if stage == CDDS_ITEMPREPAINT && needs_clip {
         restore_item_clip();
         let dc = draw.nmcd.hdc;
         let saved = unsafe { SaveDC(dc) };
@@ -386,7 +398,7 @@ unsafe extern "system" fn parent_subclass(
         if original & CDRF_SKIPDEFAULT as isize != 0 {
             restore_item_clip();
         }
-        original | CDRF_NOTIFYPOSTPAINT as isize
+        original | if needs_clip { CDRF_NOTIFYPOSTPAINT as isize } else { 0 }
     } else {
         if stage == CDDS_ITEMPOSTPAINT || stage == CDDS_POSTPAINT {
             restore_item_clip();
@@ -461,17 +473,29 @@ fn invalidate_mapping_delta(view: HWND, old: &BTreeMap<i32, POINT>, new: &BTreeM
 }
 
 fn expand_native_damage(view: HWND) {
-    let targets = STATE.with(|state| state.borrow().as_ref().map(|s| s.targets.clone()));
-    let Some(targets) = targets.filter(|t| !t.is_empty()) else {
+    if !STATE.with(|s| s.borrow().as_ref().is_some_and(|s| !s.targets.is_empty())) {
         return;
-    };
+    }
     unsafe {
         let damage = CreateRectRgn(0, 0, 0, 0);
         if damage.is_null() {
             return;
         }
         if GetUpdateRgn(view, damage, 0) > 1 {
-            for (item, target) in targets {
+            let mut region = RECT::default();
+            windows_sys::Win32::Graphics::Gdi::GetRgnBox(damage, &raw mut region);
+            let candidates = cache::damage(view, &region);
+            if let Some(candidates) = candidates {
+                for candidate in candidates {
+                    if RectInRegion(damage, &raw const candidate.native) != 0 || RectInRegion(damage, &raw const candidate.mapped) != 0 {
+                        InvalidateRect(view, &raw const candidate.native, 0);
+                        InvalidateRect(view, &raw const candidate.mapped, 0);
+                    }
+                }
+            } else {
+                // If construction raced a native change, retain the full native path.
+                let targets = STATE.with(|s| s.borrow().as_ref().map_or_else(BTreeMap::new, |s| s.targets.clone()));
+                for (item, target) in targets {
                 let Some((bounds, baseline)) = baseline_bounds(view, item) else {
                     continue;
                 };
@@ -482,6 +506,7 @@ fn expand_native_damage(view: HWND) {
                     InvalidateRect(view, &raw const bounds, 0);
                     InvalidateRect(view, &raw const mapped, 0);
                 }
+                }
             }
         }
         DeleteObject(damage);
@@ -489,6 +514,17 @@ fn expand_native_damage(view: HWND) {
 }
 
 unsafe extern "system" fn hit(
+    this: *mut c_void, x: i32, y: i32, flags: *mut u32, subitem: *mut i32, group: *mut i32,
+) -> i32 {
+    let result = unsafe { hit_impl(this, x, y, flags, subitem, group) };
+    #[cfg(feature = "input-trace")]
+    input_trace::event(|| format!("HIT x={x} y={y} result={result} flags={:#x} sub={} group={} bypass={}",
+        if flags.is_null() {0} else {unsafe {*flags}}, if subitem.is_null() {-99} else {unsafe {*subitem}},
+        if group.is_null() {-99} else {unsafe {*group}}, BYPASS.get()));
+    result
+}
+
+unsafe fn hit_impl(
     this: *mut c_void,
     x: i32,
     y: i32,
@@ -499,6 +535,27 @@ unsafe extern "system" fn hit(
     let original: HitTest = unsafe { std::mem::transmute(ORIGINAL_HIT.load(Ordering::Acquire)) };
     if !matches(1, this) {
         return unsafe { original(this, x, y, flags, subitem, group) };
+    }
+    let view = STATE.with(|s| s.borrow().as_ref().map(|s| s.view));
+    if let Some(view) = view && let Some(result) = cache::hit(view, x, y) {
+        if let Some((item, hit_flags)) = result {
+            // Explorer restricts first-press selection to actual item contents.
+            // The base icon/label bits alone route an unselected drag into marquee
+            // selection. Preserve the content bit native icon geometry supplies.
+            if !flags.is_null() { unsafe { *flags = hit_flags | LVHT_EX_ONCONTENTS; } }
+            if !subitem.is_null() { unsafe { *subitem = 0; } }
+            if !group.is_null() { unsafe { *group = -1; } }
+            return item;
+        }
+        let result = bypass(|| unsafe { original(this, x, y, flags, subitem, group) });
+        let mapped = STATE.with(|s| s.borrow().as_ref().is_some_and(|s| s.targets.contains_key(&result)));
+        if mapped || !visible_hit(result, x, y) {
+            if !flags.is_null() { unsafe { *flags = 1; } }
+            if !subitem.is_null() { unsafe { *subitem = -1; } }
+            if !group.is_null() { unsafe { *group = -1; } }
+            return -1;
+        }
+        return result;
     }
     let snapshot = STATE.with(|cell| {
         cell.try_borrow().ok().and_then(|s| {
@@ -532,7 +589,7 @@ unsafe extern "system" fn hit(
                     // The displayed native icon/label rectangle already identifies
                     // the item. Asking the underlying virtual grid again can resolve
                     // a collected item's old slot and reject this visible icon.
-                    if !flags.is_null() { unsafe { *flags = if kind == LVIR_ICON { 2 } else { 4 }; } }
+                    if !flags.is_null() { unsafe { *flags = (if kind == LVIR_ICON { 2 } else { 4 }) | LVHT_EX_ONCONTENTS; } }
                     if !subitem.is_null() { unsafe { *subitem = 0; } }
                     if !group.is_null() { unsafe { *group = -1; } }
                     return item;
@@ -571,6 +628,14 @@ unsafe extern "system" fn subclass(
     _: usize,
     _: usize,
 ) -> isize {
+    use windows_sys::Win32::UI::{Controls::{LVM_SETITEMPOSITION, LVM_SETITEMPOSITION32,
+        LVM_ARRANGE, LVM_SETITEMCOUNT, LVM_DELETEALLITEMS, LVM_DELETEITEM, LVM_INSERTITEMW,
+        LVM_SORTITEMS, LVM_SORTITEMSEX, LVM_SETICONSPACING, LVM_SETVIEW, LVM_SETIMAGELIST,
+        LVM_SETITEMTEXTW, LVM_SETITEMSTATE, LVM_SETHOTITEM, WM_MOUSELEAVE,
+        LVM_UPDATE, LVM_REDRAWITEMS, LVM_SETITEMW, LVM_SETITEMA},
+        WindowsAndMessaging::{WM_SIZE, WM_DPICHANGED, WM_DISPLAYCHANGE, WM_SETTINGCHANGE,
+        WM_STYLECHANGED, WM_THEMECHANGED, WM_SETFONT, WM_LBUTTONUP, WM_CAPTURECHANGED,
+        WM_SETFOCUS, WM_KILLFOCUS, WM_NCDESTROY, WM_PAINT, WM_HSCROLL, WM_VSCROLL, WM_WINDOWPOSCHANGED}};
     struct Scope;
     impl Drop for Scope {
         fn drop(&mut self) {
@@ -579,6 +644,22 @@ unsafe extern "system" fn subclass(
     }
     SCOPE.set(SCOPE.get() + 1);
     let _scope = Scope;
+    #[cfg(feature = "input-trace")]
+    let _press = input_trace::Press::begin(hwnd, message, wp, lp);
+    let layout_change = [LVM_SETITEMPOSITION, LVM_SETITEMPOSITION32, LVM_ARRANGE,
+        LVM_SETITEMCOUNT, LVM_DELETEALLITEMS, LVM_DELETEITEM, LVM_INSERTITEMW,
+        LVM_SORTITEMS, LVM_SORTITEMSEX, LVM_SETICONSPACING, LVM_SETVIEW,
+        LVM_SETIMAGELIST, LVM_SETITEMTEXTW, WM_SIZE, WM_DPICHANGED, WM_DISPLAYCHANGE,
+        WM_SETTINGCHANGE, WM_STYLECHANGED, WM_THEMECHANGED, WM_SETFONT,
+        WM_LBUTTONUP, WM_CAPTURECHANGED, WM_HSCROLL, WM_VSCROLL, WM_WINDOWPOSCHANGED].contains(&message);
+    if layout_change { cache::layout_changed(); }
+    else if [WM_SETFOCUS, WM_KILLFOCUS, LVM_SETHOTITEM, WM_MOUSELEAVE].contains(&message) {
+        cache::geometry_changed(None);
+    } else if message == LVM_SETITEMSTATE {
+        cache::geometry_changed(i32::try_from(wp).ok());
+    } else if [LVM_UPDATE, LVM_REDRAWITEMS, LVM_SETITEMW, LVM_SETITEMA].contains(&message) {
+        cache::geometry_changed(None);
+    }
     if message == windows_sys::Win32::UI::Controls::LVM_SETITEMPOSITION
         || message == windows_sys::Win32::UI::Controls::LVM_SETITEMPOSITION32 {
         MOVE_REQUESTS.set(MOVE_REQUESTS.get().saturating_add(1));
@@ -614,7 +695,10 @@ unsafe extern "system" fn subclass(
         hidden::refresh_identities(hwnd);
         expand_native_damage(hwnd);
     }
-    unsafe { DefSubclassProc(hwnd, message, wp, lp) }
+    let result = unsafe { DefSubclassProc(hwnd, message, wp, lp) };
+    if layout_change { cache::layout_changed(); }
+    else if message == LVM_SETITEMSTATE { cache::geometry_changed(i32::try_from(wp).ok()); }
+    result
 }
 
 /// A same-UI-thread native geometry session. Icons and native automatic-arrangement flags remain
@@ -648,14 +732,39 @@ impl GeometrySession {
     }
     /// Temporarily allow Shell to select hidden items for a user-requested menu.
     pub fn menu_selection(&self, allow: bool) {
+        if allow { self.clear_desktop_selection(); }
+        if allow { hidden::RENAME_REQUESTED.set(false); }
         hidden::MENU.set(allow);
-        if !allow { hidden::clear_selection(self.view); }
+        if !allow { self.clear_desktop_selection(); }
+    }
+    /// Only explicit pane input changes selection, never desktop mouse handling.
+    pub(crate) fn menu_active(&self) -> bool {
+        hidden::MENU.get()
+    }
+
+    pub fn clear_desktop_selection(&self) {
+        if hidden::MENU.get() { return; }
+        use windows_sys::Win32::UI::Controls::{LVITEMW, LVIS_SELECTED, LVIS_FOCUSED, LVM_SETITEMSTATE, LVM_GETNEXTITEM, LVNI_SELECTED, LVNI_FOCUSED};
+        unsafe {
+            // Avoid no-op writes, which still run Explorer's selection machinery.
+            if SendMessageW(self.view, LVM_GETNEXTITEM, usize::MAX, LVNI_SELECTED as isize) < 0
+                && SendMessageW(self.view, LVM_GETNEXTITEM, usize::MAX, LVNI_FOCUSED as isize) < 0 {
+                return;
+            }
+            let state = LVITEMW { stateMask: LVIS_SELECTED | LVIS_FOCUSED, ..Default::default() };
+            SendMessageW(self.view, LVM_SETITEMSTATE, usize::MAX, (&raw const state) as isize);
+        }
+    }
+    #[must_use]
+    pub fn take_rename_request(&self) -> bool {
+        hidden::RENAME_REQUESTED.replace(false)
     }
     /// # Safety
     /// `view` must be a live `ListView` on this process and calling UI thread. Keep its message
     /// loop running and drop the session on this same thread before unloading application code.
     /// # Errors
     /// Returns an error on an unsupported image/style, competing session or failed detour.
+    #[allow(clippy::too_many_lines)]
     pub unsafe fn attach(view: isize) -> Result<Self, String> {
         let view = view as HWND;
         let surface = crate::pane_surface::Surface::new()?;
@@ -710,6 +819,7 @@ impl GeometrySession {
                 surface,
                 clip: None,
                 identities: hidden::Identities::default(),
+                cache: cache::Cache::default(),
             });
         });
         if unsafe { SetWindowSubclass(view, Some(subclass), SUBCLASS, 0) } == 0 {
@@ -778,6 +888,7 @@ impl GeometrySession {
         let previous = STATE.with(|cell| {
             let mut state = cell.borrow_mut();
             let state = state.as_mut().ok_or("原生图标视图已退出")?;
+            state.cache.layout_changed();
             Ok::<_, String>(std::mem::replace(&mut state.targets, next.clone()))
         })?;
         invalidate_mapping_delta(self.view, &previous, &next);
@@ -856,6 +967,7 @@ impl GeometrySession {
         let (previous, next) = STATE.with(|cell| {
             let mut state = cell.borrow_mut();
             let state = state.as_mut().ok_or("图标视图已退出")?;
+            state.cache.layout_changed();
             let next = state.pending.take().ok_or("没有待提交的布局")?;
             let previous = std::mem::replace(&mut state.targets, next.clone());
             Ok::<_, String>((previous, next))
