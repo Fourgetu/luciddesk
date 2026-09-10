@@ -12,7 +12,7 @@ use super::{composition::Surface, render::Renderer};
 use desktop_core::Backdrop;
 use std::{cell::Cell, rc::Rc, time::Instant};
 use windows_sys::Win32::{
-    Foundation::{HWND, POINT},
+    Foundation::{HWND, POINT, RECT},
     Graphics::Gdi::*,
     UI::{HiDpi::GetDpiForWindow, Input::KeyboardAndMouse::*, WindowsAndMessaging::*},
 };
@@ -50,12 +50,12 @@ pub fn show(
     theme: desktop_core::PanelTheme,
 ) -> i32 {
     open(
-        owner, anchor, anchored, collapsed, backdrop, auto_hide, 0, desktop, false, theme,
+        owner, anchor, anchored, collapsed, backdrop, auto_hide, 0, desktop, false, theme, None,
     )
 }
 
 pub fn show_hook(owner: HWND, anchor: POINT, backdrop: Backdrop)->i32 {
-    open(owner,anchor,true,false,backdrop,false,0,false,true,desktop_core::PanelTheme::System)
+    open(owner,anchor,true,false,backdrop,false,0,false,true,desktop_core::PanelTheme::System,None)
 }
 
 fn open(
@@ -69,14 +69,15 @@ fn open(
     desktop: bool,
     hook: bool,
     theme: desktop_core::PanelTheme,
+    parent_row: Option<RECT>,
 ) -> i32 {
     let dark = super::theme::is_dark(theme);
     let rows = if desktop {
         vec![
-            entry(1, "新建分组", "+", ""),
-            entry(9, "刷新", "↻", "F5"),
+            entry(1, "新建分组", "", ""),
+            entry(9, "刷新", "", "F5"),
             entry(0, "", "", ""),
-            entry(4, "退出 LucidPane", "⏻", ""),
+            entry(4, "退出 LucidPane", "", ""),
         ]
     } else if submenu == 1 {
         vec![
@@ -109,12 +110,12 @@ fn open(
             entry(16, "深色", if theme == desktop_core::PanelTheme::Dark { "✓" } else { "" }, ""),
         ]
     } else if hook {
-        vec![entry(1,"新建分组","+",""),entry(10,"重命名分组","✎","F2"),
-            entry(8,"背景材质","◈","›"),entry(0,"","",""),
-            entry(11,"移除分组","−",""),entry(4,"退出 LucidPane","⏻","")]
+        vec![entry(1,"新建分组","",""),entry(10,"重命名分组","","F2"),
+            entry(8,"背景材质","","›"),entry(0,"","",""),
+            entry(11,"移除分组","",""),entry(4,"退出 LucidPane","","")]
     } else {
         vec![
-            entry(1, "新建分组", "+", ""),
+            entry(1, "新建分组", "", ""),
             entry(
                 2,
                 if collapsed {
@@ -122,17 +123,17 @@ fn open(
                 } else {
                     "收起分组"
                 },
-                "⌃",
+                "",
                 "",
             ),
-            entry(3, "按名称排序", "↕", ""),
+            entry(3, "按名称排序", "", ""),
             entry(0, "", "", ""),
             entry(7, "自动收起", if auto_hide { "✓" } else { "" }, ""),
             entry(12, "始终置顶", if unsafe { GetWindowLongW(owner, GWL_EXSTYLE) } as u32 & WS_EX_TOPMOST != 0 { "✓" } else { "" }, ""),
-            entry(8, "背景材质", "◈", "›"),
-            entry(17, "外观主题", "◐", "›"),
+            entry(8, "背景材质", "", "›"),
+            entry(17, "外观主题", "", "›"),
             entry(0, "", "", ""),
-            entry(4, "退出 LucidPane", "⏻", ""),
+            entry(4, "退出 LucidPane", "", ""),
         ]
     };
     let scale = unsafe { GetDpiForWindow(owner) }.max(96) as f32 / 96.0;
@@ -254,7 +255,15 @@ fn open(
                     }
                 }
                 WM_KEYDOWN => match wparam as u16 {
-                    VK_ESCAPE | VK_LEFT => done_handler.set(true),
+                    VK_ESCAPE | VK_LEFT => {
+                        if parent_row.is_some() {
+                            unsafe {
+                                SetForegroundWindow(owner);
+                                SetFocus(owner);
+                            }
+                        }
+                        done_handler.set(true);
+                    }
                     VK_RETURN | VK_SPACE | VK_RIGHT => {
                         activate = selected
                             .filter(|&index| wparam as u16 != VK_RIGHT || matches!(rows[index].id, 8 | 17));
@@ -322,6 +331,12 @@ fn open(
                         false,
                         hook,
                         theme,
+                        Some(RECT {
+                            left: 0,
+                            top: (row_top(&rows, index) * scale) as i32,
+                            right: width,
+                            bottom: ((row_top(&rows, index) + ROW_HEIGHT) * scale) as i32,
+                        }),
                     );
                     if result != 0 {
                         command_handler.set(result);
@@ -356,6 +371,20 @@ fn open(
                     PostQuitMessage(i32::try_from(message.wParam).unwrap_or_default());
                 }
                 break;
+            }
+            // The parent handler is suspended in this child's message loop.
+            // Return before dispatching a different parent row to avoid reentry.
+            if message.hwnd == owner && message.message == WM_MOUSEMOVE {
+                if let Some(row) = parent_row {
+                    let x = i32::from((message.lParam as u16).cast_signed());
+                    let y = i32::from(((message.lParam >> 16) as u16).cast_signed());
+                    if x < row.left || x >= row.right || y < row.top || y >= row.bottom {
+                        SetForegroundWindow(owner);
+                        SetFocus(owner);
+                        PostMessageW(owner, message.message, message.wParam, message.lParam);
+                        break;
+                    }
+                }
             }
             TranslateMessage(&raw const message);
             DispatchMessageW(&raw const message);

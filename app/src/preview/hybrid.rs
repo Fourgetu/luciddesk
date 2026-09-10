@@ -167,7 +167,31 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
             SetTimer(v.window.hwnd().cast(), 1, 25, None);
         }
     }
+    let tray_state = Rc::downgrade(&state);
+    let tray = crate::tray::Tray::new(move |action| {
+        let Some(state) = tray_state.upgrade() else { return; };
+        match action {
+            crate::tray::Action::Exit => windows_window::quit(),
+            crate::tray::Action::Show => {
+                let windows: Vec<_> = state.borrow().views.iter()
+                    .map(|v| v.window.hwnd()).collect();
+                for &hwnd in &windows {
+                    unsafe { ShowWindow(hwnd.cast(), SW_SHOWNOACTIVATE); }
+                }
+                if let Some(&hwnd) = windows.first() {
+                    unsafe { SetForegroundWindow(hwnd.cast()); }
+                }
+            }
+            crate::tray::Action::New => {
+                let id = state.borrow().views.first().map(|v| v.id);
+                if let Some(id) = id {
+                    if let Err(error) = handle(&state, id, Event::New) { window::error(&error); }
+                }
+            }
+        }
+    })?;
     windows_window::run();
+    drop(tray);
     state.borrow_mut().hybrid.take();
     Ok(())
 }

@@ -4,6 +4,7 @@ mod native_desktop;
 mod hook_desktop;
 mod hook_material;
 mod preview;
+mod tray;
 
 use desktop_compositor::MaterialController;
 use desktop_core::{
