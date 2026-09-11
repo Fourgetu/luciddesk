@@ -94,7 +94,7 @@ pub fn show(
     let command = Rc::new(Cell::new(0));
     let done_handler = Rc::clone(&done);
     let command_handler = Rc::clone(&command);
-    let Ok(mut renderer) = Renderer::new() else {
+    let Ok(renderer) = Renderer::new() else {
         return 0;
     };
     let mut surface: Option<Surface> = None;
@@ -140,7 +140,9 @@ pub fn show(
                             surface = Some(value);
                         }
                         let value = surface.as_mut().unwrap();
-                        let pixels = renderer.flyout(
+                        let target = value.begin_frame(width as u32, height as u32)?;
+                        renderer.paint_flyout(
+                            &target,
                             width as u32,
                             height as u32,
                             scale,
@@ -149,7 +151,7 @@ pub fn show(
                             value.native,
                             dark,
                         )?;
-                        value.present(width as u32, height as u32, &pixels)?;
+                        value.end_frame()?;
                         // Start after the first frame is ready: device creation and
                         // rasterization must not consume the animation's time budget.
                         if !fade_finished && fade.is_none() {
@@ -307,5 +309,100 @@ pub fn show(
         KillTimer(hwnd, 1);
     }
     drop(window);
+    debug_assert_eq!(Rc::strong_count(&done), 1, "menu callback was not released");
     command.get()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use windows_sys::Win32::System::{ProcessStatus::*, Threading::*};
+
+    #[test]
+    #[ignore = "Opens real menus repeatedly; run alone in an interactive desktop session"]
+    fn repeated_open_close_releases_resources() {
+        unsafe extern "system" fn close(hwnd: HWND, _: isize) -> i32 {
+            let mut title = [0u16; 32];
+            unsafe {
+                let len = GetWindowTextW(hwnd, title.as_mut_ptr(), title.len() as i32);
+                if String::from_utf16_lossy(&title[..len.max(0) as usize]) == "分组菜单" {
+                    PostMessageW(hwnd, WM_CLOSE, 0, 0);
+                }
+            }
+            1
+        }
+        unsafe extern "system" fn tick(_: HWND, _: u32, _: usize, _: u32) {
+            unsafe {
+                EnumThreadWindows(GetCurrentThreadId(), Some(close), 0);
+            }
+        }
+        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let owner = windows_window::Window::new("Menu lifecycle fixture")
+            .style(WS_POPUP)
+            .size(320, 240)
+            .on_message(|_, msg, _, _| (msg == WM_DESTROY).then_some(0))
+            .create()
+            .unwrap();
+        let owner = owner.hwnd().cast();
+        unsafe {
+            assert_ne!(SetTimer(owner, 99, 160, Some(tick)), 0);
+        }
+        let mut samples = Vec::new();
+        for batch in 0..6 {
+            let started = Instant::now();
+            for _ in 0..20 {
+                assert_eq!(
+                    show(
+                        owner,
+                        POINT { x: 40, y: 40 },
+                        false,
+                        false,
+                        desktop_core::PanelTheme::Dark
+                    ),
+                    0
+                );
+            }
+            unsafe {
+                let process = GetCurrentProcess();
+                let mut memory = PROCESS_MEMORY_COUNTERS_EX::default();
+                memory.cb = size_of::<PROCESS_MEMORY_COUNTERS_EX>() as u32;
+                assert_ne!(
+                    GetProcessMemoryInfo(process, (&raw mut memory).cast(), memory.cb),
+                    0
+                );
+                let mut handles = 0;
+                assert_ne!(GetProcessHandleCount(process, &raw mut handles), 0);
+                let gui = (
+                    GetGuiResources(process, GR_GDIOBJECTS),
+                    GetGuiResources(process, GR_USEROBJECTS),
+                );
+                println!(
+                    "menus={} private_kib={} handles={} gui={gui:?} batch_ms={}",
+                    (batch + 1) * 20,
+                    memory.PrivateUsage / 1024,
+                    handles,
+                    started.elapsed().as_millis()
+                );
+                samples.push((memory.PrivateUsage, handles, gui));
+            }
+        }
+        unsafe {
+            KillTimer(owner, 99);
+        }
+        let warm = samples[1];
+        let last = samples[5];
+        assert!(
+            last.0 <= warm.0 + 16 * 1024 * 1024,
+            "private bytes keep growing: {samples:?}"
+        );
+        assert!(
+            last.1 <= warm.1 + 8,
+            "process handles keep growing: {samples:?}"
+        );
+        // DWM/driver lazy initialization may add a small number of helper windows.
+        assert!(
+            last.2.0 <= warm.2.0 + 2 && last.2.1 <= warm.2.1 + 2,
+            "GUI resources keep growing: {samples:?}"
+        );
+    }
 }

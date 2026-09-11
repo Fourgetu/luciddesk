@@ -9,6 +9,27 @@ pub use dwm::{
 use windows::Win32::Foundation::HWND;
 use windows::core::{Error, HRESULT, IUnknown, Interface, Result};
 
+thread_local! {
+    static DEVICE: std::cell::RefCell<Option<windows_canvas::GpuDevice>> = const { std::cell::RefCell::new(None) };
+}
+
+/// All pane and flyout contexts on the UI thread share one graphics device.
+pub fn gpu_device() -> Result<windows_canvas::GpuDevice> {
+    DEVICE.with(|slot| {
+        let mut cached = slot.borrow_mut();
+        if let Some(device) = cached.as_ref() {
+            let native: windows::Win32::Graphics::Direct3D11::ID3D11Device =
+                native_interface(device.d3d_device())?;
+            if unsafe { native.GetDeviceRemovedReason() }.is_ok() {
+                return Ok(device.clone());
+            }
+        }
+        let device = canvas_result(windows_canvas::GpuDevice::new_or_warp())?;
+        *cached = Some(device.clone());
+        Ok(device)
+    })
+}
+
 /// # Safety
 /// The attribute and value must match the DWM API's expected layout.
 pub unsafe fn set_attribute<T>(hwnd: HWND, attribute: i32, value: &T) -> Result<()> {

@@ -17,6 +17,7 @@ use windows::core::Result;
 type ImageBitmap = (Arc<assets::Pixels>, windows_canvas::Bitmap, (u32, u32));
 
 pub struct Renderer {
+    #[cfg(test)]
     offscreen_device: Option<windows_canvas::GpuDevice>,
     labels: windows_canvas::TextFormat,
     title: windows_canvas::TextFormat,
@@ -26,6 +27,7 @@ pub struct Renderer {
 }
 
 impl Renderer {
+    #[cfg(test)]
     pub fn flyout(
         &mut self,
         width: u32,
@@ -37,73 +39,84 @@ impl Renderer {
         dark: bool,
     ) -> Result<Vec<u8>> {
         self.prepare(width, height, scale)?;
-        {
-            let (_, _, bitmap, target) = self.target.as_ref().unwrap();
-            canvas::draw(target, scale, |target| {
-                let ink = if dark { 0.95 } else { 0.10 };
-                let text =
-                    canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 1.0)))?;
-                let subtle =
-                    canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.13)))?;
-                let hover =
-                    canvas_result(target.create_solid_brush(ColorF::new(0.8, 0.88, 1.0, 0.14)))?;
-                target.clear(ColorF::new(
-                    if dark { 0.09 } else { 0.96 },
-                    if dark { 0.10 } else { 0.96 },
-                    if dark { 0.12 } else { 0.96 },
-                    if native { 0.0 } else { 1.0 },
-                ));
-                let width = width as f32 / scale;
-                target.draw_rounded_rect(
-                    &RoundedRect {
-                        rect: Rect::from_xywh(0.5, 0.5, width - 1.0, height as f32 / scale - 1.0),
-                        radius_x: 8.0,
-                        radius_y: 8.0,
-                    },
-                    &subtle,
-                    1.0,
-                );
-                for (index, row) in rows.iter().enumerate() {
-                    let top = super::menu::row_top(rows, index);
-                    if row.id == 0 {
-                        target.fill_rect(
-                            &Rect::from_xywh(12.0, top + 4.0, width - 24.0, 1.0),
-                            &subtle,
-                        );
-                        continue;
-                    }
-                    if selected == Some(index) {
-                        target.fill_rounded_rect(
-                            &RoundedRect {
-                                rect: Rect::from_xywh(
-                                    4.0,
-                                    top + 2.0,
-                                    width - 8.0,
-                                    super::menu::ROW_HEIGHT - 4.0,
-                                ),
-                                radius_x: 5.0,
-                                radius_y: 5.0,
-                            },
-                            &hover,
-                        );
-                    }
-                    for (label, left, available) in [
-                        (row.icon, 12.0, 20.0),
-                        (row.label, 38.0, width - 68.0),
-                        (row.trailing, width - 28.0, 20.0),
-                    ] {
-                        target.clipped_text(
-                            label,
-                            &self.title,
-                            &Rect::from_xywh(left, top, available, super::menu::ROW_HEIGHT),
-                            &text,
-                        );
-                    }
+        let (_, _, bitmap, target) = self.target.as_ref().unwrap();
+        self.paint_flyout(target, width, height, scale, rows, selected, native, dark)?;
+        bitmap.as_ref().unwrap().pixels()
+    }
+
+    pub fn paint_flyout(
+        &self,
+        target: &ID2D1DeviceContext,
+        width: u32,
+        height: u32,
+        scale: f32,
+        rows: &[super::menu::Entry],
+        selected: Option<usize>,
+        native: bool,
+        dark: bool,
+    ) -> Result<()> {
+        canvas::draw(target, scale, |target| {
+            let ink = if dark { 0.95 } else { 0.10 };
+            let text = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 1.0)))?;
+            let subtle =
+                canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.13)))?;
+            let hover =
+                canvas_result(target.create_solid_brush(ColorF::new(0.8, 0.88, 1.0, 0.14)))?;
+            target.clear(ColorF::new(
+                if dark { 0.09 } else { 0.96 },
+                if dark { 0.10 } else { 0.96 },
+                if dark { 0.12 } else { 0.96 },
+                if native { 0.0 } else { 1.0 },
+            ));
+            let width = width as f32 / scale;
+            target.draw_rounded_rect(
+                &RoundedRect {
+                    rect: Rect::from_xywh(0.5, 0.5, width - 1.0, height as f32 / scale - 1.0),
+                    radius_x: 8.0,
+                    radius_y: 8.0,
+                },
+                &subtle,
+                1.0,
+            );
+            for (index, row) in rows.iter().enumerate() {
+                let top = super::menu::row_top(rows, index);
+                if row.id == 0 {
+                    target.fill_rect(
+                        &Rect::from_xywh(12.0, top + 4.0, width - 24.0, 1.0),
+                        &subtle,
+                    );
+                    continue;
                 }
-                target.finish()?;
-                bitmap.as_ref().unwrap().pixels()
-            })
-        }
+                if selected == Some(index) {
+                    target.fill_rounded_rect(
+                        &RoundedRect {
+                            rect: Rect::from_xywh(
+                                4.0,
+                                top + 2.0,
+                                width - 8.0,
+                                super::menu::ROW_HEIGHT - 4.0,
+                            ),
+                            radius_x: 5.0,
+                            radius_y: 5.0,
+                        },
+                        &hover,
+                    );
+                }
+                for (label, left, available) in [
+                    (row.icon, 12.0, 20.0),
+                    (row.label, 38.0, width - 68.0),
+                    (row.trailing, width - 28.0, 20.0),
+                ] {
+                    target.clipped_text(
+                        label,
+                        &self.title,
+                        &Rect::from_xywh(left, top, available, super::menu::ROW_HEIGHT),
+                        &text,
+                    );
+                }
+            }
+            target.finish()
+        })
     }
     pub fn new() -> Result<Self> {
         use windows_canvas::{ParagraphAlignment, TextAlignment, TextFormat, WordWrapping};
@@ -116,6 +129,7 @@ impl Renderer {
             .with_paragraph_alignment(ParagraphAlignment::Center)
             .with_word_wrapping(WordWrapping::NoWrap);
         Ok(Self {
+            #[cfg(test)]
             offscreen_device: None,
             labels,
             title,
@@ -125,6 +139,7 @@ impl Renderer {
         })
     }
 
+    #[cfg(test)]
     fn prepare(&mut self, width: u32, height: u32, _scale: f32) -> Result<()> {
         if self
             .target
@@ -132,8 +147,7 @@ impl Renderer {
             .is_none_or(|(w, h, bitmap, _)| *w != width || *h != height || bitmap.is_none())
         {
             if self.offscreen_device.is_none() {
-                self.offscreen_device =
-                    Some(canvas_result(windows_canvas::GpuDevice::new_or_warp())?);
+                self.offscreen_device = Some(super::native_graphics::gpu_device()?);
             }
             let bitmap =
                 canvas::Offscreen::new(self.offscreen_device.as_ref().unwrap(), width, height)?;

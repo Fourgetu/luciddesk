@@ -15,6 +15,7 @@ pub struct Surface {
     opacity: std::cell::Cell<f32>,
     acrylic: Option<super::acrylic::Acrylic>,
     _device: GpuDevice,
+    #[cfg(test)]
     context: ID3D11DeviceContext,
     drawing: ID2D1DeviceContext,
     layer: desktop_graphics::Layer,
@@ -55,8 +56,9 @@ impl Surface {
 
     pub fn new_with_opacity(hwnd: HWND, initial_opacity: f32) -> Result<Self> {
         unsafe {
-            let device = canvas_result(GpuDevice::new_or_warp())?;
+            let device = gpu_device()?;
             let d3d: ID3D11Device = native_interface(device.d3d_device())?;
+            #[cfg(test)]
             let context = d3d.GetImmediateContext()?;
             let dxgi: IDXGIDevice = d3d.cast()?;
             let mut swap = canvas_result(device.create_swap_chain(1, 1))?;
@@ -88,6 +90,7 @@ impl Surface {
                 opacity: std::cell::Cell::new(initial_opacity),
                 acrylic: None,
                 _device: device,
+                #[cfg(test)]
                 context,
                 drawing,
                 layer,
@@ -160,6 +163,7 @@ impl Surface {
         Ok(())
     }
 
+    #[cfg(test)]
     pub fn present(&mut self, width: u32, height: u32, pixels: &[u8]) -> Result<()> {
         let expected = (width as usize)
             .checked_mul(height as usize)
