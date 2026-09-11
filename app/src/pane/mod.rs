@@ -100,8 +100,6 @@ enum Event {
     ToggleAutoHide,
     ToggleTopmost,
     Theme(desktop_core::PanelTheme),
-    PanelTheme(desktop_core::PanelTheme),
-    PanelMaterial(desktop_core::Backdrop),
     SetCollapsed(bool),
     Moving(*mut RECT),
     Material(desktop_core::Backdrop),

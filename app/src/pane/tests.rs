@@ -646,39 +646,6 @@ fn appearance_is_global_while_behavior_remains_per_group() {
 }
 
 #[test]
-fn panel_menu_appearance_targets_only_its_panel_and_survives_reload() {
-    let state = Rc::new(RefCell::new(test_state()));
-    let id = PanelId::new(1);
-    handle(&state, id, Event::Theme(desktop_core::PanelTheme::Dark)).unwrap();
-    handle(&state, id, Event::Material(desktop_core::Backdrop::Mica)).unwrap();
-    handle(
-        &state,
-        id,
-        Event::PanelMaterial(desktop_core::Backdrop::Acrylic),
-    )
-    .unwrap();
-    handle(
-        &state,
-        id,
-        Event::PanelTheme(desktop_core::PanelTheme::Light),
-    )
-    .unwrap();
-    let s = state.borrow();
-    for workspace in [s.workspace.clone(), s.store.load_workspace().unwrap()] {
-        let current = workspace.panel(id).unwrap();
-        let other = workspace.panel(PanelId::new(2)).unwrap();
-        assert_eq!(current.backdrop(), desktop_core::Backdrop::Acrylic);
-        assert_eq!(current.theme(), desktop_core::PanelTheme::Light);
-        assert_eq!(other.backdrop(), desktop_core::Backdrop::Mica);
-        assert_eq!(other.theme(), desktop_core::PanelTheme::Dark);
-        assert_eq!(
-            workspace.appearance(),
-            Some((desktop_core::PanelTheme::Dark, desktop_core::Backdrop::Mica))
-        );
-    }
-}
-
-#[test]
 fn settings_window_applies_clicks_and_closes_without_exiting() {
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();

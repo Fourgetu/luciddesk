@@ -991,17 +991,14 @@ where
                             // discard every image and trigger a visible reload.
                             return;
                         }
-                        let (collapsed, backdrop, auto_hide, theme) = {
+                        let (auto_hide, theme) = {
                             let m = model.borrow();
-                            (m.collapsed, m.backdrop, m.auto_hide, m.theme)
+                            (m.auto_hide, m.theme)
                         };
-                        let command = menu(hwnd, lparam, collapsed, backdrop, auto_hide, theme);
+                        let command = menu(hwnd, lparam, auto_hide, theme);
                         match command {
                             1 => {
                                 event(Event::New);
-                            }
-                            2 => {
-                                event(Event::Collapse);
                             }
                             3 => {
                                 event(Event::Sort);
@@ -1009,29 +1006,11 @@ where
                             4 => {
                                 event(Event::Exit);
                             }
-                            5 => {
-                                event(Event::PanelMaterial(desktop_core::Backdrop::Acrylic));
-                            }
-                            6 => {
-                                event(Event::PanelMaterial(desktop_core::Backdrop::Mica));
-                            }
                             7 => {
                                 event(Event::ToggleAutoHide);
                             }
                             12 => {
                                 event(Event::ToggleTopmost);
-                            }
-                            13 => {
-                                event(Event::PanelMaterial(desktop_core::Backdrop::MicaAlt));
-                            }
-                            14 => {
-                                event(Event::PanelTheme(desktop_core::PanelTheme::System));
-                            }
-                            15 => {
-                                event(Event::PanelTheme(desktop_core::PanelTheme::Light));
-                            }
-                            16 => {
-                                event(Event::PanelTheme(desktop_core::PanelTheme::Dark));
                             }
                             9 => {
                                 event(Event::Refresh);
@@ -1114,15 +1093,7 @@ where
     Ok(window)
 }
 
-fn menu(
-    hwnd: HWND,
-    lparam: isize,
-    collapsed: bool,
-    material: desktop_core::Backdrop,
-    auto_hide: bool,
-
-    theme: desktop_core::PanelTheme,
-) -> i32 {
+fn menu(hwnd: HWND, lparam: isize, auto_hide: bool, theme: desktop_core::PanelTheme) -> i32 {
     let anchored = lparam == -1;
     let mut anchor = point(lparam);
     if anchored {
@@ -1135,9 +1106,7 @@ fn menu(
             ClientToScreen(hwnd, &raw mut anchor);
         }
     }
-    super::menu::show(
-        hwnd, anchor, anchored, collapsed, material, auto_hide, theme,
-    )
+    super::menu::show(hwnd, anchor, anchored, auto_hide, theme)
 }
 pub fn error(message: &str) {
     unsafe {

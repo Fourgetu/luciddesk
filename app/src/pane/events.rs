@@ -11,33 +11,6 @@ pub(super) fn handle(
         settings::show(state, id)?;
         return Ok(false);
     }
-    if matches!(event, Event::PanelTheme(_) | Event::PanelMaterial(_)) {
-        let mut s = state.borrow_mut();
-        let old = s.workspace.clone();
-        let Some(panel) = s.workspace.panel_mut(id) else {
-            return Ok(false);
-        };
-        match event {
-            Event::PanelTheme(value) => panel.set_theme(value),
-            Event::PanelMaterial(value) => panel.set_backdrop(value),
-            _ => unreachable!(),
-        }
-        let (theme, backdrop) = (panel.theme(), panel.backdrop());
-        if let Err(error) = save(&mut s) {
-            s.workspace = old;
-            return Err(error);
-        }
-        if let Some(view) = s.views.iter().find(|view| view.id == id) {
-            let mut model = view.model.borrow_mut();
-            model.theme = theme;
-            model.dark = self::theme::is_dark(theme);
-            model.backdrop = backdrop;
-            unsafe {
-                InvalidateRect(view.window.hwnd().cast(), std::ptr::null(), 0);
-            }
-        }
-        return Ok(false);
-    }
     if matches!(event, Event::Theme(_) | Event::Material(_)) {
         let mut s = state.borrow_mut();
         let old = s.workspace.clone();
@@ -238,7 +211,7 @@ pub(super) fn handle(
         | Event::MenuSelection(_)
         | Event::ItemMenuEnded(_)
         | Event::RenameItem(_) => unreachable!("Handled before borrowing PaneApp"),
-        Event::Theme(_) | Event::Material(_) | Event::PanelTheme(_) | Event::PanelMaterial(_) => {
+        Event::Theme(_) | Event::Material(_) => {
             unreachable!("Handled before borrowing PaneApp")
         }
         Event::ToggleTopmost => {

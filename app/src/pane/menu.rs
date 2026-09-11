@@ -12,7 +12,7 @@ use super::{composition::Surface, render::Renderer};
 use desktop_core::Backdrop;
 use std::{cell::Cell, rc::Rc, time::Instant};
 use windows_sys::Win32::{
-    Foundation::{HWND, POINT, RECT},
+    Foundation::{HWND, POINT},
     Graphics::Gdi::*,
     UI::{HiDpi::GetDpiForWindow, Input::KeyboardAndMouse::*, WindowsAndMessaging::*},
 };
@@ -43,136 +43,36 @@ pub fn show(
     owner: HWND,
     anchor: POINT,
     anchored: bool,
-    collapsed: bool,
-    backdrop: Backdrop,
     auto_hide: bool,
-
     theme: desktop_core::PanelTheme,
-) -> i32 {
-    open(
-        owner, anchor, anchored, collapsed, backdrop, auto_hide, 0, theme, None,
-    )
-}
-
-fn open(
-    owner: HWND,
-    anchor: POINT,
-    anchored: bool,
-    collapsed: bool,
-    backdrop: Backdrop,
-    auto_hide: bool,
-    submenu: u8,
-
-    theme: desktop_core::PanelTheme,
-    parent_row: Option<RECT>,
 ) -> i32 {
     let dark = super::theme::is_dark(theme);
-    let rows = if submenu == 1 {
-        vec![
-            entry(
-                13,
-                "云母 Alt",
-                if backdrop == Backdrop::MicaAlt {
-                    "✓"
-                } else {
-                    ""
-                },
-                "",
-            ),
-            entry(
-                5,
-                "亚克力",
-                if backdrop == Backdrop::Acrylic {
-                    "✓"
-                } else {
-                    ""
-                },
-                "",
-            ),
-            entry(
-                6,
-                "云母",
-                if backdrop == Backdrop::Mica {
-                    "✓"
-                } else {
-                    ""
-                },
-                "",
-            ),
-        ]
-    } else if submenu == 2 {
-        vec![
-            entry(
-                14,
-                "跟随系统",
-                if theme == desktop_core::PanelTheme::System {
-                    "✓"
-                } else {
-                    ""
-                },
-                "",
-            ),
-            entry(
-                15,
-                "浅色",
-                if theme == desktop_core::PanelTheme::Light {
-                    "✓"
-                } else {
-                    ""
-                },
-                "",
-            ),
-            entry(
-                16,
-                "深色",
-                if theme == desktop_core::PanelTheme::Dark {
-                    "✓"
-                } else {
-                    ""
-                },
-                "",
-            ),
-        ]
-    } else {
-        vec![
-            entry(1, "新建分组", "", ""),
-            entry(
-                2,
-                if collapsed {
-                    "展开分组"
-                } else {
-                    "收起分组"
-                },
-                "",
-                "",
-            ),
-            entry(3, "按名称排序", "", ""),
-            entry(0, "", "", ""),
-            entry(7, "自动收起", if auto_hide { "✓" } else { "" }, ""),
-            entry(
-                12,
-                "始终置顶",
-                if unsafe { GetWindowLongW(owner, GWL_EXSTYLE) } as u32 & WS_EX_TOPMOST != 0 {
-                    "✓"
-                } else {
-                    ""
-                },
-                "",
-            ),
-            entry(8, "背景材质", "", "›"),
-            entry(17, "外观主题", "", "›"),
-            entry(0, "", "", ""),
-            entry(11, "关闭分组", "", ""),
-            entry(18, "设置", "", ""),
-            entry(4, "退出 LucidPane", "", ""),
-        ]
-    };
+    let rows = vec![
+        entry(1, "新建分组", "", ""),
+        entry(3, "按名称排序", "", ""),
+        entry(0, "", "", ""),
+        entry(7, "自动收起", if auto_hide { "✓" } else { "" }, ""),
+        entry(
+            12,
+            "始终置顶",
+            if unsafe { GetWindowLongW(owner, GWL_EXSTYLE) } as u32 & WS_EX_TOPMOST != 0 {
+                "✓"
+            } else {
+                ""
+            },
+            "",
+        ),
+        entry(0, "", "", ""),
+        entry(11, "关闭分组", "", ""),
+        entry(18, "设置", "", ""),
+        entry(4, "退出 LucidPane", "", ""),
+    ];
     let scale = unsafe { GetDpiForWindow(owner) }.max(96) as f32 / 96.0;
     let mut animate = 1i32;
     unsafe {
         SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, (&raw mut animate).cast(), 0);
     }
-    let width = ((if submenu != 0 { 180.0 } else { 216.0 }) * scale).round() as i32;
+    let width = (216.0 * scale).round() as i32;
     let height = ((row_top(&rows, rows.len()) + 4.0) * scale).round() as i32;
     let mut monitor = MONITORINFO {
         cbSize: size_of::<MONITORINFO>() as u32,
@@ -200,8 +100,6 @@ fn open(
     let mut surface: Option<Surface> = None;
     let mut selected: Option<usize> = None;
     let mut down: Option<usize> = None;
-    let mut hovered_at = Instant::now();
-    let mut opened_submenu = false;
     let mut fade_started: Option<Instant> = None;
     let mut fade: Option<super::animation::Fade> = None;
     let mut fade_finished = animate == 0;
@@ -300,8 +198,6 @@ fn open(
                     });
                     if selected != hit {
                         selected = hit;
-                        hovered_at = Instant::now();
-                        opened_submenu = false;
                         unsafe {
                             InvalidateRect(hwnd, std::ptr::null(), 0);
                         }
@@ -315,18 +211,10 @@ fn open(
                 }
                 WM_KEYDOWN => match wparam as u16 {
                     VK_ESCAPE | VK_LEFT => {
-                        if parent_row.is_some() {
-                            unsafe {
-                                SetForegroundWindow(owner);
-                                SetFocus(owner);
-                            }
-                        }
                         done_handler.set(true);
                     }
-                    VK_RETURN | VK_SPACE | VK_RIGHT => {
-                        activate = selected.filter(|&index| {
-                            wparam as u16 != VK_RIGHT || matches!(rows[index].id, 8 | 17)
-                        });
+                    VK_RETURN | VK_SPACE => {
+                        activate = selected;
                     }
                     VK_UP | VK_DOWN => {
                         let indices: Vec<_> = rows
@@ -344,7 +232,6 @@ fn open(
                             })
                         };
                         selected = Some(indices[next]);
-                        opened_submenu = true;
                         unsafe {
                             InvalidateRect(hwnd, std::ptr::null(), 0);
                         }
@@ -369,56 +256,19 @@ fn open(
                             if opacity >= 1.0 {
                                 fade_finished = true;
                                 unsafe {
-                                    SetTimer(hwnd, 1, 50, None);
+                                    KillTimer(hwnd, 1);
                                 }
                             }
                         }
-                    }
-                    if !opened_submenu && hovered_at.elapsed().as_millis() >= 250 {
-                        activate = selected.filter(|&index| matches!(rows[index].id, 8 | 17));
                     }
                 }
                 _ => return None,
             }
             if let Some(index) = activate {
-                if matches!(rows[index].id, 8 | 17) {
-                    opened_submenu = true;
-                    let child_width = (180.0 * scale).round() as i32;
-                    let x = if left + width + child_width <= work.right {
-                        left + width + 4
-                    } else {
-                        left - child_width - 4
-                    };
-                    let result = open(
-                        hwnd,
-                        POINT {
-                            x,
-                            y: top + (row_top(&rows, index) * scale) as i32,
-                        },
-                        false,
-                        collapsed,
-                        backdrop,
-                        auto_hide,
-                        if rows[index].id == 8 { 1 } else { 2 },
-                        theme,
-                        Some(RECT {
-                            left: 0,
-                            top: (row_top(&rows, index) * scale) as i32,
-                            right: width,
-                            bottom: ((row_top(&rows, index) + ROW_HEIGHT) * scale) as i32,
-                        }),
-                    );
-                    if result != 0 {
-                        command_handler.set(result);
-                        done_handler.set(true);
-                    } else if unsafe { GetForegroundWindow() } != hwnd {
-                        done_handler.set(true);
-                    }
-                } else {
-                    command_handler.set(rows[index].id);
-                    done_handler.set(true);
-                }
+                command_handler.set(rows[index].id);
+                done_handler.set(true);
             }
+
             Some(0)
         })
         .create();
@@ -438,7 +288,9 @@ fn open(
         SetWindowPos(hwnd, HWND_TOP, left, top, width, height, SWP_SHOWWINDOW);
         SetForegroundWindow(hwnd);
         SetFocus(hwnd);
-        SetTimer(hwnd, 1, if animate != 0 { 16 } else { 50 }, None);
+        if animate != 0 {
+            SetTimer(hwnd, 1, 16, None);
+        }
         InvalidateRect(hwnd, std::ptr::null(), 0);
         let mut message = MSG::default();
         while !done.get() {
@@ -448,20 +300,6 @@ fn open(
                     PostQuitMessage(i32::try_from(message.wParam).unwrap_or_default());
                 }
                 break;
-            }
-            // The parent handler is suspended in this child's message loop.
-            // Return before dispatching a different parent row to avoid reentry.
-            if message.hwnd == owner && message.message == WM_MOUSEMOVE {
-                if let Some(row) = parent_row {
-                    let x = i32::from((message.lParam as u16).cast_signed());
-                    let y = i32::from(((message.lParam >> 16) as u16).cast_signed());
-                    if x < row.left || x >= row.right || y < row.top || y >= row.bottom {
-                        SetForegroundWindow(owner);
-                        SetFocus(owner);
-                        PostMessageW(owner, message.message, message.wParam, message.lParam);
-                        break;
-                    }
-                }
             }
             TranslateMessage(&raw const message);
             DispatchMessageW(&raw const message);
