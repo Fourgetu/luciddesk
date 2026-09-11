@@ -1,16 +1,13 @@
 [workspace]
 members = [
     "app",
-    "legacy-app",
     "crates/desktop-core",
     "crates/desktop-graphics",
-    "crates/desktop-compositor",
     "crates/desktop-shell",
     "crates/desktop-storage",
     "crates/desktop-window",
     "crates/desktop-hook",
 ]
-default-members = ["app", "crates/desktop-core", "crates/desktop-graphics", "crates/desktop-compositor", "crates/desktop-shell", "crates/desktop-storage", "crates/desktop-window", "crates/desktop-hook"]
 resolver = "3"
 
 [workspace.package]
@@ -20,12 +17,10 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 desktop-core = { path = "crates/desktop-core" }
-desktop-compositor = { path = "crates/desktop-compositor" }
 desktop-shell = { path = "crates/desktop-shell" }
 desktop-storage = { path = "crates/desktop-storage" }
 desktop-window = { path = "crates/desktop-window" }
 desktop-hook = { path = "crates/desktop-hook" }
-notify = "8.2.0"
 rusqlite = { version = "0.37.0", features = ["bundled"] }
 windows-window = "0.100.0"
 windows-numerics = "0.3.1"

@@ -17,21 +17,18 @@ in `hook-desktop.db` in the existing data directory (`LUCIDPANE_DATA_DIR` can
 override it). HookSession owns Hook cleanup; this application never takes over
 Explorer using the old full-desktop hide/restore mechanism.
 
-## Separate legacy application
+## Archived modes
+
+The `main` branch contains only Hook + self-rendered panes. Historical modes,
+the `legacy-app` package and their exclusive compositor library are preserved
+on the local `leagcy` branch (branch name intentionally follows the requested
+spelling). They are not part of main's source tree or workspace.
+
+To work on the old application in that branch:
 
 ```powershell
+git switch leagcy
 cargo build -p lucidpane-legacy -p desktop-hook --offline
-target/debug/lucidpane-legacy.exe --preview
 ```
 
-`legacy-app` is an independent package with its own entry, UI, state, tests and
-recovery helper. It supports `--desktop`, `--managed-desktop`, `--native-desktop`,
-`--hook-desktop`, `--manual` and folder preview, but no hybrid mode. Its native
-Hook mode uses `legacy-hook-desktop.db`. Old full-desktop recovery is available
-through `lucidpane-legacy.exe --restore-shell`.
-
-Default workspace builds exclude this package. `--workspace` explicitly builds
-both applications. Neither application imports source files from the other.
-Only the reusable libraries under `crates/` are shared.
-
-See [code boundaries](docs/mode-separation.md) and [historical mode notes](docs/legacy-modes.md).
+See [code boundaries](docs/mode-separation.md).
