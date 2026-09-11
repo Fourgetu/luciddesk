@@ -724,7 +724,7 @@ impl GeometrySession {
 
     #[must_use]
     pub fn has_drop_proxy(&self) -> bool { self.drop_target.is_some() }
-    /// Cache validated labels only to bridge the short interval during a Shell reorder.
+    /// Cache the controller-validated index mapping and unique labels.
     /// Ambiguous labels are never used to resolve a new hidden index.
     pub fn identities(&self, items: &[crate::protocol::ItemPosition], owner: isize) {
         hidden::set_identities(items, owner);

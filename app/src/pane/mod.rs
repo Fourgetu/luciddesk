@@ -1,0 +1,311 @@
+//! Hybrid pane UI and persisted group interaction. Native desktop synchronization lives in hybrid.
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
+mod acrylic;
+mod animation;
+mod assets;
+mod canvas;
+mod composition;
+mod drag_image;
+mod drop_target;
+mod events;
+mod hybrid;
+mod label;
+mod layout;
+pub(crate) mod menu;
+mod native_graphics;
+mod rename;
+mod render;
+mod settings;
+use events::handle;
+mod shell_menu;
+mod snap;
+mod theme;
+mod window;
+pub use hybrid::run;
+
+use desktop_core::{
+    DesktopItem, DesktopPlacement, GridPosition, Panel, PanelId, PanelSource, RectDip,
+    ShellIdentity, Workspace,
+};
+use desktop_shell::{ShellApartment, open_shell_identity};
+use desktop_storage::WorkspaceStore;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::path::Path;
+use std::rc::Rc;
+use std::sync::{Arc, mpsc};
+use windows_sys::Win32::Foundation::{POINT, RECT};
+use windows_sys::Win32::Graphics::Gdi::{InvalidateRect, ScreenToClient};
+use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
+use windows_sys::Win32::UI::WindowsAndMessaging::{
+    GetWindowRect, IsWindow, PostMessageW, WindowFromPoint,
+};
+
+#[derive(Clone)]
+pub struct Item {
+    pub identity: ShellIdentity,
+    pub label: String,
+    pub image: Option<Arc<assets::Pixels>>,
+}
+
+fn same_items(left: &[Item], right: &[Item]) -> bool {
+    left.len() == right.len()
+        && left.iter().zip(right).all(|(a, b)| {
+            a.identity == b.identity
+                && a.label == b.label
+                && match (&a.image, &b.image) {
+                    (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+                    (None, None) => true,
+                    _ => false,
+                }
+        })
+}
+
+mod model;
+use model::GroupModel;
+
+struct View {
+    id: PanelId,
+    window: windows_window::Window,
+    model: Rc<RefCell<GroupModel>>,
+}
+
+struct PaneApp {
+    settings: Option<windows_window::Window>,
+    // Optional only while starting, shutting down, or running isolated UI tests.
+    session: Option<hybrid::Session>,
+    workspace: Workspace,
+    store: WorkspaceStore,
+    views: Vec<View>,
+    images: HashMap<String, Arc<assets::Pixels>>,
+    receiver: mpsc::Receiver<Loaded>,
+}
+
+type Loaded = Vec<(String, assets::Pixels)>;
+
+#[derive(Clone)]
+enum Event {
+    PaneItemFocus,
+    MenuSelection(bool),
+    ItemMenuEnded(ShellIdentity),
+    RenameItem(ShellIdentity),
+    RenameTitle,
+    SetTitle(String),
+    ClosePane,
+    Settings,
+    Refresh,
+    ToggleAutoHide,
+    ToggleTopmost,
+    Theme(desktop_core::PanelTheme),
+    PanelTheme(desktop_core::PanelTheme),
+    PanelMaterial(desktop_core::Backdrop),
+    SetCollapsed(bool),
+    Moving(*mut RECT),
+    Material(desktop_core::Backdrop),
+    Tick,
+    New,
+    Activate(usize),
+    Drop { index: usize, point: POINT },
+    Geometry(RectDip),
+    Collapse,
+    Sort,
+    Exit,
+}
+
+fn items_for(state: &PaneApp, id: PanelId) -> Vec<Item> {
+    let mut items: Vec<_> = state
+        .workspace
+        .desktop_items()
+        .iter()
+        .filter_map(|item| {
+            if let DesktopPlacement::Pane { pane_id, position } = item.placement() {
+                (*pane_id == id).then_some(((position.row, position.column), item))
+            } else {
+                None
+            }
+        })
+        .collect();
+    items.sort_by_key(|(position, _)| *position);
+    items
+        .into_iter()
+        .map(|(_, item)| Item {
+            identity: item.identity().clone(),
+            label: item.display_name().to_string(),
+            image: state.images.get(&item.identity().persistent_key()).cloned(),
+        })
+        .collect()
+}
+
+fn create_view(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> {
+    let (panel, items) = {
+        let s = state.borrow();
+        (s.workspace.panel(id).unwrap().clone(), items_for(&s, id))
+    };
+    let model = Rc::new(RefCell::new(GroupModel {
+        theme: panel.theme(),
+        dark: theme::is_dark(panel.theme()),
+
+        spacing: (88.0, 96.0),
+        hovered_item: None,
+        focused: false,
+        auto_hide: panel.auto_hide(),
+        reveal: if panel.collapsed() { 0.0 } else { 1.0 },
+        hovered_button: None,
+        backdrop: panel.backdrop(),
+        native_material: false,
+        title: panel.title().to_string(),
+        items,
+        icon_size: 48.0,
+        selected: None,
+        renaming: None,
+        scroll: 0,
+        collapsed: panel.collapsed(),
+        loading: id == PanelId::new(1),
+    }));
+    let weak = Rc::downgrade(state);
+    let window = window::create(panel.rect(), Rc::clone(&model), move |event| {
+        let Some(state) = weak.upgrade() else {
+            return false;
+        };
+        match handle(&state, id, event) {
+            Ok(done) => done,
+            Err(error) => {
+                eprintln!("{error}");
+                window::error(&error);
+                false
+            }
+        }
+    })?;
+    window::set_layer(window.hwnd().cast(), panel.always_on_top());
+    state.borrow_mut().views.push(View { id, window, model });
+    if state.borrow().session.is_some() {
+        hybrid::register_drop(state, id)?;
+    }
+    Ok(())
+}
+
+fn refresh_views(state: &mut PaneApp) {
+    refresh_changed_views(state, false);
+}
+
+fn refresh_changed_views(state: &mut PaneApp, force: bool) {
+    for view in &state.views {
+        let items = items_for(state, view.id);
+        let mut model = view.model.borrow_mut();
+        if !force && same_items(&model.items, &items) && !model.loading {
+            continue;
+        }
+        let selected = model
+            .selected
+            .and_then(|index| model.items.get(index))
+            .map(|item| item.identity.clone());
+        model.items = items;
+        model.selected = selected.and_then(|identity| {
+            model
+                .items
+                .iter()
+                .position(|item| item.identity == identity)
+        });
+        model.hovered_item = None;
+        let hwnd = view.window.hwnd().cast();
+        let mut bounds = RECT::default();
+        unsafe {
+            GetWindowRect(hwnd, &raw mut bounds);
+        }
+        let scale = unsafe { GetDpiForWindow(hwnd) }.max(96) as f32 / 96.0;
+        model.scroll = model.scroll.min(
+            model
+                .grid(
+                    (bounds.right - bounds.left) as f32 / scale,
+                    (bounds.bottom - bounds.top) as f32 / scale,
+                )
+                .max_scroll(model.items.len()),
+        );
+        if model.selected.is_some_and(|i| i >= model.items.len()) {
+            model.selected = None;
+        }
+        unsafe {
+            InvalidateRect(view.window.hwnd().cast(), std::ptr::null(), 0);
+        }
+    }
+}
+
+fn save(state: &mut PaneApp) -> Result<(), String> {
+    hybrid::sync(state)?;
+    state
+        .store
+        .save_workspace(&state.workspace)
+        .map_err(|e| format!("保存分组失败：{e}"))
+}
+
+fn remove_panel(workspace: &mut Workspace, id: PanelId) {
+    workspace.remove_panel(id);
+    for item in workspace.desktop_items_mut() {
+        if matches!(item.placement(), DesktopPlacement::Pane { pane_id, .. } if *pane_id == id) {
+            item.set_placement(DesktopPlacement::default());
+        }
+    }
+}
+
+fn set_order(workspace: &mut Workspace, id: PanelId, items: &[Item]) {
+    // Monitor surfaces are not panes. Their remaining icons retain absolute positions.
+    if workspace.panel(id).is_none() {
+        return;
+    }
+    for (position, item) in items.iter().enumerate() {
+        if let Some(entry) = workspace.desktop_item_mut(&item.identity) {
+            entry.set_placement(DesktopPlacement::Pane {
+                pane_id: id,
+                position: GridPosition::new(position as u32, 0),
+            });
+        }
+    }
+}
+
+// Persist a unique pane-local order before Shell replaces its inventory order.
+// Also repair legacy grid coordinates and gaps left by items dragged out.
+fn normalize_pane_orders(state: &mut PaneApp) {
+    let ids: Vec<_> = state.workspace.panels().iter().map(Panel::id).collect();
+    for id in ids {
+        let items = items_for(state, id);
+        set_order(&mut state.workspace, id, &items);
+    }
+}
+
+fn transfer(
+    state: &mut PaneApp,
+    source: PanelId,
+    index: usize,
+    target: PanelId,
+    at: usize,
+) -> Result<(), String> {
+    if state.workspace.panel(target).is_none() {
+        return Err("目标分组不存在".into());
+    }
+    let mut remaining = items_for(state, source);
+    if index >= remaining.len() {
+        return Err("图标列表已经变化，请重试".into());
+    }
+    let old = state.workspace.clone();
+    let item = remaining.remove(index);
+    set_order(&mut state.workspace, source, &remaining);
+    let mut destination = if source == target {
+        remaining
+    } else {
+        items_for(state, target)
+    };
+    destination.insert(at.min(destination.len()), item);
+    set_order(&mut state.workspace, target, &destination);
+    if let Err(error) = save(state) {
+        state.workspace = old;
+        return Err(error);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests;

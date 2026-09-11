@@ -448,10 +448,15 @@ fn paths_equal(left: &std::path::Path, right: &std::path::Path) -> bool {
         .eq_ignore_ascii_case(&right.as_os_str().to_string_lossy())
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Workspace {
+    appearance: Option<(PanelTheme, Backdrop)>,
     panels: Vec<Panel>,
     desktop_items: Vec<DesktopItem>,
+}
+
+impl Default for Workspace {
+    fn default() -> Self { Self::new() }
 }
 
 impl Workspace {
@@ -459,6 +464,7 @@ impl Workspace {
     pub const fn new() -> Self {
         Self {
             panels: Vec::new(),
+            appearance: None,
             desktop_items: Vec::new(),
         }
     }
@@ -477,6 +483,7 @@ impl Workspace {
         }
         Ok(Self {
             panels,
+            appearance: None,
             desktop_items: Vec::new(),
         })
     }
@@ -530,9 +537,13 @@ impl Workspace {
     /// # Errors
     ///
     /// Returns [`WorkspaceError::DuplicatePanel`] when the ID is already present.
-    pub fn add_panel(&mut self, panel: Panel) -> Result<(), WorkspaceError> {
+    pub fn add_panel(&mut self, mut panel: Panel) -> Result<(), WorkspaceError> {
         if self.panel(panel.id()).is_some() {
             return Err(WorkspaceError::DuplicatePanel(panel.id()));
+        }
+        if let Some((theme, backdrop)) = self.appearance {
+            panel.set_theme(theme);
+            panel.set_backdrop(backdrop);
         }
         self.panels.push(panel);
         Ok(())
@@ -550,6 +561,22 @@ impl Workspace {
     pub fn remove_panel(&mut self, id: PanelId) -> Option<Panel> {
         let index = self.panels.iter().position(|panel| panel.id() == id)?;
         Some(self.panels.remove(index))
+    }
+
+    #[must_use]
+    pub const fn appearance(&self) -> Option<(PanelTheme, Backdrop)> { self.appearance }
+
+    /// Updates defaults for new panels without overwriting existing overrides.
+    pub fn set_appearance_defaults(&mut self, theme: PanelTheme, backdrop: Backdrop) {
+        self.appearance = Some((theme, backdrop));
+    }
+
+    pub fn set_appearance(&mut self, theme: PanelTheme, backdrop: Backdrop) {
+        self.set_appearance_defaults(theme, backdrop);
+        for panel in &mut self.panels {
+            panel.set_theme(theme);
+            panel.set_backdrop(backdrop);
+        }
     }
 }
 

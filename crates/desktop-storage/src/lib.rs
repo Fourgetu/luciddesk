@@ -109,6 +109,25 @@ impl WorkspaceStore {
         let mut workspace = Workspace::from_panels(panels)
             .map_err(|error| StoreError::InvalidData(error.to_string()))?;
         workspace.reconcile_desktop_items(load_desktop_items(&self.connection)?);
+        let appearance = self.connection.query_row(
+            "SELECT value FROM metadata WHERE key = 'appearance'", [], |row| row.get::<_, String>(0)
+        ).optional()?;
+        if let Some(value) = appearance {
+            let parts: Vec<_> = value.split('|').collect();
+            if parts.len() != 3 { return Err(StoreError::InvalidData("invalid appearance".into())); }
+            let theme = match parts[0] {
+                "light" => desktop_core::PanelTheme::Light,
+                "dark" => desktop_core::PanelTheme::Dark,
+                _ => desktop_core::PanelTheme::System,
+            };
+            let backdrop = match parts[1] {
+                "mica" => Backdrop::Mica,
+                "mica_alt" => Backdrop::MicaAlt,
+                "acrylic" => Backdrop::Acrylic,
+                _ => Backdrop::Translucent { opacity: parts[2].parse().map_err(|_| StoreError::InvalidData("invalid appearance opacity".into()))? },
+            };
+            workspace.set_appearance_defaults(theme, backdrop);
+        }
         Ok(workspace)
     }
 
@@ -119,6 +138,14 @@ impl WorkspaceStore {
     /// Returns an error when any panel cannot be serialized or committed.
     pub fn save_workspace(&mut self, workspace: &Workspace) -> Result<(), StoreError> {
         let transaction = self.connection.transaction()?;
+        transaction.execute("DELETE FROM metadata WHERE key = 'appearance'", [])?;
+        if let Some((theme, backdrop)) = workspace.appearance() {
+            let theme = match theme { desktop_core::PanelTheme::System => "system", desktop_core::PanelTheme::Light => "light", desktop_core::PanelTheme::Dark => "dark" };
+            let (kind, opacity) = encode_backdrop(backdrop);
+            transaction.execute("INSERT INTO metadata(key,value) VALUES ('appearance',?1)", [format!("{theme}|{kind}|{}", opacity.unwrap_or(1.0))])?;
+        }
+        // Retire the former antialiasing preference when this workspace is saved.
+        transaction.execute("DELETE FROM metadata WHERE key = 'cleartype'", [])?;
         transaction.execute("DELETE FROM desktop_items", [])?;
         transaction.execute("DELETE FROM panels", [])?;
         for panel in workspace.panels() {
@@ -655,6 +682,21 @@ mod tests {
         store.connection.execute_batch("DROP TABLE panel_theme; UPDATE metadata SET value = '7' WHERE key = 'schema_version';").unwrap();
         super::migrate(&store.connection).unwrap();
         assert_eq!(store.load_workspace().unwrap().panel(PanelId::new(1)).unwrap().theme(), desktop_core::PanelTheme::System);
+    }
+
+    #[test]
+    fn global_appearance_survives_empty_workspace_and_new_panels() {
+        let mut store=WorkspaceStore::open_in_memory().unwrap();
+        let mut workspace=Workspace::new();
+        workspace.set_appearance(desktop_core::PanelTheme::Dark,Backdrop::MicaAlt);
+        store.save_workspace(&workspace).unwrap();
+        let mut restored=store.load_workspace().unwrap();
+        assert_eq!(restored.appearance(),workspace.appearance());
+        restored.add_panel(Panel::new(PanelId::new(1),"New",PanelSource::DesktopCollection,RectDip::default())).unwrap();
+        assert_eq!(restored.panels()[0].theme(),desktop_core::PanelTheme::Dark);
+        assert_eq!(restored.panels()[0].backdrop(),Backdrop::MicaAlt);
+        store.save_workspace(&restored).unwrap();
+        assert_eq!(store.load_workspace().unwrap(),restored);
     }
 
     #[test]

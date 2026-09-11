@@ -14,6 +14,7 @@ use windows_sys::Win32::{
 thread_local! {
     pub(super) static MENU: Cell<bool> = const { Cell::new(false) };
     pub(super) static RENAME_REQUESTED: Cell<bool> = const { Cell::new(false) };
+    static REFRESHING: Cell<bool> = const { Cell::new(false) };
     static CLEANING: Cell<bool> = const { Cell::new(false) };
 }
 
@@ -24,6 +25,9 @@ pub(super) struct Identities {
     current_hidden: BTreeSet<i32>,
     owner: isize,
     notified: bool,
+    native: Option<native_identity::View>,
+    hidden_keys: BTreeSet<Vec<u8>>,
+    init_requested: bool,
     pub(super) active: bool,
 }
 pub(super) fn invalidate_indices() {
@@ -48,14 +52,17 @@ pub(super) fn set_identities(items: &[crate::protocol::ItemPosition], owner: isi
         .filter(|i| i.reserved == crate::protocol::HIDDEN_ITEM)
         .map(|i| i.item)
         .collect();
-    let unique_hidden = items
+    let unique_hidden: BTreeSet<_> = items
         .iter()
         .filter(|i| hidden.contains(&i.item) && counts.get(&i.name_hash) == Some(&1))
         .map(|i| i.name_hash)
         .collect();
+
     STATE.with(|s| {
         if let Some(s) = s.borrow_mut().as_mut() {
             s.cache.layout_changed();
+            let native = s.identities.native.take();
+            let init_requested = s.identities.init_requested;
             s.identities = Identities {
                 expected: items.iter().map(|i| (i.item, i.name_hash)).collect(),
                 unique_hidden,
@@ -63,9 +70,44 @@ pub(super) fn set_identities(items: &[crate::protocol::ItemPosition], owner: isi
                 active: !hidden.is_empty(),
                 owner,
                 notified: false,
+                native,
+                hidden_keys: BTreeSet::new(),
+                init_requested,
             };
+            unsafe {
+                PostMessageW(s.view, IDENTITY_INIT, 0, 0);
+                windows_sys::Win32::Graphics::Gdi::InvalidateRect(s.view, std::ptr::null(), 0);
+            }
         }
     });
+}
+
+// The controller publishes indices after resolving full Shell identities.
+// Painting must retain that mapping while labels/order are unchanged, including
+// duplicates. Never discover/marshal a Shell interface from this path; only a
+// cached local implementation may resolve a changed order.
+impl Identities {
+    fn unchanged(&self, names: &BTreeMap<i32, u64>) -> bool {
+        self.expected == *names
+    }
+
+    fn resolve_unique(&self, names: &BTreeMap<i32, u64>) -> BTreeSet<i32> {
+        let mut counts = BTreeMap::new();
+        for hash in names.values() {
+            *counts.entry(*hash).or_insert(0usize) += 1;
+        }
+        names.iter()
+            .filter(|(_, hash)| self.unique_hidden.contains(hash) && counts.get(hash) == Some(&1))
+            .map(|(index, _)| *index).collect()
+    }
+}
+
+fn match_native_keys(
+    hidden: &BTreeSet<Vec<u8>>,
+    items: impl IntoIterator<Item = (i32, Option<Vec<u8>>)>,
+) -> BTreeSet<i32> {
+    items.into_iter().filter_map(|(index, key)|
+        key.filter(|key| hidden.contains(key)).map(|_| index)).collect()
 }
 
 fn name_hash(view: HWND, index: i32) -> Option<u64> {
@@ -118,6 +160,12 @@ fn original_slots(
 
 /// Reconcile before native painting, so a same-count reorder cannot paint a collected icon.
 pub(super) fn refresh_identities(view: HWND) {
+    if REFRESHING.replace(true) { return; }
+    struct RefreshGuard;
+    impl Drop for RefreshGuard {
+        fn drop(&mut self) { REFRESHING.set(false); }
+    }
+    let _guard = RefreshGuard;
     let active = STATE.with(|s| s.borrow().as_ref().is_some_and(|s| s.identities.active));
     if !active {
         return;
@@ -132,12 +180,26 @@ pub(super) fn refresh_identities(view: HWND) {
     let Some(names) = names else {
         return;
     };
-    if STATE.with(|s| {
-        s.borrow()
-            .as_ref()
-            .is_some_and(|s| s.identities.expected == names)
-    }) {
+    if STATE.with(|s| s.borrow().as_ref().is_some_and(|s| s.identities.unchanged(&names))) {
         return;
+    }
+    let mut resolved = STATE.with(|s| s.borrow().as_ref()
+        .map(|s| s.identities.resolve_unique(&names)).unwrap_or_default());
+    let (native, keys) = STATE.with(|s| s.borrow().as_ref()
+        .map(|s| (s.identities.native.clone(), s.identities.hidden_keys.clone())).unwrap_or_default());
+    if let Some(native) = native
+        && !keys.is_empty()
+    {
+        // This is a verified in-process view, used only when order changes.
+        // Normal paint and mouse movement take the unchanged fast path above.
+        let started = std::time::Instant::now();
+        let matched = match_native_keys(&keys, names.keys()
+            .map(|index| (*index, native.key(*index).ok())));
+        #[cfg(debug_assertions)]
+        native_identity::diagnostic(&format!("reorder items={} keys={} matched={} elapsed_us={}",
+            names.len(), keys.len(), matched.len(), started.elapsed().as_micros()));
+        let _ = started;
+        resolved.extend(matched);
     }
     // Read the underlying arrangement outside STATE's borrow: these synchronous
     // control messages re-enter the geometry subclass. Never write Shell positions.
@@ -152,19 +214,12 @@ pub(super) fn refresh_identities(view: HWND) {
             return;
         };
         let cache = &mut state.identities;
-        if names == cache.expected {
+        if names == cache.expected && cache.current_hidden == resolved {
             return;
         }
         state.cache.layout_changed();
-        let mut counts = BTreeMap::new();
-        for hash in names.values() {
-            *counts.entry(*hash).or_insert(0usize) += 1;
-        }
-        cache.current_hidden = names
-            .iter()
-            .filter(|(_, h)| cache.unique_hidden.contains(h) && counts.get(h) == Some(&1))
-            .map(|(i, _)| *i)
-            .collect();
+        cache.current_hidden = resolved;
+        cache.expected = names.clone();
         state.targets.clear();
         state.pending = None;
         state.members.clear();
@@ -213,6 +268,35 @@ pub(super) fn refresh_identities(view: HWND) {
     // A same-count reorder can turn a selected visible index into a hidden one.
     // Clean up only after releasing STATE: querying native state re-enters us.
     clear_selection(view);
+}
+#[path = "native_identity.rs"]
+mod native_identity;
+const IDENTITY_INIT: u32 = WM_APP + 0x351;
+
+// Run outside WM_COPYDATA/SendMessage. Acquiring the view during a synchronous
+// controller call can fail with RPC_E_CANTCALLOUT_ININPUTSYNCCALL.
+fn initialize_identity(view: HWND) {
+    let (existing, attempted) = STATE.with(|s| s.borrow().as_ref()
+        .map(|s| (s.identities.native.clone(), s.identities.init_requested)).unwrap_or_default());
+    let native = existing.or_else(|| if attempted { None } else { {
+        let started = std::time::Instant::now();
+        let result = native_identity::View::connect(view);
+        native_identity::diagnostic(&format!("connect ok={} elapsed_us={} error={:?}",
+            result.is_ok(), started.elapsed().as_micros(), result.as_ref().err()));
+        result.ok()
+    } });
+    let (expected, hidden) = STATE.with(|s| s.borrow().as_ref()
+        .map(|s| (s.identities.expected.clone(), s.identities.current_hidden.clone())).unwrap_or_default());
+    let valid = expected.iter().all(|(index, hash)| name_hash(view, *index) == Some(*hash));
+    let keys = if valid { native.as_ref().map(|v| hidden.iter()
+        .filter_map(|i| v.key(*i).ok()).collect()).unwrap_or_default() } else { BTreeSet::new() };
+    STATE.with(|s| {
+        if let Some(s) = s.borrow_mut().as_mut() {
+            s.identities.native = native;
+            s.identities.init_requested = true;
+            if valid && s.identities.expected == expected { s.identities.hidden_keys = keys; }
+        }
+    });
 }
 pub(super) fn is_hidden(item: i32) -> bool {
     STATE.with(|s| {
@@ -314,6 +398,10 @@ pub(super) unsafe fn notification(header: &NMHDR, lp: isize) -> Option<isize> {
 pub(super) unsafe fn message(hwnd: HWND, msg: u32, wp: usize, lp: isize) -> Option<isize> {
     if msg == WM_NCDESTROY {
         MENU.set(false);
+    }
+    if msg == IDENTITY_INIT {
+        initialize_identity(hwnd);
+        return Some(0);
     }
     if msg == WM_KEYDOWN || msg == WM_LBUTTONDOWN {
         refresh_identities(hwnd);
@@ -453,4 +541,55 @@ pub(super) unsafe fn message(hwnd: HWND, msg: u32, wp: usize, lp: isize) -> Opti
         clear_selection(hwnd);
     }
     None
+}
+
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+
+    #[test]
+    fn same_named_items_follow_distinct_native_keys_through_sort() {
+        let personal = vec![4, 0, 1, 0, 0, 0];
+        let public = vec![4, 0, 2, 0, 0, 0];
+        for collected in [&personal, &public] {
+            let keys = BTreeSet::from([collected.clone()]);
+            let first = match_native_keys(&keys, [(3, Some(personal.clone())), (25, Some(public.clone()))]);
+            let sorted = match_native_keys(&keys, [(3, Some(public.clone())), (25, Some(personal.clone()))]);
+            let expected = if collected == &personal { 3 } else { 25 };
+            assert_eq!(first, BTreeSet::from([expected]));
+            assert_eq!(sorted, BTreeSet::from([28 - expected]));
+            assert!(match_native_keys(&keys, [(3, None)]).is_empty());
+        }
+    }
+
+    #[test]
+    fn unchanged_duplicate_labels_retain_published_hidden_index() {
+        let names = BTreeMap::from([(0, 7), (1, 7), (2, 8)]);
+        for hidden_index in [0, 1] {
+            let cache = Identities {
+                expected: names.clone(),
+                current_hidden: BTreeSet::from([hidden_index]),
+                active: true,
+                ..Default::default()
+            };
+            for _ in 0..100 {
+                assert!(cache.unchanged(&names));
+                assert_eq!(cache.current_hidden, BTreeSet::from([hidden_index]));
+            }
+        }
+    }
+
+    #[test]
+    fn changed_order_requires_authoritative_update_for_ambiguous_names() {
+        let cache = Identities {
+            expected: BTreeMap::from([(0, 7), (1, 7), (2, 8)]),
+            current_hidden: BTreeSet::from([0, 2]),
+            unique_hidden: BTreeSet::from([8]),
+            ..Default::default()
+        };
+        let reordered = BTreeMap::from([(0, 8), (1, 7), (2, 7)]);
+        assert!(!cache.unchanged(&reordered));
+        assert_eq!(cache.resolve_unique(&reordered), BTreeSet::from([0]));
+    }
 }

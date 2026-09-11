@@ -1,0 +1,5 @@
+DCompositionCreateDevice
+IDCompositionDevice::{CreateTargetForHwnd,CreateVisual,CreateEffectGroup,Commit}
+IDCompositionTarget::SetRoot
+IDCompositionVisual::{SetContent,SetEffect}
+IDCompositionEffectGroup::SetOpacity

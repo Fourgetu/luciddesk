@@ -5,6 +5,9 @@ fn main() {
             .join("../crates/desktop-hook/native-controls.manifest");
         println!("cargo:rerun-if-changed={}", manifest.display());
         println!("cargo:rustc-link-arg-examples=/MANIFEST:EMBED");
-        println!("cargo:rustc-link-arg-examples=/MANIFESTINPUT:{}", manifest.display());
+        println!(
+            "cargo:rustc-link-arg-examples=/MANIFESTINPUT:{}",
+            manifest.display()
+        );
     }
 }

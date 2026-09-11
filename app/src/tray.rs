@@ -13,6 +13,7 @@ const NIN_KEYSELECT: u32 = NIN_SELECT | 1;
 
 #[derive(Clone, Copy)]
 pub enum Action {
+    Settings,
     Show,
     New,
     Exit,
@@ -130,6 +131,7 @@ fn menu(hwnd: HWND, anchor: usize) -> Option<Action> {
         }
         AppendMenuW(menu, MF_STRING, 1, windows_sys::w!("显示分组"));
         AppendMenuW(menu, MF_STRING, 2, windows_sys::w!("新建分组"));
+        AppendMenuW(menu, MF_STRING, 4, windows_sys::w!("设置"));
         AppendMenuW(menu, MF_SEPARATOR, 0, std::ptr::null());
         AppendMenuW(menu, MF_STRING, 3, windows_sys::w!("退出 LucidPane"));
         SetMenuDefaultItem(menu, 1, 0);
@@ -150,6 +152,7 @@ fn menu(hwnd: HWND, anchor: usize) -> Option<Action> {
             1 => Some(Action::Show),
             2 => Some(Action::New),
             3 => Some(Action::Exit),
+            4 => Some(Action::Settings),
             _ => None,
         }
     }

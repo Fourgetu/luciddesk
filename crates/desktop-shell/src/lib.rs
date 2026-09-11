@@ -595,11 +595,22 @@ impl DesktopChangeSubscription {
     ///
     /// Returns an error when the Desktop PIDL or Shell registration cannot be created.
     pub fn register(owner: isize, message: u32) -> Result<Self, ShellError> {
+        Self::register_folder(owner, message, CSIDL_DESKTOP.cast_signed())
+    }
+
+    /// Subscribe directly to Recycle Bin contents, independently of the desktop view.
+    /// # Errors
+    /// Returns an error if Shell cannot register the namespace notification.
+    pub fn register_recycle_bin(owner: isize, message: u32) -> Result<Self, ShellError> {
+        Self::register_folder(owner, message, 10) // CSIDL_BITBUCKET
+    }
+
+    fn register_folder(owner: isize, message: u32, folder: i32) -> Result<Self, ShellError> {
         let mut desktop_pidl = ptr::null_mut();
         let result = unsafe {
             SHGetSpecialFolderLocation(
                 owner as HWND,
-                CSIDL_DESKTOP.cast_signed(),
+                folder,
                 &raw mut desktop_pidl,
             )
         };

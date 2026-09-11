@@ -1,0 +1,473 @@
+//! WinUI-inspired composition flyout. Uses the same acrylic/content pipeline as panes.
+#![allow(
+    clippy::wildcard_imports,
+    clippy::fn_params_excessive_bools,
+    clippy::too_many_lines,
+    clippy::too_many_arguments,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss
+)]
+use super::{composition::Surface, render::Renderer};
+use desktop_core::Backdrop;
+use std::{cell::Cell, rc::Rc, time::Instant};
+use windows_sys::Win32::{
+    Foundation::{HWND, POINT, RECT},
+    Graphics::Gdi::*,
+    UI::{HiDpi::GetDpiForWindow, Input::KeyboardAndMouse::*, WindowsAndMessaging::*},
+};
+
+pub struct Entry {
+    pub id: i32,
+    pub label: &'static str,
+    pub icon: &'static str,
+    pub trailing: &'static str,
+}
+pub const ROW_HEIGHT: f32 = 30.0;
+pub fn row_top(rows: &[Entry], index: usize) -> f32 {
+    4.0 + rows[..index]
+        .iter()
+        .map(|row| if row.id == 0 { 7.0 } else { ROW_HEIGHT })
+        .sum::<f32>()
+}
+fn entry(id: i32, label: &'static str, icon: &'static str, trailing: &'static str) -> Entry {
+    Entry {
+        id,
+        label,
+        icon,
+        trailing,
+    }
+}
+
+pub fn show(
+    owner: HWND,
+    anchor: POINT,
+    anchored: bool,
+    collapsed: bool,
+    backdrop: Backdrop,
+    auto_hide: bool,
+
+    theme: desktop_core::PanelTheme,
+) -> i32 {
+    open(
+        owner, anchor, anchored, collapsed, backdrop, auto_hide, 0, theme, None,
+    )
+}
+
+fn open(
+    owner: HWND,
+    anchor: POINT,
+    anchored: bool,
+    collapsed: bool,
+    backdrop: Backdrop,
+    auto_hide: bool,
+    submenu: u8,
+
+    theme: desktop_core::PanelTheme,
+    parent_row: Option<RECT>,
+) -> i32 {
+    let dark = super::theme::is_dark(theme);
+    let rows = if submenu == 1 {
+        vec![
+            entry(
+                13,
+                "云母 Alt",
+                if backdrop == Backdrop::MicaAlt {
+                    "✓"
+                } else {
+                    ""
+                },
+                "",
+            ),
+            entry(
+                5,
+                "亚克力",
+                if backdrop == Backdrop::Acrylic {
+                    "✓"
+                } else {
+                    ""
+                },
+                "",
+            ),
+            entry(
+                6,
+                "云母",
+                if backdrop == Backdrop::Mica {
+                    "✓"
+                } else {
+                    ""
+                },
+                "",
+            ),
+        ]
+    } else if submenu == 2 {
+        vec![
+            entry(
+                14,
+                "跟随系统",
+                if theme == desktop_core::PanelTheme::System {
+                    "✓"
+                } else {
+                    ""
+                },
+                "",
+            ),
+            entry(
+                15,
+                "浅色",
+                if theme == desktop_core::PanelTheme::Light {
+                    "✓"
+                } else {
+                    ""
+                },
+                "",
+            ),
+            entry(
+                16,
+                "深色",
+                if theme == desktop_core::PanelTheme::Dark {
+                    "✓"
+                } else {
+                    ""
+                },
+                "",
+            ),
+        ]
+    } else {
+        vec![
+            entry(1, "新建分组", "", ""),
+            entry(
+                2,
+                if collapsed {
+                    "展开分组"
+                } else {
+                    "收起分组"
+                },
+                "",
+                "",
+            ),
+            entry(3, "按名称排序", "", ""),
+            entry(0, "", "", ""),
+            entry(7, "自动收起", if auto_hide { "✓" } else { "" }, ""),
+            entry(
+                12,
+                "始终置顶",
+                if unsafe { GetWindowLongW(owner, GWL_EXSTYLE) } as u32 & WS_EX_TOPMOST != 0 {
+                    "✓"
+                } else {
+                    ""
+                },
+                "",
+            ),
+            entry(8, "背景材质", "", "›"),
+            entry(17, "外观主题", "", "›"),
+            entry(0, "", "", ""),
+            entry(11, "关闭分组", "", ""),
+            entry(18, "设置", "", ""),
+            entry(4, "退出 LucidPane", "", ""),
+        ]
+    };
+    let scale = unsafe { GetDpiForWindow(owner) }.max(96) as f32 / 96.0;
+    let mut animate = 1i32;
+    unsafe {
+        SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, (&raw mut animate).cast(), 0);
+    }
+    let width = ((if submenu != 0 { 180.0 } else { 216.0 }) * scale).round() as i32;
+    let height = ((row_top(&rows, rows.len()) + 4.0) * scale).round() as i32;
+    let mut monitor = MONITORINFO {
+        cbSize: size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
+    unsafe {
+        GetMonitorInfoW(
+            MonitorFromPoint(anchor, MONITOR_DEFAULTTONEAREST),
+            &raw mut monitor,
+        );
+    }
+    let work = monitor.rcWork;
+    let left = (if anchored { anchor.x - width } else { anchor.x })
+        .clamp(work.left, (work.right - width).max(work.left));
+    let top = anchor
+        .y
+        .clamp(work.top, (work.bottom - height).max(work.top));
+    let done = Rc::new(Cell::new(false));
+    let command = Rc::new(Cell::new(0));
+    let done_handler = Rc::clone(&done);
+    let command_handler = Rc::clone(&command);
+    let Ok(mut renderer) = Renderer::new() else {
+        return 0;
+    };
+    let mut surface: Option<Surface> = None;
+    let mut selected: Option<usize> = None;
+    let mut down: Option<usize> = None;
+    let mut hovered_at = Instant::now();
+    let mut opened_submenu = false;
+    let mut fade_started: Option<Instant> = None;
+    let mut fade: Option<super::animation::Fade> = None;
+    let mut fade_finished = animate == 0;
+    let window = windows_window::Window::new("分组菜单")
+        .style(WS_POPUP)
+        .ex_style(WS_EX_TOOLWINDOW | WS_EX_NOREDIRECTIONBITMAP)
+        .size(width, height)
+        .on_message(move |raw, message, wparam, lparam| {
+            let hwnd = raw.cast();
+            let mut activate = None;
+            match message {
+                WM_DESTROY | WM_ERASEBKGND | WM_NCCALCSIZE => return Some(0),
+                WM_CLOSE => {
+                    done_handler.set(true);
+                    return Some(0);
+                }
+                WM_ACTIVATE if wparam & 0xffff == WA_INACTIVE as usize => {
+                    done_handler.set(true);
+                    return Some(0);
+                }
+                WM_PAINT => {
+                    unsafe {
+                        let mut paint = PAINTSTRUCT::default();
+                        BeginPaint(hwnd, &raw mut paint);
+                        EndPaint(hwnd, &raw const paint);
+                    }
+                    let result = (|| -> windows::core::Result<()> {
+                        if surface.is_none() {
+                            let mut value = Surface::new_with_opacity(
+                                windows::Win32::Foundation::HWND(hwnd),
+                                if fade_finished { 1.0 } else { 0.0 },
+                            )?;
+                            value.theme(windows::Win32::Foundation::HWND(hwnd), dark);
+                            value.material(
+                                windows::Win32::Foundation::HWND(hwnd),
+                                Backdrop::Acrylic,
+                            );
+                            surface = Some(value);
+                        }
+                        let value = surface.as_mut().unwrap();
+                        let pixels = renderer.flyout(
+                            width as u32,
+                            height as u32,
+                            scale,
+                            &rows,
+                            selected,
+                            value.native,
+                            dark,
+                        )?;
+                        value.present(width as u32, height as u32, &pixels)?;
+                        // Start after the first frame is ready: device creation and
+                        // rasterization must not consume the animation's time budget.
+                        if !fade_finished && fade.is_none() {
+                            match super::animation::Fade::new(std::time::Duration::from_millis(120))
+                            {
+                                Ok(animation) => {
+                                    fade = Some(animation);
+                                }
+                                Err(error) => {
+                                    eprintln!("Menu animation unavailable: {error}");
+                                    fade_finished = true;
+                                }
+                            }
+                        }
+                        let started = *fade_started.get_or_insert_with(Instant::now);
+                        let opacity = if fade_finished {
+                            1.0
+                        } else {
+                            match fade.as_ref().unwrap().sample(started.elapsed()) {
+                                Ok(opacity) => opacity,
+                                Err(error) => {
+                                    eprintln!("Menu animation failed: {error}");
+                                    fade_finished = true;
+                                    1.0
+                                }
+                            }
+                        };
+                        value.opacity(opacity)
+                    })();
+                    if result.is_err() {
+                        done_handler.set(true);
+                    }
+                    return Some(0);
+                }
+                WM_MOUSEMOVE | WM_LBUTTONDOWN | WM_LBUTTONUP => {
+                    let x = f32::from((lparam as u16).cast_signed()) / scale;
+                    let y = f32::from(((lparam >> 16) as u16).cast_signed()) / scale;
+                    let hit = rows.iter().enumerate().find_map(|(index, row)| {
+                        let top = row_top(&rows, index);
+                        (row.id != 0
+                            && x >= 5.0
+                            && x < width as f32 / scale - 5.0
+                            && y >= top
+                            && y < top + ROW_HEIGHT)
+                            .then_some(index)
+                    });
+                    if selected != hit {
+                        selected = hit;
+                        hovered_at = Instant::now();
+                        opened_submenu = false;
+                        unsafe {
+                            InvalidateRect(hwnd, std::ptr::null(), 0);
+                        }
+                    }
+                    if message == WM_LBUTTONDOWN {
+                        down = hit;
+                    }
+                    if message == WM_LBUTTONUP && down.take() == hit {
+                        activate = hit;
+                    }
+                }
+                WM_KEYDOWN => match wparam as u16 {
+                    VK_ESCAPE | VK_LEFT => {
+                        if parent_row.is_some() {
+                            unsafe {
+                                SetForegroundWindow(owner);
+                                SetFocus(owner);
+                            }
+                        }
+                        done_handler.set(true);
+                    }
+                    VK_RETURN | VK_SPACE | VK_RIGHT => {
+                        activate = selected.filter(|&index| {
+                            wparam as u16 != VK_RIGHT || matches!(rows[index].id, 8 | 17)
+                        });
+                    }
+                    VK_UP | VK_DOWN => {
+                        let indices: Vec<_> = rows
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(i, row)| (row.id != 0).then_some(i))
+                            .collect();
+                        let current =
+                            selected.and_then(|index| indices.iter().position(|&i| i == index));
+                        let next = if wparam as u16 == VK_DOWN {
+                            current.map_or(0, |i| (i + 1) % indices.len())
+                        } else {
+                            current.map_or(indices.len() - 1, |i| {
+                                (i + indices.len() - 1) % indices.len()
+                            })
+                        };
+                        selected = Some(indices[next]);
+                        opened_submenu = true;
+                        unsafe {
+                            InvalidateRect(hwnd, std::ptr::null(), 0);
+                        }
+                    }
+                    _ => {}
+                },
+                WM_TIMER => {
+                    if !fade_finished {
+                        if let (Some(started), Some(value)) = (fade_started, surface.as_mut()) {
+                            let opacity = match fade.as_ref().unwrap().sample(started.elapsed()) {
+                                Ok(opacity) => opacity,
+                                Err(error) => {
+                                    eprintln!("Menu animation failed: {error}");
+                                    1.0
+                                }
+                            };
+                            // Commit the final opacity even if a busy UI thread skips
+                            // every tick in the fade interval. No pixel readback/redraw.
+                            if value.opacity(opacity).is_err() {
+                                done_handler.set(true);
+                            }
+                            if opacity >= 1.0 {
+                                fade_finished = true;
+                                unsafe {
+                                    SetTimer(hwnd, 1, 50, None);
+                                }
+                            }
+                        }
+                    }
+                    if !opened_submenu && hovered_at.elapsed().as_millis() >= 250 {
+                        activate = selected.filter(|&index| matches!(rows[index].id, 8 | 17));
+                    }
+                }
+                _ => return None,
+            }
+            if let Some(index) = activate {
+                if matches!(rows[index].id, 8 | 17) {
+                    opened_submenu = true;
+                    let child_width = (180.0 * scale).round() as i32;
+                    let x = if left + width + child_width <= work.right {
+                        left + width + 4
+                    } else {
+                        left - child_width - 4
+                    };
+                    let result = open(
+                        hwnd,
+                        POINT {
+                            x,
+                            y: top + (row_top(&rows, index) * scale) as i32,
+                        },
+                        false,
+                        collapsed,
+                        backdrop,
+                        auto_hide,
+                        if rows[index].id == 8 { 1 } else { 2 },
+                        theme,
+                        Some(RECT {
+                            left: 0,
+                            top: (row_top(&rows, index) * scale) as i32,
+                            right: width,
+                            bottom: ((row_top(&rows, index) + ROW_HEIGHT) * scale) as i32,
+                        }),
+                    );
+                    if result != 0 {
+                        command_handler.set(result);
+                        done_handler.set(true);
+                    } else if unsafe { GetForegroundWindow() } != hwnd {
+                        done_handler.set(true);
+                    }
+                } else {
+                    command_handler.set(rows[index].id);
+                    done_handler.set(true);
+                }
+            }
+            Some(0)
+        })
+        .create();
+    let Ok(window) = window else {
+        return 0;
+    };
+    let hwnd = window.hwnd().cast();
+    unsafe {
+        SetWindowLongPtrW(hwnd, GWLP_HWNDPARENT, owner as isize);
+        // Prepare the complete first frame while the popup is still hidden.
+        // Neither the content target nor the material starts at full opacity.
+        SetWindowPos(hwnd, HWND_TOP, left, top, width, height, SWP_NOACTIVATE);
+        SendMessageW(hwnd, WM_PAINT, 0, 0);
+        if done.get() {
+            return 0;
+        }
+        SetWindowPos(hwnd, HWND_TOP, left, top, width, height, SWP_SHOWWINDOW);
+        SetForegroundWindow(hwnd);
+        SetFocus(hwnd);
+        SetTimer(hwnd, 1, if animate != 0 { 16 } else { 50 }, None);
+        InvalidateRect(hwnd, std::ptr::null(), 0);
+        let mut message = MSG::default();
+        while !done.get() {
+            let status = GetMessageW(&raw mut message, std::ptr::null_mut(), 0, 0);
+            if status <= 0 {
+                if status == 0 {
+                    PostQuitMessage(i32::try_from(message.wParam).unwrap_or_default());
+                }
+                break;
+            }
+            // The parent handler is suspended in this child's message loop.
+            // Return before dispatching a different parent row to avoid reentry.
+            if message.hwnd == owner && message.message == WM_MOUSEMOVE {
+                if let Some(row) = parent_row {
+                    let x = i32::from((message.lParam as u16).cast_signed());
+                    let y = i32::from(((message.lParam >> 16) as u16).cast_signed());
+                    if x < row.left || x >= row.right || y < row.top || y >= row.bottom {
+                        SetForegroundWindow(owner);
+                        SetFocus(owner);
+                        PostMessageW(owner, message.message, message.wParam, message.lParam);
+                        break;
+                    }
+                }
+            }
+            TranslateMessage(&raw const message);
+            DispatchMessageW(&raw const message);
+        }
+        KillTimer(hwnd, 1);
+    }
+    drop(window);
+    command.get()
+}

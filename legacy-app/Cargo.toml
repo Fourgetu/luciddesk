@@ -1,0 +1,35 @@
+[package]
+name = "lucidpane-legacy"
+default-run = "lucidpane-legacy"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "lucidpane-legacy"
+path = "src/main.rs"
+
+[dependencies]
+desktop-compositor.workspace = true
+desktop-core.workspace = true
+desktop-shell.workspace = true
+desktop-storage.workspace = true
+desktop-window.workspace = true
+desktop-hook.workspace = true
+notify.workspace = true
+windows = { workspace = true, features = ["UI_ViewManagement"] }
+windows-core = "0.62.2"
+windows-sys.workspace = true
+windows-window.workspace = true
+windows-numerics.workspace = true
+windows-canvas = { version = "=0.100.0", default-features = false }
+canvas-core = { package = "windows-core", version = "=0.100.0", default-features = false }
+windows-animation = "=0.100.0"
+desktop-graphics = { path = "../crates/desktop-graphics" }
+
+[dev-dependencies]
+windows-sys = { workspace = true, features = ["Win32_System_Diagnostics_Debug"] }
+
+[lints]
+workspace = true
