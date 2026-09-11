@@ -357,9 +357,9 @@ fn title_corner_diameter(scale: f32) -> i32 {
 
 unsafe fn title_region(width: i32, height: i32, scale: f32) -> HRGN {
     let diameter = title_corner_diameter(scale);
-    // Use the same exclusive right/bottom bounds as GDI RoundRect. The
-    // rectangular EDIT background must not survive outside the border arc.
-    unsafe { CreateRoundRectRgn(0, 0, width, height, diameter, diameter) }
+    // The region rasterizer excludes the last right/bottom pixel that RoundRect
+    // paints. Include that pixel so the focus border survives on all four sides.
+    unsafe { CreateRoundRectRgn(0, 0, width + 1, height + 1, diameter, diameter) }
 }
 
 unsafe fn finish(edit: HWND, pointer: *mut Editor, commit: bool) {
@@ -573,6 +573,9 @@ mod tests {
                 }
                 assert_ne!(PtInRegion(region, width / 2, height / 2), 0);
                 assert_ne!(PtInRegion(region, width / 2, 0), 0);
+                assert_ne!(PtInRegion(region, width / 2, height - 1), 0);
+                assert_ne!(PtInRegion(region, 0, height / 2), 0);
+                assert_ne!(PtInRegion(region, width - 1, height / 2), 0);
                 DeleteObject(region);
             }
         }
@@ -739,6 +742,31 @@ mod tests {
             SendMessageW(edit, EM_GETRECT, 0, (&raw mut format) as isize);
             assert_eq!(format.left, (6.0 * dpi).round() as i32);
             assert!(format.top > 0, "title text has vertical padding");
+            UpdateWindow(edit);
+            let border_colors = || {
+                let mut client = RECT::default();
+                GetClientRect(edit, &raw mut client);
+                let dc = GetDC(edit);
+                let colors = [
+                    GetPixel(dc, client.right / 2, 0),
+                    GetPixel(dc, client.right / 2, client.bottom - 1),
+                    GetPixel(dc, 0, client.bottom / 2),
+                    GetPixel(dc, client.right - 1, client.bottom / 2),
+                ];
+                ReleaseDC(edit, dc);
+                colors
+            };
+            let before = border_colors();
+            assert_eq!(
+                before, [0x00e0a060; 4],
+                "all four focus borders are visible"
+            );
+            SendMessageW(owner, WM_PAINT, 0, 0);
+            assert_eq!(
+                border_colors(),
+                before,
+                "pane repaint must preserve the edit border"
+            );
             SetWindowTextW(edit, windows_sys::w!("  工作分组  "));
             SendMessageW(edit, WM_IME_STARTCOMPOSITION, 0, 0);
             SendMessageW(edit, WM_KEYDOWN, VK_RETURN as usize, 0);
