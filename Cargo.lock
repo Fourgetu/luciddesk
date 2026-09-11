@@ -65,7 +65,6 @@ version = "0.1.0"
 dependencies = [
  "desktop-core",
  "windows-sys",
- "windows-window",
 ]
 
 [[package]]

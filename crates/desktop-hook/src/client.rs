@@ -1,8 +1,7 @@
 // Wire sizes and array counts are bounded by the fixed protocol before conversion.
 #![allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 use crate::protocol::{
-    Area, DETACH, MAGIC, MAX_AREAS, MOVE_ITEM, OK, QUERY, REJECTED, Request, SET_AREAS,
-    attach_message, name_hash,
+    Area, DETACH, MAGIC, MAX_AREAS, MOVE_ITEM, OK, QUERY, REJECTED, Request, SET_AREAS, name_hash,
 };
 use std::mem::size_of;
 use std::path::Path;
@@ -175,42 +174,12 @@ pub struct HookSession {
     module: windows_sys::Win32::Foundation::HMODULE,
 }
 
-/// Validate the experimental work-area backend before loading a DLL or creating pane state.
-/// # Errors
-/// Rejects non-list windows and virtual lists, whose public work-area API is unsupported.
-pub fn validate_layout_view(view: isize) -> Result<(), String> {
-    use windows_sys::Win32::UI::Controls::LVS_OWNERDATA;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{GWL_STYLE, GetClassNameW, GetWindowLongW};
-    let mut class = [0_u16; 64];
-    let size = unsafe { GetClassNameW(view as HWND, class.as_mut_ptr(), 64) };
-    let size = usize::try_from(size).unwrap_or(0);
-    if size == 0 || String::from_utf16_lossy(&class[..size]) != "SysListView32" {
-        return Err("Hook 目标不是有效的原生图标列表".into());
-    }
-    if unsafe { GetWindowLongW(view as HWND, GWL_STYLE) } & LVS_OWNERDATA as i32 != 0 {
-        return Err("当前 Explorer 使用虚拟图标视图，已禁止不兼容的工作区 Hook；原生位置与排列回调后端尚未完成。".into());
-    }
-    Ok(())
-}
-
 impl HookSession {
-    /// Connect to an existing `ListView` HWND. `owner` must remain alive for the whole session.
-    /// No desktop setting is changed by connecting or querying.
-    /// # Errors
-    /// Fails if the DLL, target UI thread, or handshake is unavailable.
-    pub fn connect(view: isize, owner: isize, dll: &Path) -> Result<Self, String> {
-        validate_layout_view(view)?;
-        Self::connect_mode(view, owner, dll, attach_message())
-    }
-
     /// Connect the exact-image virtual-icon geometry backend. No work-area messages are used.
     /// # Errors
     /// Fails when the target cannot validate and bind all native geometry functions.
     pub fn connect_geometry(view: isize, owner: isize, dll: &Path) -> Result<Self, String> {
-        Self::connect_mode(view, owner, dll, crate::protocol::geometry_attach_message())
-    }
-
-    fn connect_mode(view: isize, owner: isize, dll: &Path, bootstrap: u32) -> Result<Self, String> {
+        let bootstrap = crate::protocol::geometry_attach_message();
         let view = view as HWND;
         let owner = owner as HWND;
         unsafe {
@@ -318,18 +287,27 @@ impl HookSession {
     /// Returns an error if the notification could not be registered or queued.
     pub fn post_clear_desktop_selection(&self) -> Result<(), String> {
         let message = crate::protocol::clear_selection_message();
-        if message == 0 || unsafe {
-              windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW(
-                  self.view, message, self.owner as usize, 0)
-        } == 0 {
-            return Err(format!("无法通知桌面清除选择：{}", std::io::Error::last_os_error()));
+        if message == 0
+            || unsafe {
+                windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW(
+                    self.view,
+                    message,
+                    self.owner as usize,
+                    0,
+                )
+            } == 0
+        {
+            return Err(format!(
+                "无法通知桌面清除选择：{}",
+                std::io::Error::last_os_error()
+            ));
         }
         Ok(())
     }
 
-    /// Replaces this session's work areas and verifies the control accepted them.
+    /// Sets the validated bounds used by this session's geometry updates.
     /// # Errors
-    /// Fails for invalid areas or a rejected native layout change.
+    /// Fails for invalid areas or a rejected geometry update.
     pub fn set_areas(&self, areas: &[Area]) -> Result<(), String> {
         if areas.len() > MAX_AREAS {
             return Err("工作区域数量过多".into());
@@ -341,21 +319,6 @@ impl HookSession {
             return Err("原生工作区设置未得到确认".into());
         }
         Ok(())
-    }
-
-    /// Publishes a complete named layout in one cross-process round trip and native repaint.
-    /// # Errors
-    /// Rejects oversized batches, stale labels or invalid destinations without publishing them.
-    pub fn apply_layout(
-        &self,
-        areas: &[Area],
-        positions: &[(i32, i32, i32, String)],
-    ) -> Result<(), String> {
-        let positions: Vec<_> = positions
-            .iter()
-            .map(|(i, x, y, n)| (*i, *x, *y, n.clone(), 0))
-            .collect();
-        self.apply_pane_layout(areas, &positions, &[])
     }
 
     /// Publishes native pane appearance, clipping membership and positions together.
@@ -435,13 +398,6 @@ impl HookSession {
             return Err("无法安装分组材质".into());
         }
         Ok(())
-    }
-
-    /// Moves an item by its current native view index.
-    /// # Errors
-    /// Fails if the index or destination is invalid or the view refuses the move.
-    pub fn move_item(&self, index: i32, x: i32, y: i32) -> Result<(), String> {
-        self.move_item_checked(index, x, y, 0)
     }
 
     /// Checks the current label before moving, rejecting stale view indices.

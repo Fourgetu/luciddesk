@@ -7,7 +7,7 @@
 )]
 use windows_canvas::{ColorF, Ellipse, Rect, RoundedRect, Vector2};
 
-use super::composition::canvas_result;
+use super::native_graphics::canvas_result;
 use super::*;
 use desktop_core::{Backdrop, PanelTheme};
 use windows_canvas::ID2D1DeviceContext;
@@ -1118,12 +1118,7 @@ mod tests {
     #[test]
     fn settings_layout_and_rendering_at_multiple_scales() {
         let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
-        let panel = Panel::new(
-            PanelId::new(1),
-            "工作与灵感",
-            PanelSource::DesktopCollection,
-            RectDip::default(),
-        );
+        let panel = Panel::new(PanelId::new(1), "工作与灵感", RectDip::default());
         let painter = Painter::new().unwrap();
         {
             let device = windows_canvas::GpuDevice::new_warp().unwrap();

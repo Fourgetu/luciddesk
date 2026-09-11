@@ -6,7 +6,7 @@
 )]
 use windows_canvas::{ColorF, Ellipse, Rect, RoundedRect, Vector2};
 
-use super::composition::canvas_result;
+use super::native_graphics::canvas_result;
 use super::{GroupModel, assets, canvas, layout::HEADER};
 use std::collections::HashMap;
 use std::sync::Arc;

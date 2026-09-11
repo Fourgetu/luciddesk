@@ -149,7 +149,6 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
         let mut pane = Panel::new(
             PanelId::new(1),
             title.clone().unwrap_or_else(|| "新建分组".into()),
-            PanelSource::DesktopCollection,
             RectDip::new(650.0, 100.0, 440.0, 380.0),
         );
         pane.set_backdrop(desktop_core::Backdrop::Acrylic);
@@ -976,7 +975,6 @@ mod tests {
                     display_name: name.into(),
                     attributes: desktop_shell::ShellAttributes::default(),
                     modified: None,
-                    system_icon: None,
                 },
                 0,
                 0,

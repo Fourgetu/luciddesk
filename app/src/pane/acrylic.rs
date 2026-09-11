@@ -1,6 +1,6 @@
 //! Host backdrop composition has no window-activation policy. Windows still controls
 //! backdrop transparency through accessibility settings and power policy.
-use super::native_graphics::{DWMWA_USE_HOSTBACKDROPBRUSH, DwmSetWindowAttribute};
+use super::native_graphics::{DWMWA_USE_HOSTBACKDROPBRUSH, set_attribute};
 use std::{cell::RefCell, rc::Rc};
 use windows::{
     System::DispatcherQueueController,
@@ -64,12 +64,7 @@ impl Acrylic {
         })?;
         let enabled = 1i32;
         unsafe {
-            DwmSetWindowAttribute(
-                hwnd,
-                DWMWA_USE_HOSTBACKDROPBRUSH,
-                (&raw const enabled).cast(),
-                4,
-            )?;
+            set_attribute(hwnd, DWMWA_USE_HOSTBACKDROPBRUSH, &enabled)?;
         }
         let compositor = &runtime.compositor;
         let interop: ICompositorDesktopInterop = compositor.cast()?;

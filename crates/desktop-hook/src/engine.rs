@@ -5,11 +5,9 @@
     clippy::cast_possible_wrap,
     clippy::cast_sign_loss
 )]
-use crate::protocol::QUERY_BASELINE_COORD;
 use crate::protocol::{
-    Area, DETACH, MAGIC, MAX_AREAS, MOVE_ITEM, OK, QUERY, QUERY_AREA_COUNT, QUERY_AUTOARRANGE,
-    QUERY_GENERATION, QUERY_ITEM_AREA, QUERY_ITEM_COUNT, REJECTED, Request, SET_AREAS,
-    attach_message, name_hash,
+    Area, DETACH, MAGIC, MOVE_ITEM, OK, QUERY, QUERY_AREA_COUNT, QUERY_AUTOARRANGE,
+    QUERY_GENERATION, QUERY_ITEM_AREA, QUERY_ITEM_COUNT, REJECTED, Request, SET_AREAS, name_hash,
 };
 use std::cell::RefCell;
 use std::mem::size_of;
@@ -24,16 +22,14 @@ use windows_sys::Win32::System::Threading::{
 };
 use windows_sys::Win32::UI::Controls::{
     LVITEMW, LVM_DELETEALLITEMS, LVM_DELETEITEM, LVM_GETITEMCOUNT, LVM_GETITEMPOSITION,
-    LVM_GETITEMTEXTW, LVM_GETNUMBEROFWORKAREAS, LVM_GETWORKAREAS, LVM_INSERTITEMW,
-    LVM_SETITEMCOUNT, LVM_SETITEMPOSITION, LVM_SETITEMPOSITION32, LVM_SETITEMTEXTW,
-    LVM_SETWORKAREAS, LVM_SORTITEMS, LVS_AUTOARRANGE,
+    LVM_INSERTITEMW, LVM_SETITEMCOUNT, LVM_SETITEMPOSITION, LVM_SETITEMPOSITION32,
+    LVM_SETITEMTEXTW, LVM_SORTITEMS, LVS_AUTOARRANGE,
 };
 use windows_sys::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     GWL_STYLE, GetWindowLongW, GetWindowThreadProcessId, IsWindow, KillTimer, RemovePropW,
-    SendMessageW, SetPropW, SetTimer, WM_CAPTURECHANGED, WM_COPYDATA, WM_DISPLAYCHANGE,
-    WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONUP,
-    WM_RBUTTONDOWN, WM_RBUTTONDBLCLK, WM_MBUTTONDOWN, WM_NCDESTROY, WM_TIMER,
+    SendMessageW, SetPropW, SetTimer, WM_COPYDATA, WM_DISPLAYCHANGE, WM_KEYDOWN, WM_LBUTTONDBLCLK,
+    WM_LBUTTONDOWN, WM_MBUTTONDOWN, WM_NCDESTROY, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_TIMER,
 };
 
 const SUBCLASS: usize = MAGIC;
@@ -44,11 +40,10 @@ struct State {
     hwnd: HWND,
     owner: HWND,
     owner_process: HANDLE,
-    original: Vec<Area>,
     managed: Vec<Area>,
     changes: u32,
     shell_changes: u32,
-    geometry: Option<crate::geometry::GeometrySession>,
+    geometry: crate::geometry::GeometrySession,
 }
 
 impl Drop for State {
@@ -59,22 +54,9 @@ impl Drop for State {
     }
 }
 
-pub fn attach(hwnd: HWND, owner: HWND, magic: isize) {
-    attach_mode(hwnd, owner, magic, false);
-}
-
-pub fn attach_geometry(hwnd: HWND, owner: HWND, magic: isize) {
-    attach_mode(hwnd, owner, magic, true);
-}
-
 #[allow(clippy::too_many_lines)]
-fn attach_mode(hwnd: HWND, owner: HWND, magic: isize, geometry_mode: bool) {
+pub fn attach_geometry(hwnd: HWND, owner: HWND, magic: isize) {
     if magic != MAGIC as isize || hwnd.is_null() || owner.is_null() {
-        return;
-    }
-    // Explorer uses an owner-data view. Public work-area messages are unsupported there.
-    // Reject before even GETWORKAREAS; this backend is only a standard-control experiment.
-    if !geometry_mode && crate::validate_layout_view(hwnd as isize).is_err() {
         return;
     }
     unsafe {
@@ -105,26 +87,9 @@ fn attach_mode(hwnd: HWND, owner: HWND, magic: isize, geometry_mode: bool) {
                 windows_sys::w!("LucidPane.Hook.Bootstrap"),
                 2_usize as _,
             );
-            let mut count: u32 = 0;
-            if !geometry_mode {
-                SendMessageW(hwnd, LVM_GETNUMBEROFWORKAREAS, 0, (&raw mut count) as isize);
-            }
-            if count as usize > MAX_AREAS {
-                CloseHandle(process);
-                return;
-            }
-            let mut original = vec![Area::default(); count as usize];
-            if count > 0 {
-                SendMessageW(
-                    hwnd,
-                    LVM_GETWORKAREAS,
-                    count as usize,
-                    original.as_mut_ptr() as isize,
-                );
-            }
             // A controller crash removes the Windows hook before our watchdog can run.
             // Keep callback code mapped until target-process exit; detach still removes every
-            // callback/timer and restores work areas. Never unload code with live stack frames.
+            // callback/timer and geometry overrides. Never unload code with live stack frames.
             let mut module = null_mut();
             if GetModuleHandleExW(
                 GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
@@ -140,18 +105,14 @@ fn attach_mode(hwnd: HWND, owner: HWND, magic: isize, geometry_mode: bool) {
                 windows_sys::w!("LucidPane.Hook.Bootstrap"),
                 3_usize as _,
             );
-            let geometry = if geometry_mode {
-                match crate::geometry::GeometrySession::attach(hwnd as isize) {
-                    Ok(session) => Some(session),
-                    Err(error) => {
-                        // Visible only to a diagnostic debugger; no modal UI inside Explorer.
-                        eprintln!("Geometry attach rejected: {error}");
-                        CloseHandle(process);
-                        return;
-                    }
+            let geometry = match crate::geometry::GeometrySession::attach(hwnd as isize) {
+                Ok(session) => session,
+                Err(error) => {
+                    // Visible only to a diagnostic debugger; no modal UI inside Explorer.
+                    eprintln!("Geometry attach rejected: {error}");
+                    CloseHandle(process);
+                    return;
                 }
-            } else {
-                None
             };
             if SetWindowSubclass(hwnd, Some(subclass), SUBCLASS, 0) == 0 {
                 CloseHandle(process);
@@ -171,7 +132,6 @@ fn attach_mode(hwnd: HWND, owner: HWND, magic: isize, geometry_mode: bool) {
                 hwnd,
                 owner,
                 owner_process: process,
-                original,
                 managed: Vec::new(),
                 changes: 0,
                 shell_changes: 0,
@@ -207,15 +167,20 @@ unsafe extern "system" fn subclass(
             // Signal user intent, not selection notifications: Shell menus also
             // select a hidden desktop item programmatically. No synchronous pane
             // calls, item scans or mouse-move traffic on the desktop input path.
-            if matches!(msg, WM_LBUTTONDOWN | WM_LBUTTONDBLCLK | WM_RBUTTONDOWN | WM_RBUTTONDBLCLK | WM_MBUTTONDOWN)
-                || (msg == WM_KEYDOWN && lp & (1 << 30) == 0)
+            if matches!(
+                msg,
+                WM_LBUTTONDOWN
+                    | WM_LBUTTONDBLCLK
+                    | WM_RBUTTONDOWN
+                    | WM_RBUTTONDBLCLK
+                    | WM_MBUTTONDOWN
+            ) || (msg == WM_KEYDOWN && lp & (1 << 30) == 0)
             {
-                if let Some(geometry) = &state.geometry
-                    && !geometry.menu_active()
-                {
+                if !state.geometry.menu_active() {
                     unsafe {
                         windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW(
-                            state.owner, crate::protocol::DESKTOP_INPUT_MESSAGE,
+                            state.owner,
+                            crate::protocol::DESKTOP_INPUT_MESSAGE,
                             hwnd as usize,
                             windows_sys::Win32::UI::WindowsAndMessaging::GetMessageTime() as isize,
                         );
@@ -231,15 +196,15 @@ unsafe extern "system" fn subclass(
                     GetWindowThreadProcessId(state.owner, &raw mut owner_pid);
                     GetWindowThreadProcessId(
                         windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow(),
-                        &raw mut foreground_pid);
-                    if owner_pid != 0 && owner_pid == foreground_pid
-                        && let Some(geometry) = &state.geometry {
-                        geometry.clear_desktop_selection();
+                        &raw mut foreground_pid,
+                    );
+                    if owner_pid != 0 && owner_pid == foreground_pid {
+                        state.geometry.clear_desktop_selection();
                     }
                 }
                 return Some(0);
             }
-            if msg == attach_message() || msg == crate::protocol::geometry_attach_message() {
+            if msg == crate::protocol::geometry_attach_message() {
                 return Some(if state.owner == wp as HWND {
                     OK
                 } else {
@@ -247,14 +212,14 @@ unsafe extern "system" fn subclass(
                 });
             }
             if msg == WM_NCDESTROY {
-                uninstall(state, false);
+                uninstall(state);
                 *slot = None;
                 return None;
             }
             if msg == WM_DISPLAYCHANGE {
                 // Old monitor rectangles are unsafe after topology changes. Restore and let the
                 // controller report the lost session rather than parking items off screen.
-                uninstall(state, true);
+                uninstall(state);
                 *slot = None;
                 return None;
             }
@@ -262,7 +227,7 @@ unsafe extern "system" fn subclass(
                 if unsafe { WaitForSingleObject(state.owner_process, 0) } != 0x102
                     || unsafe { IsWindow(state.owner) } == 0
                 {
-                    uninstall(state, true);
+                    uninstall(state);
                     *slot = None;
                 }
                 return Some(0);
@@ -270,9 +235,7 @@ unsafe extern "system" fn subclass(
             if msg == WM_COPYDATA && wp as HWND == state.owner && lp != 0 {
                 let data = unsafe { &*(lp as *const COPYDATASTRUCT) };
                 if data.dwData == crate::protocol::TEXTURE_MAGIC {
-                    let Some(geometry) = &state.geometry else {
-                        return Some(REJECTED);
-                    };
+                    let geometry = &state.geometry;
                     let offset = size_of::<crate::protocol::TextureHeader>();
                     if data.lpData.is_null() || (data.cbData as usize) < offset {
                         return Some(REJECTED);
@@ -319,54 +282,35 @@ unsafe extern "system" fn subclass(
                     return Some(REJECTED);
                 }
                 if request.command == DETACH {
-                    uninstall(state, true);
+                    uninstall(state);
                     *slot = None;
                     return Some(OK);
                 }
                 return Some(dispatch(state, &request));
             }
-            if msg == LVM_SETWORKAREAS && state.geometry.is_none() && !state.managed.is_empty() {
-                // Preserve the Shell's latest baseline for detach, while keeping pane areas active.
-                if wp <= MAX_AREAS && (wp == 0 || lp != 0) {
-                    state.original = if wp == 0 {
-                        Vec::new()
-                    } else {
-                        unsafe { std::slice::from_raw_parts(lp as *const Area, wp) }.to_vec()
-                    };
-                    let result = unsafe {
-                        DefSubclassProc(
-                            hwnd,
-                            msg,
-                            state.managed.len(),
-                            state.managed.as_ptr() as isize,
-                        )
-                    };
-                    state.changes = state.changes.saturating_add(1);
-                    return Some(result);
-                }
-            }
-            if (state.geometry.is_none()
-                || !matches!(msg, WM_LBUTTONUP | WM_CAPTURECHANGED | WM_KEYUP))
-                && matches!(
-                    msg,
-                    WM_LBUTTONUP
-                        | WM_CAPTURECHANGED
-                        | WM_KEYUP
-                        | LVM_INSERTITEMW
-                        | LVM_DELETEITEM
-                        | LVM_DELETEALLITEMS
-                        | LVM_SETITEMTEXTW
-                        | LVM_SORTITEMS
-                        | windows_sys::Win32::UI::Controls::LVM_SORTITEMSEX
-                        | LVM_SETITEMCOUNT
-                        | LVM_SETITEMPOSITION
-                        | LVM_SETITEMPOSITION32
-                        | windows_sys::Win32::UI::Controls::LVM_ARRANGE
-                )
-            {
+            if matches!(
+                msg,
+                LVM_INSERTITEMW
+                    | LVM_DELETEITEM
+                    | LVM_DELETEALLITEMS
+                    | LVM_SETITEMTEXTW
+                    | LVM_SORTITEMS
+                    | windows_sys::Win32::UI::Controls::LVM_SORTITEMSEX
+                    | LVM_SETITEMCOUNT
+                    | LVM_SETITEMPOSITION
+                    | LVM_SETITEMPOSITION32
+                    | windows_sys::Win32::UI::Controls::LVM_ARRANGE
+            ) {
                 state.changes = state.changes.wrapping_add(1);
                 state.shell_changes = state.shell_changes.wrapping_add(1);
-                unsafe { windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW(state.owner, crate::protocol::SCENE_DIRTY_MESSAGE, 0, 0); }
+                unsafe {
+                    windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW(
+                        state.owner,
+                        crate::protocol::SCENE_DIRTY_MESSAGE,
+                        0,
+                        0,
+                    );
+                }
             }
             None
         })
@@ -379,9 +323,7 @@ unsafe extern "system" fn subclass(
 }
 
 fn apply_layout(state: &mut State, batch: &crate::protocol::LayoutBatch) -> isize {
-    let Some(geometry) = &state.geometry else {
-        return REJECTED;
-    };
+    let geometry = &state.geometry;
     if !batch.valid() {
         return REJECTED;
     }
@@ -408,12 +350,12 @@ fn apply_layout(state: &mut State, batch: &crate::protocol::LayoutBatch) -> isiz
         .collect();
     let result = if state
         .geometry
-        .as_ref()
-        .unwrap()
         .commit_scene(&batch.panes[..batch.pane_count as usize], members)
         .is_ok()
     {
-        state.geometry.as_ref().unwrap().identities(&batch.items[..batch.count as usize], state.owner as isize);
+        state
+            .geometry
+            .identities(&batch.items[..batch.count as usize], state.owner as isize);
         state.changes = state.changes.wrapping_add(1);
         if batch.flush == 1 {
             unsafe {
@@ -434,67 +376,54 @@ fn apply_layout(state: &mut State, batch: &crate::protocol::LayoutBatch) -> isiz
 fn dispatch(state: &mut State, request: &Request) -> isize {
     unsafe {
         match request.command {
-              QUERY => OK,
-              crate::protocol::CLEAR_DESKTOP_SELECTION => {
-                  if let Some(geometry) = &state.geometry {
-                      geometry.clear_desktop_selection();
-                      OK
-                  } else { REJECTED }
-              }
+            QUERY => OK,
+            crate::protocol::CLEAR_DESKTOP_SELECTION => {
+                state.geometry.clear_desktop_selection();
+                OK
+            }
             crate::protocol::MENU_SELECTION_BEGIN | crate::protocol::MENU_SELECTION_END => {
-                if let Some(geometry) = &state.geometry {
-                    geometry.menu_selection(request.command == crate::protocol::MENU_SELECTION_BEGIN);
-                    if request.command == crate::protocol::MENU_SELECTION_END && geometry.take_rename_request() {
-                        crate::protocol::RENAME_REQUESTED
-                    } else { OK }
-                } else { REJECTED }
+                state
+                    .geometry
+                    .menu_selection(request.command == crate::protocol::MENU_SELECTION_BEGIN);
+                if request.command == crate::protocol::MENU_SELECTION_END
+                    && state.geometry.take_rename_request()
+                {
+                    crate::protocol::RENAME_REQUESTED
+                } else {
+                    OK
+                }
             }
             crate::protocol::QUERY_SHELL_GENERATION => state.shell_changes as isize,
             crate::protocol::QUERY_MOVE_REQUESTS => crate::geometry::move_requests(),
-            crate::protocol::QUERY_DROP_PROXY => isize::from(state.geometry.as_ref().is_some_and(crate::geometry::GeometrySession::has_drop_proxy)),
+            crate::protocol::QUERY_DROP_PROXY => isize::from(state.geometry.has_drop_proxy()),
             crate::protocol::QUERY_ORIGINAL_POSITION => {
-                if let Some(geometry) = &state.geometry {
-                    match geometry.original_position(request.item) {
-                        Ok(p) if request.x == 0 => p.x as isize,
-                        Ok(p) if request.x == 1 => p.y as isize,
-                        _ => REJECTED,
-                    }
-                } else {
-                    REJECTED
+                match state.geometry.original_position(request.item) {
+                    Ok(p) if request.x == 0 => p.x as isize,
+                    Ok(p) if request.x == 1 => p.y as isize,
+                    _ => REJECTED,
                 }
             }
             crate::protocol::BEGIN_POSITIONS => {
-                if let Some(geometry) = &state.geometry {
-                    geometry.begin_positions();
+                state.geometry.begin_positions();
+                OK
+            }
+            crate::protocol::COMMIT_POSITIONS => {
+                if state.geometry.commit_positions().is_ok() {
+                    state.changes = state.changes.wrapping_add(1);
+                    if request.x == 1 {
+                        windows_sys::Win32::Graphics::Gdi::UpdateWindow(state.hwnd);
+                    }
                     OK
                 } else {
                     REJECTED
                 }
             }
-            crate::protocol::COMMIT_POSITIONS => {
-                if let Some(geometry) = &state.geometry {
-                    if geometry.commit_positions().is_ok() {
-                        state.changes = state.changes.wrapping_add(1);
-                        if request.x == 1 {
-                            windows_sys::Win32::Graphics::Gdi::UpdateWindow(state.hwnd);
-                        }
-                        OK
-                    } else {
-                        REJECTED
-                    }
+            crate::protocol::CLEAR_POSITIONS => {
+                return if state.geometry.set_positions(&[]).is_ok() {
+                    OK
                 } else {
                     REJECTED
-                }
-            }
-            crate::protocol::CLEAR_POSITIONS => {
-                if let Some(geometry) = &state.geometry {
-                    return if geometry.set_positions(&[]).is_ok() {
-                        OK
-                    } else {
-                        REJECTED
-                    };
-                }
-                REJECTED
+                };
             }
             crate::protocol::QUERY_HIT => {
                 let mut hit = windows_sys::Win32::UI::Controls::LVHITTESTINFO {
@@ -511,9 +440,15 @@ fn dispatch(state: &mut State, request: &Request) -> isize {
                     (&raw mut hit) as isize,
                 ) + 1
             }
-            crate::protocol::QUERY_INSERTION_TARGET => state.geometry.as_ref()
-                .and_then(|g| g.insertion_target(POINT { x: request.x, y: request.y }))
-                .map_or(0, |(item, after)| ((item as isize + 1) * 2) + isize::from(after)),
+            crate::protocol::QUERY_INSERTION_TARGET => state
+                .geometry
+                .insertion_target(POINT {
+                    x: request.x,
+                    y: request.y,
+                })
+                .map_or(0, |(item, after)| {
+                    ((item as isize + 1) * 2) + isize::from(after)
+                }),
             crate::protocol::QUERY_ICON_RECT => {
                 if request.item < 0 {
                     return REJECTED;
@@ -536,18 +471,6 @@ fn dispatch(state: &mut State, request: &Request) -> isize {
                     1 => rect.top as isize,
                     2 => rect.right as isize,
                     3 => rect.bottom as isize,
-                    _ => REJECTED,
-                }
-            }
-            QUERY_BASELINE_COORD => {
-                let Some(area) = state.original.get(request.item as usize) else {
-                    return REJECTED;
-                };
-                match request.x {
-                    0 => area.left as isize,
-                    1 => area.top as isize,
-                    2 => area.right as isize,
-                    3 => area.bottom as isize,
                     _ => REJECTED,
                 }
             }
@@ -574,62 +497,9 @@ fn dispatch(state: &mut State, request: &Request) -> isize {
                     .position(|a| a.contains(actual.x, actual.y))
                     .map_or(REJECTED, |i| i as isize)
             }
-            QUERY_AREA_COUNT => {
-                if state.geometry.is_some() {
-                    return state.managed.len() as isize;
-                }
-                let mut count: u32 = 0;
-                SendMessageW(
-                    state.hwnd,
-                    LVM_GETNUMBEROFWORKAREAS,
-                    0,
-                    (&raw mut count) as isize,
-                );
-                count as isize
-            }
+            QUERY_AREA_COUNT => state.managed.len() as isize,
             SET_AREAS => {
-                if state.geometry.is_some() {
-                    state.managed = request.areas[..request.count as usize].to_vec();
-                    state.changes = state.changes.wrapping_add(1);
-                    return OK;
-                }
-                let old = state.managed.clone();
-                let areas = &request.areas[..request.count as usize];
-                SendMessageW(
-                    state.hwnd,
-                    LVM_SETWORKAREAS,
-                    areas.len(),
-                    areas.as_ptr() as isize,
-                );
-                let mut count: u32 = 0;
-                SendMessageW(
-                    state.hwnd,
-                    LVM_GETNUMBEROFWORKAREAS,
-                    0,
-                    (&raw mut count) as isize,
-                );
-                let mut actual = vec![Area::default(); count.min(MAX_AREAS as u32) as usize];
-                SendMessageW(
-                    state.hwnd,
-                    LVM_GETWORKAREAS,
-                    actual.len(),
-                    actual.as_mut_ptr() as isize,
-                );
-                if actual != areas {
-                    let restore = if old.is_empty() {
-                        &state.original
-                    } else {
-                        &old
-                    };
-                    SendMessageW(
-                        state.hwnd,
-                        LVM_SETWORKAREAS,
-                        restore.len(),
-                        restore.as_ptr() as isize,
-                    );
-                    return REJECTED;
-                }
-                state.managed = areas.to_vec();
+                state.managed = request.areas[..request.count as usize].to_vec();
                 state.changes = state.changes.wrapping_add(1);
                 OK
             }
@@ -652,7 +522,7 @@ fn dispatch(state: &mut State, request: &Request) -> isize {
                         cchTextMax: text.len() as i32,
                         ..std::mem::zeroed()
                     };
-                    let len = if state.geometry.is_some() {
+                    let len = {
                         if SendMessageW(
                             state.hwnd,
                             windows_sys::Win32::UI::Controls::LVM_GETITEMW,
@@ -675,13 +545,6 @@ fn dispatch(state: &mut State, request: &Request) -> isize {
                             std::ptr::copy(item.pszText, text.as_mut_ptr(), len);
                         }
                         len as isize
-                    } else {
-                        SendMessageW(
-                            state.hwnd,
-                            LVM_GETITEMTEXTW,
-                            request.item as usize,
-                            (&raw mut item) as isize,
-                        )
                     };
                     if len <= 0
                         || len as usize >= text.len() - 1
@@ -694,60 +557,24 @@ fn dispatch(state: &mut State, request: &Request) -> isize {
                     x: request.x,
                     y: request.y,
                 };
-                if let Some(geometry) = &state.geometry {
-                    return if geometry.set_position(request.item, desired).is_ok() {
-                        state.changes = state.changes.wrapping_add(1);
-                        OK
-                    } else {
-                        REJECTED
-                    };
-                }
-                SendMessageW(
-                    state.hwnd,
-                    LVM_SETITEMPOSITION32,
-                    request.item as usize,
-                    (&raw const desired) as isize,
-                );
-                let mut actual = POINT::default();
-                let read = SendMessageW(
-                    state.hwnd,
-                    LVM_GETITEMPOSITION,
-                    request.item as usize,
-                    (&raw mut actual) as isize,
-                );
-                let wanted_area = state
-                    .managed
-                    .iter()
-                    .position(|a| a.contains(request.x, request.y));
-                let actual_area = state
-                    .managed
-                    .iter()
-                    .position(|a| a.contains(actual.x, actual.y));
-                if read != 0 && wanted_area == actual_area {
+
+                return if state.geometry.set_position(request.item, desired).is_ok() {
+                    state.changes = state.changes.wrapping_add(1);
                     OK
                 } else {
                     REJECTED
-                }
+                };
             }
             _ => REJECTED,
         }
     }
 }
 
-fn uninstall(state: &mut State, restore: bool) {
+fn uninstall(state: &mut State) {
     unsafe {
         KillTimer(state.hwnd, TIMER);
-        let geometry = state.geometry.take();
-        if restore && geometry.is_none() && !state.managed.is_empty() {
-            SendMessageW(
-                state.hwnd,
-                LVM_SETWORKAREAS,
-                state.original.len(),
-                state.original.as_ptr() as isize,
-            );
-        }
         RemoveWindowSubclass(state.hwnd, Some(subclass), SUBCLASS);
         RemovePropW(state.hwnd, windows_sys::w!("LucidPane.Hook.Bootstrap"));
-        drop(geometry);
     }
+    // The caller drops State immediately, restoring the geometry session.
 }

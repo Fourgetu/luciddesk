@@ -1,7 +1,7 @@
 //! Bounded, pointer-free request payload for `WM_COPYDATA`.
 use windows_sys::Win32::UI::WindowsAndMessaging::RegisterWindowMessageW;
 
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 pub const MAGIC: usize = 0x4c50_484b;
 pub const MAX_AREAS: usize = 16;
 pub const OK: isize = 0x4c50;
@@ -17,22 +17,21 @@ pub const QUERY_AREA_COUNT: u32 = 6;
 pub const QUERY_ITEM_COUNT: u32 = 7;
 pub const QUERY_ITEM_AREA: u32 = 8;
 pub const QUERY_GENERATION: u32 = 9;
-pub const QUERY_BASELINE_COORD: u32 = 10;
-pub const QUERY_ICON_RECT: u32 = 11;
-pub const QUERY_HIT: u32 = 12;
-pub const CLEAR_POSITIONS: u32 = 13;
-pub const BEGIN_POSITIONS: u32 = 14;
-pub const COMMIT_POSITIONS: u32 = 15;
-pub const QUERY_ORIGINAL_POSITION: u32 = 16;
+pub const QUERY_ICON_RECT: u32 = 10;
+pub const QUERY_HIT: u32 = 11;
+pub const CLEAR_POSITIONS: u32 = 12;
+pub const BEGIN_POSITIONS: u32 = 13;
+pub const COMMIT_POSITIONS: u32 = 14;
+pub const QUERY_ORIGINAL_POSITION: u32 = 15;
 /// Native inventory/layout changes only; publishing our geometry does not invalidate caches.
-pub const QUERY_SHELL_GENERATION: u32 = 17;
-pub const MENU_SELECTION_BEGIN: u32 = 18;
-pub const MENU_SELECTION_END: u32 = 19;
-pub const QUERY_MOVE_REQUESTS: u32 = 20;
-pub const QUERY_DROP_PROXY: u32 = 21;
-pub const QUERY_INSERTION_TARGET: u32 = 22;
+pub const QUERY_SHELL_GENERATION: u32 = 16;
+pub const MENU_SELECTION_BEGIN: u32 = 17;
+pub const MENU_SELECTION_END: u32 = 18;
+pub const QUERY_MOVE_REQUESTS: u32 = 19;
+pub const QUERY_DROP_PROXY: u32 = 20;
+pub const QUERY_INSERTION_TARGET: u32 = 21;
 /// Pane input relinquishes the desktop's selected and keyboard-focused items.
-pub const CLEAR_DESKTOP_SELECTION: u32 = 23;
+pub const CLEAR_DESKTOP_SELECTION: u32 = 22;
 /// Pointer-free queued notification; unlike WM_COPYDATA it never waits on Explorer.
 pub fn clear_selection_message() -> u32 {
     static MESSAGE: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
@@ -166,16 +165,6 @@ impl Area {
     pub fn valid(self) -> bool {
         self.left < self.right && self.top < self.bottom
     }
-
-    fn intersect(self, other: Self) -> Option<Self> {
-        let result = Self {
-            left: self.left.max(other.left),
-            top: self.top.max(other.top),
-            right: self.right.min(other.right),
-            bottom: self.bottom.min(other.bottom),
-        };
-        result.valid().then_some(result)
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -225,139 +214,14 @@ pub fn name_hash(name: impl IntoIterator<Item = u16>) -> u64 {
 }
 
 #[must_use]
-pub fn attach_message() -> u32 {
-    unsafe { RegisterWindowMessageW(windows_sys::w!("LucidPane.DesktopHook.Attach.v1")) }
-}
-
-#[must_use]
 pub fn geometry_attach_message() -> u32 {
-    unsafe { RegisterWindowMessageW(windows_sys::w!("LucidPane.DesktopHook.Geometry.Attach.v1")) }
-}
-
-/// Partition actual monitor work areas around panes. Index zero remains uncollected space.
-/// No overlap is allowed: Explorer assigns overlapping items to the lowest area index.
-/// # Errors
-/// Rejects invalid/overlapping panes, missing free space, or too many native work areas.
-pub fn partition(monitors: &[Area], panes: &[Area]) -> Result<Vec<Area>, String> {
-    if monitors.is_empty()
-        || monitors.iter().any(|r| !r.valid())
-        || panes.iter().any(|r| !r.valid())
-    {
-        return Err("桌面或分组工作区域无效".into());
-    }
-    for (i, pane) in panes.iter().enumerate() {
-        if !monitors.iter().any(|m| m.intersect(*pane) == Some(*pane)) {
-            return Err("分组需要完整位于一个显示器的工作区内".into());
-        }
-        if panes[..i].iter().any(|p| p.intersect(*pane).is_some()) {
-            return Err("原生分组工作区不能重叠，请移动分组后重试".into());
-        }
-    }
-    let mut remaining = monitors.to_vec();
-    for pane in panes {
-        let mut next = Vec::new();
-        for rect in remaining {
-            let Some(cut) = rect.intersect(*pane) else {
-                next.push(rect);
-                continue;
-            };
-            for piece in [
-                Area {
-                    bottom: cut.top,
-                    ..rect
-                },
-                Area {
-                    top: cut.bottom,
-                    ..rect
-                },
-                Area {
-                    top: cut.top,
-                    bottom: cut.bottom,
-                    right: cut.left,
-                    ..rect
-                },
-                Area {
-                    top: cut.top,
-                    bottom: cut.bottom,
-                    left: cut.right,
-                    ..rect
-                },
-            ] {
-                if piece.valid() {
-                    next.push(piece);
-                }
-            }
-        }
-        remaining = next;
-    }
-    if remaining.is_empty() {
-        return Err("需要为未收纳桌面图标保留工作区域".into());
-    }
-    // Use the largest free rectangle for newly appearing/unassigned items.
-    remaining.sort_by_key(|r| {
-        std::cmp::Reverse(i64::from(r.right - r.left) * i64::from(r.bottom - r.top))
-    });
-    remaining.extend_from_slice(panes);
-    if remaining.len() > MAX_AREAS {
-        return Err("原生工作区数量超过 Windows 的 16 个区域限制".into());
-    }
-    Ok(remaining)
+    unsafe { RegisterWindowMessageW(windows_sys::w!("LucidPane.DesktopHook.Geometry.Attach.v2")) }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn partitions_without_overlap_and_preserves_every_pixel() {
-        let desktop = Area {
-            left: -100,
-            top: 0,
-            right: 900,
-            bottom: 700,
-        };
-        let panes = [
-            Area {
-                left: 100,
-                top: 100,
-                right: 300,
-                bottom: 400,
-            },
-            Area {
-                left: 400,
-                top: 300,
-                right: 800,
-                bottom: 600,
-            },
-        ];
-        let areas = partition(&[desktop], &panes).unwrap();
-        for y in 0..700 {
-            for x in -100..900 {
-                assert_eq!(areas.iter().filter(|r| r.contains(x, y)).count(), 1);
-            }
-        }
-        assert_eq!(&areas[areas.len() - 2..], &panes);
-    }
-    #[test]
-    fn rejects_overlapping_or_outside_panes_without_changing_layout() {
-        let desktop = Area {
-            left: 0,
-            top: 0,
-            right: 100,
-            bottom: 100,
-        };
-        assert!(partition(&[desktop], &[desktop, desktop]).is_err());
-        assert!(
-            partition(
-                &[desktop],
-                &[Area {
-                    right: 101,
-                    ..desktop
-                }]
-            )
-            .is_err()
-        );
-        assert!(partition(&[desktop], &[desktop]).is_err());
-    }
+
     #[test]
     fn rejects_unbounded_protocol_payloads() {
         let mut r = Request::new(SET_AREAS);

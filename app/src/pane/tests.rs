@@ -34,7 +34,6 @@ fn test_state() -> PaneApp {
             .add_panel(Panel::new(
                 PanelId::new(id),
                 format!("Group {id}"),
-                PanelSource::DesktopCollection,
                 RectDip::default(),
             ))
             .unwrap();

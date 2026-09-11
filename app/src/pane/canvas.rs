@@ -1,5 +1,5 @@
 //! Canvas draw-pass lifetime, clipping and the few native operations absent from Canvas 0.100.
-use super::composition::{canvas_result, native_interface};
+use super::native_graphics::{canvas_result, native_interface};
 use windows::Win32::Graphics::Direct2D::{
     Common::D2D_RECT_F, D2D1_ANTIALIAS_MODE_ALIASED, D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE,
     ID2D1DeviceContext, ID2D1Image,

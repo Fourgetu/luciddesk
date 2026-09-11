@@ -6,7 +6,7 @@ use windows::Win32::Foundation::HWND;
 
 use windows::Win32::Graphics::Direct3D11::*;
 use windows::Win32::Graphics::Dxgi::*;
-use windows::core::{Error, HRESULT, IUnknown, Interface, Result};
+use windows::core::{Error, Interface, Result};
 use windows_canvas::{GpuDevice, ID2D1DeviceContext, SwapChain};
 
 pub struct Surface {
@@ -16,7 +16,7 @@ pub struct Surface {
     _device: GpuDevice,
     context: ID3D11DeviceContext,
     drawing: ID2D1DeviceContext,
-    layer: Layer,
+    layer: desktop_graphics::Layer,
     swap: SwapChain,
     material: Option<Backdrop>,
     pub native: bool,
@@ -27,23 +27,16 @@ impl Surface {
     /// Keep this separate from shared surface initialization so flyout shadows remain.
     pub fn disable_window_shadow(hwnd: HWND) -> Result<()> {
         let policy = DWMNCRP_DISABLED;
-        unsafe {
-            DwmSetWindowAttribute(
-                hwnd,
-                DWMWA_NCRENDERING_POLICY,
-                (&raw const policy).cast(),
-                4,
-            )
-        }
+        unsafe { set_attribute(hwnd, DWMWA_NCRENDERING_POLICY, &policy) }
     }
 
     pub fn opacity(&self, opacity: f32) -> Result<()> {
-        self.layer.opacity(opacity)?;
+        canvas_result(self.layer.opacity(opacity))?;
         if let Some(acrylic) = &self.acrylic {
             acrylic.opacity(opacity)?;
         }
         self.opacity.set(opacity);
-        self.layer.commit()
+        canvas_result(self.layer.commit())
     }
     pub fn new(hwnd: HWND) -> Result<Self> {
         Self::new_with_opacity(hwnd, 1.0)
@@ -63,31 +56,21 @@ impl Surface {
                 session.raw().clone()
             };
             let native_swap: IDXGISwapChain1 = native_interface(swap.raw_swap_chain())?;
-            let layer = Layer::new(hwnd, &dxgi, &native_swap, initial_opacity)?;
+            let layer = create_layer(hwnd, &dxgi, &native_swap, initial_opacity)?;
             let margins = MARGINS {
                 cxLeftWidth: -1,
                 cxRightWidth: -1,
                 cyTopHeight: -1,
                 cyBottomHeight: -1,
             };
-            DwmExtendFrameIntoClientArea(hwnd, &raw const margins)?;
+            extend_frame(hwnd, &margins)?;
             let dark = 1i32;
             // The content renderer owns the single border. Suppress the second DWM outline.
             let border = 0xffff_fffeu32;
-            let _ = DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, (&raw const border).cast(), 4);
-            let _ = DwmSetWindowAttribute(
-                hwnd,
-                DWMWA_USE_IMMERSIVE_DARK_MODE,
-                (&raw const dark).cast(),
-                4,
-            );
+            let _ = set_attribute(hwnd, DWMWA_BORDER_COLOR, &border);
+            let _ = set_attribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark);
             let corner = DWMWCP_ROUND;
-            let _ = DwmSetWindowAttribute(
-                hwnd,
-                DWMWA_WINDOW_CORNER_PREFERENCE,
-                (&raw const corner).cast(),
-                4,
-            );
+            let _ = set_attribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &corner);
             Ok(Self {
                 dark: true,
                 opacity: std::cell::Cell::new(initial_opacity),
@@ -109,12 +92,7 @@ impl Surface {
             self.material = None;
             let value = i32::from(dark);
             unsafe {
-                let _ = DwmSetWindowAttribute(
-                    hwnd,
-                    DWMWA_USE_IMMERSIVE_DARK_MODE,
-                    (&raw const value).cast(),
-                    4,
-                );
+                let _ = set_attribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &value);
             }
         }
     }
@@ -127,10 +105,8 @@ impl Surface {
             Backdrop::Mica | Backdrop::MicaAlt => DWMSBT_NONE,
             Backdrop::Acrylic | Backdrop::Translucent { .. } => DWMSBT_NONE,
         };
-        self.native = unsafe {
-            DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, (&raw const kind).cast(), 4)
-                .is_ok()
-        } && kind != DWMSBT_NONE;
+        self.native = unsafe { set_attribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &kind).is_ok() }
+            && kind != DWMSBT_NONE;
         if matches!(
             material,
             Backdrop::Acrylic | Backdrop::Mica | Backdrop::MicaAlt
@@ -183,7 +159,7 @@ impl Surface {
                 .UpdateSubresource(&buffer, 0, None, pixels.as_ptr().cast(), width * 4, 0);
         }
         self.end_frame()?;
-        self.layer.commit()
+        canvas_result(self.layer.commit())
     }
 
     /// Canvas owns buffer binding and resizing; the renderer owns the draw bracket.
@@ -238,18 +214,6 @@ impl Surface {
             Ok(pixels)
         }
     }
-}
-
-/// `QueryInterface` crosses the generated binding versions without transferring
-/// ownership of Canvas's COM reference. The returned interface owns its `AddRef`.
-pub(super) fn native_interface<T: Interface>(source: &impl canvas_core::Interface) -> Result<T> {
-    let raw = source.as_raw();
-    // SAFETY: source keeps this COM object alive throughout QueryInterface.
-    unsafe { IUnknown::from_raw_borrowed(&raw).unwrap().cast() }
-}
-
-pub(super) fn canvas_result<T>(result: canvas_core::Result<T>) -> Result<T> {
-    result.map_err(|error| Error::from_hresult(HRESULT(error.code().0)))
 }
 
 #[cfg(test)]

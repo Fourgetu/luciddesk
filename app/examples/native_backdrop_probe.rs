@@ -12,10 +12,9 @@ use windows_sys::Win32::{
 };
 #[path = "../src/pane/acrylic.rs"]
 mod acrylic;
-// This standalone native comparison retains its original DWM entry points.
-mod native_graphics {
-    pub use windows::Win32::Graphics::Dwm::{DWMWA_USE_HOSTBACKDROPBRUSH, DwmSetWindowAttribute};
-}
+#[allow(dead_code, unused_imports)]
+#[path = "../src/pane/native_graphics.rs"]
+mod native_graphics;
 
 // Isolated comparison of the private Accent API with the public DWM backdrop API.
 // Do not use this experiment to change Explorer's composition attributes.

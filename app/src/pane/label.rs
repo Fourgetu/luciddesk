@@ -1,5 +1,5 @@
 //! Shared DirectWrite layout for labels, selection geometry and drag previews.
-use super::composition::canvas_result;
+use super::native_graphics::canvas_result;
 use super::{assets::Pixels, canvas};
 use windows_canvas::ColorF;
 

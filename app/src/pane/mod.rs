@@ -28,8 +28,7 @@ mod window;
 pub use hybrid::run;
 
 use desktop_core::{
-    DesktopItem, DesktopPlacement, GridPosition, Panel, PanelId, PanelSource, RectDip,
-    ShellIdentity, Workspace,
+    DesktopItem, DesktopPlacement, GridPosition, Panel, PanelId, RectDip, ShellIdentity, Workspace,
 };
 use desktop_shell::{ShellApartment, open_shell_identity};
 use desktop_storage::WorkspaceStore;

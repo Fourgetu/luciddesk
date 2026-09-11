@@ -196,7 +196,6 @@ pub(super) fn handle(
                 .add_panel(Panel::new(
                     next,
                     format!("分组 {}", next.get()),
-                    PanelSource::DesktopCollection,
                     RectDip::new(240.0, 240.0, 480.0, 360.0),
                 ))
                 .map_err(|e| e.to_string())?;

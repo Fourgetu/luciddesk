@@ -253,22 +253,13 @@ impl Default for RectDip {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum PanelSource {
-    Folder { path: PathBuf },
-    DesktopCollection,
-    ManualCollection { collection_id: u64 },
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub enum PanelIcon {
-    #[default]
-    Automatic,
-    Custom(PathBuf),
-}
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum PanelTheme { #[default] System, Light, Dark }
+pub enum PanelTheme {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Panel {
@@ -277,23 +268,18 @@ pub struct Panel {
     auto_hide: bool,
     id: PanelId,
     title: String,
-    source: PanelSource,
-    icon: PanelIcon,
     rect: RectDip,
     collapsed: bool,
     locked: bool,
     backdrop: Backdrop,
-    items: Vec<PathBuf>,
 }
 
 impl Panel {
     #[must_use]
-    pub fn new(id: PanelId, title: impl Into<String>, source: PanelSource, rect: RectDip) -> Self {
+    pub fn new(id: PanelId, title: impl Into<String>, rect: RectDip) -> Self {
         Self {
             id,
             title: title.into(),
-            source,
-            icon: PanelIcon::Automatic,
             rect,
             collapsed: false,
             auto_hide: false,
@@ -301,7 +287,6 @@ impl Panel {
             always_on_top: false,
             locked: false,
             backdrop: Backdrop::DEFAULT,
-            items: Vec::new(),
         }
     }
 
@@ -313,16 +298,6 @@ impl Panel {
     #[must_use]
     pub fn title(&self) -> &str {
         &self.title
-    }
-
-    #[must_use]
-    pub const fn source(&self) -> &PanelSource {
-        &self.source
-    }
-
-    #[must_use]
-    pub const fn icon(&self) -> &PanelIcon {
-        &self.icon
     }
 
     #[must_use]
@@ -341,13 +316,21 @@ impl Panel {
     }
 
     #[must_use]
-    pub const fn always_on_top(&self) -> bool { self.always_on_top }
+    pub const fn always_on_top(&self) -> bool {
+        self.always_on_top
+    }
 
     #[must_use]
-    pub const fn theme(&self) -> PanelTheme { self.theme }
-    pub const fn set_theme(&mut self, theme: PanelTheme) { self.theme = theme; }
+    pub const fn theme(&self) -> PanelTheme {
+        self.theme
+    }
+    pub const fn set_theme(&mut self, theme: PanelTheme) {
+        self.theme = theme;
+    }
 
-    pub const fn set_always_on_top(&mut self, enabled: bool) { self.always_on_top = enabled; }
+    pub const fn set_always_on_top(&mut self, enabled: bool) {
+        self.always_on_top = enabled;
+    }
 
     pub const fn set_auto_hide(&mut self, enabled: bool) {
         self.auto_hide = enabled;
@@ -363,21 +346,8 @@ impl Panel {
         self.backdrop
     }
 
-    #[must_use]
-    pub fn item_paths(&self) -> &[PathBuf] {
-        &self.items
-    }
-
     pub fn set_title(&mut self, title: impl Into<String>) {
         self.title = title.into();
-    }
-
-    pub fn set_source(&mut self, source: PanelSource) {
-        self.source = source;
-    }
-
-    pub fn set_icon(&mut self, icon: PanelIcon) {
-        self.icon = icon;
     }
 
     pub fn set_rect(&mut self, rect: RectDip) {
@@ -395,57 +365,6 @@ impl Panel {
     pub const fn set_backdrop(&mut self, backdrop: Backdrop) {
         self.backdrop = backdrop;
     }
-
-    /// Adds a logical item reference without moving or copying the real file.
-    ///
-    /// Returns `true` when the path was new to this pane.
-    pub fn add_item(&mut self, path: PathBuf) -> bool {
-        if self
-            .items
-            .iter()
-            .any(|existing| paths_equal(existing, &path))
-        {
-            return false;
-        }
-        self.items.push(path);
-        true
-    }
-
-    /// Replaces the logical item order, discarding case-insensitive duplicates.
-    pub fn replace_items(&mut self, paths: impl IntoIterator<Item = PathBuf>) {
-        self.items.clear();
-        for path in paths {
-            self.add_item(path);
-        }
-    }
-
-    pub fn remove_item(&mut self, path: &std::path::Path) -> bool {
-        let Some(index) = self
-            .items
-            .iter()
-            .position(|existing| paths_equal(existing, path))
-        else {
-            return false;
-        };
-        self.items.remove(index);
-        true
-    }
-
-    /// Moves one item to another grid position while preserving every reference.
-    pub fn move_item(&mut self, from: usize, to: usize) -> bool {
-        if from >= self.items.len() || to >= self.items.len() || from == to {
-            return false;
-        }
-        let item = self.items.remove(from);
-        self.items.insert(to, item);
-        true
-    }
-}
-
-fn paths_equal(left: &std::path::Path, right: &std::path::Path) -> bool {
-    left.as_os_str()
-        .to_string_lossy()
-        .eq_ignore_ascii_case(&right.as_os_str().to_string_lossy())
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -456,7 +375,9 @@ pub struct Workspace {
 }
 
 impl Default for Workspace {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Workspace {
@@ -564,7 +485,9 @@ impl Workspace {
     }
 
     #[must_use]
-    pub const fn appearance(&self) -> Option<(PanelTheme, Backdrop)> { self.appearance }
+    pub const fn appearance(&self) -> Option<(PanelTheme, Backdrop)> {
+        self.appearance
+    }
 
     /// Updates defaults for new panels without overwriting existing overrides.
     pub fn set_appearance_defaults(&mut self, theme: PanelTheme, backdrop: Backdrop) {
@@ -598,20 +521,13 @@ impl std::error::Error for WorkspaceError {}
 #[cfg(test)]
 mod tests {
     use super::{
-        DesktopItem, DesktopPlacement, GridPosition, Panel, PanelIcon, PanelId, PanelSource,
-        RectDip, ShellIdentity, Workspace, WorkspaceError,
+        DesktopItem, DesktopPlacement, GridPosition, Panel, PanelId, RectDip, ShellIdentity,
+        Workspace, WorkspaceError,
     };
     use std::path::PathBuf;
 
     fn panel(id: u64) -> Panel {
-        Panel::new(
-            PanelId::new(id),
-            format!("Panel {id}"),
-            PanelSource::Folder {
-                path: PathBuf::from(r"C:\Users\Test\Desktop"),
-            },
-            RectDip::default(),
-        )
+        Panel::new(PanelId::new(id), format!("Panel {id}"), RectDip::default())
     }
 
     #[test]
@@ -636,75 +552,6 @@ mod tests {
         assert_eq!(workspace.panel(PanelId::new(1)).unwrap().title(), "Panel 1");
         assert!(workspace.remove_panel(PanelId::new(1)).is_some());
         assert!(workspace.panels().is_empty());
-    }
-
-    #[test]
-    fn panel_supports_a_custom_header_icon() {
-        let mut panel = panel(1);
-        let icon = PanelIcon::Custom(PathBuf::from(r"C:\Icons\work.ico"));
-        panel.set_icon(icon.clone());
-        assert_eq!(panel.icon(), &icon);
-    }
-
-    #[test]
-    fn manual_panel_starts_empty_and_deduplicates_item_references() {
-        let mut panel = Panel::new(
-            PanelId::new(1),
-            "New Pane",
-            PanelSource::ManualCollection { collection_id: 1 },
-            RectDip::default(),
-        );
-        assert!(panel.item_paths().is_empty());
-
-        assert!(panel.add_item(PathBuf::from(r"C:\Users\Test\Desktop\Editor.lnk")));
-        assert!(!panel.add_item(PathBuf::from(r"c:\users\test\desktop\EDITOR.LNK")));
-        assert_eq!(panel.item_paths().len(), 1);
-    }
-
-    #[test]
-    fn manual_panel_items_can_be_reordered() {
-        let mut panel = Panel::new(
-            PanelId::new(1),
-            "New Pane",
-            PanelSource::ManualCollection { collection_id: 1 },
-            RectDip::default(),
-        );
-        panel.add_item(PathBuf::from("one.lnk"));
-        panel.add_item(PathBuf::from("two.lnk"));
-        panel.add_item(PathBuf::from("three.lnk"));
-
-        assert!(panel.move_item(0, 2));
-        assert_eq!(
-            panel.item_paths(),
-            &[
-                PathBuf::from("two.lnk"),
-                PathBuf::from("three.lnk"),
-                PathBuf::from("one.lnk")
-            ]
-        );
-        assert!(!panel.move_item(4, 0));
-    }
-
-    #[test]
-    fn replacing_items_preserves_order_and_removes_duplicates() {
-        let mut panel = Panel::new(
-            PanelId::new(1),
-            "Desktop",
-            PanelSource::DesktopCollection,
-            RectDip::default(),
-        );
-        panel.add_item(PathBuf::from("old.lnk"));
-
-        panel.replace_items([
-            PathBuf::from("two.lnk"),
-            PathBuf::from("ONE.lnk"),
-            PathBuf::from("one.LNK"),
-        ]);
-
-        assert_eq!(
-            panel.item_paths(),
-            &[PathBuf::from("two.lnk"), PathBuf::from("ONE.lnk")]
-        );
     }
 
     #[test]
