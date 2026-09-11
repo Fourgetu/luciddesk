@@ -425,7 +425,8 @@ impl Renderer {
                     }
                     target.pop_clip();
                     let max = grid.max_scroll(model.items.len());
-                    if max > 0 {
+                    // Intermediate fold heights can overflow even when the expanded pane fits.
+                    if max > 0 && !model.collapsed && model.reveal >= 1.0 {
                         let track = (h - HEADER - 24.0).max(10.0);
                         let thumb = (track / (max + 1) as f32).max(16.0).min(track);
                         target.fill_rounded_rect(
