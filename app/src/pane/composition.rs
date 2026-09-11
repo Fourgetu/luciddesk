@@ -10,6 +10,7 @@ use windows::core::{Error, Interface, Result};
 use windows_canvas::{GpuDevice, ID2D1DeviceContext, SwapChain};
 
 pub struct Surface {
+    rounded_backdrop: Option<HWND>,
     dark: bool,
     opacity: std::cell::Cell<f32>,
     acrylic: Option<super::acrylic::Acrylic>,
@@ -23,7 +24,7 @@ pub struct Surface {
 }
 
 impl Surface {
-    /// Panes draw their own outline; suppress the activation-dependent DWM frame.
+    /// Suppress the DWM non-client frame; forced system rounding can still cast a shadow.
     /// Keep this separate from shared surface initialization so flyout shadows remain.
     pub fn disable_window_shadow(hwnd: HWND) -> Result<()> {
         let policy = DWMNCRP_DISABLED;
@@ -40,6 +41,16 @@ impl Surface {
     }
     pub fn new(hwnd: HWND) -> Result<Self> {
         Self::new_with_opacity(hwnd, 1.0)
+    }
+
+    pub fn new_pane(hwnd: HWND) -> Result<Self> {
+        let mut surface = Self::new(hwnd)?;
+        Self::disable_window_shadow(hwnd)?;
+        // On Windows 11, forced DWM rounding casts an activation shadow even with
+        // non-client rendering disabled. Round our backdrop instead of the HWND.
+        unsafe { set_attribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &DWMWCP_DONOTROUND)? };
+        surface.rounded_backdrop = Some(hwnd);
+        Ok(surface)
     }
 
     pub fn new_with_opacity(hwnd: HWND, initial_opacity: f32) -> Result<Self> {
@@ -72,6 +83,7 @@ impl Surface {
             let corner = DWMWCP_ROUND;
             let _ = set_attribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &corner);
             Ok(Self {
+                rounded_backdrop: None,
                 dark: true,
                 opacity: std::cell::Cell::new(initial_opacity),
                 acrylic: None,
@@ -138,6 +150,12 @@ impl Surface {
         }
         if (self.swap.width(), self.swap.height()) != (width, height) {
             canvas_result(self.swap.resize(width, height))?;
+        }
+        if let (Some(hwnd), Some(acrylic)) = (self.rounded_backdrop, &mut self.acrylic) {
+            let scale =
+                unsafe { windows_sys::Win32::UI::HiDpi::GetDpiForWindow(hwnd.0) } as f32 / 96.0;
+            // The renderer's outline has a 7 DIP radius and a half-DIP stroke outset.
+            acrylic.round_corners(width, height, 7.5 * scale)?;
         }
         Ok(())
     }

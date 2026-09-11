@@ -6,7 +6,10 @@ use windows::{
     System::DispatcherQueueController,
     UI::{
         Color,
-        Composition::{Compositor, ContainerVisual, Desktop::DesktopWindowTarget},
+        Composition::{
+            CompositionRoundedRectangleGeometry, Compositor, ContainerVisual,
+            Desktop::DesktopWindowTarget,
+        },
     },
     Win32::{
         Foundation::HWND,
@@ -34,6 +37,7 @@ pub struct Acrylic {
     root: ContainerVisual,
     backdrop: windows::UI::Composition::SpriteVisual,
     tint: windows::UI::Composition::SpriteVisual,
+    rounded_clip: Option<(CompositionRoundedRectangleGeometry, (u32, u32, f32))>,
 }
 
 impl Acrylic {
@@ -93,7 +97,41 @@ impl Acrylic {
             root,
             backdrop,
             tint,
+            rounded_clip: None,
         })
+    }
+
+    pub fn round_corners(&mut self, width: u32, height: u32, radius: f32) -> Result<()> {
+        let bounds = (width, height, radius);
+        if self
+            .rounded_clip
+            .as_ref()
+            .is_some_and(|(_, old)| *old == bounds)
+        {
+            return Ok(());
+        }
+        let geometry = if let Some((geometry, _)) = &self.rounded_clip {
+            geometry.clone()
+        } else {
+            self._runtime.compositor.CreateRoundedRectangleGeometry()?
+        };
+        geometry.SetSize(Vector2 {
+            X: width as f32,
+            Y: height as f32,
+        })?;
+        geometry.SetCornerRadius(Vector2 {
+            X: radius,
+            Y: radius,
+        })?;
+        if self.rounded_clip.is_none() {
+            let clip = self
+                ._runtime
+                .compositor
+                .CreateGeometricClipWithGeometry(&geometry)?;
+            self.root.SetClip(&clip)?;
+        }
+        self.rounded_clip = Some((geometry, bounds));
+        Ok(())
     }
 
     pub fn material(&self, material: desktop_core::Backdrop, dark: bool) -> Result<()> {

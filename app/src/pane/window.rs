@@ -591,13 +591,9 @@ where
                         let s = scale(hwnd);
                         let result = (|| {
                             if surface.is_none() {
-                                surface =
-                                    Some(Surface::new(windows::Win32::Foundation::HWND(hwnd))?);
-                                {
-                                    Surface::disable_window_shadow(
-                                        windows::Win32::Foundation::HWND(hwnd),
-                                    )?;
-                                }
+                                surface = Some(Surface::new_pane(
+                                    windows::Win32::Foundation::HWND(hwnd),
+                                )?);
                             }
                             let surface = surface.as_mut().unwrap();
                             surface
