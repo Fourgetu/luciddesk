@@ -1,0 +1,77 @@
+# 构建与验证
+
+本文命令均从仓库根目录执行，适用于 Windows PowerShell。
+
+## 环境
+
+- Windows x64 交互桌面，Explorer 正常运行。
+- Rust MSVC 工具链；仓库声明的最低 Rust 版本为 1.95，使用 edition 2024。
+- Visual Studio C++ 构建工具与 Windows SDK，用于链接 Win32 库及编译 MinHook。
+
+首次获取依赖时省略 `--offline`。已有锁文件和依赖缓存后，可按以下方式离线构建。
+
+## 构建与启动
+
+```powershell
+cargo build -p lucidpane -p desktop-hook --offline
+$env:LUCIDPANE_DATA_DIR = Join-Path $PWD 'target\dev-data-v9'
+& .\target\debug\lucidpane.exe
+```
+
+主程序与 Hook DLL 必须来自同次构建，位于同一目录。当前 IPC 协议为 v2，数据库为 v9。不使用旧运行模式参数，也不自动迁移旧库。
+
+`LUCIDPANE_DATA_DIR` 仅影响该环境下启动的程序。无需自定义目录时，在启动前移除该环境变量，程序会使用 LocalAppData。
+
+可选标题参数示例：
+
+```powershell
+& .\target\debug\lucidpane.exe --title '工作'
+```
+
+如果正在运行的程序占用了原构建产物，可以先编译到独立目录：
+
+```powershell
+cargo build -p lucidpane -p desktop-hook --offline --target-dir target\convergence-check
+```
+
+退出旧实例后，再从 `target\convergence-check\debug` 启动新程序。不要同时运行新旧实例以测试桌面 Hook。
+
+## 自动检查
+
+```powershell
+cargo check --workspace --all-targets --offline
+cargo test -p desktop-core -p desktop-storage -p desktop-hook -p desktop-shell --lib --offline -- --test-threads=1
+cargo test -p lucidpane --bin lucidpane --offline -- --test-threads=1
+cargo test -p lucidpane --test canvas_compat --offline
+```
+
+UI 测试按单线程执行，降低原生窗口与 COM 消息的相互干扰。部分 Shell 测试需要实际桌面权限；受限会话中的失败应与代码回归区分，并记录具体错误。
+
+Canvas 集成测试可能连带构建主程序；若可执行文件正被占用，在命令末尾添加 `--target-dir target\convergence-check`。
+
+托盘交互测试默认跳过，需要在实际 Windows 通知区域中单独执行：
+
+```powershell
+cargo test -p lucidpane tray::tests --bin lucidpane --offline -- --ignored --test-threads=1
+```
+
+## 生成绑定
+
+生成器是独立工具，不是应用构建依赖：
+
+```powershell
+cargo run --locked --offline --manifest-path tools/windows-bindings/Cargo.toml
+cargo run --locked --offline --manifest-path tools/windows-bindings/Cargo.toml -- --check
+```
+
+第一条更新生成源码，第二条生成到临时目录并核对一致性。修改 API 筛选清单时，同时提交筛选文件、工具锁文件和生成结果，不手工编辑生成文件。边界说明见[绘图与绑定](rendering.md)。
+
+## 探针与真实桌面验证
+
+`geometry_probe` 使用独立虚拟 ListView，适合检查原生几何和绘制；`geometry_layout_probe` 涉及真实桌面，运行前应阅读源码确认操作范围。旧 `hook_probe`、`hook_layout_probe`、`desktop_probe` 已删除，历史文档中的命令不能在当前主线使用。
+
+```powershell
+cargo build -p desktop-hook --example geometry_probe --offline
+```
+
+自动测试不能代替实际拖入、拖出、排序、重命名、退出恢复及混合 DPI 检查。最近记录见[验证记录](validation.md)。
