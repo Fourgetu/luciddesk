@@ -51,7 +51,7 @@ UI 线程复用 D3D/D2D 设备，同一 DXGI 设备还复用 DirectComposition �
 ## 材质与动画
 
 
-背景使用 Windows.UI.Composition 与 HWND 桌面互操作。云母和云母 Alt 采用系统壁纸画刷叠加不同色调，不是完整原生 Mica 控制器；亚克力使用 HostBackdrop 画刷。材质失败时保留普通背景。
+背景使用 Windows.UI.Composition 与 HWND 桌面互操作。云母使用系统模糊壁纸画刷，经亮度、染色两级 GPU 混合，参考 [WinUI 2.8 的公开实现](https://github.com/microsoft/microsoft-ui-xaml/blob/v2.8.0/dev/Materials/Backdrop/SystemBackdropBrushFactory.cpp)。主题底色为深色 #202020、浅色 #F3F3F3，染色强度分别为 80% 和 50%；Alt 暂为增强壁纸色彩的预设，强度为 65% 和 35%，不声称与官方 BaseAlt 完全一致。效果工厂在同一合成运行时内复用，不读取壁纸像素到 CPU，也不额外计算模糊。壁纸画刷或效果不可用时回退到不透明主题底色。当前仍不是完整原生 Mica 控制器，未复刻全部激活和系统策略行为；亚克力使用 HostBackdrop 已模糊背景，复用亮度、染色两级混合，按 WinUI AcrylicBrush 的中性色公式修正染色与亮度不透明度，避免对背景重复模糊。颜色固定跟随主题，不开放自定义颜色。当前尚未叠加官方配方中的噪点纹理。
 
 菜单淡入由 `windows-animation` 提供统一透明度，同时作用于内容与材质。首帧准备完成后开始计时，延迟帧仍提交终值，失败或系统禁用动画时直接显示。折叠保留现有曲线与真实 HWND 高度更新。
 

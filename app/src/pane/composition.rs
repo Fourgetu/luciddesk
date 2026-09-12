@@ -186,16 +186,11 @@ impl Surface {
         if self.material == Some(material) {
             return;
         }
-        let kind = match material {
-            Backdrop::Mica | Backdrop::MicaAlt => DWMSBT_NONE,
-            Backdrop::Acrylic | Backdrop::Translucent { .. } | Backdrop::Solid { .. } => {
-                DWMSBT_NONE
-            }
-        };
+        let kind = DWMSBT_NONE;
         self.native = unsafe { set_attribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &kind).is_ok() }
             && kind != DWMSBT_NONE;
         if matches!(
-            material,
+            material.base(),
             Backdrop::Acrylic | Backdrop::Mica | Backdrop::MicaAlt | Backdrop::Solid { .. }
         ) {
             if self.acrylic.is_none() {
@@ -382,10 +377,9 @@ impl Drop for Surface {
 }
 
 #[cfg(test)]
-mod animation_tests {
+pub(super) mod animation_tests {
     use super::*;
-    #[test]
-    fn settings_content_survives_material_changes_and_resize() {
+    pub(crate) fn settings_content_survives_material_changes_and_resize() {
         use windows_sys::Win32::UI::WindowsAndMessaging::*;
         let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
         let window = windows_window::Window::new("Settings composition regression")
@@ -426,6 +420,12 @@ mod animation_tests {
                     !matches!(material, Backdrop::Translucent { .. })
                 );
                 surface.acrylic.as_ref().unwrap().assert_content_visible();
+                if matches!(
+                    material,
+                    Backdrop::Acrylic | Backdrop::Mica | Backdrop::MicaAlt
+                ) {
+                    surface.acrylic.as_ref().unwrap().assert_material_effect();
+                }
                 if let Backdrop::Solid { color, opacity } = material {
                     surface
                         .acrylic
@@ -434,6 +434,22 @@ mod animation_tests {
                         .assert_solid_color(color, opacity);
                 }
                 surface.resize(320, 200).unwrap();
+            }
+            for dark in [false, true] {
+                surface.theme(hwnd, dark);
+                for material in [Backdrop::Acrylic, Backdrop::Mica, Backdrop::MicaAlt] {
+                    for strength in [0, 25, 50, 75, 100] {
+                        let tuned = material.with_strength(strength);
+                        surface.material(hwnd, tuned);
+                        surface.acrylic.as_ref().unwrap().assert_material_effect();
+                        surface
+                            .acrylic
+                            .as_ref()
+                            .unwrap()
+                            .assert_material_colors(tuned, dark);
+                        surface.acrylic.as_ref().unwrap().assert_content_visible();
+                    }
+                }
             }
         }
         unsafe {

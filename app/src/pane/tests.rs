@@ -1309,6 +1309,57 @@ fn solid_settings_edit_preview_save_and_remember_style() {
         SendMessageW(hwnd, WM_KEYDOWN, VK_RETURN as usize, 0);
         SendMessageW(hwnd, WM_PAINT, 0, 0);
     };
+    click(315.0, 315.0); // Acrylic strength, independently retained from Mica.
+    let before_strength = state.borrow().store.change_count();
+    let strength_point = ((414.0 * scale) as isize) << 16 | ((600.0 * scale) as isize & 0xffff);
+    unsafe {
+        SendMessageW(hwnd, WM_LBUTTONDOWN, 1, strength_point);
+    }
+    let adjusted = state.borrow().workspace.appearance().unwrap().1;
+    assert_ne!(adjusted.strength(), Some(50));
+    assert_eq!(state.borrow().store.change_count(), before_strength);
+    unsafe {
+        SendMessageW(hwnd, WM_LBUTTONUP, 0, strength_point);
+    }
+    assert_eq!(
+        state
+            .borrow()
+            .store
+            .load_workspace()
+            .unwrap()
+            .appearance()
+            .unwrap()
+            .1,
+        adjusted
+    );
+    click(455.0, 315.0); // Mica retains its own default.
+    assert_eq!(
+        state.borrow().workspace.appearance().unwrap().1.strength(),
+        Some(50)
+    );
+    click(315.0, 315.0);
+    assert_eq!(state.borrow().workspace.appearance().unwrap().1, adjusted);
+    click(815.0, 450.0); // Restore recommended strength.
+    assert_eq!(
+        state.borrow().workspace.appearance().unwrap().1,
+        desktop_core::Backdrop::Acrylic
+    );
+    click(600.0, 414.0);
+    unsafe {
+        SendMessageW(hwnd, WM_KEYDOWN, 0x24, 0);
+    } // Home
+    assert_eq!(
+        state.borrow().workspace.appearance().unwrap().1.strength(),
+        Some(0)
+    );
+    unsafe {
+        SendMessageW(hwnd, WM_KEYDOWN, 0x23, 0);
+    } // End
+    assert_eq!(
+        state.borrow().workspace.appearance().unwrap().1.strength(),
+        Some(100)
+    );
+    click(815.0, 450.0);
     click(815.0, 315.0); // Fourth material card, including custom titlebar.
     assert!(matches!(
         state.borrow().workspace.appearance().unwrap().1,
@@ -1394,8 +1445,35 @@ fn solid_settings_edit_preview_save_and_remember_style() {
 
 #[test]
 fn settings_window_applies_clicks_and_closes_without_exiting() {
+    // Composition owns native dispatch state beyond Rust test-thread lifetimes.
+    // Run the complete window scenario in one fresh process/STA, like the app.
+    const CHILD: &str = "LUCIDPANE_SETTINGS_TEST_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        use std::os::windows::process::CommandExt;
+        let result = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "pane::tests::settings_window_applies_clicks_and_closes_without_exiting",
+                "--test-threads=1",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "native settings test failed: {}\n{}\n{}",
+            result.status,
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+        return;
+    }
+
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    composition::animation_tests::settings_content_survives_material_changes_and_resize();
     let state = Rc::new(RefCell::new(test_state()));
     settings::show(&state, PanelId::new(1)).unwrap();
     let hwnd = state.borrow().settings.as_ref().unwrap().hwnd().cast();

@@ -49,6 +49,8 @@ enum Action {
     Change(Event),
     Radius(u8),
     Opacity(u8),
+    Strength(u8),
+    StrengthReset,
     Channel(u8, u8),
     ColorPreset(u32),
     SolidColor,
@@ -133,8 +135,17 @@ fn settings_backdrop(backdrop: Backdrop, dark: bool) -> Backdrop {
             color: if dark { 0x202020 } else { 0xf3f3f3 },
             opacity: 1.0,
         },
-        other => other,
+        other => other.base(),
     }
+}
+
+fn material_style(store: &desktop_storage::WorkspaceStore, backdrop: Backdrop) -> Backdrop {
+    backdrop
+        .strength_key()
+        .and_then(|key| store.preference(key).ok().flatten())
+        .and_then(|value| value.parse::<u8>().ok())
+        .filter(|value| *value <= 100)
+        .map_or(backdrop, |value| backdrop.with_strength(value))
 }
 
 fn color_channel(color: u32, channel: u8, value: u8) -> u32 {
@@ -535,6 +546,7 @@ impl Painter {
                 for (i, c) in s.controls.iter().enumerate() {
                     if let Action::Radius(value)
                     | Action::Opacity(value)
+                    | Action::Strength(value)
                     | Action::Channel(_, value) = c.action
                     {
                         let r = c.bounds;
@@ -542,7 +554,7 @@ impl Painter {
                         let left = r.left + 8.0;
                         let right = r.right - 8.0;
                         let max = match c.action {
-                            Action::Opacity(_) => 100.0,
+                            Action::Opacity(_) | Action::Strength(_) => 100.0,
                             Action::Channel(_, _) => 255.0,
                             _ => 24.0,
                         };
@@ -553,8 +565,18 @@ impl Painter {
                             radius_y: 2.0,
                         };
                         t.fill_rounded_rect(&rail, &border);
+                        let (fill_start, fill_width) = if matches!(c.action, Action::Strength(_)) {
+                            let middle = (left + right) * 0.5;
+                            t.fill_rect(
+                                &Rect::from_xywh(middle - 0.5, cy - 5.0, 1.0, 10.0),
+                                &muted,
+                            );
+                            (cx.min(middle), (cx - middle).abs())
+                        } else {
+                            (left, (cx - left).max(0.0))
+                        };
                         let filled = RoundedRect {
-                            rect: Rect::from_xywh(left, cy - 2.0, (cx - left).max(0.0), 4.0),
+                            rect: Rect::from_xywh(fill_start, cy - 2.0, fill_width, 4.0),
                             radius_x: 2.0,
                             radius_y: 2.0,
                         };
@@ -1252,6 +1274,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
             let mut activate = None;
             let mut radius_change = None;
             let mut opacity_change = None;
+            let mut strength_change = None;
             let mut channel_change = None;
             match msg {
                 WM_PAINT => {
@@ -1376,6 +1399,9 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                             let fraction = ((x - control.bounds.left - 8.0) / (control.bounds.right - control.bounds.left - 16.0).max(1.0)).clamp(0.0, 1.0);
                             channel_change = Some((channel, (fraction * 255.0).round() as u8));
                         }
+                        if matches!(control.action, Action::Strength(_)) {
+                            strength_change = Some((((x - control.bounds.left - 8.0) / (control.bounds.right - control.bounds.left - 16.0).max(1.0)).clamp(0.0, 1.0) * 100.0).round() as u8);
+                        }
                         if matches!(control.action, Action::Opacity(_)) {
                             opacity_change = Some((((x - control.bounds.left - 8.0) / (control.bounds.right - control.bounds.left - 16.0).max(1.0)).clamp(0.0, 1.0) * 100.0).round() as u8);
                         }
@@ -1444,6 +1470,12 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                                 VK_HOME => Some(0), VK_END => Some(255), _ => None,
                             }.map(|value| (channel, value));
                         }
+                        if let Action::Strength(value) = control.action {
+                            strength_change = match wp as u16 {
+                                VK_LEFT => Some(value.saturating_sub(1)), VK_RIGHT => Some((value + 1).min(100)),
+                                VK_HOME => Some(0), VK_END => Some(100), _ => None,
+                            };
+                        }
                         if let Action::Opacity(value) = control.action {
                             opacity_change = match wp as u16 {
                                 VK_LEFT => Some(value.saturating_sub(1)), VK_RIGHT => Some((value + 1).min(100)),
@@ -1494,6 +1526,15 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     }
                 }
             }
+            if let Some(value) = strength_change.filter(|_| available) {
+                let backdrop = appearance.1.with_strength(value);
+                if msg == WM_KEYDOWN {
+                    if let Err(error) = handle(&state, selected, Event::Material(backdrop)) { window::error(&error); }
+                } else {
+                    material_original.get_or_insert(appearance.1);
+                    events::preview_material(&mut state.borrow_mut(), backdrop);
+                }
+            }
             if let Some(value) = opacity_change.filter(|_| available) {
                 if let Backdrop::Solid { color, .. } = appearance.1 {
                     let backdrop = Backdrop::Solid { color, opacity: f32::from(value) / 100.0 };
@@ -1542,6 +1583,9 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         if let Backdrop::Solid { opacity, .. } = appearance.1 {
                             if let Err(error) = handle(&state, selected, Event::Material(Backdrop::Solid { color: *color, opacity })) { window::error(&error); }
                         }
+                    }
+                    Action::StrengthReset => {
+                        if let Err(error) = handle(&state, selected, Event::Material(appearance.1.base())) { window::error(&error); }
                     }
                     Action::SolidReset => {
                         let value = Backdrop::Solid { color: if dark { 0x181b20 } else { 0xf5f6f8 }, opacity: 0.85 };
@@ -1619,7 +1663,11 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     Action::Next => {
                         selected = panels[(at + 1) % panels.len()].id();
                     }
-                    Action::Radius(_) | Action::Opacity(_) | Action::Channel(_, _) => {}
+                    Action::Radius(_) | Action::Opacity(_) | Action::Strength(_) | Action::Channel(_, _) => {}
+                    Action::Change(Event::Material(value)) if value.strength().is_some() => {
+                        let backdrop = material_style(&state.borrow().store, *value);
+                        if let Err(error) = handle(&state, selected, Event::Material(backdrop)) { window::error(&error); }
+                    }
                     Action::Change(event) => {
                         if let Err(e) = handle(&state, selected, event.clone()) {
                             window::error(&e);
@@ -1714,6 +1762,11 @@ mod tests {
             settings_backdrop(Backdrop::Acrylic, true),
             Backdrop::Acrylic
         );
+        for base in [Backdrop::Acrylic, Backdrop::Mica, Backdrop::MicaAlt] {
+            for strength in [0, 50, 100] {
+                assert_eq!(settings_backdrop(base.with_strength(strength), true), base);
+            }
+        }
         assert_eq!(color_channel(0x123456, 0, 255), 0xff3456);
         assert_eq!(color_channel(0x123456, 1, 0), 0x120056);
         assert_eq!(color_channel(0x123456, 2, 255), 0x1234ff);
@@ -1903,7 +1956,9 @@ mod tests {
                                 true,
                                 (
                                     PanelTheme::System,
-                                    if page == 0 || page == 7 {
+                                    if page == 0 {
+                                        Backdrop::Acrylic.with_strength(65)
+                                    } else if page == 7 {
                                         Backdrop::Solid {
                                             color: 0x24364b,
                                             opacity: 0.85,

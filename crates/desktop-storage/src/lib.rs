@@ -290,6 +290,12 @@ impl WorkspaceStore {
             };
             let (kind, opacity, color) = encode_backdrop(backdrop);
             decode_backdrop(kind, opacity, color)?;
+            if let (Some(key), Some(strength)) = (backdrop.strength_key(), backdrop.strength()) {
+                transaction.execute(
+                    "INSERT OR REPLACE INTO metadata(key,value) VALUES (?1,?2)",
+                    [key, &strength.to_string()],
+                )?;
+            }
             if let Backdrop::Solid { color, opacity } = backdrop {
                 transaction.execute(
                     "INSERT OR REPLACE INTO metadata(key,value) VALUES ('solid_style',?1)",
@@ -645,6 +651,14 @@ fn required<T>(value: Option<T>, label: &str) -> Result<T, StoreError> {
 
 fn encode_backdrop(backdrop: Backdrop) -> (&'static str, Option<f32>, Option<u32>) {
     match backdrop {
+        Backdrop::Tuned { material, strength } => (
+            match material {
+                desktop_core::MaterialKind::Acrylic => "acrylic_tuned",
+                desktop_core::MaterialKind::Mica => "mica_tuned",
+            },
+            Some(f32::from(strength) / 100.0),
+            None,
+        ),
         Backdrop::Mica => ("mica", None, None),
         Backdrop::MicaAlt => ("mica_alt", None, None),
         Backdrop::Acrylic => ("acrylic", None, None),
@@ -663,6 +677,9 @@ fn decode_backdrop(
         return Err(StoreError::InvalidData("invalid backdrop opacity".into()));
     }
     Ok(match kind {
+        "acrylic_tuned" => Backdrop::Acrylic.with_strength((opacity * 100.0).round() as u8),
+        "mica_tuned" => Backdrop::Mica.with_strength((opacity * 100.0).round() as u8),
+        "mica_alt_tuned" => Backdrop::MicaAlt, // Normalize legacy adjustable Alt to the fixed preset.
         "mica" => Backdrop::Mica,
         "mica_alt" => Backdrop::MicaAlt,
         "acrylic" => Backdrop::Acrylic,
@@ -734,6 +751,59 @@ impl From<rusqlite::Error> for StoreError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn material_strength_round_trips_and_remembers_each_material() {
+        let mut store = WorkspaceStore::open_in_memory().unwrap();
+        let mut workspace = Workspace::new();
+        workspace
+            .add_panel(Panel::new(
+                PanelId::new(1),
+                "Material",
+                RectDip::new(0.0, 0.0, 300.0, 200.0),
+            ))
+            .unwrap();
+        for base in [Backdrop::Acrylic, Backdrop::Mica] {
+            for strength in [0, 33, 50, 100] {
+                let value = base.with_strength(strength);
+                workspace.set_appearance(desktop_core::PanelTheme::Dark, value);
+                store.save_workspace(&workspace).unwrap();
+                let restored = store.load_workspace().unwrap();
+                assert_eq!(restored.appearance(), workspace.appearance());
+                assert_eq!(restored.panels()[0].backdrop(), value);
+            }
+        }
+        for base in [Backdrop::Acrylic, Backdrop::Mica] {
+            assert_eq!(
+                store
+                    .preference(base.strength_key().unwrap())
+                    .unwrap()
+                    .as_deref(),
+                Some("100")
+            );
+        }
+        workspace.set_appearance(
+            desktop_core::PanelTheme::Dark,
+            Backdrop::Tuned {
+                material: desktop_core::MaterialKind::Mica,
+                strength: 200,
+            },
+        );
+        assert!(store.save_workspace(&workspace).is_err());
+        assert_eq!(
+            store.load_workspace().unwrap().appearance().unwrap().1,
+            Backdrop::Mica.with_strength(100)
+        );
+        for opacity in [0.0, 0.5, 1.0] {
+            assert_eq!(
+                super::decode_backdrop("mica_alt_tuned", Some(opacity), None).unwrap(),
+                Backdrop::MicaAlt
+            );
+        }
+        assert_eq!(Backdrop::MicaAlt.strength(), None);
+        assert_eq!(Backdrop::MicaAlt.strength_key(), None);
+        assert!(super::decode_backdrop("mica_tuned", Some(f32::NAN), None).is_err());
+    }
+
     #[test]
     fn solid_style_round_trips_and_survives_switching_material() {
         let mut store = WorkspaceStore::open_in_memory().unwrap();

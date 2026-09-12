@@ -5,9 +5,24 @@ use std::path::Path;
 use std::path::PathBuf;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub enum MaterialKind {
+    Acrylic,
+    Mica,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Backdrop {
-    Translucent { opacity: f32 },
-    Solid { color: u32, opacity: f32 },
+    Tuned {
+        material: MaterialKind,
+        strength: u8,
+    },
+    Translucent {
+        opacity: f32,
+    },
+    Solid {
+        color: u32,
+        opacity: f32,
+    },
     Mica,
     MicaAlt,
     Acrylic,
@@ -703,6 +718,52 @@ impl Backdrop {
     pub const DEFAULT: Self = Self::Mica;
 
     #[must_use]
+    pub const fn base(self) -> Self {
+        match self {
+            Self::Tuned { material, .. } => match material {
+                MaterialKind::Acrylic => Self::Acrylic,
+                MaterialKind::Mica => Self::Mica,
+            },
+            other => other,
+        }
+    }
+
+    #[must_use]
+    pub const fn strength(self) -> Option<u8> {
+        match self {
+            Self::Tuned { strength, .. } => Some(strength),
+            Self::Acrylic | Self::Mica => Some(50),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_strength(self, strength: u8) -> Self {
+        let material = match self.base() {
+            Self::Acrylic => MaterialKind::Acrylic,
+            Self::Mica => MaterialKind::Mica,
+            _ => return self,
+        };
+        if strength == 50 {
+            self.base()
+        } else {
+            Self::Tuned {
+                material,
+                strength: strength.min(100),
+            }
+        }
+    }
+
+    #[must_use]
+    pub const fn strength_key(self) -> Option<&'static str> {
+        match self.base() {
+            Self::Acrylic => Some("material_strength_acrylic"),
+            Self::Mica => Some("material_strength_mica"),
+            _ => None,
+        }
+    }
+
+    #[must_use]
     pub const fn translucent() -> Self {
         Self::Translucent { opacity: 0.86 }
     }
@@ -710,6 +771,7 @@ impl Backdrop {
     #[must_use]
     pub const fn kind(self) -> BackdropKind {
         match self {
+            Self::Tuned { .. } => self.base().kind(),
             Self::Translucent { .. } => BackdropKind::Translucent,
             Self::Solid { .. } => BackdropKind::Solid,
             Self::Mica => BackdropKind::Mica,

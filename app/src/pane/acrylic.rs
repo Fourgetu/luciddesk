@@ -1,5 +1,7 @@
 //! Host backdrop composition has no window-activation policy. Windows still controls
 //! backdrop transparency through accessibility settings and power policy.
+mod effects;
+
 use super::native_graphics::{DWMWA_USE_HOSTBACKDROPBRUSH, set_attribute};
 use std::{cell::RefCell, rc::Rc};
 use windows::{
@@ -23,6 +25,8 @@ use windows::{
 use windows_numerics::Vector2;
 
 struct Runtime {
+    // Release effects before their compositor and dispatcher queue.
+    material_factory: RefCell<Option<windows::UI::Composition::CompositionEffectFactory>>,
     compositor: Compositor,
     _queue: DispatcherQueueController,
 }
@@ -32,6 +36,7 @@ thread_local! {
 }
 
 pub struct Acrylic {
+    material_brush: RefCell<Option<(bool, windows::UI::Composition::CompositionBrush)>>,
     _runtime: Rc<Runtime>,
     _target: DesktopWindowTarget,
     root: ContainerVisual,
@@ -79,6 +84,7 @@ impl Acrylic {
             let runtime = Rc::new(Runtime {
                 compositor: Compositor::new()?,
                 _queue: queue,
+                material_factory: RefCell::new(None),
             });
             *slot = Some(Rc::clone(&runtime));
             Ok(runtime)
@@ -110,6 +116,7 @@ impl Acrylic {
         root.Children()?.InsertAtTop(&tint)?;
         target.SetRoot(&root)?;
         Ok(Self {
+            material_brush: RefCell::new(None),
             _runtime: runtime,
             _target: target,
             root,
@@ -156,6 +163,7 @@ impl Acrylic {
     pub fn material(&self, material: desktop_core::Backdrop, dark: bool) -> Result<()> {
         let compositor = &self._runtime.compositor;
         if let desktop_core::Backdrop::Solid { color, opacity } = material {
+            self.material_brush.borrow_mut().take();
             let set_color =
                 |visual: &windows::UI::Composition::SpriteVisual, color: Color| -> Result<()> {
                     if let Ok(brush) = visual
@@ -188,27 +196,63 @@ impl Acrylic {
             return self.visible(true);
         }
         let wallpaper = matches!(
-            material,
+            material.base(),
             desktop_core::Backdrop::Mica | desktop_core::Backdrop::MicaAlt
         );
-        let brush = if wallpaper {
-            compositor.TryCreateBlurredWallpaperBackdropBrush()?
+        let (luminosity, tint) = if wallpaper {
+            effects::mica_palette(
+                dark,
+                matches!(material.base(), desktop_core::Backdrop::MicaAlt),
+            )
         } else {
-            compositor.CreateHostBackdropBrush()?
+            effects::acrylic_palette(dark)
         };
+        let (luminosity, tint) =
+            effects::adjust_strength(luminosity, tint, material.strength().unwrap_or(50));
+        let brush = (|| -> Result<windows::UI::Composition::CompositionBrush> {
+            let mut cached = self.material_brush.borrow_mut();
+            if let Some((old_wallpaper, brush)) = cached.as_ref() {
+                if *old_wallpaper == wallpaper {
+                    effects::update_colors(brush, luminosity, tint)?;
+                    return Ok(brush.clone());
+                }
+            }
+            let mut factory = self._runtime.material_factory.borrow_mut();
+            if factory.is_none() {
+                *factory = Some(effects::factory(compositor)?);
+            }
+            let backdrop: windows::UI::Composition::CompositionBrush = if wallpaper {
+                compositor
+                    .TryCreateBlurredWallpaperBackdropBrush()?
+                    .cast()?
+            } else {
+                compositor.CreateHostBackdropBrush()?.cast()?
+            };
+            let brush = effects::brush(
+                compositor,
+                factory.as_ref().unwrap(),
+                &backdrop,
+                luminosity,
+                tint,
+            )?;
+            *cached = Some((wallpaper, brush.clone()));
+            Ok(brush)
+        })()
+        .or_else(|_| -> Result<windows::UI::Composition::CompositionBrush> {
+            // An unavailable backdrop/effect must remain opaque and legible.
+            compositor
+                .CreateColorBrushWithColor(effects::mica_palette(dark, false).0)?
+                .cast()
+        })?;
         self.backdrop.SetBrush(&brush)?;
-        let color = Color {
-            A: match material {
-                desktop_core::Backdrop::Mica => 205,
-                desktop_core::Backdrop::MicaAlt => 165,
-                _ => 120,
-            },
-            R: if dark { 24 } else { 245 },
-            G: if dark { 27 } else { 246 },
-            B: if dark { 32 } else { 248 },
-        };
-        self.tint
-            .SetBrush(&compositor.CreateColorBrushWithColor(color)?)?;
+        let clear_tint: windows::UI::Composition::CompositionColorBrush =
+            self.tint.Brush()?.cast()?;
+        clear_tint.SetColor(Color {
+            A: 0,
+            R: 0,
+            G: 0,
+            B: 0,
+        })?;
         self.visible(true)
     }
 
@@ -272,6 +316,49 @@ impl Acrylic {
             self.tint.Brush().unwrap().cast().unwrap();
         assert_eq!(tint.Color().unwrap().A, 0);
         assert_eq!(self.content.as_ref().unwrap().Opacity().unwrap(), 1.0);
+    }
+
+    #[cfg(test)]
+    pub fn assert_material_colors(&self, material: desktop_core::Backdrop, dark: bool) {
+        let (luminosity, tint) = if material.base() == desktop_core::Backdrop::Acrylic {
+            effects::acrylic_palette(dark)
+        } else {
+            effects::mica_palette(dark, material.base() == desktop_core::Backdrop::MicaAlt)
+        };
+        let (luminosity, tint) =
+            effects::adjust_strength(luminosity, tint, material.strength().unwrap_or(50));
+        let effect: windows::UI::Composition::CompositionEffectBrush =
+            self.backdrop.Brush().unwrap().cast().unwrap();
+        for (name, expected) in [("Luminosity", luminosity), ("Tint", tint)] {
+            let brush: windows::UI::Composition::CompositionColorBrush = effect
+                .GetSourceParameter(&windows::core::HSTRING::from(name))
+                .unwrap()
+                .cast()
+                .unwrap();
+            assert_eq!(brush.Color().unwrap(), expected);
+        }
+    }
+
+    #[cfg(test)]
+    pub fn assert_material_effect(&self) {
+        let effect: windows::UI::Composition::CompositionEffectBrush = self
+            .backdrop
+            .Brush()
+            .unwrap()
+            .cast()
+            .expect("Material must use the GPU blend graph, not fallback");
+        for name in ["Backdrop", "Luminosity", "Tint"] {
+            effect
+                .GetSourceParameter(&windows::core::HSTRING::from(name))
+                .unwrap();
+        }
+        let tint: windows::UI::Composition::CompositionColorBrush =
+            self.tint.Brush().unwrap().cast().unwrap();
+        assert_eq!(
+            tint.Color().unwrap().A,
+            0,
+            "Do not overlay the old tint twice"
+        );
     }
 
     #[cfg(test)]

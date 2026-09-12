@@ -250,6 +250,38 @@ pub(super) fn scene(
                 false,
             );
         }
+        if let Some(value) = appearance.1.strength() {
+            let y = 364.0 + extra;
+            s.cards.push(Rect::from_xywh(x, y - 12.0, w, 96.0));
+            s.text(Rect::from_xywh(x + 14.0, y, 100.0, 30.0), "效果强度", 0);
+            s.controls.push(Control {
+                bounds: Rect::from_xywh(x + 124.0, y, w - 224.0, 30.0),
+                label: String::new(),
+                action: Action::Strength(value),
+                selected: false,
+                toggle: false,
+            });
+            s.text(
+                Rect::from_xywh(x + w - 72.0, y, 58.0, 30.0),
+                if value == 50 {
+                    "默认".to_string()
+                } else {
+                    format!("{:+}", i16::from(value) - 50)
+                },
+                1,
+            );
+            s.text(
+                Rect::from_xywh(x + 14.0, y + 42.0, w - 142.0, 30.0),
+                "相对默认调整 · 越高越接近主题底色",
+                0,
+            );
+            s.button(
+                Rect::from_xywh(x + w - 114.0, y + 42.0, 100.0, 30.0),
+                "恢复默认",
+                Action::StrengthReset,
+                false,
+            );
+        }
     } else if page == 1 {
         s.text(
             Rect::from_xywh(x, 76.0, w, 24.0),
