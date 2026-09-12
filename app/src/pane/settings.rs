@@ -1253,8 +1253,8 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     );
                 if page == 6 { body.text(Rect::from_xywh(248.0, 408.0, w - 282.0, 48.0), &backup_status, 0); }
                 if page == 5 {
-                    body.text(Rect::from_xywh(264.0, 352.0, w - 304.0, 40.0), &desktop_status, 0);
-                    body.button(Rect::from_xywh(264.0, 398.0, 150.0, 34.0), "重新连接桌面", Action::Change(Event::RetryDesktop), false);
+                    body.text(Rect::from_xywh(264.0, 304.0, w - 304.0, 40.0), &desktop_status, 0);
+                    body.button(Rect::from_xywh(264.0, 350.0, 150.0, 34.0), "重新连接桌面", Action::Change(Event::RetryDesktop), false);
                 }
                 cached_scene = Some(with_titlebar(body, w, key.9));
                 scene_key = Some(key);
@@ -2007,7 +2007,7 @@ mod tests {
                         let pixels = bitmap.pixels().unwrap();
                         assert!(pixels.chunks_exact(4).all(|p| p[3] == 255));
                         assert_eq!(pixels[0] < 128, dark);
-                        if scale == 1.0 && (page <= 1 || page == 5 || page == 7) {
+                        if scale == 1.0 {
                             // Standalone raster for visual review, independent of the live desktop.
                             let mut bmp = vec![0u8; 54];
                             bmp[0..2].copy_from_slice(b"BM");
@@ -2022,6 +2022,14 @@ mod tests {
                             let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                                 .join("../target")
                                 .join(match (page, dark) {
+                                    (2, true) => "settings-group-dark.bmp",
+                                    (2, false) => "settings-group-light.bmp",
+                                    (3, true) => "settings-peek-dark.bmp",
+                                    (3, false) => "settings-peek-light.bmp",
+                                    (4, true) => "settings-search-dark.bmp",
+                                    (4, false) => "settings-search-light.bmp",
+                                    (6, true) => "settings-backup-dark.bmp",
+                                    (6, false) => "settings-backup-light.bmp",
                                     (7, true) => "settings-colors-dark.bmp",
                                     (7, false) => "settings-colors-light.bmp",
                                     (5, true) => "settings-about-dark.bmp",
