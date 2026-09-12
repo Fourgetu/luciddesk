@@ -65,6 +65,56 @@ pub fn item_pixels(
     })
 }
 
+/// Merge selected cells in client-pixel coordinates, including gaps and rows.
+/// The returned origin keeps the pointer anchored to the cell actually grabbed.
+pub fn selection_pixels(cells: &[(Pixels, POINT)]) -> Option<(Pixels, POINT)> {
+    let left = cells.iter().map(|(_, p)| p.x).min()?;
+    let top = cells.iter().map(|(_, p)| p.y).min()?;
+    let right = cells
+        .iter()
+        .map(|(image, p)| i64::from(p.x) + i64::from(image.width))
+        .max()?;
+    let bottom = cells
+        .iter()
+        .map(|(image, p)| i64::from(p.y) + i64::from(image.height))
+        .max()?;
+    let width = u32::try_from(right - i64::from(left)).ok()?;
+    let height = u32::try_from(bottom - i64::from(top)).ok()?;
+    let size = usize::try_from(width)
+        .ok()?
+        .checked_mul(height as usize)?
+        .checked_mul(4)?;
+    let mut data = Vec::new();
+    data.try_reserve_exact(size).ok()?;
+    data.resize(size, 0);
+    for (image, point) in cells {
+        let x = (i64::from(point.x) - i64::from(left)) as usize;
+        let y = (i64::from(point.y) - i64::from(top)) as usize;
+        for row in 0..image.height as usize {
+            let source = row * image.width as usize * 4;
+            let destination = ((y + row) * width as usize + x) * 4;
+            for (src, dst) in image.data[source..source + image.width as usize * 4]
+                .chunks_exact(4)
+                .zip(data[destination..destination + image.width as usize * 4].chunks_exact_mut(4))
+            {
+                let remaining = 255 - u16::from(src[3]);
+                for c in 0..4 {
+                    dst[c] =
+                        (u16::from(src[c]) + (u16::from(dst[c]) * remaining + 127) / 255) as u8;
+                }
+            }
+        }
+    }
+    Some((
+        Pixels {
+            width,
+            height,
+            data,
+        },
+        POINT { x: left, y: top },
+    ))
+}
+
 // Interpolate premultiplied BGRA without losing edge alpha.
 fn resize(source: &Pixels, width: u32, height: u32) -> Vec<u8> {
     let mut output = vec![0; (width * height * 4) as usize];
@@ -255,6 +305,61 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn multi_selection_keeps_cells_gaps_and_pointer_anchor_at_each_dpi() {
+        for scale in [1.0, 1.5, 2.0] {
+            let grid = super::super::layout::Grid::system(400.0, 300.0, 48.0, (88.0, 96.0));
+            let icon = |color: [u8; 4]| Pixels {
+                width: 16,
+                height: 16,
+                data: color.repeat(256),
+            };
+            let first = item_pixels(&icon([0, 0, 255, 255]), "First", grid, scale).unwrap();
+            let second = item_pixels(&icon([0, 255, 0, 255]), "Second", grid, scale).unwrap();
+            let third = item_pixels(&icon([255, 0, 0, 255]), "Third", grid, scale).unwrap();
+            let origin = POINT {
+                x: (12.0 * scale) as i32,
+                y: (-40.0 * scale) as i32,
+            };
+            let right = POINT {
+                x: origin.x + (grid.cell_width * scale * 2.0).round() as i32,
+                y: origin.y,
+            };
+            let below = POINT {
+                x: origin.x,
+                y: origin.y + (140.0 * scale) as i32,
+            };
+            let (one, one_origin) = selection_pixels(&[(first.clone(), origin)]).unwrap();
+            assert_eq!(one.data, first.data);
+            assert_eq!((one_origin.x, one_origin.y), (origin.x, origin.y));
+            let (all, all_origin) =
+                selection_pixels(&[(first, origin), (second, right), (third, below)]).unwrap();
+            assert_eq!((all_origin.x, all_origin.y), (origin.x, origin.y));
+            for color in [[0, 0, 255, 255], [0, 255, 0, 255], [255, 0, 0, 255]] {
+                assert!(all.data.chunks_exact(4).any(|pixel| pixel == color));
+            }
+            let gap = ((grid.cell_width * scale * 1.5).round() as u32 * 4) as usize;
+            assert_eq!(&all.data[gap..gap + 4], &[0, 0, 0, 0]);
+            // Grabbing the right cell keeps its exact offset within the group.
+            let grabbed = POINT {
+                x: right.x + 15,
+                y: right.y + 20,
+            };
+            let hotspot = POINT {
+                x: grabbed.x - all_origin.x,
+                y: grabbed.y - all_origin.y,
+            };
+            assert_eq!(grabbed.x - hotspot.x + right.x - all_origin.x, right.x);
+            assert_eq!(grabbed.y - hotspot.y + right.y - all_origin.y, right.y);
+            assert!(
+                all.data
+                    .chunks_exact(4)
+                    .all(|p| p[..3].iter().all(|v| *v <= p[3]))
+            );
+        }
+        assert!(selection_pixels(&[]).is_none());
     }
 
     #[test]

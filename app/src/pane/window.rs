@@ -920,26 +920,44 @@ where
                                 ClientToScreen(hwnd, &raw mut screen);
                             }
                             if drag_image.is_none() {
-                                let image = model
-                                    .borrow()
-                                    .items
-                                    .get(*index)
-                                    .and_then(|item| item.image.clone());
-                                if let Some(image) = image {
-                                    let m = model.borrow();
-                                    let grid = grid(hwnd, &m);
-                                    let (cell_x, cell_y) = m.cell(grid, *index);
-                                    let Some(pixels) = super::drag_image::item_pixels(
-                                        &image,
-                                        &m.items[*index].label,
-                                        grid,
-                                        s,
-                                    ) else {
-                                        return Some(0);
-                                    };
+                                let m = model.borrow();
+                                let grid = grid(hwnd, &m);
+                                let selected = if m.selection.contains(index) {
+                                    m.selection.iter().copied().collect::<Vec<_>>()
+                                } else {
+                                    vec![*index]
+                                };
+                                let placeholder = super::assets::Pixels {
+                                    width: 1,
+                                    height: 1,
+                                    data: vec![0; 4],
+                                };
+                                let cells = selected
+                                    .into_iter()
+                                    .filter_map(|index| {
+                                        let item = m.items.get(index)?;
+                                        let pixels = super::drag_image::item_pixels(
+                                            item.image.as_deref().unwrap_or(&placeholder),
+                                            &item.label,
+                                            grid,
+                                            s,
+                                        )?;
+                                        let (x, y) = m.cell(grid, index);
+                                        Some((
+                                            pixels,
+                                            POINT {
+                                                x: (x * s).round() as i32,
+                                                y: (y * s).round() as i32,
+                                            },
+                                        ))
+                                    })
+                                    .collect::<Vec<_>>();
+                                if let Some((pixels, origin)) =
+                                    super::drag_image::selection_pixels(&cells)
+                                {
                                     let hotspot = POINT {
-                                        x: start.x - (cell_x * s).round() as i32,
-                                        y: start.y - (cell_y * s).round() as i32,
+                                        x: start.x - origin.x,
+                                        y: start.y - origin.y,
                                     };
                                     let size = windows_sys::Win32::Foundation::SIZE {
                                         cx: pixels.width as i32,
