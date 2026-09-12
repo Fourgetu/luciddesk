@@ -249,11 +249,12 @@ pub(super) fn handle(
                 let Some(state) = weak.upgrade() else {
                     return Ok(());
                 };
-                if state
-                    .borrow()
-                    .workspace
-                    .panel(id)
-                    .is_some_and(|p| p.folder().is_some())
+                if peek::settings().provider == peek::Provider::QuickLook
+                    || state
+                        .borrow()
+                        .workspace
+                        .panel(id)
+                        .is_some_and(|p| p.folder().is_some())
                 {
                     return peek::open_path(identity);
                 }

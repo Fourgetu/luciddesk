@@ -5,9 +5,31 @@ use desktop_storage::WorkspaceStore;
 use std::{cell::RefCell, path::PathBuf};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Provider {
+    Peek,
+    QuickLook,
+}
+impl Provider {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Peek => "Peek",
+            Self::QuickLook => "QuickLook",
+        }
+    }
+    fn executable(self) -> &'static str {
+        match self {
+            Self::Peek => "PowerToys.Peek.UI.exe",
+            Self::QuickLook => "QuickLook.exe",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Settings {
     pub enabled: bool,
+    pub provider: Provider,
+    pub quicklook_path: String,
     pub path: String,
     pub key: u16,
     pub modifiers: u8,
@@ -16,6 +38,8 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             enabled: true,
+            provider: Provider::Peek,
+            quicklook_path: String::new(),
             path: String::new(),
             key: VK_SPACE,
             modifiers: 0,
@@ -26,17 +50,51 @@ thread_local! { static SETTINGS: RefCell<Settings> = RefCell::new(Settings::defa
 pub(super) fn settings() -> Settings {
     SETTINGS.with(|s| s.borrow().clone())
 }
+impl Settings {
+    pub fn active_path(&self) -> &str {
+        match self.provider {
+            Provider::Peek => &self.path,
+            Provider::QuickLook => &self.quicklook_path,
+        }
+    }
+    pub fn set_path(&mut self, path: String) {
+        match self.provider {
+            Provider::Peek => self.path = path,
+            Provider::QuickLook => self.quicklook_path = path,
+        }
+    }
+}
 fn encode(s: &Settings) -> String {
     format!(
-        "{}\n{}\n{}\n{}",
+        "v2\n{}\n{}\n{}\n{}\n{}\n{}",
         u8::from(s.enabled),
         s.key,
         s.modifiers,
-        s.path
+        s.provider.name(),
+        s.path,
+        s.quicklook_path
     )
 }
 fn decode(raw: &str) -> Option<Settings> {
-    let mut lines = raw.splitn(4, '\n');
+    let (provider, quicklook_path, legacy) = if let Some(raw) = raw.strip_prefix("v2\n") {
+        let fields: Vec<_> = raw.splitn(6, '\n').collect();
+        if fields.len() != 6 {
+            return None;
+        }
+        let provider = match fields[3] {
+            "Peek" => Provider::Peek,
+            "QuickLook" => Provider::QuickLook,
+            _ => return None,
+        };
+        (
+            provider,
+            fields[5].to_owned(),
+            format!("{}\n{}\n{}\n{}", fields[0], fields[1], fields[2], fields[4]),
+        )
+    } else {
+        (Provider::Peek, String::new(), raw.to_owned())
+    };
+    let mut lines = legacy.splitn(4, '\n');
     let enabled = match lines.next()? {
         "1" => true,
         "0" => false,
@@ -50,6 +108,8 @@ fn decode(raw: &str) -> Option<Settings> {
         key,
         modifiers,
         path,
+        provider,
+        quicklook_path,
     })
 }
 pub(super) fn load(store: &WorkspaceStore) -> Result<(), String> {
@@ -133,20 +193,125 @@ pub(super) fn detect() -> Option<PathBuf> {
     }
     None
 }
-pub(super) fn resolved(s: &Settings) -> Option<PathBuf> {
-    if s.path.is_empty() {
-        detect()
-    } else {
-        Some(PathBuf::from(&s.path))
+fn running_quicklook() -> Option<PathBuf> {
+    use windows_sys::Win32::{
+        Foundation::CloseHandle,
+        System::{ProcessStatus::EnumProcesses, Threading::*},
+    };
+    let mut ids = vec![0u32; 65536];
+    let mut bytes = 0;
+    unsafe {
+        if EnumProcesses(ids.as_mut_ptr(), (ids.len() * 4) as u32, &raw mut bytes) == 0 {
+            return None;
+        }
+        for id in &ids[..bytes as usize / 4] {
+            let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, *id);
+            if process.is_null() {
+                continue;
+            }
+            let mut name = [0u16; 32768];
+            let mut length = name.len() as u32;
+            let ok = QueryFullProcessImageNameW(process, 0, name.as_mut_ptr(), &raw mut length);
+            CloseHandle(process);
+            if ok != 0 {
+                let path = PathBuf::from(String::from_utf16_lossy(&name[..length as usize]));
+                if path
+                    .file_name()
+                    .is_some_and(|n| n.eq_ignore_ascii_case("QuickLook.exe"))
+                {
+                    return Some(path);
+                }
+            }
+        }
     }
+    None
 }
-pub(super) fn browse(owner: isize) -> Result<Option<String>, String> {
+
+// QuickLook's per-user pipe accepts UTF-8 command|path|options lines.
+fn quicklook_pipe(path: &std::path::Path) -> Result<(), String> {
+    use std::io::Write;
+    use windows_sys::Win32::{
+        Foundation::{CloseHandle, LocalFree},
+        Security::{Authorization::ConvertSidToStringSidW, *},
+        System::Threading::*,
+    };
+    let pipe = unsafe {
+        let mut token = std::ptr::null_mut();
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &raw mut token) == 0 {
+            return Err(std::io::Error::last_os_error().to_string());
+        }
+        let mut length = 0;
+        GetTokenInformation(token, TokenUser, std::ptr::null_mut(), 0, &raw mut length);
+        let mut buffer = vec![0usize; (length as usize).div_ceil(size_of::<usize>())];
+        let ok = GetTokenInformation(
+            token,
+            TokenUser,
+            buffer.as_mut_ptr().cast(),
+            length,
+            &raw mut length,
+        );
+        CloseHandle(token);
+        if ok == 0 {
+            return Err(std::io::Error::last_os_error().to_string());
+        }
+        let user = &*buffer.as_ptr().cast::<TOKEN_USER>();
+        let mut sid = std::ptr::null_mut();
+        if ConvertSidToStringSidW(user.User.Sid, &raw mut sid) == 0 {
+            return Err(std::io::Error::last_os_error().to_string());
+        }
+        let mut len = 0;
+        while *sid.add(len) != 0 {
+            len += 1;
+        }
+        let name = String::from_utf16_lossy(std::slice::from_raw_parts(sid, len));
+        LocalFree(sid.cast());
+        format!(r"\\.\pipe\QuickLook.App.Pipe.{name}")
+    };
+    let path = path.to_str().ok_or("QuickLook requires a Unicode path")?;
+    if path.contains(['\r', '\n', '|']) {
+        return Err("Invalid QuickLook path".into());
+    }
+    let mut stream = std::fs::OpenOptions::new()
+        .write(true)
+        .open(pipe)
+        .map_err(|e| e.to_string())?;
+    stream
+        .write_all(format!("QuickLook.App.PipeMessages.Toggle|{path}|\n").as_bytes())
+        .map_err(|e| e.to_string())
+}
+
+pub(super) fn resolved(s: &Settings) -> Option<PathBuf> {
+    if !s.active_path().is_empty() {
+        return Some(PathBuf::from(s.active_path()));
+    }
+    if s.provider == Provider::Peek {
+        return detect();
+    }
+    for (var, relative) in [
+        ("LOCALAPPDATA", "Programs/QuickLook/QuickLook.exe"),
+        ("LOCALAPPDATA", "QuickLook/QuickLook.exe"),
+        ("ProgramFiles", "QuickLook/QuickLook.exe"),
+        ("ProgramFiles(x86)", "QuickLook/QuickLook.exe"),
+    ] {
+        if let Some(root) = std::env::var_os(var) {
+            let path = PathBuf::from(root).join(relative);
+            if path.is_file() {
+                return Some(path);
+            }
+        }
+    }
+    running_quicklook()
+}
+pub(super) fn browse(owner: isize, provider: Provider) -> Result<Option<String>, String> {
     use windows_sys::Win32::UI::Controls::Dialogs::*;
     let mut file = [0u16; 32768];
     let mut dialog = OPENFILENAMEW {
         lStructSize: size_of::<OPENFILENAMEW>() as u32,
         hwndOwner: owner as _,
-        lpstrFilter: windows_sys::w!("PowerToys Peek\0PowerToys.Peek.UI.exe\0\0"),
+        lpstrFilter: match provider {
+            Provider::Peek => windows_sys::w!("PowerToys Peek\0PowerToys.Peek.UI.exe\0\0"),
+            Provider::QuickLook => windows_sys::w!("QuickLook\0QuickLook.exe\0\0"),
+        },
         lpstrFile: file.as_mut_ptr(),
         nMaxFile: file.len() as u32,
         Flags: OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR,
@@ -157,16 +322,16 @@ pub(super) fn browse(owner: isize) -> Result<Option<String>, String> {
         return if error == 0 {
             Ok(None)
         } else {
-            Err(format!("无法选择 Peek 程序：{error}"))
+            Err(format!("无法选择预览程序：{error}"))
         };
     }
     let path =
         String::from_utf16_lossy(&file[..file.iter().position(|c| *c == 0).unwrap_or(file.len())]);
     if !PathBuf::from(&path)
         .file_name()
-        .is_some_and(|n| n.eq_ignore_ascii_case("PowerToys.Peek.UI.exe"))
+        .is_some_and(|n| n.eq_ignore_ascii_case(provider.executable()))
     {
-        return Err("请选择 PowerToys.Peek.UI.exe".into());
+        return Err(format!("请选择 {}", provider.executable()));
     }
     Ok(Some(path))
 }
@@ -231,6 +396,9 @@ pub(super) fn open(owner: isize, identity: &ShellIdentity) -> Result<(), String>
     if !s.enabled {
         return Ok(());
     }
+    if s.provider == Provider::QuickLook {
+        return open_path(identity);
+    }
     let path = resolved(&s)
         .filter(|path| path.is_file())
         .ok_or("未找到 Peek，请在设置中选择 PowerToys.Peek.UI.exe")?;
@@ -244,14 +412,60 @@ pub(super) fn open_path(identity: &ShellIdentity) -> Result<(), String> {
     if !value.enabled {
         return Ok(());
     }
+    let path = if value.provider == Provider::QuickLook {
+        // QuickLook accepts Shell parsing names (such as ::{CLSID}) over its pipe.
+        PathBuf::from(identity.activation_name())
+    } else {
+        identity
+            .file_system_path()
+            .ok_or("此项目没有文件路径")?
+            .to_path_buf()
+    };
+    if value.provider == Provider::QuickLook && quicklook_pipe(&path).is_ok() {
+        return Ok(());
+    }
     let executable = resolved(&value)
         .filter(|p| p.is_file())
-        .ok_or("未找到 Peek，请在设置中选择程序路径")?;
-    let path = identity.file_system_path().ok_or("此项目没有文件路径")?;
+        .ok_or_else(|| format!("未找到 {}，请在设置中选择程序路径", value.provider.name()))?;
+    if value.provider == Provider::QuickLook {
+        std::process::Command::new(executable)
+            .arg("/autorun")
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        // Startup is asynchronous. Keep UI messages flowing while waiting for the listener.
+        use windows_sys::Win32::UI::WindowsAndMessaging::*;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            if quicklook_pipe(&path).is_ok() {
+                return Ok(());
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err("QuickLook 启动后未能连接预览服务".into());
+            }
+            unsafe {
+                let mut message = MSG::default();
+                while PeekMessageW(&raw mut message, std::ptr::null_mut(), 0, 0, PM_REMOVE) != 0 {
+                    if message.message == WM_QUIT {
+                        PostQuitMessage(message.wParam as i32);
+                        return Err("预览已取消".into());
+                    }
+                    TranslateMessage(&raw const message);
+                    DispatchMessageW(&raw const message);
+                }
+                MsgWaitForMultipleObjectsEx(
+                    0,
+                    std::ptr::null(),
+                    25,
+                    QS_ALLINPUT,
+                    MWMO_INPUTAVAILABLE,
+                );
+            }
+        }
+    }
     std::process::Command::new(executable)
         .arg(path)
         .spawn()
-        .map_err(|error| error.to_string())?;
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -259,10 +473,58 @@ pub(super) fn open_path(identity: &ShellIdentity) -> Result<(), String> {
 mod tests {
     use super::*;
     #[test]
+    fn quicklook_keeps_namespace_parsing_names() {
+        let item = ShellIdentity::Namespace {
+            parsing_name: "::{645FF040-5081-101B-9F08-00AA002F954E}".into(),
+        };
+        let path = PathBuf::from(item.activation_name());
+        assert_eq!(
+            path.to_str().unwrap(),
+            "::{645FF040-5081-101B-9F08-00AA002F954E}"
+        );
+    }
+    #[test]
+    #[ignore = "requires running QuickLook on the interactive desktop"]
+    fn live_quicklook_recycle_bin_preview() {
+        let store = WorkspaceStore::open_in_memory().unwrap();
+        save(
+            &store,
+            Settings {
+                provider: Provider::QuickLook,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let item = ShellIdentity::Namespace {
+            parsing_name: "::{645FF040-5081-101B-9F08-00AA002F954E}".into(),
+        };
+        let result = open(0, &item);
+        save(&store, Default::default()).unwrap();
+        result.unwrap();
+    }
+    #[test]
+    fn legacy_preview_preferences_preserve_peek_and_provider_paths() {
+        let mut value = decode("1\n32\n0\nC:/Peek.exe").unwrap();
+        assert_eq!(value.provider, Provider::Peek);
+        value.provider = Provider::QuickLook;
+        value.set_path("C:/QuickLook.exe".into());
+        assert_eq!(value.path, "C:/Peek.exe");
+        assert_eq!(decode(&encode(&value)), Some(value));
+    }
+    #[test]
+    #[ignore = "requires running QuickLook on the interactive desktop"]
+    fn live_quicklook_path_preview() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../README.md");
+        assert!(running_quicklook().is_some());
+        quicklook_pipe(&path.canonicalize().unwrap()).unwrap();
+    }
+    #[test]
     fn preferences_round_trip_and_shortcut_conflicts() {
         let store = WorkspaceStore::open_in_memory().unwrap();
         let value = Settings {
             enabled: false,
+            provider: Provider::QuickLook,
+            quicklook_path: "C:/QuickLook/QuickLook.exe".into(),
             path: "C:\\应用\\PowerToys.Peek.UI.exe".into(),
             key: 0x50,
             modifiers: 3,

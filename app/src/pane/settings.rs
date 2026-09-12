@@ -55,6 +55,7 @@ enum Action {
     SolidReset,
     StyleInput(bool),
     PeekEnable,
+    PreviewProvider(peek::Provider),
     PeekBrowse,
     PeekDetect,
     PeekShortcut,
@@ -1624,16 +1625,17 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         recording_search = false;
                     }
                     Action::PeekShortcut => { recording_peek = true; recording_search = false; }
-                    Action::PeekEnable | Action::PeekBrowse | Action::PeekDetect | Action::PeekReset => {
+                    Action::PreviewProvider(_) | Action::PeekEnable | Action::PeekBrowse | Action::PeekDetect | Action::PeekReset => {
                         let mut value = peek::settings();
                         let result = (|| -> Result<(), String> {
                             match c.action {
+                                Action::PreviewProvider(provider) => value.provider = provider,
                                 Action::PeekEnable => value.enabled = !value.enabled,
                                 Action::PeekBrowse => {
-                                    let Some(path) = peek::browse(hwnd as isize)? else { return Ok(()); };
-                                    value.path = path;
+                                    let Some(path) = peek::browse(hwnd as isize, value.provider)? else { return Ok(()); };
+                                    value.set_path(path);
                                 }
-                                Action::PeekDetect => { value.path.clear(); }
+                                Action::PeekDetect => { value.set_path(String::new()); }
                                 Action::PeekReset => { value.key = VK_SPACE; value.modifiers = 0; }
                                 _ => unreachable!(),
                             }

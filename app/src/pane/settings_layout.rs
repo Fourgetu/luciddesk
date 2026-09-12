@@ -5,7 +5,7 @@ const PAGES: [(usize, &str, &str); 6] = [
     (0, "主题与材质", "\u{e790}"),
     (1, "面板布局", "\u{f0e2}"),
     (4, "Everything 搜索", "\u{e721}"),
-    (3, "Peek 预览", "\u{e890}"),
+    (3, "文件预览", "\u{e890}"),
     (6, "备份与恢复", "\u{e81c}"),
     (5, "关于", "\u{e946}"),
 ];
@@ -322,13 +322,14 @@ pub(super) fn scene(
             });
         }
     } else if page == 3 {
-        for y in [158.0, 308.0] {
-            s.separators.push(Rect::from_xywh(x + 18.0, y, w - 36.0, 1.0));
+        for y in [198.0, 348.0] {
+            s.separators
+                .push(Rect::from_xywh(x + 18.0, y, w - 36.0, 1.0));
         }
         let value = peek::settings();
         s.text(
             Rect::from_xywh(x + 18.0, 104.0, w - 110.0, 32.0),
-            "启用 Peek 预览",
+            "启用文件预览",
             1,
         );
         s.controls.push(Control {
@@ -339,45 +340,56 @@ pub(super) fn scene(
             toggle: true,
         });
         s.text(
-            Rect::from_xywh(x + 18.0, 174.0, w - 36.0, 26.0),
-            if value.path.is_empty() {
+            Rect::from_xywh(x + 18.0, 214.0, w - 36.0, 26.0),
+            if value.active_path().is_empty() {
                 "程序路径 · 自动"
             } else {
                 "程序路径"
             },
             1,
         );
+        for (i, provider) in [peek::Provider::Peek, peek::Provider::QuickLook]
+            .into_iter()
+            .enumerate()
+        {
+            s.button(
+                Rect::from_xywh(x + 18.0 + i as f32 * 130.0, 154.0, 120.0, 32.0),
+                provider.name(),
+                Action::PreviewProvider(provider),
+                value.provider == provider,
+            );
+        }
         let path = peek::resolved(&value)
             .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "未找到 Peek，请安装 PowerToys 或选择程序".into());
-        s.text(Rect::from_xywh(x + 18.0, 208.0, w - 36.0, 36.0), path, 0);
+            .unwrap_or_else(|| format!("未找到 {}，请选择程序", value.provider.name()));
+        s.text(Rect::from_xywh(x + 18.0, 248.0, w - 36.0, 36.0), path, 0);
         s.button(
-            Rect::from_xywh(x + 18.0, 254.0, 110.0, 34.0),
+            Rect::from_xywh(x + 18.0, 294.0, 110.0, 34.0),
             "浏览…",
             Action::PeekBrowse,
             false,
         );
         s.button(
-            Rect::from_xywh(x + 140.0, 254.0, 110.0, 34.0),
+            Rect::from_xywh(x + 140.0, 294.0, 110.0, 34.0),
             "自动检测",
             Action::PeekDetect,
             false,
         );
-        s.text(Rect::from_xywh(x + 18.0, 322.0, 90.0, 26.0), "快捷键", 1);
+        s.text(Rect::from_xywh(x + 18.0, 362.0, 90.0, 26.0), "快捷键", 1);
         s.button(
-            Rect::from_xywh(x + 114.0, 324.0, w - 250.0, 34.0),
+            Rect::from_xywh(x + 114.0, 364.0, w - 250.0, 34.0),
             &peek::shortcut_label(&value),
             Action::PeekShortcut,
             false,
         );
         s.button(
-            Rect::from_xywh(x + w - 124.0, 324.0, 106.0, 34.0),
+            Rect::from_xywh(x + w - 124.0, 364.0, 106.0, 34.0),
             "恢复默认",
             Action::PeekReset,
             false,
         );
         s.text(
-            Rect::from_xywh(x + 18.0, 370.0, w - 36.0, 24.0),
+            Rect::from_xywh(x + 18.0, 410.0, w - 36.0, 24.0),
             "仅在面板内生效",
             0,
         );
