@@ -30,7 +30,13 @@ enum Action {
     PeekBrowse,
     PeekDetect,
     PeekShortcut,
+    SearchShortcut,
+    SearchReset,
     PeekReset,
+    EverythingAutoStart,
+    EverythingBrowse,
+    EverythingDetect,
+    EverythingLaunch,
 }
 struct Control {
     bounds: Rect,
@@ -702,8 +708,19 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
     let mut options = state.borrow().workspace.pane_options();
     let painter = Painter::new().map_err(|e| e.to_string())?;
     let mut surface: Option<composition::Surface> = None;
-    let mut page = 0;
+    let mut page = if state
+        .borrow()
+        .runtime
+        .as_ref()
+        .is_some_and(|r| r.desktop_error.is_some())
+    {
+        5
+    } else {
+        0
+    };
     let mut recording_peek = false;
+    let mut recording_search = false;
+    let mut search_visible = false;
     let mut selected = id;
     let mut hover = None;
     let mut focus = None;
@@ -712,6 +729,8 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
     let mut radius_original = None;
     let mut cached_scene = None;
     let mut scene_key = None;
+    let mut desktop_status = String::new();
+    let mut backup_status = String::new();
     let mut toggle_motion = std::collections::HashMap::<usize, ToggleMotion>::new();
     let window = windows_window::Window::new("LucidPane 设置")
         .size(900, 520)
@@ -860,6 +879,9 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     panels = state.workspace.panels().to_vec();
                     snapshot_changed = true;
                 }
+                search_visible = state.views.iter().any(|v| state.workspace.panel(v.id).is_some_and(Panel::is_search));
+                desktop_status = runtime::status(&state);
+                backup_status = runtime::backup_status(&state);
                 options = state.workspace.pane_options();
                 appearance = state
                     .workspace
@@ -889,29 +911,35 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 appearance,
                 options,
                 peek::settings(),
-                recording_peek,
+                everything_settings::settings(),
+                (recording_peek, recording_search, search_hotkey::settings(), search_hotkey::status()),
                 unsafe { IsZoomed(hwnd) } != 0,
+                search_visible,
+                (desktop_status.clone(), backup_status.clone()),
             );
             let scene_changed = snapshot_changed || scene_key.as_ref() != Some(&key);
             if scene_changed {
-                cached_scene = Some(with_titlebar(
-                    scene(
+                let mut body = scene(
                         w,
                         h - TITLE_HEIGHT,
                         page,
                         panel,
                         panels.len(),
+                        search_visible,
                         appearance,
                         options,
-                    ),
-                    w,
-                    key.8,
-                ));
+                    );
+                if page == 6 { body.text(Rect::from_xywh(248.0, 408.0, w - 282.0, 48.0), &backup_status, 0); }
+                if page == 5 {
+                    body.text(Rect::from_xywh(264.0, 250.0, w - 304.0, 126.0), &desktop_status, 0);
+                    body.button(Rect::from_xywh(264.0, 388.0, 150.0, 34.0), "重新连接桌面", Action::Change(Event::RetryDesktop), false);
+                }
+                cached_scene = Some(with_titlebar(body, w, key.9));
                 scene_key = Some(key);
             }
-            if recording_peek {
+            if recording_peek || recording_search {
                 for control in &mut cached_scene.as_mut().unwrap().controls {
-                    if matches!(control.action, Action::PeekShortcut) { control.label = "按下快捷键…".into(); }
+                    if (recording_peek && matches!(control.action, Action::PeekShortcut)) || (recording_search && matches!(control.action, Action::SearchShortcut)) { control.label = "按下快捷键…".into(); }
                 }
             }
             let scene = cached_scene.as_ref().unwrap();
@@ -969,8 +997,10 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                             let surface = surface.as_mut().unwrap();
                             surface.theme(windows::Win32::Foundation::HWND(hwnd), dark);
                             surface.material(windows::Win32::Foundation::HWND(hwnd), appearance.1);
-                            let target =
-                                surface.begin_frame(bounds.right as u32, bounds.bottom as u32)?;
+                            let Some(target) =
+                                surface.try_begin_frame(bounds.right as u32, bounds.bottom as u32)? else {
+                                    return Ok(());
+                                };
                             painter.paint(
                                 &target,
                                 &scene,
@@ -1052,6 +1082,18 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     pressed = None;
                 }
                 WM_KEYDOWN | WM_SYSKEYDOWN => {
+                    if recording_search {
+                        if lp & (1 << 30) != 0 { return Some(0); }
+                        let key = wp as u16;
+                        if matches!(key, VK_CONTROL | VK_SHIFT | VK_MENU | VK_LWIN | VK_RWIN) { return Some(0); }
+                        if key != VK_ESCAPE {
+                            let value = search_hotkey::Shortcut { key, modifiers: peek::modifier_bits(&keyboard::Modifiers::current()) };
+                            if let Err(error) = search_hotkey::save(&state.borrow().store, value) { window::error(&error); return Some(0); }
+                        }
+                        recording_search = false;
+                        unsafe { InvalidateRect(hwnd, std::ptr::null(), 0); }
+                        return Some(0);
+                    }
                     if recording_peek {
                         if lp & (1 << 30) != 0 { return Some(0); }
                         let key = wp as u16;
@@ -1133,7 +1175,30 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 .and_then(|i| scene.controls.get(i))
             {
                 match &c.action {
-                    Action::PeekShortcut => { recording_peek = true; }
+                    Action::EverythingAutoStart | Action::EverythingBrowse | Action::EverythingDetect | Action::EverythingLaunch => {
+                        let mut value = everything_settings::settings();
+                        let result = (|| -> Result<(), String> {
+                            match c.action {
+                                Action::EverythingAutoStart => value.auto_start = !value.auto_start,
+                                Action::EverythingBrowse => {
+                                    let Some(path) = everything_settings::browse(hwnd as isize)? else { return Ok(()); };
+                                    value.path = path;
+                                }
+                                Action::EverythingDetect => value.path.clear(),
+                                Action::EverythingLaunch => return everything_settings::launch(),
+                                _ => unreachable!(),
+                            }
+                            everything_settings::save(&state.borrow().store, value)
+                        })();
+                        if let Err(error) = result { window::error(&error); }
+                        scene_key = None;
+                    }
+                    Action::SearchShortcut => { recording_search = true; recording_peek = false; }
+                    Action::SearchReset => {
+                        if let Err(error) = search_hotkey::save(&state.borrow().store, Default::default()) { window::error(&error); }
+                        recording_search = false;
+                    }
+                    Action::PeekShortcut => { recording_peek = true; recording_search = false; }
                     Action::PeekEnable | Action::PeekBrowse | Action::PeekDetect | Action::PeekReset => {
                         let mut value = peek::settings();
                         let result = (|| -> Result<(), String> {
@@ -1162,6 +1227,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     },
                     Action::Page(value) => {
                         recording_peek = false;
+                        recording_search = false;
                         page = *value;
                         toggle_motion.clear();
                         focus = None;
@@ -1297,6 +1363,7 @@ mod tests {
                 0,
                 None,
                 0,
+                false,
                 (PanelTheme::Dark, Backdrop::Mica),
                 desktop_core::PaneOptions::default(),
             ),
@@ -1319,7 +1386,7 @@ mod tests {
         {
             let device = windows_canvas::GpuDevice::new_warp().unwrap();
             for scale in [1.0, 1.5, 2.0] {
-                for page in 0..5 {
+                for page in 0..7 {
                     for dark in [false, true] {
                         let s = with_titlebar(
                             scene(
@@ -1328,6 +1395,7 @@ mod tests {
                                 page,
                                 Some(&panel),
                                 2,
+                                true,
                                 (PanelTheme::System, Backdrop::Mica),
                                 desktop_core::PaneOptions::default(),
                             ),
@@ -1428,6 +1496,7 @@ mod tests {
                 2,
                 None,
                 0,
+                false,
                 (PanelTheme::System, Backdrop::Mica),
                 desktop_core::PaneOptions::default(),
             );

@@ -16,11 +16,20 @@ use windows_canvas::ID2D1DeviceContext;
 use windows::core::Result;
 type ImageBitmap = (Arc<assets::Pixels>, windows_canvas::Bitmap, (u32, u32));
 
+struct TitleLayout {
+    text: String,
+    natural_width: f32,
+    width_pixels: f32,
+    scale: f32,
+    layout: windows_canvas::TextLayout,
+}
+
 pub struct Renderer {
     #[cfg(test)]
     offscreen_device: Option<windows_canvas::GpuDevice>,
     labels: windows_canvas::TextFormat,
     title: windows_canvas::TextFormat,
+    title_layout: Option<TitleLayout>,
     details: windows_canvas::TextFormat,
     icons: windows_canvas::TextFormat,
     target: Option<(u32, u32, Option<canvas::Offscreen>, ID2D1DeviceContext)>,
@@ -125,11 +134,13 @@ impl Renderer {
         let (family, size) = assets::font();
         let labels = canvas_result(TextFormat::new(&family, size))?
             .with_alignment(TextAlignment::Center)
+            .with_paragraph_alignment(ParagraphAlignment::Center)
             .with_word_wrapping(WordWrapping::Wrap);
         canvas::ellipsis(&labels)?;
         let title = canvas_result(TextFormat::new(&family, size + 1.0))?
             .with_paragraph_alignment(ParagraphAlignment::Center)
             .with_word_wrapping(WordWrapping::NoWrap);
+        canvas::ellipsis(&title)?;
         let details = canvas_result(TextFormat::new(&family, 12.0))?
             .with_paragraph_alignment(ParagraphAlignment::Center)
             .with_word_wrapping(WordWrapping::NoWrap);
@@ -139,6 +150,7 @@ impl Renderer {
             offscreen_device: None,
             labels,
             title,
+            title_layout: None,
             details,
             icons: canvas_result(TextFormat::new("Segoe Fluent Icons", 12.0))?
                 .with_alignment(windows_canvas::TextAlignment::Center)
@@ -201,18 +213,90 @@ impl Renderer {
             self.states.clear();
         }
         self.target = Some((width, height, None, target.clone()));
-        let live: std::collections::HashSet<_> = model
+        let height_dip = height as f32 / scale;
+        let grid = model.grid(width as f32 / scale, height_dip);
+        // Keep the viewport plus one row for smooth scrolling, not every icon
+        // ever visited in a large mapped folder. Source identity still detects
+        // replaced icons without re-uploading unchanged visible textures.
+        let live: HashMap<_, _> = model
             .items
             .iter()
-            .filter_map(|item| item.image.as_ref().map(Arc::as_ptr))
+            .enumerate()
+            .filter(|(index, _)| {
+                let (_, y) = model.cell(grid, *index);
+                height_dip > HEADER + 1.0
+                    && y + grid.cell_height * 2.0 > HEADER
+                    && y < height_dip + grid.cell_height
+            })
+            .filter_map(|(_, item)| {
+                item.image
+                    .as_ref()
+                    .map(|image| (item.identity.persistent_key(), Arc::as_ptr(image)))
+            })
             .collect();
         self.images
-            .retain(|_, (source, _, _)| live.contains(&Arc::as_ptr(source)));
+            .retain(|key, (source, _, _)| live.get(key) == Some(&Arc::as_ptr(source)));
         self.draw(width, height, scale, model)
+    }
+
+    fn layout_title(
+        &mut self,
+        text: &str,
+        available: f32,
+        scale: f32,
+    ) -> Result<windows_canvas::TextLayout> {
+        if self
+            .title_layout
+            .as_ref()
+            .is_none_or(|cached| cached.text != text)
+        {
+            let layout = canvas_result(windows_canvas::TextLayout::new(
+                text,
+                &self.title,
+                1_000_000.0,
+                HEADER,
+            ))?;
+            self.title_layout = Some(TitleLayout {
+                text: text.into(),
+                natural_width: layout.metrics().width_including_trailing_whitespace,
+                width_pixels: 0.0,
+                scale,
+                layout,
+            });
+        }
+        let cached = self.title_layout.as_mut().unwrap();
+        // Draw this same layout instead of reshaping with DrawText and a
+        // fractional rectangle; leave one physical pixel around a full title.
+        let available_pixels = (available * scale).floor().max(1.0);
+        let pixels = available_pixels.min((cached.natural_width * scale).ceil() + 1.0);
+        // Shrink immediately, but require four spare physical pixels before
+        // growing again so size jitter cannot toggle a final glyph and ellipsis.
+        // Use uncapped space here so even a fully visible title can recover.
+        if cached.width_pixels == 0.0
+            || cached.scale != scale
+            || pixels < cached.width_pixels
+            || available_pixels >= cached.width_pixels + 4.0
+        {
+            cached.width_pixels = pixels;
+            cached.scale = scale;
+        }
+        cached
+            .layout
+            .set_max_size(cached.width_pixels / scale, HEADER);
+        Ok(cached.layout.clone())
     }
 
     #[allow(clippy::too_many_lines)]
     fn draw(&mut self, width: u32, height: u32, scale: f32, model: &GroupModel) -> Result<()> {
+        let w = width as f32 / scale;
+        let (title_left, title_space) = super::layout::title_area(w);
+        let show_icon = model.folder.is_some() && title_space >= 42.0;
+        let icon_width = if model.folder.is_some() { 24.0 } else { 0.0 };
+        let title = self.layout_title(&model.title, (title_space - icon_width).max(1.0), scale)?;
+        let group_left =
+            ((title_left + (title_space - title.max_size().0 - icon_width).max(0.0) / 2.0) * scale)
+                .floor()
+                / scale;
         {
             let (_, _, _, target) = self.target.as_ref().unwrap();
             canvas::draw(target, scale, |target| {
@@ -246,19 +330,16 @@ impl Renderer {
                     if model.options.border {
                         target.draw_rounded_rect(&rounded, &outline, 1.0);
                     }
-                    let title = &model.title;
-                    target.clipped_text(
-                        title,
-                        &self.title,
-                        &Rect::from_xywh(
-                            14.0,
-                            0.0,
-                            (w - super::layout::HEADER_BUTTONS_WIDTH - 16.0).max(0.0),
-                            HEADER,
-                        ),
-                        &white,
-                    );
-                    for button in 0..3 {
+                    if show_icon {
+                        target.clipped_text(
+                            "\u{e8b7}",
+                            &self.icons,
+                            &Rect::from_xywh(group_left, 0.0, 18.0, HEADER),
+                            &white,
+                        );
+                    }
+                    target.clipped_layout(&title, group_left + icon_width, 0.0, &white);
+                    for button in 0..2 {
                         let x = super::layout::header_button_x(w, button);
                         let hovered = model.hovered_button == Some(button);
                         let glyph = canvas_result(target.create_solid_brush(ColorF::new(
@@ -302,7 +383,7 @@ impl Renderer {
                                     1.5,
                                 );
                             }
-                        } else if button == 1 {
+                        } else {
                             for offset in [-4.5, 0.0, 4.5] {
                                 target.fill_ellipse(
                                     &Ellipse {
@@ -316,13 +397,6 @@ impl Renderer {
                                     &glyph,
                                 );
                             }
-                        } else {
-                            target.clipped_text(
-                                if model.locked { "\u{e72e}" } else { "\u{e785}" },
-                                &self.icons,
-                                &Rect::from_xywh(x, 5.0, 28.0, 28.0),
-                                &glyph,
-                            );
                         }
                     }
                 }
@@ -337,7 +411,19 @@ impl Renderer {
                         for (column, name) in ["文件名", "类型", "修改时间"].iter().enumerate()
                         {
                             target.clipped_text(
-                                name,
+                                &format!(
+                                    "{}{}",
+                                    name,
+                                    if model.folder_sort.0 as usize == column {
+                                        if model.folder_sort.1 {
+                                            " \u{2193}"
+                                        } else {
+                                            " \u{2191}"
+                                        }
+                                    } else {
+                                        ""
+                                    }
+                                ),
                                 &self.details,
                                 &Rect::from_xywh(
                                     super::layout::PADDING + columns[column],
@@ -549,7 +635,7 @@ impl Renderer {
                         target.clipped_text(
                             text,
                             &self.labels,
-                            &Rect::from_xywh(20.0, HEADER + 48.0, w - 40.0, 40.0),
+                            &Rect::from_xywh(20.0, 0.0, (w - 40.0).max(1.0), h),
                             &dim,
                         );
                     }
@@ -584,6 +670,97 @@ impl Renderer {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn title_ellipsis_stays_stable_when_width_jitters_at_last_character() {
+        use windows::Win32::Graphics::DirectWrite::{DWRITE_LINE_METRICS, IDWriteTextLayout};
+        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let trimmed = |title: &windows_canvas::TextLayout| {
+            let native: IDWriteTextLayout =
+                super::super::native_graphics::native_interface(title.raw()).unwrap();
+            let mut lines = [DWRITE_LINE_METRICS::default(); 1];
+            let mut count = 0;
+            unsafe {
+                native
+                    .GetLineMetrics(Some(&mut lines), &raw mut count)
+                    .unwrap();
+            }
+            lines[0].isTrimmed.as_bool()
+        };
+        let mut renderer = Renderer::new().unwrap();
+        for scale in [1.0, 1.25, 1.5, 2.0] {
+            for text in ["新建分组", "Project 项目文件夹与资料", "tinyMediaManager"] {
+                let mut boundary = None;
+                for width in (8..=600).rev() {
+                    let title = renderer
+                        .layout_title(text, (width as f32 + 0.01) / scale, scale)
+                        .unwrap();
+                    if trimmed(&title) {
+                        boundary = Some(width);
+                        break;
+                    }
+                }
+                let boundary = boundary.expect("title must cross its actual trimming boundary");
+                for offset in [1, 0, 2, 1, 0, 1, 2, 0] {
+                    let title = renderer
+                        .layout_title(text, ((boundary + offset) as f32 + 0.01) / scale, scale)
+                        .unwrap();
+                    assert!(
+                        trimmed(&title),
+                        "ellipsis toggled at scale {scale}, offset {offset}"
+                    );
+                }
+                let title = renderer
+                    .layout_title(text, (boundary as f32 + 4.01) / scale, scale)
+                    .unwrap();
+                assert!(
+                    !trimmed(&title),
+                    "full title must return when enough space is available"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn title_trimming_does_not_reverse_while_shrinking() {
+        use windows::Win32::Graphics::DirectWrite::{DWRITE_LINE_METRICS, IDWriteTextLayout};
+        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let mut renderer = Renderer::new().unwrap();
+        for scale in [1.0, 1.25, 1.5, 2.0] {
+            for text in ["新建分组", "Project 项目文件夹与资料", "tinyMediaManager"] {
+                let mut was_trimmed = false;
+                let mut previous_end = u32::MAX;
+                for width in (8..=600).rev() {
+                    let title = renderer
+                        .layout_title(text, width as f32 / scale, scale)
+                        .unwrap();
+                    let native: IDWriteTextLayout =
+                        super::super::native_graphics::native_interface(title.raw()).unwrap();
+                    let mut lines = [DWRITE_LINE_METRICS::default(); 1];
+                    let mut count = 0;
+                    unsafe {
+                        native
+                            .GetLineMetrics(Some(&mut lines), &raw mut count)
+                            .unwrap();
+                    }
+                    let trimmed = lines[0].isTrimmed.as_bool();
+                    assert!(
+                        !was_trimmed || trimmed,
+                        "ellipsis reverted at {width}px, scale {scale}"
+                    );
+                    let end = title
+                        .hit_test_point(Vector2::new(title.max_size().0 - 0.25, HEADER / 2.0))
+                        .text_position;
+                    assert!(
+                        end <= previous_end,
+                        "shrinking revealed characters at {width}px"
+                    );
+                    was_trimmed = trimmed;
+                    previous_end = end;
+                }
+                assert!(was_trimmed);
+            }
+        }
+    }
     #[test]
     fn folder_list_columns_render_and_share_scrolled_hit_geometry() {
         let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
@@ -725,6 +902,7 @@ mod tests {
 
     fn sample_model() -> GroupModel {
         GroupModel {
+            folder_sort: (0, false),
             folder_list: false,
             folder: None,
             folder_status: None,
@@ -842,7 +1020,7 @@ mod tests {
             assert_eq!(at(59, 78), [80, 100, 200, 255]);
             assert_eq!(at(380, 200)[0] < 128, dark);
             let ink_present = (5..32).any(|y| {
-                (14..120).any(|x| {
+                (106..294).any(|x| {
                     let p = at(x, y)[0];
                     if dark { p > 180 } else { p < 100 }
                 })
@@ -888,6 +1066,47 @@ mod tests {
             );
             model.native_material = true;
         }
+    }
+
+    #[test]
+    fn scrolling_releases_offscreen_icon_textures() {
+        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let mut model = sample_model();
+        let image = model.items[0].image.clone();
+        model.items = (0..1000)
+            .map(|index| Item {
+                identity: ShellIdentity::Namespace {
+                    parsing_name: format!("test:icon-{index}"),
+                },
+                label: format!("Icon {index}"),
+                image: image.clone(),
+                details: Default::default(),
+            })
+            .collect();
+        let device = windows_canvas::GpuDevice::new().unwrap();
+        let bitmap = canvas::Offscreen::new(&device, 400, 240).unwrap();
+        let mut renderer = Renderer::new().unwrap();
+        for row in (0..150).step_by(5) {
+            model.scroll = row;
+            renderer
+                .paint(&bitmap.target, 400, 240, 1.0, &model)
+                .unwrap();
+            assert!(!renderer.images.is_empty());
+            assert!(
+                renderer.images.len() <= 32,
+                "offscreen uploads accumulated: {}",
+                renderer.images.len()
+            );
+        }
+        model.scroll = 0;
+        renderer
+            .paint(&bitmap.target, 400, 240, 1.0, &model)
+            .unwrap();
+        assert!(
+            renderer
+                .images
+                .contains_key(&model.items[0].identity.persistent_key())
+        );
     }
 
     #[test]
@@ -958,8 +1177,7 @@ mod tests {
             assert!(gpu.images.is_empty());
             assert!(!retained_source.data.is_empty());
             surface.end_frame().unwrap();
-            // Menus upload CPU-rendered pixels through the same Canvas surface.
-            // Alternate that path with native drawing to catch lingering buffer
+            // Alternate the test-only CPU upload path with native drawing to catch lingering buffer
             // references and context state that would make ResizeBuffers fail.
             for (width, height) in [(160, 120), (400, 240)] {
                 assert!(surface.present(width, height, &[0; 4]).is_err());

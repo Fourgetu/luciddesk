@@ -10,7 +10,10 @@ use windows::Win32::{
 };
 
 pub(super) struct Source {
-    path: PathBuf,
+    pub path: PathBuf,
+    root: PathBuf,
+    history: Vec<PathBuf>,
+    pub sort: (u8, bool),
     request: mpsc::SyncSender<()>,
     updates: mpsc::Receiver<Result<Vec<Item>, String>>,
     pub items: Vec<Item>,
@@ -141,6 +144,9 @@ impl Source {
             })
             .map_err(|error| error.to_string())?;
         Ok(Self {
+            root: path.clone(),
+            history: Vec::new(),
+            sort: (0, false),
             path,
             request,
             updates,
@@ -164,9 +170,19 @@ pub(super) fn ensure(state: &mut PaneApp, id: PanelId) -> Result<(), String> {
         if state
             .folders
             .get(&id)
-            .is_none_or(|source| source.path != path)
+            .is_none_or(|source| source.root != path)
         {
-            state.folders.insert(id, Source::start(path)?);
+            let mut source = Source::start(path)?;
+            source.sort = state
+                .store
+                .preference(&format!("panel_folder_sort:{}", id.get()))
+                .map_err(|e| e.to_string())?
+                .and_then(|v| {
+                    let (column, direction) = v.split_once(':')?;
+                    Some((column.parse::<u8>().ok()?.min(2), direction == "desc"))
+                })
+                .unwrap_or((0, false));
+            state.folders.insert(id, source);
         }
     } else {
         state.folders.remove(&id);
@@ -182,6 +198,7 @@ pub(super) fn poll(state: &mut PaneApp) {
             match result {
                 Ok(items) => {
                     source.items = items;
+                    sort_items(&mut source.items, source.sort);
                     source.status = None;
                 }
                 Err(error) => {
@@ -195,6 +212,88 @@ pub(super) fn poll(state: &mut PaneApp) {
     if changed {
         refresh_views(state);
     }
+}
+
+fn sort_items(items: &mut Vec<Item>, sort: (u8, bool)) {
+    let mut sorted: Vec<_> = std::mem::take(items)
+        .into_iter()
+        .map(|item| {
+            let metadata = item
+                .identity
+                .file_system_path()
+                .and_then(|p| p.metadata().ok());
+            let folder = metadata.as_ref().is_some_and(|m| m.is_dir());
+            let modified = metadata.and_then(|m| m.modified().ok());
+            let name = item.label.to_lowercase();
+            (folder, name, modified, item)
+        })
+        .collect();
+    sorted.sort_by(|(af, an, at, a), (bf, bn, bt, b)| {
+        bf.cmp(af).then_with(|| {
+            let order = match sort.0 {
+                1 => a.details.kind.cmp(&b.details.kind),
+                2 => at.cmp(bt),
+                _ => an.cmp(bn),
+            };
+            let order = order.then_with(|| an.cmp(bn));
+            if sort.1 { order.reverse() } else { order }
+        })
+    });
+    *items = sorted.into_iter().map(|(_, _, _, item)| item).collect();
+}
+
+pub(super) fn sort(state: &mut PaneApp, id: PanelId, column: u8) -> Result<(), String> {
+    let Some(source) = state.folders.get_mut(&id) else {
+        return Ok(());
+    };
+    let order = (column.min(2), source.sort.0 == column && !source.sort.1);
+    state
+        .store
+        .save_preference(
+            &format!("panel_folder_sort:{}", id.get()),
+            &format!("{}:{}", order.0, if order.1 { "desc" } else { "asc" }),
+        )
+        .map_err(|e| e.to_string())?;
+    source.sort = order;
+    sort_items(&mut source.items, order);
+    refresh_changed_views(state, true);
+    Ok(())
+}
+
+pub(super) fn navigate(
+    state: &mut PaneApp,
+    id: PanelId,
+    path: Option<PathBuf>,
+) -> Result<(), String> {
+    let Some(old) = state.folders.get(&id) else {
+        return Ok(());
+    };
+    let mut history = old.history.clone();
+    let path = if let Some(path) = path {
+        if !path.is_dir() {
+            return Err("文件夹不可访问".into());
+        }
+        history.push(old.path.clone());
+        path
+    } else {
+        let Some(path) = history.pop() else {
+            return Ok(());
+        };
+        path
+    };
+    let mut source = Source::start(path.clone())?;
+    source.root = old.root.clone();
+    source.history = history;
+    source.sort = old.sort;
+    state.folders.insert(id, source);
+    if let Some(view) = state.views.iter().find(|v| v.id == id) {
+        let mut model = view.model.borrow_mut();
+        model.folder = Some(path);
+        model.clear_selection();
+        model.scroll = 0;
+    }
+    refresh_changed_views(state, true);
+    Ok(())
 }
 
 pub(super) fn choose(owner: isize) -> Result<Option<PathBuf>, String> {
@@ -348,6 +447,91 @@ pub(super) fn request_picker(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn navigation_and_sort_keep_the_mapping_and_back_history() {
+        let root = std::env::temp_dir().join(format!(
+            "lucidpane-navigation-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(root.join("child")).unwrap();
+        std::fs::write(root.join("z.txt"), b"z").unwrap();
+        std::fs::write(root.join("a.txt"), b"a").unwrap();
+        let mut state = super::super::tests::test_state();
+        let id = PanelId::new(2);
+        state
+            .workspace
+            .panel_mut(id)
+            .unwrap()
+            .set_folder(Some(root.clone()));
+        state.store.save_workspace(&state.workspace).unwrap();
+        ensure(&mut state, id).unwrap();
+        let items = state.folders[&id]
+            .updates
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap()
+            .unwrap();
+        state.folders.get_mut(&id).unwrap().items = items;
+        sort(&mut state, id, 0).unwrap();
+        assert_eq!(
+            state.folders[&id]
+                .items
+                .iter()
+                .map(|i| i
+                    .identity
+                    .file_system_path()
+                    .unwrap()
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned())
+                .collect::<Vec<_>>(),
+            ["child", "z.txt", "a.txt"]
+        );
+        sort(&mut state, id, 0).unwrap();
+        assert_eq!(
+            state.folders[&id]
+                .items
+                .iter()
+                .map(|i| i
+                    .identity
+                    .file_system_path()
+                    .unwrap()
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned())
+                .collect::<Vec<_>>(),
+            ["child", "a.txt", "z.txt"]
+        );
+        navigate(&mut state, id, Some(root.join("child"))).unwrap();
+        ensure(&mut state, id).unwrap();
+        assert_eq!(state.folders[&id].path, root.join("child"));
+        assert_eq!(
+            state
+                .store
+                .load_workspace()
+                .unwrap()
+                .panel(id)
+                .unwrap()
+                .folder(),
+            Some(root.as_path())
+        );
+        navigate(&mut state, id, None).unwrap();
+        assert_eq!(state.folders[&id].path, root);
+        state.folders.remove(&id);
+        ensure(&mut state, id).unwrap();
+        assert_eq!(state.folders[&id].sort, (0, false));
+        state.folders.clear();
+        std::fs::remove_file(root.join("a.txt")).unwrap();
+        std::fs::remove_file(root.join("z.txt")).unwrap();
+        std::fs::remove_dir(root.join("child")).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
 
     #[test]
     fn folder_watch_tracks_children_and_recovers_after_missing_directory() {

@@ -5,6 +5,7 @@ use super::*;
 #[derive(Clone)]
 pub struct GroupModel {
     pub folder_list: bool,
+    pub folder_sort: (u8, bool),
     pub folder: Option<std::path::PathBuf>,
     pub folder_status: Option<String>,
     pub options: desktop_core::PaneOptions,

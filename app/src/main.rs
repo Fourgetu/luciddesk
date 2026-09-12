@@ -16,11 +16,49 @@ fn main() -> Result<(), String> {
     let arguments: Vec<_> = std::env::args_os().skip(1).collect();
     let _apartment = ShellApartment::initialize_sta().map_err(|e| e.to_string())?;
     let title = parse_options(arguments)?;
+    let Some(_instance) = Instance::acquire()? else {
+        return Ok(());
+    };
     let path = database_path()?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     pane::run(&path, title).inspect_err(|error| desktop_window::show_error(error))
+}
+
+struct Instance(windows_sys::Win32::Foundation::HANDLE);
+impl Instance {
+    fn acquire() -> Result<Option<Self>, String> {
+        use windows_sys::Win32::{Foundation::*, System::Threading::*, UI::WindowsAndMessaging::*};
+        unsafe {
+            let handle = CreateMutexW(
+                std::ptr::null(),
+                0,
+                windows_sys::w!("Local\\LucidPane.DesktopSession"),
+            );
+            if handle.is_null() {
+                return Err(std::io::Error::last_os_error().to_string());
+            }
+            if GetLastError() == ERROR_ALREADY_EXISTS {
+                CloseHandle(handle);
+                PostMessageW(
+                    HWND_BROADCAST,
+                    RegisterWindowMessageW(windows_sys::w!("LucidPane.ShowExisting")),
+                    0,
+                    0,
+                );
+                return Ok(None);
+            }
+            Ok(Some(Self(handle)))
+        }
+    }
+}
+impl Drop for Instance {
+    fn drop(&mut self) {
+        unsafe {
+            windows_sys::Win32::Foundation::CloseHandle(self.0);
+        }
+    }
 }
 
 fn parse_options(arguments: impl IntoIterator<Item = OsString>) -> Result<Option<String>, String> {

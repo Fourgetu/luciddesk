@@ -9,11 +9,13 @@ mod animation;
 mod assets;
 mod canvas;
 mod composition;
+mod display_layout;
 mod drag_image;
 mod drop_description;
 mod drop_target;
 mod events;
 mod everything;
+mod everything_settings;
 mod folder;
 mod hybrid;
 mod keyboard;
@@ -22,9 +24,14 @@ mod layout;
 pub(crate) mod menu;
 mod native_graphics;
 mod peek;
+mod recovery;
 mod rename;
 mod render;
+#[cfg(test)]
+mod render_bench;
+mod runtime;
 mod search;
+mod search_hotkey;
 mod settings;
 use events::handle;
 mod shell_menu;
@@ -90,8 +97,10 @@ struct View {
 struct PaneApp {
     folders: HashMap<PanelId, folder::Source>,
     settings: Option<windows_window::Window>,
-    // Optional only while starting, shutting down, or running isolated UI tests.
+    // Desktop membership is suspended while Explorer/its compatible Hook is unavailable.
     session: Option<hybrid::Session>,
+    drops: Vec<drop_target::Registration>,
+    runtime: Option<runtime::State>,
     workspace: Workspace,
     store: WorkspaceStore,
     views: Vec<View>,
@@ -115,6 +124,10 @@ enum Event {
     ClosePane,
     Settings,
     Refresh,
+    RetryDesktop,
+    ExportBackup,
+    RestoreBackup,
+    OpenBackups,
     ToggleAutoHide,
     ToggleTopmost,
     ToggleLocked,
@@ -127,12 +140,16 @@ enum Event {
     Material(desktop_core::Backdrop),
     Tick,
     New,
-    NewSearch,
+    EnableSearch,
+    ToggleSearch,
     NewFolder,
     MapFolder(std::path::PathBuf),
     ChangeFolder,
     SetFolder(std::path::PathBuf),
     OpenFolder,
+    SortFolder(u8),
+    NavigateFolder(std::path::PathBuf),
+    FolderBack,
     Activate(usize),
     ActivateSelection,
     Peek,
@@ -192,6 +209,7 @@ fn create_view(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> 
         (s.workspace.panel(id).unwrap().clone(), items_for(&s, id))
     };
     let model = Rc::new(RefCell::new(GroupModel {
+        folder_sort: (0, false),
         folder_list: panel.folder_list(),
         folder: panel.folder().map(Path::to_path_buf),
         folder_status: None,
@@ -241,7 +259,8 @@ fn create_view(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> 
     };
     window::set_layer(window.hwnd().cast(), panel.always_on_top());
     state.borrow_mut().views.push(View { id, window, model });
-    if state.borrow().session.is_some() {
+    display_layout::place(&state.borrow(), id);
+    if state.borrow().session.is_some() || panel.folder().is_some() {
         hybrid::register_drop(state, id)?;
     }
     Ok(())
@@ -259,6 +278,10 @@ fn refresh_changed_views(state: &mut PaneApp, force: bool) {
         let items = items_for(state, view.id);
         let mut model = view.model.borrow_mut();
         if model.folder.is_some() {
+            model.folder_sort = state
+                .folders
+                .get(&view.id)
+                .map_or((0, false), |source| source.sort);
             let status = state
                 .folders
                 .get(&view.id)
@@ -351,6 +374,7 @@ fn normalize_pane_orders(state: &mut PaneApp) {
     }
 }
 
+#[cfg(test)]
 fn transfer(
     state: &mut PaneApp,
     source: PanelId,
@@ -358,26 +382,56 @@ fn transfer(
     target: PanelId,
     at: usize,
 ) -> Result<(), String> {
+    transfer_many(state, source, &[index], target, at)
+}
+
+fn transfer_many(
+    state: &mut PaneApp,
+    source: PanelId,
+    indices: &[usize],
+    target: PanelId,
+    at: usize,
+) -> Result<(), String> {
     if state.workspace.panel(target).is_none() {
-        return Err("目标分组不存在".into());
+        return Err("目标面板不可用".into());
     }
-    let mut remaining = items_for(state, source);
-    if index >= remaining.len() {
-        return Err("图标列表已经变化，请重试".into());
+    let items = items_for(state, source);
+    let selected: std::collections::BTreeSet<_> = indices.iter().copied().collect();
+    if selected.is_empty() || selected.iter().any(|i| *i >= items.len()) {
+        return Err("选中项目已变化，请重新拖动".into());
     }
     let old = state.workspace.clone();
-    let item = remaining.remove(index);
+    let moving: Vec<_> = items
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| selected.contains(i))
+        .map(|(_, item)| item.clone())
+        .collect();
+    let remaining: Vec<_> = items
+        .into_iter()
+        .enumerate()
+        .filter(|(i, _)| !selected.contains(i))
+        .map(|(_, item)| item)
+        .collect();
+    let insertion = if source == target {
+        at.saturating_sub(selected.iter().filter(|i| **i < at).count())
+    } else {
+        at
+    };
     set_order(&mut state.workspace, source, &remaining);
     let mut destination = if source == target {
         remaining
     } else {
         items_for(state, target)
     };
-    destination.insert(at.min(destination.len()), item);
+    destination.splice(
+        insertion.min(destination.len())..insertion.min(destination.len()),
+        moving,
+    );
     set_order(&mut state.workspace, target, &destination);
-    if let Err(error) = save(state) {
+    if let Err(e) = save(state) {
         state.workspace = old;
-        return Err(error);
+        return Err(e);
     }
     Ok(())
 }

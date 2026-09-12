@@ -43,7 +43,6 @@ pub(super) struct Session {
     pending_desktop_input: Rc<Cell<Option<u32>>>,
     mouse_down: bool,
     drag: Option<(ShellIdentity, POINT)>,
-    drops: Vec<super::drop_target::Registration>,
     dirty: Rc<Cell<bool>>,
     retry_after: Option<Instant>,
     last_failure: Option<String>,
@@ -87,6 +86,13 @@ impl DesktopAudit {
 }
 
 struct OleApartment;
+pub(super) fn is_alive(session: &Session) -> bool {
+    (unsafe { IsWindow(session.view as _) != 0 })
+        && session
+            .hook
+            .request(&Request::new(QUERY))
+            .is_ok_and(|reply| reply == OK)
+}
 impl Drop for OleApartment {
     fn drop(&mut self) {
         unsafe {
@@ -100,6 +106,140 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
         windows::Win32::System::Ole::OleInitialize(None).map_err(|e| e.to_string())?;
     }
     let _ole = OleApartment;
+    let first_run = !path.exists();
+    let mut store = WorkspaceStore::open(path).map_err(|e| e.to_string())?;
+    super::peek::load(&store)?;
+    super::search_hotkey::load(&store)?;
+    super::everything_settings::load(&store)?;
+    let mut workspace = store.load_workspace().map_err(|e| e.to_string())?;
+    // Migrate older workspaces that allowed multiple search panes.
+    let duplicates: Vec<_> = workspace
+        .panels()
+        .iter()
+        .filter(|p| p.is_search())
+        .skip(1)
+        .map(Panel::id)
+        .collect();
+    if !duplicates.is_empty() {
+        for id in duplicates {
+            remove_panel(&mut workspace, id);
+        }
+        store
+            .save_workspace(&workspace)
+            .map_err(|e| e.to_string())?;
+    }
+    if workspace.panels().is_empty() && first_run {
+        let mut pane = Panel::new(
+            PanelId::new(1),
+            title.clone().unwrap_or_else(|| "新建分组".into()),
+            RectDip::new(650.0, 100.0, 440.0, 380.0),
+        );
+        pane.set_backdrop(desktop_core::Backdrop::Acrylic);
+        workspace.add_panel(pane).map_err(|e| e.to_string())?;
+    } else if let Some(title) = title.filter(|_| !workspace.panels().is_empty()) {
+        let id = workspace.panels()[0].id();
+        workspace.panel_mut(id).unwrap().set_title(title);
+    }
+    let (_, receiver) = mpsc::channel();
+    let state = Rc::new(RefCell::new(PaneApp {
+        folders: HashMap::new(),
+        settings: None,
+        session: None,
+        drops: Vec::new(),
+        runtime: Some(runtime::State::new(path.to_path_buf())),
+        workspace,
+        store,
+        views: Vec::new(),
+        images: HashMap::new(),
+        receiver,
+    }));
+    display_layout::initialize(
+        &mut state.borrow_mut(),
+        desktop_window::enumerate_monitors(),
+    )?;
+    {
+        let mut s = state.borrow_mut();
+        let workspace = s.workspace.clone();
+        s.store
+            .save_workspace(&workspace)
+            .map_err(|e| e.to_string())?;
+    }
+    runtime::reconnect(&state);
+    let search_enabled = everything_settings::enabled(&state.borrow().store)?;
+    let ids: Vec<_> = state
+        .borrow()
+        .workspace
+        .panels()
+        .iter()
+        .filter(|p| {
+            (!p.is_search() || search_enabled)
+                && (p.folder().is_some() || p.is_search() || state.borrow().session.is_some())
+        })
+        .map(Panel::id)
+        .collect();
+    for id in ids {
+        create_view(&state, id)?;
+        let s = state.borrow();
+        let v = s.views.last().unwrap();
+        unsafe {
+            SetTimer(v.window.hwnd().cast(), 1, 25, None);
+        }
+    }
+    let tray_state = Rc::downgrade(&state);
+    let tray = crate::tray::Tray::new(move |action| {
+        let Some(state) = tray_state.upgrade() else {
+            return;
+        };
+        match action {
+            crate::tray::Action::NewFolder => {
+                if let Err(error) = handle(&state, PanelId::new(0), Event::NewFolder) {
+                    window::error(&error);
+                }
+            }
+            crate::tray::Action::Settings => {
+                if let Err(error) = handle(&state, PanelId::new(0), Event::Settings) {
+                    window::error(&error);
+                }
+            }
+            crate::tray::Action::Exit => windows_window::quit(),
+            crate::tray::Action::Show => {
+                let windows: Vec<_> = state
+                    .borrow()
+                    .views
+                    .iter()
+                    .map(|v| v.window.hwnd())
+                    .collect();
+                for &hwnd in &windows {
+                    unsafe {
+                        ShowWindow(hwnd.cast(), SW_SHOWNOACTIVATE);
+                    }
+                }
+                if let Some(&hwnd) = windows.first() {
+                    unsafe {
+                        SetForegroundWindow(hwnd.cast());
+                    }
+                }
+            }
+            crate::tray::Action::New => {
+                if let Err(error) = handle(&state, PanelId::new(0), Event::New) {
+                    window::error(&error);
+                }
+            }
+        }
+    })?;
+    display_layout::record(&mut state.borrow_mut())?;
+    let supervisor = runtime::supervisor(&state)?;
+    if state.borrow().session.is_none() {
+        settings::show(&state, PanelId::new(0))?;
+    }
+    windows_window::run();
+    drop(supervisor);
+    drop(tray);
+    state.borrow_mut().session.take();
+    Ok(())
+}
+
+pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), String> {
     if desktop_hook::conflicting_desktop_extension() {
         return Err("请先退出其他桌面整理软件".into());
     }
@@ -111,7 +251,7 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
     let notify = Rc::clone(&dirty);
     let icons_dirty = Rc::new(RefCell::new(icon_changes::Pending::default()));
     let icon_notify = Rc::clone(&icons_dirty);
-    let input_state = Rc::new(RefCell::new(std::rc::Weak::<RefCell<PaneApp>>::new()));
+    let input_state = Rc::new(RefCell::new(Rc::downgrade(state)));
     let input_receiver = Rc::clone(&input_state);
     let pending_desktop_input = Rc::new(Cell::new(None));
     let pending_input = Rc::clone(&pending_desktop_input);
@@ -120,7 +260,10 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
         .style(WS_POPUP)
         .ex_style(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)
         .on_message(move |_, message, wparam, lparam| {
-            if message == ICON_CHANGE_MESSAGE {
+            if message == WM_DESTROY {
+                // Releasing a failed/stale connection must not quit independent panes.
+                Some(0)
+            } else if message == ICON_CHANGE_MESSAGE {
                 if std::env::var_os("LUCIDPANE_ICON_TRACE").is_some() {
                     eprintln!("icon-notify event={:x}", lparam);
                 }
@@ -173,33 +316,6 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
         RECYCLE_CHANGE_MESSAGE,
     )
     .map_err(|error| error.to_string())?;
-    let first_run = !path.exists();
-    let store = WorkspaceStore::open(path).map_err(|e| e.to_string())?;
-    super::peek::load(&store)?;
-    {
-        use std::io::Write;
-        let installed = hook.request(&Request::new(QUERY_DROP_PROXY))?;
-        if let Ok(mut log) = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path.with_extension("log"))
-        {
-            let _ = writeln!(log, "Desktop OLE coordinate proxy installed={installed}");
-        }
-    }
-    let mut workspace = store.load_workspace().map_err(|e| e.to_string())?;
-    if workspace.panels().is_empty() && first_run {
-        let mut pane = Panel::new(
-            PanelId::new(1),
-            title.clone().unwrap_or_else(|| "新建分组".into()),
-            RectDip::new(650.0, 100.0, 440.0, 380.0),
-        );
-        pane.set_backdrop(desktop_core::Backdrop::Acrylic);
-        workspace.add_panel(pane).map_err(|e| e.to_string())?;
-    } else if let Some(title) = title.filter(|_| !workspace.panels().is_empty()) {
-        let id = workspace.panels()[0].id();
-        workspace.panel_mut(id).unwrap().set_title(title);
-    }
     let snapshot = native_desktop_snapshot()?;
     let (sender, receiver) = mpsc::channel();
     let session = Session {
@@ -233,89 +349,18 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
         pending_desktop_input,
         mouse_down: false,
         drag: None,
-        drops: Vec::new(),
         dirty,
         retry_after: None,
         last_failure: None,
         diagnostic_path: path.with_extension("log"),
     };
-    let state = Rc::new(RefCell::new(PaneApp {
-        folders: HashMap::new(),
-        settings: None,
-        session: Some(session),
-        workspace,
-        store,
-        views: Vec::new(),
-        images: HashMap::new(),
-        receiver,
-    }));
-    *input_state.borrow_mut() = Rc::downgrade(&state);
-    refresh(&mut state.borrow_mut())?;
-    let ids: Vec<_> = state
-        .borrow()
-        .workspace
-        .panels()
-        .iter()
-        .map(Panel::id)
-        .collect();
-    for id in ids {
-        create_view(&state, id)?;
-        let s = state.borrow();
-        let v = s.views.last().unwrap();
-        unsafe {
-            SetTimer(v.window.hwnd().cast(), 1, 25, None);
-        }
+    let mut s = state.borrow_mut();
+    s.receiver = receiver;
+    s.session = Some(session);
+    if let Err(error) = refresh(&mut s) {
+        s.session.take();
+        return Err(error);
     }
-    let tray_state = Rc::downgrade(&state);
-    let tray = crate::tray::Tray::new(move |action| {
-        let Some(state) = tray_state.upgrade() else {
-            return;
-        };
-        match action {
-            crate::tray::Action::NewSearch => {
-                if let Err(error) = handle(&state, PanelId::new(0), Event::NewSearch) {
-                    window::error(&error);
-                }
-            }
-            crate::tray::Action::NewFolder => {
-                if let Err(error) = handle(&state, PanelId::new(0), Event::NewFolder) {
-                    window::error(&error);
-                }
-            }
-            crate::tray::Action::Settings => {
-                if let Err(error) = handle(&state, PanelId::new(0), Event::Settings) {
-                    window::error(&error);
-                }
-            }
-            crate::tray::Action::Exit => windows_window::quit(),
-            crate::tray::Action::Show => {
-                let windows: Vec<_> = state
-                    .borrow()
-                    .views
-                    .iter()
-                    .map(|v| v.window.hwnd())
-                    .collect();
-                for &hwnd in &windows {
-                    unsafe {
-                        ShowWindow(hwnd.cast(), SW_SHOWNOACTIVATE);
-                    }
-                }
-                if let Some(&hwnd) = windows.first() {
-                    unsafe {
-                        SetForegroundWindow(hwnd.cast());
-                    }
-                }
-            }
-            crate::tray::Action::New => {
-                if let Err(error) = handle(&state, PanelId::new(0), Event::New) {
-                    window::error(&error);
-                }
-            }
-        }
-    })?;
-    windows_window::run();
-    drop(tray);
-    state.borrow_mut().session.take();
     Ok(())
 }
 
@@ -363,19 +408,16 @@ pub(super) fn register_drop(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result
             {
                 return false;
             }
-            if let Some(path) = s
-                .workspace
-                .panel(id)
-                .and_then(Panel::folder)
-                .map(Path::to_path_buf)
-            {
+            if let Some(path) = s.folders.get(&id).map(|source| source.path.clone()) {
                 if !folder::accepts_copy(identities, &path) {
                     return false;
                 }
                 if !commit {
                     return true;
                 }
-                s.session.as_mut().unwrap().drag = None;
+                if let Some(session) = &mut s.session {
+                    session.drag = None;
+                }
                 let items = identities.to_vec();
                 drop(s);
                 return window::post_action(hwnd.cast(), move || {
@@ -428,22 +470,14 @@ pub(super) fn register_drop(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result
         },
     )
     .map_err(|e| e.to_string())?;
-    state
-        .borrow_mut()
-        .session
-        .as_mut()
-        .unwrap()
-        .drops
-        .push(registration);
+    state.borrow_mut().drops.push(registration);
     Ok(())
 }
 
 pub(super) fn unregister_drop(state: &mut PaneApp, hwnd: windows_sys::Win32::Foundation::HWND) {
-    if let Some(session) = state.session.as_mut() {
-        session
-            .drops
-            .retain(|registration| registration.window().0 != hwnd);
-    }
+    state
+        .drops
+        .retain(|registration| registration.window().0 != hwnd);
 }
 
 fn refresh(s: &mut PaneApp) -> Result<(), String> {
@@ -1077,7 +1111,7 @@ fn poll_drag(s: &mut PaneApp) -> Result<(), String> {
 pub(super) fn release(
     s: &mut PaneApp,
     id: PanelId,
-    index: usize,
+    indices: &[usize],
     point: POINT,
 ) -> Result<bool, String> {
     let Some(h) = &s.session else {
@@ -1088,13 +1122,22 @@ pub(super) fn release(
         return Ok(false);
     }
     let items = items_for(s, id);
-    let Some(item) = items.get(index) else {
+    if indices.is_empty() || indices.iter().any(|index| *index >= items.len()) {
         return Ok(false);
-    };
-    if let Some(entry) = s.workspace.desktop_item_mut(&item.identity) {
-        entry.set_placement(DesktopPlacement::default());
     }
-    save(s)?;
+    let old = s.workspace.clone();
+    for index in indices {
+        let Some(item) = items.get(*index) else {
+            return Ok(false);
+        };
+        if let Some(entry) = s.workspace.desktop_item_mut(&item.identity) {
+            entry.set_placement(DesktopPlacement::default());
+        }
+    }
+    if let Err(error) = save(s) {
+        s.workspace = old;
+        return Err(error);
+    }
     Ok(true)
 }
 

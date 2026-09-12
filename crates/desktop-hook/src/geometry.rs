@@ -39,6 +39,7 @@ mod hidden;
 mod drop_target;
 mod insertion;
 mod cache;
+mod install_cache;
 #[cfg(feature = "input-trace")]
 mod input_trace;
 
@@ -71,7 +72,7 @@ static ORIGINAL_HIT: AtomicUsize = AtomicUsize::new(0);
 static ORIGINAL_POSITION: AtomicUsize = AtomicUsize::new(0);
 static ORIGINAL_INSERT_RECT: AtomicUsize = AtomicUsize::new(0);
 static ORIGINAL_INSERT_HIT: AtomicUsize = AtomicUsize::new(0);
-static INSTALLED: OnceLock<Result<[usize; 5], String>> = OnceLock::new();
+static INSTALLED: OnceLock<[usize; 5]> = OnceLock::new();
 static ACTIVE: Mutex<bool> = Mutex::new(false);
 const SUBCLASS: usize = 0x4c50_4745;
 
@@ -792,10 +793,7 @@ impl GeometrySession {
         if *active {
             return Err("进程内已有 Geometry Hook 会话".into());
         }
-        let targets = INSTALLED
-            .get_or_init(|| unsafe { install(view) })
-            .as_ref()
-            .map_err(Clone::clone)?;
+        let targets = install_cache::get(&INSTALLED, || unsafe { install(view) })?;
         for &address in targets {
             let status = unsafe { MH_EnableHook(address as _) };
             if status != 0 && status != 5 {
@@ -1051,7 +1049,7 @@ impl Drop for GeometrySession {
             RemoveWindowSubclass(self.view, Some(subclass), SUBCLASS);
             RemoveWindowSubclass(self.parent, Some(parent_subclass), SUBCLASS + 1);
         }
-        if let Some(Ok(targets)) = INSTALLED.get() {
+        if let Some(targets) = INSTALLED.get() {
             for &target in targets {
                 unsafe {
                     MH_DisableHook(target as _);

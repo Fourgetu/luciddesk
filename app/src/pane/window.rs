@@ -339,7 +339,7 @@ fn invalidate(hwnd: HWND) {
 
 // windows-window temporarily detaches its callback during reentrant dispatch. Non-client
 // sizing must still be handled while DWM or collapse/resize calls synchronously reenter.
-unsafe extern "system" fn borderless_proc(
+pub(super) unsafe extern "system" fn borderless_proc(
     hwnd: HWND,
     message: u32,
     wparam: usize,
@@ -430,8 +430,8 @@ where
             let event = |value| (events.borrow_mut())(value);
             match message {
                 WM_DISPLAYCHANGE => {
-                    // Restore Explorer if display topology changes; stale surfaces must never strand icons.
-                    event(Event::Exit);
+                    // The runtime supervisor restores the layout after displays settle.
+                    invalidate(hwnd);
                     Some(0)
                 }
                 WM_SETFOCUS | WM_KILLFOCUS => {
@@ -606,7 +606,7 @@ where
                     Some(0)
                 }
                 WM_DESTROY => {
-                    event(Event::Exit);
+                    // The supervisor can recreate a surface destroyed with Explorer.
                     Some(0)
                 }
                 WM_NCCALCSIZE | WM_ERASEBKGND => Some(0),
@@ -709,7 +709,11 @@ where
                                 );
                             }
                             model.borrow_mut().native_material = surface.native;
-                            let target = surface.begin_frame(r.right as u32, r.bottom as u32)?;
+                            let Some(target) =
+                                surface.try_begin_frame(r.right as u32, r.bottom as u32)?
+                            else {
+                                return Ok(());
+                            };
                             renderer.paint(
                                 &target,
                                 r.right as u32,
@@ -813,6 +817,20 @@ where
                     let p = point(lparam);
                     let s = scale(hwnd);
                     let r = client(hwnd);
+                    if model.borrow().is_list()
+                        && p.y as f32 / s >= HEADER
+                        && p.y as f32 / s < HEADER + super::layout::LIST_HEADER
+                    {
+                        let columns =
+                            super::layout::list_columns(grid(hwnd, &model.borrow()).cell_width);
+                        let x = p.x as f32 / s - super::layout::PADDING;
+                        if let Some(column) =
+                            (0..3).find(|i| x >= columns[*i] && x < columns[*i + 1])
+                        {
+                            event(Event::SortFolder(column as u8));
+                        }
+                        return Some(0);
+                    }
                     if p.y as f32 / s < HEADER {
                         let button = super::layout::header_button(
                             r.right as f32 / s,
@@ -836,7 +854,12 @@ where
                         {
                             let mut m = model.borrow_mut();
                             if let Some(index) = selected {
-                                m.select_item(index, modifiers.ctrl, modifiers.shift);
+                                if modifiers.ctrl
+                                    || modifiers.shift
+                                    || !m.selection.contains(&index)
+                                {
+                                    m.select_item(index, modifiers.ctrl, modifiers.shift);
+                                }
                             } else if !modifiers.ctrl && !modifiers.shift {
                                 m.clear_selection();
                             }
@@ -958,9 +981,6 @@ where
                                 1 => unsafe {
                                     PostMessageW(hwnd, WM_CONTEXTMENU, 0, -1);
                                 },
-                                2 => {
-                                    event(Event::ToggleLocked);
-                                }
                                 _ => {}
                             }
                         }
@@ -970,6 +990,19 @@ where
                     drag_image = None;
                     unsafe {
                         ReleaseCapture();
+                    }
+                    if let Some((_, _, false)) = old {
+                        let index = drag_identity.take().and_then(|identity| {
+                            model
+                                .borrow()
+                                .items
+                                .iter()
+                                .position(|item| item.identity == identity)
+                        });
+                        if let Some(index) = index {
+                            model.borrow_mut().select_item(index, false, false);
+                        }
+                        invalidate(hwnd);
                     }
                     if let Some((_, _, true)) = old {
                         let index = drag_identity.take().and_then(|identity| {
@@ -1036,6 +1069,18 @@ where
                 WM_KEYUP if wparam == usize::from(VK_APPS) => Some(0),
                 WM_KEYDOWN | WM_SYSKEYDOWN => {
                     use super::keyboard::{self, Command, Modifiers};
+                    use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_LEFT;
+                    let navigation_mods = Modifiers::current();
+                    if model.borrow().folder.is_some()
+                        && model.borrow().renaming.is_none()
+                        && navigation_mods.alt
+                        && !navigation_mods.ctrl
+                        && !navigation_mods.shift
+                        && wparam as u16 == VK_LEFT
+                    {
+                        event(Event::FolderBack);
+                        return Some(0);
+                    }
                     if model.borrow().renaming.is_some() {
                         return None;
                     }
@@ -1243,9 +1288,9 @@ where
                             // discard every image and trigger a visible reload.
                             return;
                         }
-                        let (auto_hide, theme) = {
+                        let (auto_hide, locked, theme) = {
                             let m = model.borrow();
-                            (m.auto_hide, m.theme)
+                            (m.auto_hide, m.locked, m.theme)
                         };
                         update_pointer(hwnd, &model, None);
                         invalidate(hwnd);
@@ -1253,12 +1298,15 @@ where
                             let model = model.borrow();
                             model.folder.as_ref().map(|_| model.folder_list)
                         };
-                        let command = menu(hwnd, lparam, auto_hide, theme, is_folder);
+                        let command = menu(hwnd, lparam, auto_hide, locked, theme, is_folder);
                         update_pointer(hwnd, &model, None);
                         invalidate(hwnd);
                         match command {
                             23 => {
-                                event(Event::NewSearch);
+                                event(Event::FolderBack);
+                            }
+                            10 => {
+                                event(Event::ToggleLocked);
                             }
                             22 => {
                                 event(Event::ToggleFolderView);
@@ -1372,6 +1420,7 @@ fn menu(
     hwnd: HWND,
     lparam: isize,
     auto_hide: bool,
+    locked: bool,
     theme: desktop_core::PanelTheme,
     folder: Option<bool>,
 ) -> i32 {
@@ -1387,7 +1436,7 @@ fn menu(
             ClientToScreen(hwnd, &raw mut anchor);
         }
     }
-    super::menu::show(hwnd, anchor, anchored, auto_hide, theme, folder)
+    super::menu::show(hwnd, anchor, anchored, auto_hide, locked, theme, folder)
 }
 pub fn error(message: &str) {
     unsafe {

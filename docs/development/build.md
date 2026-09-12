@@ -18,7 +18,7 @@ $env:LUCIDPANE_DATA_DIR = Join-Path $PWD 'target\dev-data-v9'
 & .\target\debug\lucidpane.exe
 ```
 
-主程序与 Hook DLL 必须来自同次构建，位于同一目录。当前 IPC 协议为 v2，数据库为 v9。不使用旧运行模式参数，也不自动迁移旧库。
+主程序与 Hook DLL 必须来自同次构建，位于同一目录。当前 IPC 协议为 v2，数据库为 v10。不使用旧运行模式参数；v8/v9 库会在备份后自动升级。
 
 `LUCIDPANE_DATA_DIR` 仅影响该环境下启动的程序。无需自定义目录时，在启动前移除该环境变量，程序会使用 LocalAppData。
 
@@ -37,6 +37,14 @@ cargo build -p lucidpane -p desktop-hook --offline --target-dir target\convergen
 退出旧实例后，再从 `target\convergence-check\debug` 启动新程序。不要同时运行新旧实例以测试桌面 Hook。
 
 ## 自动检查
+
+生成包含同次构建的 EXE、Hook DLL、使用说明、构建信息与校验值的免安装预览包：
+
+```powershell
+.\tools\package-preview.ps1 -Offline
+```
+
+产物位于 `target\preview`。包内配置仍默认保存在 LocalAppData；未提交代码会在包名和 `build.json` 中标记为 dirty。GitHub Actions 的 Windows preview 工作流执行全目标编译、核心和存储测试后上传 ZIP；原生桌面 UI 测试仍在交互会话运行。
 
 ```powershell
 cargo check --workspace --all-targets --offline

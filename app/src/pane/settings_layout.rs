@@ -6,6 +6,7 @@ pub(super) fn scene(
     page: usize,
     panel: Option<&Panel>,
     count: usize,
+    search_enabled: bool,
     appearance: (PanelTheme, Backdrop),
     options: desktop_core::PaneOptions,
 ) -> Scene {
@@ -20,7 +21,9 @@ pub(super) fn scene(
         ("面板外观", "\u{e790}"),
         ("分组行为", "\u{e8b7}"),
         ("Peek 速览", "\u{e721}"),
+        ("Everything 搜索", "\u{e721}"),
         ("关于", "\u{e946}"),
+        ("备份与恢复", "\u{e74e}"),
     ]
     .iter()
     .enumerate()
@@ -38,7 +41,15 @@ pub(super) fn scene(
     let w = width - x - 24.0;
     s.text(
         Rect::from_xywh(x, 28.0, w, 44.0),
-        ["个性化", "面板外观", "分组行为", "Peek 速览", "关于"][page],
+        [
+            "个性化",
+            "面板外观",
+            "分组行为",
+            "Peek 速览",
+            "Everything 搜索",
+            "关于",
+            "备份与恢复",
+        ][page],
         3,
     );
     if page == 0 {
@@ -250,7 +261,7 @@ pub(super) fn scene(
             );
             s.text(
                 Rect::from_xywh(x + 18.0, 286.0, w - 36.0, 52.0),
-                "连接本机 Everything 1.4+ · 每页 200 项\nCtrl+L 搜索，F5 刷新，Ctrl+Enter 打开位置",
+                "输入后展开结果，清空后收回\nCtrl+L 搜索，F5 刷新，Ctrl+Enter 打开位置",
                 0,
             );
         }
@@ -354,6 +365,116 @@ pub(super) fn scene(
             "点击录入快捷键，Esc 取消；仅在分组中生效",
             0,
         );
+    } else if page == 4 {
+        let value = everything_settings::settings();
+        s.cards.push(Rect::from_xywh(x, 88.0, w, 64.0));
+        s.text(
+            Rect::from_xywh(x + 18.0, 96.0, w - 110.0, 24.0),
+            "搜索时自动启动",
+            1,
+        );
+        s.text(
+            Rect::from_xywh(x + 18.0, 122.0, w - 110.0, 22.0),
+            "Everything 未运行时在后台启动",
+            0,
+        );
+        s.controls.push(Control {
+            bounds: Rect::from_xywh(x + w - 70.0, 108.0, 46.0, 24.0),
+            label: String::new(),
+            action: Action::EverythingAutoStart,
+            selected: value.auto_start,
+            toggle: true,
+        });
+        s.cards.push(Rect::from_xywh(x, 164.0, w, 112.0));
+        s.text(
+            Rect::from_xywh(x + 18.0, 174.0, w - 36.0, 26.0),
+            if value.path.is_empty() {
+                "Everything 路径 · 自动检测"
+            } else {
+                "Everything 路径 · 自定义"
+            },
+            1,
+        );
+        let path = everything_settings::resolved(&value)
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "未检测到 Everything，请浏览选择程序".into());
+        s.text(Rect::from_xywh(x + 18.0, 204.0, w - 36.0, 24.0), path, 0);
+        s.button(
+            Rect::from_xywh(x + 18.0, 232.0, 110.0, 34.0),
+            "浏览…",
+            Action::EverythingBrowse,
+            false,
+        );
+        s.button(
+            Rect::from_xywh(x + 140.0, 232.0, 110.0, 34.0),
+            "自动检测",
+            Action::EverythingDetect,
+            false,
+        );
+        s.cards.push(Rect::from_xywh(x, 288.0, w, 64.0));
+        s.button(
+            Rect::from_xywh(x + 18.0, 302.0, 150.0, 34.0),
+            "启动 Everything",
+            Action::EverythingLaunch,
+            false,
+        );
+        s.text(
+            Rect::from_xywh(x + 180.0, 302.0, w - 268.0, 34.0),
+            "启用搜索面板",
+            1,
+        );
+        s.controls.push(Control {
+            bounds: Rect::from_xywh(x + w - 70.0, 307.0, 46.0, 24.0),
+            label: String::new(),
+            action: Action::Change(Event::ToggleSearch),
+            selected: search_enabled,
+            toggle: true,
+        });
+        s.cards.push(Rect::from_xywh(x, 364.0, w, 78.0));
+        s.text(Rect::from_xywh(x + 18.0, 372.0, 90.0, 26.0), "全局唤起", 1);
+        s.button(
+            Rect::from_xywh(x + 114.0, 374.0, w - 250.0, 34.0),
+            &search_hotkey::label(search_hotkey::settings()),
+            Action::SearchShortcut,
+            false,
+        );
+        s.button(
+            Rect::from_xywh(x + w - 124.0, 374.0, 106.0, 34.0),
+            "恢复默认",
+            Action::SearchReset,
+            false,
+        );
+        s.text(
+            Rect::from_xywh(x + 18.0, 412.0, w - 36.0, 24.0),
+            search_hotkey::status(),
+            0,
+        );
+    } else if page == 6 {
+        s.text(
+            Rect::from_xywh(x, 88.0, w, 60.0),
+            "每 5 分钟自动备份变更后的配置，保留最近 10 份。",
+            0,
+        );
+        for (i, (label, event)) in [
+            ("导出配置…", Event::ExportBackup),
+            ("恢复配置…", Event::RestoreBackup),
+            ("打开备份文件夹", Event::OpenBackups),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            s.button(
+                Rect::from_xywh(x, 164.0 + i as f32 * 52.0, 190.0, 38.0),
+                label,
+                Action::Change(event),
+                false,
+            );
+        }
+        s.text(
+            Rect::from_xywh(x, 334.0, w, 68.0),
+            "包含布局、分组归属和设置，不包含原文件。\n恢复前会保留当前配置的备份。",
+            0,
+        );
     } else {
         s.cards.push(Rect::from_xywh(x, 88.0, w, 152.0));
         s.text(
@@ -368,7 +489,7 @@ pub(super) fn scene(
         );
         s.text(
             Rect::from_xywh(x + 28.0, 190.0, w - 56.0, 28.0),
-            "\u{6df7}\u{5408}\u{684c}\u{9762}\u{6a21}\u{5f0f}",
+            "混合桌面模式",
             1,
         );
     }

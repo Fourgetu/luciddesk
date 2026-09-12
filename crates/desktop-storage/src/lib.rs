@@ -7,7 +7,8 @@ use std::error::Error;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-const SCHEMA_VERSION: i64 = 9;
+const SCHEMA_VERSION: i64 = 10;
+mod recovery;
 
 pub struct WorkspaceStore {
     connection: Connection,
@@ -44,6 +45,18 @@ impl WorkspaceStore {
     /// Returns an error when the database cannot be opened or initialized.
     pub fn open(path: &Path) -> Result<Self, StoreError> {
         let connection = Connection::open(path)?;
+        let version: Option<String> = connection
+            .query_row(
+                "SELECT value FROM metadata WHERE key='schema_version'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap_or(None);
+        if matches!(version.as_deref(), Some("8" | "9")) {
+            let backup = recovery::unique_backup_path(path, "before-v10");
+            connection.backup(rusqlite::MAIN_DB, backup, None)?;
+        }
         Self::from_connection(connection)
     }
 
@@ -285,7 +298,12 @@ impl WorkspaceStore {
         for panel in workspace.panels() {
             insert_panel(&transaction, panel)?;
         }
+        transaction.execute(
+            "DELETE FROM monitor_layouts WHERE panel_id NOT IN (SELECT id FROM panels)",
+            [],
+        )?;
         insert_desktop_items(&transaction, workspace.desktop_items())?;
+        transaction.execute("DELETE FROM metadata WHERE key GLOB 'panel_folder_sort:*' AND substr(key,19) NOT IN (SELECT CAST(id AS TEXT) FROM panels)", [])?;
         transaction.commit()?;
         Ok(())
     }
@@ -304,9 +322,22 @@ fn initialize_schema(connection: &Connection) -> Result<(), StoreError> {
                 |row| row.get(0),
             )
             .optional()?;
+        if matches!(version.as_deref(), Some("8" | "9")) {
+            let transaction = connection.unchecked_transaction()?;
+            if version.as_deref() == Some("8") {
+                recovery::migrate_v8(&transaction)?;
+            }
+            transaction.execute_batch(recovery::LAYOUT_SCHEMA)?;
+            transaction.execute(
+                "UPDATE metadata SET value=?1 WHERE key='schema_version'",
+                [SCHEMA_VERSION.to_string()],
+            )?;
+            transaction.commit()?;
+            return Ok(());
+        }
         if version.as_deref() != Some(SCHEMA_VERSION.to_string().as_str()) {
             return Err(StoreError::InvalidData(format!(
-                "unsupported schema version {}; expected {SCHEMA_VERSION}. Use a new development database",
+                "配置版本 {} 暂不支持；当前支持 v8、v9 升级至 v{SCHEMA_VERSION}。原配置未修改，请保留数据库用于迁移",
                 version.as_deref().unwrap_or("missing"),
             )));
         }
@@ -359,6 +390,7 @@ fn initialize_schema(connection: &Connection) -> Result<(), StoreError> {
          );",
     )?;
 
+    transaction.execute_batch(recovery::LAYOUT_SCHEMA)?;
     transaction.execute(
         "INSERT INTO metadata(key, value) VALUES ('schema_version', ?1)",
         [SCHEMA_VERSION.to_string()],
@@ -852,7 +884,7 @@ mod tests {
 
     #[test]
     fn rejects_other_schema_versions_without_modifying_data() {
-        for version in ["1", "8", "10"] {
+        for version in ["1", "7", "11"] {
             let connection = Connection::open_in_memory().unwrap();
             connection
                 .execute_batch("CREATE TABLE metadata(key TEXT PRIMARY KEY, value TEXT NOT NULL);")

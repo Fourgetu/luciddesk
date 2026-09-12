@@ -1,0 +1,31 @@
+name: Windows preview
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.95.0 --profile minimal
+          rustup override set 1.95.0
+      - name: Compile all targets
+        run: cargo check --workspace --all-targets --locked
+      - name: Test workspace data and layout rules
+        run: cargo test -p desktop-core -p desktop-storage --lib --locked
+      - name: Package matching executable and Hook
+        shell: pwsh
+        run: ./tools/package-preview.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LucidPane-windows-x64-preview
+          path: |
+            target/preview/*.zip
+            target/preview/*.sha256
+          if-no-files-found: error

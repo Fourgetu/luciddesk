@@ -1,6 +1,57 @@
 //! Group commands and their persisted state transitions.
 use super::*;
 
+fn enable_search_view(
+    state: &Rc<RefCell<PaneApp>>,
+    id: PanelId,
+    create: impl FnOnce(&Rc<RefCell<PaneApp>>, PanelId) -> Result<(), String>,
+) -> Result<bool, String> {
+    if !state.borrow().views.iter().any(|v| v.id == id) {
+        if let Err(error) = create(state, id) {
+            everything_settings::set_enabled(&state.borrow().store, false)?;
+            return Err(error);
+        }
+    }
+    if let Err(error) = everything_settings::set_enabled(&state.borrow().store, true) {
+        let view = {
+            let mut s = state.borrow_mut();
+            s.views
+                .iter()
+                .position(|v| v.id == id)
+                .map(|at| s.views.remove(at))
+        };
+        drop(view);
+        return Err(error);
+    }
+    Ok(false)
+}
+
+#[cfg(test)]
+mod search_lifecycle_tests {
+    use super::*;
+    #[test]
+    fn failed_search_window_can_be_enabled_again() {
+        let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let state = Rc::new(RefCell::new(super::super::tests::test_state()));
+        state.borrow_mut().workspace.set_appearance(
+            desktop_core::PanelTheme::Dark,
+            desktop_core::Backdrop::Translucent { opacity: 1.0 },
+        );
+        handle(&state, PanelId::new(0), Event::EnableSearch).unwrap();
+        let id = state.borrow().views[0].id;
+        handle(&state, id, Event::ClosePane).unwrap();
+        let failed = enable_search_view(&state, id, |_, _| {
+            Err("injected window creation failure".into())
+        });
+        assert!(failed.is_err());
+        assert!(state.borrow().views.is_empty());
+        assert!(!everything_settings::enabled(&state.borrow().store).unwrap());
+        handle(&state, id, Event::EnableSearch).unwrap();
+        assert_eq!(state.borrow().views[0].id, id);
+        assert!(everything_settings::enabled(&state.borrow().store).unwrap());
+    }
+}
+
 pub(super) fn activate_with(
     state: &Rc<RefCell<PaneApp>>,
     id: PanelId,
@@ -40,6 +91,52 @@ pub(super) fn handle(
     id: PanelId,
     event: Event,
 ) -> Result<bool, String> {
+    if let Event::SortFolder(column) = event {
+        folder::sort(&mut state.borrow_mut(), id, column)?;
+        return Ok(false);
+    }
+    if let Event::NavigateFolder(path) = &event {
+        folder::navigate(&mut state.borrow_mut(), id, Some(path.clone()))?;
+        return Ok(false);
+    }
+    if matches!(event, Event::FolderBack) {
+        folder::navigate(&mut state.borrow_mut(), id, None)?;
+        return Ok(false);
+    }
+    if let Event::Activate(index) = event {
+        let folder = {
+            let s = state.borrow();
+            s.folders
+                .get(&id)
+                .and_then(|source| source.items.get(index))
+                .and_then(|item| item.identity.file_system_path())
+                .filter(|p| p.is_dir())
+                .map(Path::to_path_buf)
+        };
+        if let Some(path) = folder {
+            return handle(state, id, Event::NavigateFolder(path));
+        }
+    }
+    if matches!(
+        event,
+        Event::ExportBackup | Event::RestoreBackup | Event::OpenBackups
+    ) {
+        recovery::request(state, &event);
+        return Ok(false);
+    }
+    if matches!(event, Event::RetryDesktop) {
+        runtime::maintain(state, true)?;
+        if state.borrow().session.is_none() {
+            return Err(runtime::status(&state.borrow()));
+        }
+        return Ok(false);
+    }
+    if matches!(event, Event::New)
+        && state.borrow().runtime.is_some()
+        && state.borrow().session.is_none()
+    {
+        return Err(runtime::status(&state.borrow()));
+    }
     if matches!(event, Event::ToggleFolderView) {
         let mut s = state.borrow_mut();
         let old = s.workspace.clone();
@@ -113,7 +210,7 @@ pub(super) fn handle(
     if matches!(event, Event::OpenFolder) {
         let target = {
             let s = state.borrow();
-            s.workspace.panel(id).and_then(Panel::folder).map(|path| {
+            s.folders.get(&id).map(|source| &source.path).map(|path| {
                 (
                     s.views
                         .iter()
@@ -174,12 +271,7 @@ pub(super) fn handle(
             s.views.iter().find(|view| view.id == id).map(|view| {
                 let model = view.model.borrow();
                 let destination = (command == desktop_shell::FileCommand::Paste)
-                    .then(|| {
-                        s.workspace
-                            .panel(id)
-                            .and_then(Panel::folder)
-                            .map(Path::to_path_buf)
-                    })
+                    .then(|| s.folders.get(&id).map(|source| source.path.clone()))
                     .flatten();
                 (view.window.hwnd(), model.selected_identities(), destination)
             })
@@ -219,6 +311,9 @@ pub(super) fn handle(
                 .map(|view| view.model.borrow().selection.iter().copied().collect())
                 .unwrap_or_default()
         };
+        if indices.len() == 1 {
+            return handle(state, id, Event::Activate(indices[0]));
+        }
         for index in indices {
             activate_with(state, id, index, |owner, identity| {
                 open_shell_identity(owner, identity).map_err(|error| error.to_string())
@@ -335,8 +430,14 @@ pub(super) fn handle(
             return Ok(false);
         }
         let old = s.workspace.clone();
-        remove_panel(&mut s.workspace, id);
-        if let Err(error) = save(&mut s) {
+        let search = s.workspace.panel(id).is_some_and(Panel::is_search);
+        let result = if search {
+            everything_settings::set_enabled(&s.store, false)
+        } else {
+            remove_panel(&mut s.workspace, id);
+            save(&mut s)
+        };
+        if let Err(error) = result {
             s.workspace = old;
             hybrid::sync(&mut s)?;
             return Err(error);
@@ -449,8 +550,41 @@ pub(super) fn handle(
         }
         return Ok(false);
     }
-    if matches!(event, Event::New | Event::NewSearch | Event::MapFolder(_)) {
-        let search = matches!(event, Event::NewSearch);
+    if matches!(event, Event::ToggleSearch) {
+        let ids: Vec<_> = state
+            .borrow()
+            .workspace
+            .panels()
+            .iter()
+            .filter(|p| p.is_search())
+            .map(Panel::id)
+            .collect();
+        let visible = state.borrow().views.iter().any(|v| ids.contains(&v.id));
+        if !visible {
+            return handle(state, id, Event::EnableSearch);
+        }
+        for id in ids {
+            handle(state, id, Event::ClosePane)?;
+        }
+        return Ok(false);
+    }
+    if matches!(
+        event,
+        Event::New | Event::EnableSearch | Event::MapFolder(_)
+    ) {
+        let search = matches!(event, Event::EnableSearch);
+        if search {
+            let existing = state
+                .borrow()
+                .workspace
+                .panels()
+                .iter()
+                .find(|p| p.is_search())
+                .map(Panel::id);
+            if let Some(existing) = existing {
+                return enable_search_view(state, existing, create_view);
+            }
+        }
         let path = if let Event::MapFolder(path) = &event {
             Some(path.clone())
         } else {
@@ -484,7 +618,7 @@ pub(super) fn handle(
             if search {
                 panel.set_search(true);
                 panel.set_title("Everything 搜索".to_string());
-                panel.set_rect(RectDip::new(240.0, 240.0, 860.0, 520.0));
+                panel.set_rect(RectDip::new(240.0, 240.0, 480.0, 200.0));
             }
             s.workspace.add_panel(panel).map_err(|e| e.to_string())?;
             if s.workspace.appearance().is_none() {
@@ -499,13 +633,27 @@ pub(super) fn handle(
             }
             next
         };
-        create_view(state, next)?;
+        if search {
+            // Keep the saved configuration on failure so enabling can retry.
+            everything_settings::set_enabled(&state.borrow().store, false)?;
+            enable_search_view(state, next, create_view)?;
+        } else {
+            create_view(state, next)?;
+        }
         return Ok(false);
     }
     let mut s = state.borrow_mut();
     match event {
-        Event::ToggleFolderView
-        | Event::NewSearch
+        Event::SortFolder(_)
+        | Event::NavigateFolder(_)
+        | Event::FolderBack
+        | Event::ExportBackup
+        | Event::RestoreBackup
+        | Event::OpenBackups
+        | Event::RetryDesktop
+        | Event::ToggleFolderView
+        | Event::ToggleSearch
+        | Event::EnableSearch
         | Event::FileDrag
         | Event::NewFolder
         | Event::MapFolder(_)
@@ -659,6 +807,7 @@ pub(super) fn handle(
                 });
             }
             save(&mut s)?;
+            display_layout::record(&mut s)?;
         }
         Event::Collapse | Event::SetCollapsed(_) => {
             if s.workspace.panel(id).is_none() {
@@ -695,8 +844,8 @@ pub(super) fn handle(
             save(&mut s)?;
         }
         Event::Sort => {
-            if let Some(source) = s.folders.get(&id) {
-                source.refresh();
+            if s.folders.contains_key(&id) {
+                folder::sort(&mut s, id, 0)?;
                 return Ok(false);
             }
             if s.workspace.panel(id).is_none() {
@@ -717,6 +866,19 @@ pub(super) fn handle(
             let Some(_) = source.get(index) else {
                 return Ok(false);
             };
+            let indices: Vec<usize> = s
+                .views
+                .iter()
+                .find(|v| v.id == id)
+                .map(|v| {
+                    let m = v.model.borrow();
+                    if m.selection.contains(&index) {
+                        m.selection.iter().copied().collect()
+                    } else {
+                        vec![index]
+                    }
+                })
+                .unwrap_or_else(|| vec![index]);
             let target = s.views.iter().rev().find_map(|view| {
                 if s.workspace.panel(view.id).is_some_and(Panel::is_search) {
                     return None;
@@ -761,14 +923,13 @@ pub(super) fn handle(
                 Some((view.id, at))
             });
             if let Some((target, at)) = target {
-                if let Some(path) = s
-                    .workspace
-                    .panel(target)
-                    .and_then(Panel::folder)
-                    .map(Path::to_path_buf)
-                {
-                    let identity = source[index].identity.clone();
-                    if !folder::accepts_copy(std::slice::from_ref(&identity), &path) {
+                if let Some(path) = s.folders.get(&target).map(|source| source.path.clone()) {
+                    let identities: Vec<_> = indices
+                        .iter()
+                        .filter_map(|i| source.get(*i))
+                        .map(|i| i.identity.clone())
+                        .collect();
+                    if !folder::accepts_copy(&identities, &path) {
                         return Ok(false);
                     }
                     let owner = s
@@ -781,7 +942,7 @@ pub(super) fn handle(
                     window::post_action(owner as _, move || {
                         if let Err(error) = desktop_shell::copy_to_folder(
                             windows::Win32::Foundation::HWND(owner as _),
-                            &[identity],
+                            &identities,
                             &path,
                         ) {
                             window::error(&error.to_string());
@@ -792,12 +953,12 @@ pub(super) fn handle(
                 if s.workspace.panel(id).is_some_and(|p| p.folder().is_some()) {
                     return Ok(false);
                 }
-                transfer(&mut s, id, index, target, at)?;
+                transfer_many(&mut s, id, &indices, target, at)?;
                 for view in &s.views {
                     view.model.borrow_mut().clear_selection();
                 }
                 refresh_views(&mut s);
-            } else if hybrid::release(&mut s, id, index, point)? {
+            } else if hybrid::release(&mut s, id, &indices, point)? {
                 refresh_views(&mut s);
             }
         }

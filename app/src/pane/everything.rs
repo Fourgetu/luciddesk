@@ -9,13 +9,12 @@ use windows_sys::Win32::{
 
 pub(super) const PAGE_SIZE: u32 = 200;
 const TOKEN: usize = 0x4c504556;
-const REQUEST: u32 = 0x44; // FULL_PATH_AND_NAME | DATE_MODIFIED
+const REQUEST: u32 = 0x4; // FULL_PATH_AND_NAME
 
 #[derive(Debug, Clone)]
 pub(super) struct Entry {
     pub path: PathBuf,
     pub folder: bool,
-    pub modified: u64,
 }
 #[derive(Debug)]
 pub(super) struct Page {
@@ -80,11 +79,9 @@ fn parse(bytes: &[u8]) -> Result<Page, String> {
         if !path.is_absolute() {
             return Err("Everything 返回的路径不是绝对路径".into());
         }
-        let modified = u64::from(word(bytes, end)?) | (u64::from(word(bytes, end + 4)?) << 32);
         entries.push(Entry {
             path,
             folder: flags & 3 != 0,
-            modified,
         });
     }
     Ok(Page {
@@ -130,10 +127,7 @@ unsafe extern "system" fn receive(
     unsafe { windows_sys::Win32::UI::Shell::DefSubclassProc(hwnd, message, wp, lp) }
 }
 
-pub(super) fn query(search: &str, offset: u32) -> Result<Page, String> {
-    if search.encode_utf16().count() > 16_384 || search.contains('\0') {
-        return Err("搜索内容过长或无效".into());
-    }
+fn instance() -> HWND {
     let mut target = unsafe {
         FindWindowW(
             windows_sys::w!("EVERYTHING_TASKBAR_NOTIFICATION"),
@@ -143,6 +137,29 @@ pub(super) fn query(search: &str, offset: u32) -> Result<Page, String> {
     if target.is_null() {
         unsafe {
             EnumWindows(Some(find_instance), (&raw mut target) as isize);
+        }
+    }
+    target
+}
+
+pub(super) fn query(search: &str, offset: u32) -> Result<Page, String> {
+    if search.encode_utf16().count() > 16_384 || search.contains('\0') {
+        return Err("搜索内容过长或无效".into());
+    }
+    let mut target = instance();
+    if target.is_null() && super::everything_settings::settings().auto_start {
+        // Serialize startup across search panes, then recheck in case another
+        // worker has already started the IPC instance.
+        static START: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = START.lock().unwrap();
+        target = instance();
+        if target.is_null() {
+            super::everything_settings::launch()?;
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while target.is_null() && Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(100));
+                target = instance();
+            }
         }
     }
     if target.is_null() {
@@ -266,7 +283,6 @@ mod tests {
         for c in path.encode_utf16().chain(Some(0)) {
             data.extend(c.to_le_bytes());
         }
-        data.extend(123456u64.to_le_bytes());
         data
     }
     #[test]
@@ -274,7 +290,6 @@ mod tests {
         let bytes = packet("C:\\测试\\文档.txt");
         let page = parse(&bytes).unwrap();
         assert_eq!(page.entries[0].path, PathBuf::from("C:\\测试\\文档.txt"));
-        assert_eq!(page.entries[0].modified, 123456);
         assert!(!page.entries[0].folder);
         for end in 0..bytes.len() {
             assert!(parse(&bytes[..end]).is_err(), "end={end}");
@@ -314,7 +329,6 @@ mod tests {
         )
         .unwrap();
         assert!(files.entries.iter().all(|e| !e.folder));
-        assert!(files.entries.iter().any(|e| e.modified > 0));
         let folders = query(&format!("folder: path:\"{}\"", root.display()), 0).unwrap();
         assert!(!folders.entries.is_empty());
         assert!(folders.entries.iter().all(|e| e.folder));

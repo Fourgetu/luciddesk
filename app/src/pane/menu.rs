@@ -44,6 +44,7 @@ pub fn show(
     anchor: POINT,
     anchored: bool,
     auto_hide: bool,
+    locked: bool,
     theme: desktop_core::PanelTheme,
     folder: Option<bool>,
 ) -> i32 {
@@ -51,9 +52,18 @@ pub fn show(
     let mut rows = vec![
         entry(1, "新建分组", "", ""),
         entry(19, "新建文件夹面板…", "", ""),
-        entry(23, "新建 Everything 搜索面板", "", ""),
         entry(3, "按名称排序", "", ""),
         entry(0, "", "", ""),
+        entry(
+            10,
+            if locked {
+                "解锁面板"
+            } else {
+                "锁定面板"
+            },
+            "",
+            "",
+        ),
         entry(7, "自动收起", if auto_hide { "✓" } else { "" }, ""),
         entry(
             12,
@@ -74,7 +84,8 @@ pub fn show(
         rows.splice(
             2..2,
             [
-                entry(20, "打开源文件夹", "", ""),
+                entry(20, "在资源管理器中打开", "", ""),
+                entry(23, "返回上个文件夹", "", "Alt+←"),
                 entry(21, "更换文件夹…", "", ""),
                 entry(
                     22,
@@ -163,7 +174,10 @@ pub fn show(
                             surface = Some(value);
                         }
                         let value = surface.as_mut().unwrap();
-                        let target = value.begin_frame(width as u32, height as u32)?;
+                        let Some(target) = value.try_begin_frame(width as u32, height as u32)?
+                        else {
+                            return Ok(());
+                        };
                         renderer.paint_flyout(
                             &target,
                             width as u32,
@@ -316,7 +330,6 @@ pub fn show(
         if animate != 0 {
             SetTimer(hwnd, 1, 16, None);
         }
-        InvalidateRect(hwnd, std::ptr::null(), 0);
         let mut message = MSG::default();
         while !done.get() {
             let status = GetMessageW(&raw mut message, std::ptr::null_mut(), 0, 0);
@@ -411,6 +424,7 @@ mod tests {
                 POINT { x: 40, y: 40 },
                 true,
                 false,
+                false,
                 desktop_core::PanelTheme::Dark,
                 None
             ),
@@ -464,6 +478,7 @@ mod tests {
                     show(
                         owner,
                         POINT { x: 40, y: 40 },
+                        false,
                         false,
                         false,
                         desktop_core::PanelTheme::Dark,

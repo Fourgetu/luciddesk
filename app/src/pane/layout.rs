@@ -28,23 +28,26 @@ pub fn list_columns(width: f32) -> [f32; 4] {
 // Label top relative to the icon-size baseline, shared by paint and geometry.
 pub const LABEL_OFFSET: f32 = 6.0;
 pub const PADDING: f32 = 12.0;
-pub const HEADER_BUTTONS_WIDTH: f32 = 102.0;
+pub const HEADER_BUTTONS_WIDTH: f32 = 70.0;
+
+pub fn title_area(width: f32) -> (f32, f32) {
+    // Relax the left margin gradually on narrow panes. Switching between two
+    // layouts at a fixed width makes the title grow while the pane shrinks.
+    let right = width - HEADER_BUTTONS_WIDTH - 4.0;
+    let left = ((width - 80.0) / 2.0).clamp(14.0, HEADER_BUTTONS_WIDTH + 4.0);
+    (left, (right - left).max(1.0))
+}
 
 pub fn header_button_x(width: f32, button: usize) -> f32 {
-    // Visual order: lock, collapse, menu; retain the existing action IDs.
-    let position = match button {
-        1 => 2,
-        2 => 0,
-        _ => 1,
-    };
-    width - HEADER_BUTTONS_WIDTH + position as f32 * 32.0
+    // Visual order: collapse, menu.
+    width - HEADER_BUTTONS_WIDTH + button as f32 * 32.0
 }
 
 pub fn header_button(width: f32, x: f32, y: f32) -> Option<usize> {
     if !(5.0..33.0).contains(&y) {
         return None;
     }
-    (0..3).find(|&button| {
+    (0..2).find(|&button| {
         let left = header_button_x(width, button);
         (left..left + 28.0).contains(&x)
     })
@@ -52,7 +55,7 @@ pub fn header_button(width: f32, x: f32, y: f32) -> Option<usize> {
 
 impl Grid {
     pub fn list(width: f32, height: f32) -> Self {
-        let top = HEADER + PADDING + LIST_HEADER;
+        let top = HEADER + LIST_HEADER;
         Self {
             content_top: top,
             columns: 1,
@@ -113,6 +116,23 @@ impl Grid {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn shrinking_title_space_is_continuous_across_dpi_and_icon_thresholds() {
+        for scale in [1.0, 1.25, 1.5, 2.0] {
+            for icon_width in [0.0_f32, 24.0] {
+                let mut previous = f32::MAX;
+                for pixels in (112..=900).rev() {
+                    let (_, area) = title_area(pixels as f32 / scale);
+                    let available = (area - icon_width).max(1.0);
+                    assert!(available <= previous, "shrinking must not reveal more text");
+                    if previous != f32::MAX {
+                        assert!(previous - available <= 1.0 / scale + 0.001);
+                    }
+                    previous = available;
+                }
+            }
+        }
+    }
     #[test]
     fn resize_reflows_and_hit_testing_tracks_scrolled_rows() {
         let wide = Grid::system(500.0, 260.0, 48.0, (88.0, 96.0));

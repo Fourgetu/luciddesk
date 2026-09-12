@@ -122,7 +122,7 @@ impl Drop for DrawPass<'_> {
     }
 }
 
-/// CPU readback for menus and tests; all drawing still uses the Canvas GPU context.
+/// CPU readback for Shell drag images and tests; live windows draw directly to GPU surfaces.
 pub struct Offscreen {
     canvas: c::RenderTarget,
     context: ID2D1DeviceContext,

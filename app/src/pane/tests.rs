@@ -1,5 +1,36 @@
 use super::*;
 
+#[test]
+fn batch_drag_preserves_order_and_moves_each_identity_once() {
+    let mut s = test_state();
+    transfer_many(&mut s, PanelId::new(1), &[0, 2], PanelId::new(2), 0).unwrap();
+    assert_eq!(
+        items_for(&s, PanelId::new(1))
+            .iter()
+            .map(|i| i.label.as_str())
+            .collect::<Vec<_>>(),
+        ["B"]
+    );
+    assert_eq!(
+        items_for(&s, PanelId::new(2))
+            .iter()
+            .map(|i| i.label.as_str())
+            .collect::<Vec<_>>(),
+        ["A", "C"]
+    );
+    transfer_many(&mut s, PanelId::new(2), &[0, 1], PanelId::new(1), 0).unwrap();
+    transfer_many(&mut s, PanelId::new(1), &[0, 1], PanelId::new(1), 3).unwrap();
+    assert_eq!(
+        items_for(&s, PanelId::new(1))
+            .iter()
+            .map(|i| i.label.as_str())
+            .collect::<Vec<_>>(),
+        ["B", "A", "C"]
+    );
+    assert_eq!(s.workspace.desktop_items().len(), 3);
+    assert_eq!(s.store.load_workspace().unwrap(), s.workspace);
+}
+
 fn reconcile(workspace: &mut Workspace, inventory: Vec<DesktopItem>) {
     workspace.reconcile_desktop_items(inventory);
     let valid: Vec<_> = workspace.panels().iter().map(Panel::id).collect();
@@ -27,7 +58,7 @@ fn reconcile(workspace: &mut Workspace, inventory: Vec<DesktopItem>) {
     }
 }
 
-fn test_state() -> PaneApp {
+pub(super) fn test_state() -> PaneApp {
     let mut workspace = Workspace::new();
     for id in [1, 2] {
         workspace
@@ -55,6 +86,8 @@ fn test_state() -> PaneApp {
         folders: HashMap::new(),
         settings: None,
         session: None,
+        drops: Vec::new(),
+        runtime: None,
         workspace,
         store: WorkspaceStore::open_in_memory().unwrap(),
         views: Vec::new(),
@@ -87,9 +120,61 @@ fn mapped_folder_never_takes_desktop_membership() {
 fn search_pane_creation_and_close_preserve_desktop_membership() {
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
     let state = Rc::new(RefCell::new(test_state()));
+    state.borrow_mut().workspace.set_appearance(
+        desktop_core::PanelTheme::Dark,
+        desktop_core::Backdrop::Translucent { opacity: 1.0 },
+    );
     let original = state.borrow().workspace.desktop_items().to_vec();
-    handle(&state, PanelId::new(0), Event::NewSearch).unwrap();
+    handle(&state, PanelId::new(0), Event::EnableSearch).unwrap();
+    handle(&state, PanelId::new(0), Event::EnableSearch).unwrap();
+    assert_eq!(state.borrow().views.len(), 1);
+    assert_eq!(
+        state
+            .borrow()
+            .workspace
+            .panels()
+            .iter()
+            .filter(|p| p.is_search())
+            .count(),
+        1
+    );
     let id = state.borrow().views[0].id;
+    let hwnd = state.borrow().views[0].window.hwnd().cast();
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GWL_STYLE, GetPropW, GetWindowLongW, SetWindowTextW, WS_CAPTION,
+    };
+    let mut bounds = RECT::default();
+    unsafe {
+        GetWindowRect(hwnd, &raw mut bounds);
+    }
+    let compact_height = bounds.bottom - bounds.top;
+    assert!(compact_height < (100.0 * unsafe { GetDpiForWindow(hwnd) } as f32 / 96.0) as i32);
+    assert_eq!(
+        unsafe { GetWindowLongW(hwnd, GWL_STYLE) } as u32 & WS_CAPTION,
+        0
+    );
+    let edit = unsafe { GetPropW(hwnd, windows_sys::w!("LucidPane.SearchInput")) };
+    assert!(!edit.is_null());
+    unsafe {
+        SetWindowTextW(edit, windows_sys::w!("lucidpane-query-test"));
+    }
+    unsafe {
+        windows_sys::Win32::UI::WindowsAndMessaging::SendMessageW(hwnd, search::INPUT, 0, 0);
+    }
+    unsafe {
+        GetWindowRect(hwnd, &raw mut bounds);
+    }
+    assert!(bounds.bottom - bounds.top > compact_height);
+    unsafe {
+        SetWindowTextW(edit, windows_sys::w!(""));
+    }
+    unsafe {
+        windows_sys::Win32::UI::WindowsAndMessaging::SendMessageW(hwnd, search::INPUT, 0, 0);
+    }
+    unsafe {
+        GetWindowRect(hwnd, &raw mut bounds);
+    }
+    assert_eq!(bounds.bottom - bounds.top, compact_height);
     assert!(state.borrow().workspace.panel(id).unwrap().is_search());
     assert!(
         state
@@ -105,18 +190,30 @@ fn search_pane_creation_and_close_preserve_desktop_membership() {
     let source = items_for(&state.borrow(), PanelId::new(1));
     set_order(&mut state.borrow_mut().workspace, id, &source);
     assert_eq!(state.borrow().workspace.desktop_items(), original);
-    handle(&state, id, Event::ClosePane).unwrap();
+    handle(
+        &state,
+        id,
+        Event::Geometry(RectDip::new(420.0, 320.0, 520.0, 200.0)),
+    )
+    .unwrap();
+    handle(&state, id, Event::ToggleTopmost).unwrap();
+    let saved_panel = state.borrow().workspace.panel(id).unwrap().clone();
+    handle(&state, id, Event::ToggleSearch).unwrap();
     assert!(state.borrow().views.is_empty());
-    assert!(
-        state
-            .borrow()
-            .store
-            .load_workspace()
-            .unwrap()
-            .panel(id)
-            .is_none()
+    assert!(!everything_settings::enabled(&state.borrow().store).unwrap());
+    assert_eq!(
+        state.borrow().store.load_workspace().unwrap().panel(id),
+        Some(&saved_panel)
     );
     assert_eq!(state.borrow().workspace.desktop_items(), original);
+    handle(&state, PanelId::new(0), Event::ToggleSearch).unwrap();
+    assert_eq!(state.borrow().views.len(), 1);
+    assert_eq!(state.borrow().views[0].id, id);
+    assert!(everything_settings::enabled(&state.borrow().store).unwrap());
+    assert_eq!(state.borrow().workspace.panel(id), Some(&saved_panel));
+    handle(&state, id, Event::ClosePane).unwrap();
+    assert!(!everything_settings::enabled(&state.borrow().store).unwrap());
+    assert_eq!(state.borrow().workspace.panel(id), Some(&saved_panel));
 }
 
 #[test]
@@ -304,6 +401,7 @@ fn activation_releases_state_and_model_before_shell_reentry() {
 #[test]
 fn snapped_content_bottom_and_scrollbar_use_the_same_row_metrics() {
     let mut model = GroupModel {
+        folder_sort: (0, false),
         folder_list: false,
         folder: None,
         folder_status: None,
@@ -415,6 +513,7 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
     };
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
     let model = Rc::new(RefCell::new(GroupModel {
+        folder_sort: (0, false),
         folder_list: false,
         folder: None,
         folder_status: None,
@@ -669,17 +768,21 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
         let mut rect = RECT::default();
         GetClientRect(hwnd, &raw mut rect);
         let dpi = windows_sys::Win32::UI::HiDpi::GetDpiForWindow(hwnd).max(96) as f32 / 96.0;
-        let x = ((layout::header_button_x(rect.right as f32 / dpi, 2) + 14.0) * dpi) as isize;
+        let x = ((layout::header_button_x(rect.right as f32 / dpi, 0) + 14.0) * dpi) as isize;
         let position = (((19.0 * dpi) as isize) << 16) | x;
         SendMessageW(hwnd, WM_LBUTTONDOWN, 0, position);
-        assert_eq!(model.borrow().pressed_button, Some(2));
+        assert_eq!(model.borrow().pressed_button, Some(0));
         assert_eq!(lock_events.get(), 0);
         SendMessageW(hwnd, WM_LBUTTONUP, 0, 0);
         assert_eq!(lock_events.get(), 0, "release outside cancels the click");
         assert_eq!(model.borrow().pressed_button, None);
         SendMessageW(hwnd, WM_LBUTTONDOWN, 0, position);
         SendMessageW(hwnd, WM_LBUTTONUP, 0, position);
-        assert_eq!(lock_events.get(), 1);
+        assert_eq!(
+            lock_events.get(),
+            0,
+            "header buttons no longer change locking"
+        );
         SendMessageW(hwnd, WM_LBUTTONDOWN, 0, position);
         SendMessageW(hwnd, WM_CANCELMODE, 0, 0);
         assert_eq!(model.borrow().pressed_button, None);
@@ -734,6 +837,7 @@ fn pane_layer_switch_and_wallpaper_material_initialize() {
     use windows_sys::Win32::UI::WindowsAndMessaging::{GWL_EXSTYLE, GetWindowLongW, WS_EX_TOPMOST};
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
     let model = Rc::new(RefCell::new(GroupModel {
+        folder_sort: (0, false),
         folder_list: false,
         folder: None,
         folder_status: None,
@@ -1315,6 +1419,7 @@ fn reconciliation_preserves_groups_and_appends_new_items_after_existing_order() 
 #[test]
 fn multiselection_preserves_anchor_toggle_and_file_identity_on_refresh() {
     let mut model = GroupModel {
+        folder_sort: (0, false),
         folder_list: false,
         folder: None,
         folder_status: None,

@@ -140,7 +140,9 @@ fn show_editor(
             WS_POPUP
                 | if title { 0 } else { WS_BORDER }
                 | WS_TABSTOP
-                | if title || model.borrow().is_list() {
+                | if title {
+                    ES_CENTER as u32 | ES_AUTOHSCROLL as u32
+                } else if model.borrow().is_list() {
                     ES_LEFT as u32 | ES_AUTOHSCROLL as u32
                 } else {
                     ES_CENTER as u32
@@ -232,14 +234,13 @@ unsafe fn resize(edit: HWND, pointer: *mut Editor) {
             let scale = GetDpiForWindow(editor.owner).max(96) as f32 / 96.0;
             let mut client = RECT::default();
             GetClientRect(editor.owner, &raw mut client);
+            let (title_left, title_width) = super::layout::title_area(client.right as f32 / scale);
             let mut origin = POINT {
-                x: (8.0 * scale).round() as i32,
+                x: ((title_left - 6.0) * scale).round() as i32,
                 y: (5.0 * scale).round() as i32,
             };
             ClientToScreen(editor.owner, &raw mut origin);
-            let width = (client.right
-                - ((super::layout::HEADER_BUTTONS_WIDTH + 10.0) * scale).round() as i32)
-                .max(1);
+            let width = ((title_width + 12.0) * scale).round().max(1.0) as i32;
             let height = (28.0 * scale).round() as i32;
             let mut before = RECT::default();
             GetWindowRect(edit, &raw mut before);
@@ -628,6 +629,7 @@ mod tests {
     fn inline_editor_tracks_label_and_escape_cleans_up_without_a_dialog() {
         let identity = identity("网易云音乐.lnk");
         let model = Rc::new(RefCell::new(GroupModel {
+            folder_sort: (0, false),
             folder_list: false,
             folder: None,
             folder_status: None,
@@ -770,7 +772,9 @@ mod tests {
             let mut bounds = RECT::default();
             GetWindowRect(edit, &raw mut bounds);
             MapWindowPoints(std::ptr::null_mut(), owner, (&raw mut bounds).cast(), 2);
-            assert_eq!(bounds.left, (8.0 * dpi).round() as i32);
+            let mut owner_bounds = RECT::default();
+            GetClientRect(owner, &raw mut owner_bounds);
+            assert!((bounds.left + bounds.right - owner_bounds.right).abs() <= 1);
             assert_eq!(bounds.top, (5.0 * dpi).round() as i32);
             let mut format = RECT::default();
             SendMessageW(edit, EM_GETRECT, 0, (&raw mut format) as isize);

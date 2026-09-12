@@ -1,0 +1,246 @@
+//! Physical window bounds are remembered independently for each display topology.
+use super::*;
+use desktop_window::MonitorDescriptor;
+use std::time::{Duration, Instant};
+use windows_sys::Win32::UI::WindowsAndMessaging::*;
+
+pub(super) struct Layouts {
+    monitors: Vec<MonitorDescriptor>,
+    pending: Option<(Vec<MonitorDescriptor>, Instant)>,
+    pub positions: HashMap<PanelId, RectDip>,
+}
+impl Default for Layouts {
+    fn default() -> Self {
+        Self {
+            monitors: Vec::new(),
+            pending: None,
+            positions: HashMap::new(),
+        }
+    }
+}
+fn key(monitors: &[MonitorDescriptor]) -> String {
+    let mut parts: Vec<_> = monitors
+        .iter()
+        .map(|m| format!("{}:{:?}:{}", m.id.as_str(), m.work_area, m.dpi))
+        .collect();
+    parts.sort();
+    parts.join("|")
+}
+
+fn fit(mut r: RectDip, monitors: &[MonitorDescriptor]) -> RectDip {
+    let distance = |m: &&MonitorDescriptor| {
+        let w = m.work_area;
+        let x = r.x + r.width / 2.0;
+        let y = r.y + r.height / 2.0;
+        let dx = x - x.clamp(w.x as f32, (w.x + w.width) as f32);
+        let dy = y - y.clamp(w.y as f32, (w.y + w.height) as f32);
+        (dx * dx + dy * dy) as u64
+    };
+    if let Some(m) = monitors.iter().min_by_key(distance) {
+        let w = m.work_area;
+        r.width = r.width.min(w.width as f32).max(1.0);
+        r.height = r.height.min(w.height as f32).max(1.0);
+        r.x = r.x.clamp(w.x as f32, (w.x + w.width) as f32 - r.width);
+        r.y = r.y.clamp(w.y as f32, (w.y + w.height) as f32 - r.height);
+    }
+    r
+}
+
+fn monitor_scale(r: RectDip, monitors: &[MonitorDescriptor]) -> f32 {
+    monitors
+        .iter()
+        .find(|m| {
+            let b = m.bounds;
+            r.x >= b.x as f32
+                && r.x < (b.x + b.width) as f32
+                && r.y >= b.y as f32
+                && r.y < (b.y + b.height) as f32
+        })
+        .or_else(|| monitors.first())
+        .map_or(1.0, |m| m.dpi as f32 / 96.0)
+}
+
+pub(super) fn initialize(s: &mut PaneApp, monitors: Vec<MonitorDescriptor>) -> Result<(), String> {
+    if monitors.is_empty() {
+        return Ok(());
+    }
+    let saved: HashMap<_, _> = s
+        .store
+        .monitor_layout(&key(&monitors))
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .collect();
+    let Some(runtime) = &mut s.runtime else {
+        return Ok(());
+    };
+    let primary_scale = monitors.first().map_or(1.0, |m| m.dpi as f32 / 96.0);
+    let mut positions = HashMap::new();
+    let ids: Vec<_> = s.workspace.panels().iter().map(Panel::id).collect();
+    for id in ids {
+        let panel = s.workspace.panel_mut(id).unwrap();
+        let old = panel.rect();
+        let physical = saved
+            .get(&id)
+            .or_else(|| runtime.layouts.positions.get(&id))
+            .copied()
+            .unwrap_or(RectDip::new(
+                old.x * primary_scale,
+                old.y * primary_scale,
+                old.width * primary_scale,
+                old.height * primary_scale,
+            ));
+        let physical = fit(physical, &monitors);
+        let scale = monitor_scale(physical, &monitors);
+        panel.set_rect(RectDip::new(
+            physical.x / scale,
+            physical.y / scale,
+            physical.width / scale,
+            physical.height / scale,
+        ));
+        positions.insert(id, physical);
+    }
+    runtime.layouts = Layouts {
+        monitors,
+        pending: None,
+        positions,
+    };
+    Ok(())
+}
+
+pub(super) fn place(s: &PaneApp, id: PanelId) {
+    let Some(runtime) = &s.runtime else {
+        return;
+    };
+    let Some(r) = runtime.layouts.positions.get(&id) else {
+        return;
+    };
+    let Some(v) = s.views.iter().find(|v| v.id == id) else {
+        return;
+    };
+    let scale = monitor_scale(*r, &runtime.layouts.monitors);
+    let panel = s.workspace.panel(id).unwrap();
+    let height = if panel.is_search() {
+        56.0 * scale
+    } else if panel.collapsed() {
+        layout::HEADER * scale
+    } else {
+        r.height
+    };
+    unsafe {
+        SetWindowPos(
+            v.window.hwnd().cast(),
+            std::ptr::null_mut(),
+            r.x as i32,
+            r.y as i32,
+            r.width as i32,
+            height as i32,
+            SWP_NOACTIVATE | SWP_NOZORDER,
+        );
+        if panel.is_search() {
+            PostMessageW(v.window.hwnd().cast(), search::RESTORE_LAYOUT, 0, 0);
+        }
+    }
+}
+
+pub(super) fn record(s: &mut PaneApp) -> Result<(), String> {
+    let Some(runtime) = &mut s.runtime else {
+        return Ok(());
+    };
+    let current = desktop_window::enumerate_monitors();
+    if runtime.layouts.monitors != current || runtime.layouts.pending.is_some() {
+        return Ok(());
+    }
+    for view in &s.views {
+        let mut r = RECT::default();
+        if unsafe { GetWindowRect(view.window.hwnd().cast(), &raw mut r) } == 0 {
+            continue;
+        }
+        let scale = unsafe { GetDpiForWindow(view.window.hwnd().cast()) }.max(96) as f32 / 96.0;
+        let panel = s.workspace.panel(view.id).unwrap();
+        runtime.layouts.positions.insert(
+            view.id,
+            RectDip::new(
+                r.left as f32,
+                r.top as f32,
+                (r.right - r.left) as f32,
+                if panel.collapsed() || panel.is_search() {
+                    panel.rect().height * scale
+                } else {
+                    (r.bottom - r.top) as f32
+                },
+            ),
+        );
+    }
+    runtime
+        .layouts
+        .positions
+        .retain(|id, _| s.workspace.panel(*id).is_some());
+    let layout: Vec<_> = runtime
+        .layouts
+        .positions
+        .iter()
+        .map(|(id, r)| (*id, *r))
+        .collect();
+    s.store
+        .save_monitor_layout(&key(&current), &layout)
+        .map_err(|e| e.to_string())
+}
+
+pub(super) fn tick(state: &Rc<RefCell<PaneApp>>) -> Result<(), String> {
+    let current = desktop_window::enumerate_monitors();
+    if current.is_empty() {
+        return Ok(());
+    }
+    {
+        let mut s = state.borrow_mut();
+        let Some(runtime) = &mut s.runtime else {
+            return Ok(());
+        };
+        if runtime.layouts.monitors == current {
+            runtime.layouts.pending = None;
+            return Ok(());
+        }
+        match &runtime.layouts.pending {
+            Some((pending, since))
+                if *pending == current && since.elapsed() >= Duration::from_secs(2) => {}
+            Some((pending, _)) if *pending == current => return Ok(()),
+            _ => {
+                runtime.layouts.pending = Some((current, Instant::now()));
+                return Ok(());
+            }
+        }
+        initialize(&mut s, current)?;
+    }
+    let ids: Vec<_> = state.borrow().views.iter().map(|v| v.id).collect();
+    for id in ids {
+        place(&state.borrow(), id);
+    }
+    record(&mut state.borrow_mut())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn removed_monitor_moves_panes_into_work_area_without_minimum_width() {
+        let monitor = MonitorDescriptor {
+            id: desktop_core::MonitorId::new("primary"),
+            bounds: desktop_window::PixelRect {
+                x: 0,
+                y: 0,
+                width: 1920,
+                height: 1080,
+            },
+            work_area: desktop_window::PixelRect {
+                x: 0,
+                y: 0,
+                width: 1920,
+                height: 1040,
+            },
+            dpi: 96,
+            primary: true,
+        };
+        let r = fit(RectDip::new(-1200.0, -900.0, 80.0, 300.0), &[monitor]);
+        assert_eq!(r, RectDip::new(0.0, 0.0, 80.0, 300.0));
+    }
+}

@@ -10,6 +10,9 @@ use windows::core::{Error, Interface, Result};
 use windows_canvas::{GpuDevice, ID2D1DeviceContext, SwapChain};
 
 pub struct Surface {
+    retry_at: std::cell::Cell<Option<std::time::Instant>>,
+    hwnd: HWND,
+    present: IDXGISwapChain1,
     rounded_backdrop: Option<HWND>,
     pub pane_corner_radius: u8,
     dark: bool,
@@ -34,12 +37,16 @@ impl Surface {
     }
 
     pub fn opacity(&self, opacity: f32) -> Result<()> {
+        if self.opacity.get() == opacity {
+            return Ok(());
+        }
         canvas_result(self.layer.opacity(opacity))?;
         if let Some(acrylic) = &self.acrylic {
             acrylic.opacity(opacity)?;
         }
+        canvas_result(self.layer.commit())?;
         self.opacity.set(opacity);
-        canvas_result(self.layer.commit())
+        Ok(())
     }
     pub fn new(hwnd: HWND) -> Result<Self> {
         Self::new_with_opacity(hwnd, 1.0)
@@ -56,13 +63,20 @@ impl Surface {
     }
 
     pub fn new_with_opacity(hwnd: HWND, initial_opacity: f32) -> Result<Self> {
+        Self::new_with_device(hwnd, initial_opacity, gpu_device()?)
+    }
+
+    fn new_with_device(hwnd: HWND, initial_opacity: f32, device: GpuDevice) -> Result<Self> {
         unsafe {
-            let device = gpu_device()?;
             let d3d: ID3D11Device = native_interface(device.d3d_device())?;
             #[cfg(test)]
             let context = d3d.GetImmediateContext()?;
             let dxgi: IDXGIDevice = d3d.cast()?;
-            let mut swap = canvas_result(device.create_swap_chain(1, 1))?;
+            let mut bounds = windows_sys::Win32::Foundation::RECT::default();
+            windows_sys::Win32::UI::WindowsAndMessaging::GetClientRect(hwnd.0, &raw mut bounds);
+            let mut swap = canvas_result(
+                device.create_swap_chain(bounds.right.max(1) as u32, bounds.bottom.max(1) as u32),
+            )?;
             // Obtain Canvas's persistent context once. Subsequent frames keep the
             // renderer's explicit BeginDraw/EndDraw so all drawing errors propagate.
             let drawing: ID2D1DeviceContext = {
@@ -86,6 +100,9 @@ impl Surface {
             let corner = DWMWCP_ROUND;
             let _ = set_attribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &corner);
             Ok(Self {
+                retry_at: std::cell::Cell::new(None),
+                hwnd,
+                present: native_swap,
                 rounded_backdrop: None,
                 pane_corner_radius: 7,
                 dark: true,
@@ -200,16 +217,56 @@ impl Surface {
         Ok(self.drawing.clone())
     }
 
-    pub fn end_frame(&self) -> Result<()> {
-        if canvas_result(self.swap.present())? {
-            Ok(())
-        } else {
-            // Canvas reports device loss as Ok(false); preserve the application's
-            // error path instead of silently treating a missing frame as success.
-            Err(Error::from_hresult(
-                windows::Win32::Foundation::D2DERR_RECREATE_TARGET,
-            ))
+    /// Backpressure before rasterization, rather than drawing frames a full
+    /// presentation queue cannot accept. The pending timer retains the redraw.
+    pub fn try_begin_frame(
+        &mut self,
+        width: u32,
+        height: u32,
+    ) -> Result<Option<ID2D1DeviceContext>> {
+        if let Some(at) = self.retry_at.get() {
+            let remaining = at.saturating_duration_since(std::time::Instant::now());
+            if !remaining.is_zero() {
+                // A timer can run just before the deadline. Preserve a wakeup
+                // even after that callback validated the previous paint request.
+                self.schedule_retry(remaining.as_millis() as u32 + 1)?;
+                return Ok(None);
+            }
         }
+        self.begin_frame(width, height).map(Some)
+    }
+
+    pub fn end_frame(&self) -> Result<()> {
+        // DWM owns display synchronization. Never make the common UI thread wait
+        // for every pane's vertical blank; a full queue retries the latest state.
+        let result = unsafe { self.present.Present(0, DXGI_PRESENT_DO_NOT_WAIT) };
+        if result == DXGI_ERROR_WAS_STILL_DRAWING {
+            self.schedule_retry(16)?;
+            self.retry_at.set(Some(
+                std::time::Instant::now() + std::time::Duration::from_millis(16),
+            ));
+            return Ok(());
+        }
+        self.retry_at.set(None);
+        unsafe {
+            windows_sys::Win32::UI::WindowsAndMessaging::KillTimer(self.hwnd.0, PRESENT_RETRY);
+        }
+        result.ok()
+    }
+
+    fn schedule_retry(&self, millis: u32) -> Result<()> {
+        if unsafe {
+            windows_sys::Win32::UI::WindowsAndMessaging::SetTimer(
+                self.hwnd.0,
+                PRESENT_RETRY,
+                millis,
+                Some(retry_present),
+            )
+        } == 0
+        {
+            return Err(Error::from_thread());
+        }
+        Ok(())
     }
 
     #[cfg(test)]
@@ -248,9 +305,92 @@ impl Surface {
     }
 }
 
+const PRESENT_RETRY: usize = 0x4c50_4750;
+unsafe extern "system" fn retry_present(
+    hwnd: windows_sys::Win32::Foundation::HWND,
+    _: u32,
+    id: usize,
+    _: u32,
+) {
+    unsafe {
+        windows_sys::Win32::UI::WindowsAndMessaging::KillTimer(hwnd, id);
+        windows_sys::Win32::Graphics::Gdi::InvalidateRect(hwnd, std::ptr::null(), 0);
+    }
+}
+impl Drop for Surface {
+    fn drop(&mut self) {
+        unsafe {
+            windows_sys::Win32::UI::WindowsAndMessaging::KillTimer(self.hwnd.0, PRESENT_RETRY);
+        }
+    }
+}
+
 #[cfg(test)]
 mod animation_tests {
     use super::*;
+    #[test]
+    fn warp_surface_draws_resizes_and_defers_without_losing_the_wakeup() {
+        use windows_sys::Win32::UI::WindowsAndMessaging::*;
+        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let window = windows_window::Window::new("WARP rendering regression")
+            .size(96, 64)
+            .style(WS_POPUP)
+            .ex_style(WS_EX_NOREDIRECTIONBITMAP)
+            .create()
+            .unwrap();
+        let hwnd = HWND(window.hwnd().cast());
+        let mut surface =
+            Surface::new_with_device(hwnd, 1.0, GpuDevice::new_warp().unwrap()).unwrap();
+        // Simulate an early retry callback: try_begin_frame must rearm a wakeup.
+        surface.retry_at.set(Some(
+            std::time::Instant::now() + std::time::Duration::from_millis(16),
+        ));
+        assert!(surface.try_begin_frame(96, 64).unwrap().is_none());
+        unsafe {
+            windows_sys::Win32::Graphics::Gdi::ValidateRect(hwnd.0, std::ptr::null());
+        }
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        loop {
+            let mut message = MSG::default();
+            unsafe {
+                while PeekMessageW(&raw mut message, hwnd.0, WM_TIMER, WM_TIMER, PM_REMOVE) != 0 {
+                    DispatchMessageW(&message);
+                }
+                if windows_sys::Win32::Graphics::Gdi::GetUpdateRect(hwnd.0, std::ptr::null_mut(), 0)
+                    != 0
+                {
+                    break;
+                }
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "retry lost the final redraw"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        surface.retry_at.set(None);
+        for (width, height) in [(96, 64), (144, 96), (96, 64)] {
+            let target = surface.try_begin_frame(width, height).unwrap().unwrap();
+            super::super::canvas::draw(&target, 1.0, |frame| {
+                frame.clear(windows_canvas::ColorF::new(1.0, 0.0, 0.0, 1.0));
+                frame.finish()
+            })
+            .unwrap();
+            let pixels = surface.readback().unwrap();
+            assert!(
+                pixels
+                    .chunks_exact(4)
+                    .all(|pixel| pixel == [0, 0, 255, 255])
+            );
+            surface.end_frame().unwrap();
+            surface.retry_at.set(None);
+        }
+        // Destruction must cancel even a still-pending queue retry.
+        surface.schedule_retry(16).unwrap();
+        drop(surface);
+        assert_eq!(unsafe { KillTimer(hwnd.0, PRESENT_RETRY) }, 0);
+    }
+
     #[test]
     fn fade_applies_to_native_material_and_finishes_after_a_delayed_tick() {
         let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();

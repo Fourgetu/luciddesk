@@ -1,0 +1,224 @@
+//! A single global activation binding, owned by the runtime window.
+use super::*;
+use windows_sys::Win32::UI::{Input::KeyboardAndMouse::*, WindowsAndMessaging::*};
+
+pub(super) const ID: i32 = 0x4c50;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct Shortcut {
+    pub key: u16,
+    pub modifiers: u8,
+}
+impl Default for Shortcut {
+    fn default() -> Self {
+        Self {
+            key: VK_SPACE,
+            modifiers: 3,
+        }
+    }
+}
+thread_local! {
+    static CONFIG: RefCell<Shortcut> = RefCell::new(Shortcut::default());
+    static STATUS: RefCell<String> = const { RefCell::new(String::new()) };
+}
+pub(super) fn settings() -> Shortcut {
+    CONFIG.with(|s| *s.borrow())
+}
+pub(super) fn status() -> String {
+    STATUS.with(|s| s.borrow().clone())
+}
+pub(super) fn valid(value: Shortcut) -> bool {
+    // Require Ctrl or Alt; reserve system/menu combinations and the debugger's F12.
+    value.modifiers <= 7
+        && value.modifiers & 5 != 0
+        && value.key != VK_F12
+        && peek::valid_shortcut(value.key, value.modifiers)
+}
+fn decode(raw: &str) -> Option<Shortcut> {
+    let (key, modifiers) = raw.split_once(':')?;
+    let value = Shortcut {
+        key: key.parse().ok()?,
+        modifiers: modifiers.parse().ok()?,
+    };
+    valid(value).then_some(value)
+}
+pub(super) fn load(store: &WorkspaceStore) -> Result<(), String> {
+    let value = store
+        .preference("search_hotkey")
+        .map_err(|e| e.to_string())?
+        .and_then(|raw| decode(&raw))
+        .unwrap_or_default();
+    CONFIG.with(|s| *s.borrow_mut() = value);
+    Ok(())
+}
+pub(super) fn save(store: &WorkspaceStore, value: Shortcut) -> Result<(), String> {
+    if !valid(value) {
+        return Err(
+            "请使用 Ctrl 或 Alt 搭配字母、数字、空格或功能键，避开现有文件操作和系统快捷键。"
+                .into(),
+        );
+    }
+    store
+        .save_preference(
+            "search_hotkey",
+            &format!("{}:{}", value.key, value.modifiers),
+        )
+        .map_err(|e| e.to_string())?;
+    CONFIG.with(|s| *s.borrow_mut() = value);
+    Ok(())
+}
+pub(super) fn label(value: Shortcut) -> String {
+    peek::shortcut_label(&peek::Settings {
+        key: value.key,
+        modifiers: value.modifiers,
+        ..Default::default()
+    })
+}
+fn flags(value: Shortcut) -> u32 {
+    MOD_NOREPEAT
+        | if value.modifiers & 1 != 0 {
+            MOD_CONTROL
+        } else {
+            0
+        }
+        | if value.modifiers & 2 != 0 {
+            MOD_SHIFT
+        } else {
+            0
+        }
+        | if value.modifiers & 4 != 0 { MOD_ALT } else { 0 }
+}
+#[derive(Default)]
+pub(super) struct Registration {
+    hwnd: isize,
+    desired: Option<Shortcut>,
+    registered: bool,
+    attempted: Option<std::time::Instant>,
+}
+impl Registration {
+    pub fn update(&mut self, hwnd: isize, desired: Option<Shortcut>) {
+        if self.desired == desired
+            && (self.registered
+                || desired.is_none()
+                || self.attempted.is_some_and(|t| t.elapsed().as_secs() < 10))
+        {
+            return;
+        }
+        self.clear();
+        self.hwnd = hwnd;
+        self.desired = desired;
+        self.attempted = Some(std::time::Instant::now());
+        self.registered = desired.is_some_and(|value| unsafe { RegisterHotKey(hwnd as _, ID, flags(value), u32::from(value.key)) } != 0);
+        let status = if desired.is_none() {
+            "搜索已关闭，全局快捷键未注册".into()
+        } else if self.registered {
+            "全局生效；Esc 取消录入".into()
+        } else {
+            format!(
+                "{} 已被占用或无法注册，请更换快捷键",
+                label(desired.unwrap())
+            )
+        };
+        STATUS.with(|s| *s.borrow_mut() = status);
+    }
+    fn clear(&mut self) {
+        if self.registered {
+            unsafe {
+                UnregisterHotKey(self.hwnd as _, ID);
+            }
+        }
+        self.registered = false;
+    }
+}
+impl Drop for Registration {
+    fn drop(&mut self) {
+        self.clear();
+    }
+}
+
+pub(super) fn activate(state: &Rc<RefCell<PaneApp>>) {
+    let target = {
+        let s = state.borrow();
+        if !everything_settings::enabled(&s.store).unwrap_or(false) {
+            return;
+        }
+        s.views
+            .iter()
+            .find(|v| s.workspace.panel(v.id).is_some_and(Panel::is_search))
+            .map(|v| v.window.hwnd() as isize)
+    };
+    if let Some(hwnd) = target {
+        unsafe {
+            ShowWindow(hwnd as _, SW_SHOWNORMAL);
+            SetForegroundWindow(hwnd as _);
+            PostMessageW(hwnd as _, search::FOCUS_INPUT, 0, 0);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn native_registration_reports_conflicts_and_releases_disabled_binding() {
+        let window = windows_window::Window::new("Hotkey test")
+            .style(WS_POPUP)
+            .on_message(|_, msg, _, _| (msg == WM_DESTROY).then_some(0))
+            .create()
+            .unwrap();
+        let hwnd = window.hwnd() as isize;
+        let shortcut = (VK_F13..=VK_F24).filter(|key| *key != VK_F12).map(|key| Shortcut { key, modifiers: 7 }).find(|value| unsafe { RegisterHotKey(hwnd as _, ID + 1, flags(*value), u32::from(value.key)) } != 0).expect("available test binding");
+        let mut registration = Registration::default();
+        registration.update(hwnd, Some(shortcut));
+        assert!(
+            !registration.registered,
+            "must not steal an existing binding"
+        );
+        unsafe {
+            UnregisterHotKey(hwnd as _, ID + 1);
+        }
+        registration.update(hwnd, None);
+        registration.update(hwnd, Some(shortcut));
+        assert!(registration.registered);
+        registration.update(hwnd, None);
+        assert_ne!(
+            unsafe { RegisterHotKey(hwnd as _, ID + 1, flags(shortcut), u32::from(shortcut.key)) },
+            0
+        );
+        unsafe {
+            UnregisterHotKey(hwnd as _, ID + 1);
+        }
+    }
+    #[test]
+    fn shortcut_persists_and_reserves_system_and_file_commands() {
+        let store = WorkspaceStore::open_in_memory().unwrap();
+        save(&store, Shortcut::default()).unwrap();
+        load(&store).unwrap();
+        assert_eq!(settings(), Shortcut::default());
+        assert_eq!(label(settings()), "Ctrl + Shift + Space");
+        for value in [
+            Shortcut {
+                key: VK_F12,
+                modifiers: 3,
+            },
+            Shortcut {
+                key: VK_SPACE,
+                modifiers: 4,
+            },
+            Shortcut {
+                key: 0x43,
+                modifiers: 1,
+            },
+            Shortcut {
+                key: 0x41,
+                modifiers: 0,
+            },
+        ] {
+            assert!(save(&store, value).is_err());
+        }
+        assert_eq!(decode("broken"), None);
+        assert_eq!(
+            flags(Shortcut::default()),
+            MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT
+        );
+    }
+}

@@ -24,7 +24,16 @@ pub fn gpu_device() -> Result<windows_canvas::GpuDevice> {
                 return Ok(device.clone());
             }
         }
-        let device = canvas_result(windows_canvas::GpuDevice::new_or_warp())?;
+        let device = if std::env::var("LUCIDPANE_RENDERER")
+            .is_ok_and(|value| value.eq_ignore_ascii_case("warp"))
+        {
+            canvas_result(windows_canvas::GpuDevice::new_warp())?
+        } else {
+            canvas_result(windows_canvas::GpuDevice::new().or_else(|error| {
+                eprintln!("Hardware rendering unavailable, using WARP: {error}");
+                windows_canvas::GpuDevice::new_warp()
+            }))?
+        };
         *cached = Some(device.clone());
         Ok(device)
     })
