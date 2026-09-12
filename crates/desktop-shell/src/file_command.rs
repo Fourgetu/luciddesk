@@ -27,6 +27,192 @@ impl FileCommand {
     }
 }
 
+/// Copies filesystem items using Windows conflict and progress dialogs.
+/// # Errors
+/// Returns a Shell error if sources, destination or copy operation fail.
+pub fn copy_to_folder(
+    owner: HWND,
+    selected: &[ShellIdentity],
+    destination: &std::path::Path,
+) -> Result<()> {
+    use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance};
+    if selected.is_empty() {
+        return Ok(());
+    }
+    unsafe {
+        let target: IShellItem =
+            SHCreateItemFromParsingName(&HSTRING::from(destination.as_os_str()), None)?;
+        let operation: IFileOperation =
+            CoCreateInstance(&FileOperation, None, CLSCTX_INPROC_SERVER)?;
+        operation.SetOwnerWindow(owner)?;
+        operation.SetOperationFlags(FOF_ALLOWUNDO)?;
+        operation.CopyItems(&shell_items(selected)?, &target)?;
+        operation.PerformOperations()?;
+    }
+    Ok(())
+}
+
+/// Pastes into this exact folder; missing folders never fall back to Desktop.
+/// # Errors
+/// Returns errors opening the destination or invoking the clipboard command.
+pub fn paste_into_folder(owner: HWND, destination: &std::path::Path) -> Result<bool> {
+    unsafe {
+        let item: IShellItem =
+            SHCreateItemFromParsingName(&HSTRING::from(destination.as_os_str()), None)?;
+        let folder: IShellFolder = item.BindToHandler(None, &BHID_SFObject)?;
+        let context: IContextMenu = folder.CreateViewObject(owner)?;
+        let menu = Menu(CreatePopupMenu()?);
+        context
+            .QueryContextMenu(menu.0, 0, 1, 0x7fff, CMF_NORMAL)
+            .ok()?;
+        let info = CMINVOKECOMMANDINFO {
+            cbSize: size_of::<CMINVOKECOMMANDINFO>() as u32,
+            hwnd: owner,
+            lpVerb: PCSTR(b"paste\0".as_ptr()),
+            nShow: SW_SHOWNORMAL.0,
+            ..Default::default()
+        };
+        context.InvokeCommand(&info)?;
+        Ok(true)
+    }
+}
+
+/// Starts a native file drag; Explorer determines destination copy/move semantics.
+/// # Errors
+/// Returns errors creating the Shell data object or starting the drag loop.
+pub fn drag_file_items(owner: HWND, selected: &[ShellIdentity]) -> Result<()> {
+    use windows::Win32::System::{Com::IDataObject, Ole::*};
+    if selected.is_empty() {
+        return Ok(());
+    }
+    unsafe {
+        let data: IDataObject = shell_items(selected)?.BindToHandler(None, &BHID_DataObject)?;
+        SHDoDragDrop(
+            Some(owner),
+            &data,
+            None,
+            DROPEFFECT_COPY | DROPEFFECT_MOVE | DROPEFFECT_LINK,
+        )?;
+    }
+    Ok(())
+}
+
+struct MenuMessages {
+    context: IContextMenu,
+    owner: HWND,
+}
+impl Drop for MenuMessages {
+    fn drop(&mut self) {
+        unsafe {
+            windows_sys::Win32::UI::Shell::RemoveWindowSubclass(
+                self.owner.0,
+                Some(menu_messages),
+                0x4c50464d,
+            );
+        }
+    }
+}
+unsafe extern "system" fn menu_messages(
+    hwnd: windows_sys::Win32::Foundation::HWND,
+    msg: u32,
+    wp: usize,
+    lp: isize,
+    _id: usize,
+    data: usize,
+) -> isize {
+    use windows::Win32::Foundation::{LPARAM, WPARAM};
+    use windows::core::Interface;
+    unsafe {
+        let state = &*(data as *const MenuMessages);
+        if matches!(
+            msg,
+            WM_INITMENUPOPUP | WM_DRAWITEM | WM_MEASUREITEM | WM_MENUCHAR
+        ) {
+            if let Ok(context) = state.context.cast::<IContextMenu3>() {
+                let mut result = windows::Win32::Foundation::LRESULT::default();
+                if context
+                    .HandleMenuMsg2(msg, WPARAM(wp), LPARAM(lp), Some(&raw mut result))
+                    .is_ok()
+                {
+                    return result.0;
+                }
+            } else if let Ok(context) = state.context.cast::<IContextMenu2>() {
+                if context.HandleMenuMsg(msg, WPARAM(wp), LPARAM(lp)).is_ok() {
+                    return 0;
+                }
+            }
+        }
+        windows_sys::Win32::UI::Shell::DefSubclassProc(hwnd, msg, wp, lp)
+    }
+}
+
+/// Shows a filesystem context menu; true requests inline rename.
+/// # Errors
+/// Returns errors creating the Shell menu or invoking its selected command.
+pub fn show_file_items_menu(
+    owner: HWND,
+    selected: &[ShellIdentity],
+    point: windows::Win32::Foundation::POINT,
+) -> Result<bool> {
+    if selected.is_empty() {
+        return Ok(false);
+    }
+    unsafe {
+        let context: IContextMenu = shell_items(selected)?.BindToHandler(None, &BHID_SFUIObject)?;
+        let menu = Menu(CreatePopupMenu()?);
+        context
+            .QueryContextMenu(menu.0, 0, 1, 0x7fff, CMF_NORMAL | CMF_CANRENAME)
+            .ok()?;
+        let messages = Box::new(MenuMessages {
+            context: context.clone(),
+            owner,
+        });
+        if windows_sys::Win32::UI::Shell::SetWindowSubclass(
+            owner.0,
+            Some(menu_messages),
+            0x4c50464d,
+            (&*messages as *const MenuMessages) as usize,
+        ) == 0
+        {
+            return Err(windows::core::Error::from_thread());
+        }
+        let chosen = TrackPopupMenuEx(
+            menu.0,
+            (TPM_RETURNCMD | TPM_RIGHTBUTTON).0,
+            point.x,
+            point.y,
+            owner,
+            None,
+        )
+        .0;
+        drop(messages);
+        if chosen == 0 {
+            return Ok(false);
+        }
+        let offset = chosen as usize - 1;
+        let mut verb = [0u8; 256];
+        let _ = context.GetCommandString(
+            offset,
+            GCS_VERBA,
+            None,
+            PSTR(verb.as_mut_ptr()),
+            verb.len() as u32,
+        );
+        if selected.len() == 1 && verb.starts_with(b"rename\0") {
+            return Ok(true);
+        }
+        let command = CMINVOKECOMMANDINFO {
+            cbSize: size_of::<CMINVOKECOMMANDINFO>() as u32,
+            hwnd: owner,
+            lpVerb: PCSTR(offset as *const u8),
+            nShow: SW_SHOWNORMAL.0,
+            ..Default::default()
+        };
+        context.InvokeCommand(&command)?;
+        Ok(false)
+    }
+}
+
 struct Menu(HMENU);
 impl Drop for Menu {
     fn drop(&mut self) {
@@ -230,6 +416,56 @@ pub fn invoke_file_commands(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn folder_item_menu_copy_and_missing_paste_destination() {
+        let _apartment = crate::ShellApartment::initialize_sta().unwrap();
+        let root = std::env::temp_dir().join(format!(
+            "lucidpane-folder-shell-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let destination = root.join("destination");
+        std::fs::create_dir(&destination).unwrap();
+        let paths = [root.join("one.txt"), root.join("two.txt")];
+        for path in &paths {
+            std::fs::write(path, b"folder copy").unwrap();
+        }
+        let items: Vec<_> = paths
+            .iter()
+            .map(|path| ShellIdentity::FileSystem {
+                path: path.clone(),
+                volume_id: None,
+                file_id: None,
+            })
+            .collect();
+        unsafe {
+            let context: IContextMenu = shell_items(&items)
+                .unwrap()
+                .BindToHandler(None, &BHID_SFUIObject)
+                .unwrap();
+            let menu = Menu(CreatePopupMenu().unwrap());
+            context
+                .QueryContextMenu(menu.0, 0, 1, 0x7fff, CMF_NORMAL)
+                .ok()
+                .unwrap();
+        }
+        copy_to_folder(HWND::default(), &items, &destination).unwrap();
+        for path in &paths {
+            assert_eq!(std::fs::read(path).unwrap(), b"folder copy");
+            let copied = destination.join(path.file_name().unwrap());
+            assert_eq!(std::fs::read(&copied).unwrap(), b"folder copy");
+            std::fs::remove_file(copied).unwrap();
+            std::fs::remove_file(path).unwrap();
+        }
+        assert!(paste_into_folder(HWND::default(), &root.join("missing")).is_err());
+        std::fs::remove_dir(destination).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
 
     #[test]
     #[ignore = "Uses the interactive Shell clipboard; restores its previous contents"]

@@ -239,6 +239,22 @@ pub(super) fn open(owner: isize, identity: &ShellIdentity) -> Result<(), String>
         .map_err(|error| format!("无法打开 PowerToys Peek：{error}"))
 }
 
+pub(super) fn open_path(identity: &ShellIdentity) -> Result<(), String> {
+    let value = settings();
+    if !value.enabled {
+        return Ok(());
+    }
+    let executable = resolved(&value)
+        .filter(|p| p.is_file())
+        .ok_or("未找到 Peek，请在设置中选择程序路径")?;
+    let path = identity.file_system_path().ok_or("此项目没有文件路径")?;
+    std::process::Command::new(executable)
+        .arg(path)
+        .spawn()
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

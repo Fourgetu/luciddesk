@@ -876,6 +876,15 @@ where
                         *moved |= (p.x - start.x).abs() > unsafe { GetSystemMetrics(SM_CXDRAG) }
                             || (p.y - start.y).abs() > unsafe { GetSystemMetrics(SM_CYDRAG) };
                         if *moved {
+                            if model.borrow().folder.is_some() {
+                                drag = None;
+                                drag_identity = None;
+                                unsafe {
+                                    ReleaseCapture();
+                                }
+                                event(Event::FileDrag);
+                                return Some(0);
+                            }
                             let mut screen = p;
                             unsafe {
                                 ClientToScreen(hwnd, &raw mut screen);
@@ -1196,6 +1205,26 @@ where
                                 }
                             }
                             invalidate(hwnd);
+                            if model.borrow().folder.is_some() {
+                                let result = desktop_shell::show_file_items_menu(
+                                    windows::Win32::Foundation::HWND(hwnd),
+                                    &identities,
+                                    windows::Win32::Foundation::POINT {
+                                        x: anchor.x,
+                                        y: anchor.y,
+                                    },
+                                );
+                                match result {
+                                    Ok(true) => {
+                                        event(Event::RenameItem(identity));
+                                    }
+                                    Ok(false) => {
+                                        event(Event::Refresh);
+                                    }
+                                    Err(message) => error(&message.to_string()),
+                                }
+                                return;
+                            }
                             event(Event::MenuSelection(true));
                             let result = super::shell_menu::show_many(
                                 hwnd,
@@ -1217,10 +1246,20 @@ where
                         };
                         update_pointer(hwnd, &model, None);
                         invalidate(hwnd);
-                        let command = menu(hwnd, lparam, auto_hide, theme);
+                        let is_folder = model.borrow().folder.is_some();
+                        let command = menu(hwnd, lparam, auto_hide, theme, is_folder);
                         update_pointer(hwnd, &model, None);
                         invalidate(hwnd);
                         match command {
+                            19 => {
+                                event(Event::NewFolder);
+                            }
+                            20 => {
+                                event(Event::OpenFolder);
+                            }
+                            21 => {
+                                event(Event::ChangeFolder);
+                            }
                             1 => {
                                 event(Event::New);
                             }
@@ -1317,7 +1356,13 @@ where
     Ok(window)
 }
 
-fn menu(hwnd: HWND, lparam: isize, auto_hide: bool, theme: desktop_core::PanelTheme) -> i32 {
+fn menu(
+    hwnd: HWND,
+    lparam: isize,
+    auto_hide: bool,
+    theme: desktop_core::PanelTheme,
+    folder: bool,
+) -> i32 {
     let anchored = lparam == -1;
     let mut anchor = point(lparam);
     if anchored {
@@ -1330,7 +1375,7 @@ fn menu(hwnd: HWND, lparam: isize, auto_hide: bool, theme: desktop_core::PanelTh
             ClientToScreen(hwnd, &raw mut anchor);
         }
     }
-    super::menu::show(hwnd, anchor, anchored, auto_hide, theme)
+    super::menu::show(hwnd, anchor, anchored, auto_hide, theme, folder)
 }
 pub fn error(message: &str) {
     unsafe {

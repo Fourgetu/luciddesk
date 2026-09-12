@@ -238,6 +238,31 @@ pub(super) fn scene(
                 toggle: true,
             });
         }
+        if let Some(path) = panel.folder() {
+            s.cards.push(Rect::from_xywh(x, 316.0, w, 108.0));
+            s.text(
+                Rect::from_xywh(x + 18.0, 324.0, w - 36.0, 26.0),
+                "文件夹面板 · 源文件夹",
+                1,
+            );
+            s.text(
+                Rect::from_xywh(x + 18.0, 354.0, w - 36.0, 26.0),
+                path.to_string_lossy(),
+                0,
+            );
+            s.button(
+                Rect::from_xywh(x + 18.0, 386.0, 120.0, 30.0),
+                "打开文件夹",
+                Action::Change(Event::OpenFolder),
+                false,
+            );
+            s.button(
+                Rect::from_xywh(x + 150.0, 386.0, 120.0, 30.0),
+                "更换文件夹…",
+                Action::Change(Event::ChangeFolder),
+                false,
+            );
+        }
     } else if page == 3 {
         let value = peek::settings();
         s.cards.push(Rect::from_xywh(x, 88.0, w, 64.0));

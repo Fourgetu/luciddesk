@@ -45,10 +45,12 @@ pub fn show(
     anchored: bool,
     auto_hide: bool,
     theme: desktop_core::PanelTheme,
+    folder: bool,
 ) -> i32 {
     let dark = super::theme::is_dark(theme);
-    let rows = vec![
+    let mut rows = vec![
         entry(1, "新建分组", "", ""),
+        entry(19, "新建文件夹面板…", "", ""),
         entry(3, "按名称排序", "", ""),
         entry(0, "", "", ""),
         entry(7, "自动收起", if auto_hide { "✓" } else { "" }, ""),
@@ -67,6 +69,16 @@ pub fn show(
         entry(18, "设置", "", ""),
         entry(4, "退出 LucidPane", "", ""),
     ];
+    if folder {
+        rows.splice(
+            2..2,
+            [
+                entry(20, "打开源文件夹", "", ""),
+                entry(21, "更换文件夹…", "", ""),
+                entry(9, "刷新", "", "F5"),
+            ],
+        );
+    }
     let scale = unsafe { GetDpiForWindow(owner) }.max(96) as f32 / 96.0;
     let mut animate = 1i32;
     unsafe {
@@ -388,7 +400,8 @@ mod tests {
                 POINT { x: 40, y: 40 },
                 true,
                 false,
-                desktop_core::PanelTheme::Dark
+                desktop_core::PanelTheme::Dark,
+                false
             ),
             0
         );
@@ -442,7 +455,8 @@ mod tests {
                         POINT { x: 40, y: 40 },
                         false,
                         false,
-                        desktop_core::PanelTheme::Dark
+                        desktop_core::PanelTheme::Dark,
+                        false
                     ),
                     0
                 );

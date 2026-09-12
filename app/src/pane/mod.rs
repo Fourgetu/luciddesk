@@ -13,6 +13,7 @@ mod drag_image;
 mod drop_description;
 mod drop_target;
 mod events;
+mod folder;
 mod hybrid;
 mod keyboard;
 mod label;
@@ -77,6 +78,7 @@ struct View {
 }
 
 struct PaneApp {
+    folders: HashMap<PanelId, folder::Source>,
     settings: Option<windows_window::Window>,
     // Optional only while starting, shutting down, or running isolated UI tests.
     session: Option<hybrid::Session>,
@@ -115,10 +117,16 @@ enum Event {
     Material(desktop_core::Backdrop),
     Tick,
     New,
+    NewFolder,
+    MapFolder(std::path::PathBuf),
+    ChangeFolder,
+    SetFolder(std::path::PathBuf),
+    OpenFolder,
     Activate(usize),
     ActivateSelection,
     Peek,
     FileCommand(desktop_shell::FileCommand),
+    FileDrag,
     Drop { index: usize, point: POINT },
     Geometry(RectDip),
     Collapse,
@@ -127,6 +135,17 @@ enum Event {
 }
 
 fn items_for(state: &PaneApp, id: PanelId) -> Vec<Item> {
+    if state
+        .workspace
+        .panel(id)
+        .is_some_and(|p| p.folder().is_some())
+    {
+        return state
+            .folders
+            .get(&id)
+            .map(|source| source.items.clone())
+            .unwrap_or_default();
+    }
     let mut items: Vec<_> = state
         .workspace
         .desktop_items()
@@ -151,11 +170,14 @@ fn items_for(state: &PaneApp, id: PanelId) -> Vec<Item> {
 }
 
 fn create_view(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> {
+    folder::ensure(&mut state.borrow_mut(), id)?;
     let (panel, items) = {
         let s = state.borrow();
         (s.workspace.panel(id).unwrap().clone(), items_for(&s, id))
     };
     let model = Rc::new(RefCell::new(GroupModel {
+        folder: panel.folder().map(Path::to_path_buf),
+        folder_status: None,
         options: state.borrow().workspace.pane_options(),
         theme: panel.theme(),
         dark: theme::is_dark(panel.theme()),
@@ -179,7 +201,7 @@ fn create_view(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> 
         renaming: None,
         scroll: 0,
         collapsed: panel.collapsed(),
-        loading: id == PanelId::new(1),
+        loading: panel.folder().is_some() || id == PanelId::new(1),
     }));
     let weak = Rc::downgrade(state);
     let window = window::create(panel.rect(), Rc::clone(&model), move |event| {
@@ -211,6 +233,23 @@ fn refresh_changed_views(state: &mut PaneApp, force: bool) {
     for view in &state.views {
         let items = items_for(state, view.id);
         let mut model = view.model.borrow_mut();
+        if model.folder.is_some() {
+            let status = state
+                .folders
+                .get(&view.id)
+                .and_then(|source| source.status.clone());
+            let loading = state
+                .folders
+                .get(&view.id)
+                .is_none_or(|source| source.loading);
+            if model.folder_status != status || model.loading != loading {
+                model.folder_status = status;
+                model.loading = loading;
+                unsafe {
+                    InvalidateRect(view.window.hwnd().cast(), std::ptr::null(), 0);
+                }
+            }
+        }
         if !force && same_items(&model.items, &items) && !model.loading {
             continue;
         }
@@ -257,6 +296,12 @@ fn remove_panel(workspace: &mut Workspace, id: PanelId) {
 }
 
 fn set_order(workspace: &mut Workspace, id: PanelId, items: &[Item]) {
+    if workspace
+        .panel(id)
+        .is_some_and(|panel| panel.folder().is_some())
+    {
+        return;
+    }
     // Monitor surfaces are not panes. Their remaining icons retain absolute positions.
     if workspace.panel(id).is_none() {
         return;

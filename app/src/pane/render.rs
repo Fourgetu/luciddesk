@@ -463,7 +463,15 @@ impl Renderer {
                         continue;
                     }
                     if model.items.is_empty() {
-                        let text = if model.loading {
+                        let text = if let Some(status) = &model.folder_status {
+                            status.as_str()
+                        } else if model.folder.is_some() {
+                            if model.loading {
+                                "正在读取文件夹…"
+                            } else {
+                                "此文件夹为空"
+                            }
+                        } else if model.loading {
                             "正在读取桌面项目…"
                         } else {
                             "将图标拖入此分组"
@@ -591,6 +599,8 @@ mod tests {
 
     fn sample_model() -> GroupModel {
         GroupModel {
+            folder: None,
+            folder_status: None,
             options: desktop_core::PaneOptions::default(),
             theme: desktop_core::PanelTheme::Dark,
             dark: true,

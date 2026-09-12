@@ -240,6 +240,7 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
         diagnostic_path: path.with_extension("log"),
     };
     let state = Rc::new(RefCell::new(PaneApp {
+        folders: HashMap::new(),
         settings: None,
         session: Some(session),
         workspace,
@@ -271,6 +272,11 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
             return;
         };
         match action {
+            crate::tray::Action::NewFolder => {
+                if let Err(error) = handle(&state, PanelId::new(0), Event::NewFolder) {
+                    window::error(&error);
+                }
+            }
             crate::tray::Action::Settings => {
                 if let Err(error) = handle(&state, PanelId::new(0), Event::Settings) {
                     window::error(&error);
@@ -320,6 +326,16 @@ pub(super) fn register_drop(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result
     let weak = Rc::downgrade(state);
     let registration = super::drop_target::Registration::new(
         windows::Win32::Foundation::HWND(hwnd.cast()),
+        if state
+            .borrow()
+            .workspace
+            .panel(id)
+            .is_some_and(|p| p.folder().is_some())
+        {
+            windows::Win32::System::Ole::DROPEFFECT_COPY
+        } else {
+            windows::Win32::System::Ole::DROPEFFECT_LINK
+        },
         move |identities, commit| {
             let Some(state) = weak.upgrade() else {
                 return false;
@@ -333,6 +349,31 @@ pub(super) fn register_drop(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result
                 .is_none_or(|v| v.model.borrow().collapsed)
             {
                 return false;
+            }
+            if let Some(path) = s
+                .workspace
+                .panel(id)
+                .and_then(Panel::folder)
+                .map(Path::to_path_buf)
+            {
+                if !folder::accepts_copy(identities, &path) {
+                    return false;
+                }
+                if !commit {
+                    return true;
+                }
+                s.session.as_mut().unwrap().drag = None;
+                let items = identities.to_vec();
+                drop(s);
+                return window::post_action(hwnd.cast(), move || {
+                    if let Err(error) = desktop_shell::copy_to_folder(
+                        windows::Win32::Foundation::HWND(hwnd.cast()),
+                        &items,
+                        &path,
+                    ) {
+                        window::error(&error.to_string());
+                    }
+                });
             }
             let keys: Option<Vec<_>> = identities
                 .iter()
@@ -998,7 +1039,11 @@ fn poll_drag(s: &mut PaneApp) -> Result<(), String> {
         .views
         .iter()
         .find(|v| {
-            v.window.hwnd().cast::<std::ffi::c_void>() == surface && !v.model.borrow().collapsed
+            v.window.hwnd().cast::<std::ffi::c_void>() == surface
+                && !v.model.borrow().collapsed
+                && s.workspace
+                    .panel(v.id)
+                    .is_some_and(|panel| panel.folder().is_none())
         })
         .map(|v| v.id);
     if let Some(id) = target {

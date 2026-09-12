@@ -1,9 +1,16 @@
 pub use desktop_core::ShellIdentity;
+use windows::{
+    Win32::UI::Shell::{BHID_SFObject, IShellFolder, SHCreateItemFromParsingName},
+    core::HSTRING,
+};
 mod file_command;
 mod native_layout;
 mod native_menu;
 mod rename;
-pub use file_command::{FileCommand, invoke_file_command, invoke_file_commands};
+pub use file_command::{
+    FileCommand, copy_to_folder, drag_file_items, invoke_file_command, invoke_file_commands,
+    paste_into_folder, show_file_items_menu,
+};
 pub use native_layout::{
     NativeDesktopReader, NativeDesktopRevision, NativeDesktopSnapshot, native_desktop_snapshot,
 };
@@ -129,6 +136,23 @@ pub fn local_app_data_path() -> Result<PathBuf, ShellError> {
 /// Returns a COM or Shell error when the Desktop Folder cannot be enumerated.
 pub fn enumerate_desktop_namespace(owner: isize) -> Result<Vec<DesktopShellItem>, ShellError> {
     let desktop = unsafe { SHGetDesktopFolder() }?;
+    enumerate_shell_folder(&desktop, owner)
+}
+
+/// Enumerates a filesystem folder using Shell display names and attributes.
+/// # Errors
+/// Returns a Shell error if the folder cannot be opened or enumerated.
+pub fn enumerate_folder(path: &Path) -> Result<Vec<DesktopShellItem>, ShellError> {
+    let item: IShellItem =
+        unsafe { SHCreateItemFromParsingName(&HSTRING::from(path.as_os_str()), None) }?;
+    let folder: IShellFolder = unsafe { item.BindToHandler(None, &BHID_SFObject) }?;
+    enumerate_shell_folder(&folder, 0)
+}
+
+fn enumerate_shell_folder(
+    desktop: &IShellFolder,
+    owner: isize,
+) -> Result<Vec<DesktopShellItem>, ShellError> {
     let mut enumerator = None;
     let flags = u32::try_from(SHCONTF_FOLDERS.0 | SHCONTF_NONFOLDERS.0).unwrap_or_default();
     let result = unsafe {
@@ -156,7 +180,7 @@ pub fn enumerate_desktop_namespace(owner: isize) -> Result<Vec<DesktopShellItem>
         }
         let child = Pidl::new(child[0]);
         let Ok(shell_item): Result<IShellItem, _> =
-            (unsafe { SHCreateItemWithParent(None, &desktop, child.as_ptr()) })
+            (unsafe { SHCreateItemWithParent(None, desktop, child.as_ptr()) })
         else {
             continue;
         };

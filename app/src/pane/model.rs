@@ -3,6 +3,8 @@ use super::*;
 
 #[allow(clippy::struct_excessive_bools)]
 pub struct GroupModel {
+    pub folder: Option<std::path::PathBuf>,
+    pub folder_status: Option<String>,
     pub options: desktop_core::PaneOptions,
     pub theme: desktop_core::PanelTheme,
     pub dark: bool,

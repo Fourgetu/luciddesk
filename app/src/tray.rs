@@ -16,6 +16,7 @@ pub enum Action {
     Settings,
     Show,
     New,
+    NewFolder,
     Exit,
 }
 
@@ -131,6 +132,7 @@ fn menu(hwnd: HWND, anchor: usize) -> Option<Action> {
         }
         AppendMenuW(menu, MF_STRING, 1, windows_sys::w!("显示分组"));
         AppendMenuW(menu, MF_STRING, 2, windows_sys::w!("新建分组"));
+        AppendMenuW(menu, MF_STRING, 5, windows_sys::w!("新建文件夹面板…"));
         AppendMenuW(menu, MF_STRING, 4, windows_sys::w!("设置"));
         AppendMenuW(menu, MF_SEPARATOR, 0, std::ptr::null());
         AppendMenuW(menu, MF_STRING, 3, windows_sys::w!("退出 LucidPane"));
@@ -153,6 +155,7 @@ fn menu(hwnd: HWND, anchor: usize) -> Option<Action> {
             2 => Some(Action::New),
             3 => Some(Action::Exit),
             4 => Some(Action::Settings),
+            5 => Some(Action::NewFolder),
             _ => None,
         }
     }

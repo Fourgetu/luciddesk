@@ -17,6 +17,7 @@ use windows::{
 type Accept = Rc<dyn Fn(&[ShellIdentity], bool) -> bool>;
 #[implement(IDropTarget)]
 struct Target {
+    effect: DROPEFFECT,
     hwnd: HWND,
     helper: Option<IDropTargetHelper>,
     accept: Accept,
@@ -39,7 +40,7 @@ impl IDropTarget_Impl for Target_Impl {
         // before decoding Shell objects, which may synchronously call Explorer.
         // This provisional effect is visual only; update_effect below decides
         // what we return to the source, and Drop validates again before commit.
-        let preview_effect = unsafe { *effect & DROPEFFECT_LINK };
+        let preview_effect = unsafe { *effect & self.effect };
         if let (Some(helper), Some(data)) = (&self.helper, data.as_ref()) {
             unsafe {
                 let _ = helper.DragEnter(self.hwnd, data, &raw const screen, preview_effect);
@@ -52,7 +53,7 @@ impl IDropTarget_Impl for Target_Impl {
             .unwrap_or_default();
         *self.items.borrow_mut() = items;
         self.update_effect(effect);
-        if unsafe { *effect != DROPEFFECT_NONE } {
+        if self.effect == DROPEFFECT_LINK && unsafe { *effect != DROPEFFECT_NONE } {
             *self.description.borrow_mut() = data
                 .as_ref()
                 .map(|data| Rc::new(super::drop_description::QuietDescription::new(data)));
@@ -120,10 +121,10 @@ impl IDropTarget_Impl for Target_Impl {
         let items = self.items.take();
         unsafe {
             *effect = if !items.is_empty()
-                && (*effect & DROPEFFECT_LINK) != DROPEFFECT_NONE
+                && (*effect & self.effect) != DROPEFFECT_NONE
                 && (self.accept)(&items, true)
             {
-                DROPEFFECT_LINK
+                self.effect
             } else {
                 DROPEFFECT_NONE
             };
@@ -146,10 +147,10 @@ impl Target_Impl {
         let items = self.items.borrow().clone();
         unsafe {
             *effect = if !items.is_empty()
-                && (*effect & DROPEFFECT_LINK) != DROPEFFECT_NONE
+                && (*effect & self.effect) != DROPEFFECT_NONE
                 && (self.accept)(&items, false)
             {
-                DROPEFFECT_LINK
+                self.effect
             } else {
                 DROPEFFECT_NONE
             };
@@ -166,9 +167,11 @@ impl Registration {
     }
     pub fn new(
         hwnd: HWND,
+        effect: DROPEFFECT,
         accept: impl Fn(&[ShellIdentity], bool) -> bool + 'static,
     ) -> Result<Self> {
         let target: IDropTarget = Target {
+            effect,
             hwnd,
             helper: unsafe {
                 CoCreateInstance(&CLSID_DragDropHelper, None, CLSCTX_INPROC_SERVER).ok()
@@ -235,6 +238,7 @@ mod tests {
         let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
         let events = Rc::new(RefCell::new(Vec::new()));
         let target: IDropTarget = Target {
+            effect: DROPEFFECT_LINK,
             hwnd: HWND::default(),
             helper: Some(Helper(events.clone()).into()),
             accept: Rc::new(|_, _| false),

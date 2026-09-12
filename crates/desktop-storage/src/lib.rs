@@ -94,6 +94,10 @@ impl WorkspaceStore {
         }
         drop(statement);
         for panel in &mut panels {
+            panel.set_folder(
+                self.preference(&format!("panel_folder:{}", panel.id().get()))?
+                    .map(PathBuf::from),
+            );
             let panel_id = i64::try_from(panel.id().get())
                 .map_err(|_| StoreError::InvalidData("panel id exceeds SQLite range".into()))?;
             let auto_hide = self
@@ -215,6 +219,18 @@ impl WorkspaceStore {
     /// Returns an error when serialization or commit fails.
     pub fn save_workspace(&mut self, workspace: &Workspace) -> Result<(), StoreError> {
         let transaction = self.connection.transaction()?;
+        transaction.execute("DELETE FROM metadata WHERE key GLOB 'panel_folder:*'", [])?;
+        for panel in workspace.panels() {
+            if let Some(folder) = panel.folder() {
+                transaction.execute(
+                    "INSERT INTO metadata(key,value) VALUES (?1,?2)",
+                    params![
+                        format!("panel_folder:{}", panel.id().get()),
+                        folder.to_string_lossy()
+                    ],
+                )?;
+            }
+        }
         let options = workspace.pane_options();
         transaction.execute(
             "INSERT OR REPLACE INTO metadata(key,value) VALUES ('pane_options',?1)",
@@ -621,6 +637,48 @@ impl From<rusqlite::Error> for StoreError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn folder_sources_survive_reopen_and_are_removed_with_the_panel() {
+        let mut store = super::WorkspaceStore::open_in_memory().unwrap();
+        let mut folder = desktop_core::Panel::new(
+            desktop_core::PanelId::new(2),
+            "映射",
+            desktop_core::RectDip::default(),
+        );
+        let path = std::path::PathBuf::from(r"C:\资料\尚未挂载");
+        folder.set_folder(Some(path.clone()));
+        let mut workspace = desktop_core::Workspace::from_panels(vec![
+            desktop_core::Panel::new(
+                desktop_core::PanelId::new(1),
+                "桌面",
+                desktop_core::RectDip::default(),
+            ),
+            folder,
+        ])
+        .unwrap();
+        store.save_preference("peek", "keep").unwrap();
+        store.save_workspace(&workspace).unwrap();
+        let loaded = store.load_workspace().unwrap();
+        assert_eq!(
+            loaded
+                .panel(desktop_core::PanelId::new(2))
+                .unwrap()
+                .folder(),
+            Some(path.as_path())
+        );
+        assert!(
+            loaded
+                .panel(desktop_core::PanelId::new(1))
+                .unwrap()
+                .folder()
+                .is_none()
+        );
+        assert!(loaded.desktop_items().is_empty());
+        workspace.remove_panel(desktop_core::PanelId::new(2));
+        store.save_workspace(&workspace).unwrap();
+        assert!(store.preference("panel_folder:2").unwrap().is_none());
+        assert_eq!(store.preference("peek").unwrap().as_deref(), Some("keep"));
+    }
     use super::{SCHEMA_VERSION, WorkspaceStore};
     use desktop_core::{
         Backdrop, DesktopItem, DesktopPlacement, GridPosition, Panel, PanelId, RectDip,

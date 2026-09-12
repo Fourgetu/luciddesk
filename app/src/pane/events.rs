@@ -40,6 +40,76 @@ pub(super) fn handle(
     id: PanelId,
     event: Event,
 ) -> Result<bool, String> {
+    if matches!(event, Event::FileDrag) {
+        let target = {
+            let s = state.borrow();
+            s.views.iter().find(|v| v.id == id).map(|v| {
+                (
+                    v.window.hwnd() as isize,
+                    v.model.borrow().selected_identities(),
+                )
+            })
+        };
+        if let Some((owner, items)) = target {
+            window::post_action(owner as _, move || {
+                if let Err(error) = desktop_shell::drag_file_items(
+                    windows::Win32::Foundation::HWND(owner as _),
+                    &items,
+                ) {
+                    window::error(&error.to_string());
+                }
+            });
+        }
+        return Ok(false);
+    }
+    if matches!(event, Event::NewFolder | Event::ChangeFolder) {
+        folder::request_picker(state, id, matches!(event, Event::ChangeFolder))?;
+        return Ok(false);
+    }
+    if let Event::SetFolder(path) = &event {
+        let mut s = state.borrow_mut();
+        let old = s.workspace.clone();
+        let panel = s.workspace.panel_mut(id).ok_or("面板已关闭")?;
+        if panel.folder().is_none() {
+            return Err("此面板不是文件夹面板".into());
+        }
+        panel.set_folder(Some(path.clone()));
+        if let Err(error) = save(&mut s) {
+            s.workspace = old;
+            return Err(error);
+        }
+        folder::ensure(&mut s, id)?;
+        if let Some(view) = s.views.iter().find(|v| v.id == id) {
+            let mut model = view.model.borrow_mut();
+            model.folder = Some(path.clone());
+            model.clear_selection();
+            model.scroll = 0;
+        }
+        refresh_views(&mut s);
+        return Ok(false);
+    }
+    if matches!(event, Event::OpenFolder) {
+        let target = {
+            let s = state.borrow();
+            s.workspace.panel(id).and_then(Panel::folder).map(|path| {
+                (
+                    s.views
+                        .iter()
+                        .find(|v| v.id == id)
+                        .map_or(0, |v| v.window.hwnd() as isize),
+                    folder::identity(path.to_path_buf()),
+                )
+            })
+        };
+        if let Some((owner, identity)) = target {
+            window::defer_action(move || {
+                if let Err(error) = open_shell_identity(owner, &identity) {
+                    window::error(&error.to_string());
+                }
+            });
+        }
+        return Ok(false);
+    }
     if let Event::Peek = event {
         let index = {
             let s = state.borrow();
@@ -60,6 +130,14 @@ pub(super) fn handle(
                 let Some(state) = weak.upgrade() else {
                     return Ok(());
                 };
+                if state
+                    .borrow()
+                    .workspace
+                    .panel(id)
+                    .is_some_and(|p| p.folder().is_some())
+                {
+                    return peek::open_path(identity);
+                }
                 hybrid::menu(&state.borrow(), true)?;
                 let result = peek::open(owner, identity);
                 let restored = hybrid::menu(&state.borrow(), false).map(|_| ());
@@ -73,19 +151,35 @@ pub(super) fn handle(
             let s = state.borrow();
             s.views.iter().find(|view| view.id == id).map(|view| {
                 let model = view.model.borrow();
-                (view.window.hwnd(), model.selected_identities())
+                let destination = (command == desktop_shell::FileCommand::Paste)
+                    .then(|| {
+                        s.workspace
+                            .panel(id)
+                            .and_then(Panel::folder)
+                            .map(Path::to_path_buf)
+                    })
+                    .flatten();
+                (view.window.hwnd(), model.selected_identities(), destination)
             })
         };
-        if let Some((owner, identity)) = target {
+        if let Some((owner, identity, destination)) = target {
             if !window::post_action(owner.cast(), move || {
                 if unsafe { IsWindow(owner.cast()) } == 0 {
                     return;
                 }
-                if let Err(error) = desktop_shell::invoke_file_commands(
-                    windows::Win32::Foundation::HWND(owner.cast()),
-                    &identity,
-                    command,
-                ) {
+                let result = if let Some(path) = destination {
+                    desktop_shell::paste_into_folder(
+                        windows::Win32::Foundation::HWND(owner.cast()),
+                        &path,
+                    )
+                } else {
+                    desktop_shell::invoke_file_commands(
+                        windows::Win32::Foundation::HWND(owner.cast()),
+                        &identity,
+                        command,
+                    )
+                };
+                if let Err(error) = result {
                     window::error(&format!("文件操作失败：{error}"));
                 }
             }) {
@@ -225,6 +319,7 @@ pub(super) fn handle(
             hybrid::sync(&mut s)?;
             return Err(error);
         }
+        s.folders.remove(&id);
         let view = s
             .views
             .iter()
@@ -327,9 +422,15 @@ pub(super) fn handle(
         }
         return Ok(false);
     }
-    if matches!(event, Event::New) {
+    if matches!(event, Event::New | Event::MapFolder(_)) {
+        let path = if let Event::MapFolder(path) = &event {
+            Some(path.clone())
+        } else {
+            None
+        };
         let next = {
             let mut s = state.borrow_mut();
+            let old = s.workspace.clone();
             let next = PanelId::new(
                 s.workspace
                     .panels()
@@ -339,20 +440,30 @@ pub(super) fn handle(
                     .unwrap_or(0)
                     + 1,
             );
-            s.workspace
-                .add_panel(Panel::new(
-                    next,
-                    format!("分组 {}", next.get()),
-                    RectDip::new(240.0, 240.0, 480.0, 360.0),
-                ))
-                .map_err(|e| e.to_string())?;
+            let mut panel = Panel::new(
+                next,
+                path.as_ref()
+                    .map(|p| {
+                        p.file_name()
+                            .unwrap_or(p.as_os_str())
+                            .to_string_lossy()
+                            .into_owned()
+                    })
+                    .unwrap_or_else(|| format!("分组 {}", next.get())),
+                RectDip::new(240.0, 240.0, 480.0, 360.0),
+            );
+            panel.set_folder(path.clone());
+            s.workspace.add_panel(panel).map_err(|e| e.to_string())?;
             if s.workspace.appearance().is_none() {
                 s.workspace
                     .panel_mut(next)
                     .unwrap()
                     .set_backdrop(desktop_core::Backdrop::Acrylic);
             }
-            save(&mut s)?;
+            if let Err(error) = save(&mut s) {
+                s.workspace = old;
+                return Err(error);
+            }
             next
         };
         create_view(state, next)?;
@@ -360,6 +471,12 @@ pub(super) fn handle(
     }
     let mut s = state.borrow_mut();
     match event {
+        Event::FileDrag
+        | Event::NewFolder
+        | Event::MapFolder(_)
+        | Event::ChangeFolder
+        | Event::SetFolder(_)
+        | Event::OpenFolder => unreachable!("Handled before borrowing PaneApp"),
         Event::RenameTitle | Event::ClosePane | Event::Settings => {
             unreachable!("Handled before borrowing PaneApp")
         }
@@ -422,7 +539,13 @@ pub(super) fn handle(
                 window::set_layer(view.window.hwnd().cast(), enabled);
             }
         }
-        Event::Refresh => hybrid::refresh_icons(&mut s),
+        Event::Refresh => {
+            if let Some(source) = s.folders.get(&id) {
+                source.refresh();
+            } else {
+                hybrid::refresh_icons(&mut s);
+            }
+        }
         Event::Moving(rect) => {
             if !s.workspace.pane_options().snap {
                 return Ok(false);
@@ -478,6 +601,7 @@ pub(super) fn handle(
             }
         }
         Event::Tick => {
+            folder::poll(&mut s);
             if s.session.is_some() {
                 hybrid::tick(&mut s)?;
             }
@@ -536,6 +660,10 @@ pub(super) fn handle(
             save(&mut s)?;
         }
         Event::Sort => {
+            if let Some(source) = s.folders.get(&id) {
+                source.refresh();
+                return Ok(false);
+            }
             if s.workspace.panel(id).is_none() {
                 return Ok(false);
             }
@@ -595,6 +723,37 @@ pub(super) fn handle(
                 Some((view.id, at))
             });
             if let Some((target, at)) = target {
+                if let Some(path) = s
+                    .workspace
+                    .panel(target)
+                    .and_then(Panel::folder)
+                    .map(Path::to_path_buf)
+                {
+                    let identity = source[index].identity.clone();
+                    if !folder::accepts_copy(std::slice::from_ref(&identity), &path) {
+                        return Ok(false);
+                    }
+                    let owner = s
+                        .views
+                        .iter()
+                        .find(|v| v.id == target)
+                        .unwrap()
+                        .window
+                        .hwnd() as isize;
+                    window::post_action(owner as _, move || {
+                        if let Err(error) = desktop_shell::copy_to_folder(
+                            windows::Win32::Foundation::HWND(owner as _),
+                            &[identity],
+                            &path,
+                        ) {
+                            window::error(&error.to_string());
+                        }
+                    });
+                    return Ok(false);
+                }
+                if s.workspace.panel(id).is_some_and(|p| p.folder().is_some()) {
+                    return Ok(false);
+                }
                 transfer(&mut s, id, index, target, at)?;
                 for view in &s.views {
                     view.model.borrow_mut().clear_selection();

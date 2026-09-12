@@ -52,6 +52,7 @@ fn test_state() -> PaneApp {
     reconcile(&mut workspace, inventory);
     let (_, receiver) = mpsc::channel();
     PaneApp {
+        folders: HashMap::new(),
         settings: None,
         session: None,
         workspace,
@@ -60,6 +61,93 @@ fn test_state() -> PaneApp {
         images: HashMap::new(),
         receiver,
     }
+}
+
+#[test]
+fn mapped_folder_never_takes_desktop_membership() {
+    let mut state = test_state();
+    normalize_pane_orders(&mut state);
+    let panel = PanelId::new(2);
+    state
+        .workspace
+        .panel_mut(panel)
+        .unwrap()
+        .set_folder(Some(std::path::PathBuf::from(r"C:\Mapped")));
+    let desktop_items = state.workspace.desktop_items().to_vec();
+    let desktop_view = items_for(&state, PanelId::new(1));
+    set_order(&mut state.workspace, panel, &desktop_view);
+    normalize_pane_orders(&mut state);
+    assert_eq!(state.workspace.desktop_items(), desktop_items);
+    assert!(items_for(&state, panel).is_empty());
+    remove_panel(&mut state.workspace, panel);
+    assert_eq!(state.workspace.desktop_items(), desktop_items);
+}
+
+#[test]
+fn folder_pane_creation_switch_and_close_preserve_real_files() {
+    let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let root = std::env::temp_dir().join(format!(
+        "lucidpane-folder-ui-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir(&root).unwrap();
+    std::fs::create_dir(root.join("child")).unwrap();
+    std::fs::write(root.join("keep.txt"), b"keep").unwrap();
+    let mut initial = test_state();
+    initial
+        .workspace
+        .set_appearance(desktop_core::PanelTheme::Dark, desktop_core::Backdrop::Mica);
+    let state = Rc::new(RefCell::new(initial));
+    handle(&state, PanelId::new(0), Event::MapFolder(root.clone())).unwrap();
+    let id = PanelId::new(3);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        folder::poll(&mut state.borrow_mut());
+        if !state.borrow().folders[&id].loading {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_eq!(state.borrow().views[0].model.borrow().items.len(), 2);
+    assert_eq!(
+        state
+            .borrow()
+            .store
+            .load_workspace()
+            .unwrap()
+            .panel(id)
+            .unwrap()
+            .folder(),
+        Some(root.as_path())
+    );
+    handle(&state, id, Event::SetFolder(root.join("child"))).unwrap();
+    assert_eq!(
+        state.borrow().views[0].model.borrow().folder.as_deref(),
+        Some(root.join("child").as_path())
+    );
+    assert!(state.borrow().views[0].model.borrow().items.is_empty());
+    handle(&state, id, Event::ClosePane).unwrap();
+    assert!(state.borrow().folders.is_empty());
+    assert!(state.borrow().views.is_empty());
+    assert_eq!(std::fs::read(root.join("keep.txt")).unwrap(), b"keep");
+    assert!(
+        state
+            .borrow()
+            .store
+            .load_workspace()
+            .unwrap()
+            .panel(id)
+            .is_none()
+    );
+    drop(state);
+    std::fs::remove_file(root.join("keep.txt")).unwrap();
+    std::fs::remove_dir(root.join("child")).unwrap();
+    std::fs::remove_dir(root).unwrap();
 }
 
 #[test]
@@ -151,6 +239,8 @@ fn activation_releases_state_and_model_before_shell_reentry() {
 #[test]
 fn snapped_content_bottom_and_scrollbar_use_the_same_row_metrics() {
     let mut model = GroupModel {
+        folder: None,
+        folder_status: None,
         options: desktop_core::PaneOptions::default(),
         theme: desktop_core::PanelTheme::Dark,
         dark: true,
@@ -258,6 +348,8 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
     };
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
     let model = Rc::new(RefCell::new(GroupModel {
+        folder: None,
+        folder_status: None,
         options: desktop_core::PaneOptions::default(),
         theme: desktop_core::PanelTheme::Dark,
         dark: true,
@@ -573,6 +665,8 @@ fn pane_layer_switch_and_wallpaper_material_initialize() {
     use windows_sys::Win32::UI::WindowsAndMessaging::{GWL_EXSTYLE, GetWindowLongW, WS_EX_TOPMOST};
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
     let model = Rc::new(RefCell::new(GroupModel {
+        folder: None,
+        folder_status: None,
         options: desktop_core::PaneOptions::default(),
         theme: desktop_core::PanelTheme::Dark,
         dark: true,
@@ -1151,6 +1245,8 @@ fn reconciliation_preserves_groups_and_appends_new_items_after_existing_order() 
 #[test]
 fn multiselection_preserves_anchor_toggle_and_file_identity_on_refresh() {
     let mut model = GroupModel {
+        folder: None,
+        folder_status: None,
         options: desktop_core::PaneOptions::default(),
         theme: desktop_core::PanelTheme::Dark,
         dark: true,

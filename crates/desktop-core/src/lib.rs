@@ -263,6 +263,7 @@ pub enum PanelTheme {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Panel {
+    folder: Option<PathBuf>,
     theme: PanelTheme,
     always_on_top: bool,
     auto_hide: bool,
@@ -279,6 +280,7 @@ impl Panel {
     pub fn new(id: PanelId, title: impl Into<String>, rect: RectDip) -> Self {
         Self {
             id,
+            folder: None,
             title: title.into(),
             rect,
             collapsed: false,
@@ -293,6 +295,16 @@ impl Panel {
     #[must_use]
     pub const fn id(&self) -> PanelId {
         self.id
+    }
+
+    /// A folder pane displays live children, independently of desktop membership.
+    #[must_use]
+    pub fn folder(&self) -> Option<&Path> {
+        self.folder.as_deref()
+    }
+
+    pub fn set_folder(&mut self, path: Option<PathBuf>) {
+        self.folder = path;
     }
 
     #[must_use]
