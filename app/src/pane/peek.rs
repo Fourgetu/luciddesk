@@ -113,15 +113,17 @@ fn decode(raw: &str) -> Option<Settings> {
     })
 }
 pub(super) fn load(store: &WorkspaceStore) -> Result<(), String> {
-    let value = store
+    let mut value = store
         .preference("peek")
         .map_err(|e| e.to_string())?
         .and_then(|raw| decode(&raw))
         .unwrap_or_default();
+    value.enabled &= resolved(&value).is_some();
     SETTINGS.with(|s| *s.borrow_mut() = value);
     Ok(())
 }
-pub(super) fn save(store: &WorkspaceStore, value: Settings) -> Result<(), String> {
+pub(super) fn save(store: &WorkspaceStore, mut value: Settings) -> Result<(), String> {
+    value.enabled &= resolved(&value).is_some();
     store
         .save_preference("peek", &encode(&value))
         .map_err(|e| e.to_string())?;
@@ -156,7 +158,11 @@ pub(super) fn valid_shortcut(key: u16, bits: u8) -> bool {
 }
 pub(super) fn matches(key: u16, mods: &Modifiers, repeat: bool) -> bool {
     let s = settings();
-    s.enabled && !repeat && key == s.key && modifier_bits(mods) == s.modifiers
+    s.enabled
+        && !repeat
+        && key == s.key
+        && modifier_bits(mods) == s.modifiers
+        && resolved(&s).is_some()
 }
 pub(super) fn shortcut_label(s: &Settings) -> String {
     let mut parts = Vec::new();
@@ -282,7 +288,11 @@ fn quicklook_pipe(path: &std::path::Path) -> Result<(), String> {
 
 pub(super) fn resolved(s: &Settings) -> Option<PathBuf> {
     if !s.active_path().is_empty() {
-        return Some(PathBuf::from(s.active_path()));
+        return Some(PathBuf::from(s.active_path())).filter(|p| {
+            p.is_file()
+                && p.file_name()
+                    .is_some_and(|n| n.eq_ignore_ascii_case(s.provider.executable()))
+        });
     }
     if s.provider == Provider::Peek {
         return detect();
@@ -393,7 +403,7 @@ fn ensure_running(path: &std::path::Path) -> Result<Vec<Signal>, String> {
 
 pub(super) fn open(owner: isize, identity: &ShellIdentity) -> Result<(), String> {
     let s = settings();
-    if !s.enabled {
+    if !s.enabled || resolved(&s).is_none() {
         return Ok(());
     }
     if s.provider == Provider::QuickLook {
@@ -409,7 +419,7 @@ pub(super) fn open(owner: isize, identity: &ShellIdentity) -> Result<(), String>
 
 pub(super) fn open_path(identity: &ShellIdentity) -> Result<(), String> {
     let value = settings();
-    if !value.enabled {
+    if !value.enabled || resolved(&value).is_none() {
         return Ok(());
     }
     let path = if value.provider == Provider::QuickLook {
@@ -472,6 +482,27 @@ pub(super) fn open_path(identity: &ShellIdentity) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn executable_availability_tracks_configured_path() {
+        let dir = std::env::temp_dir().join(format!(
+            "lucidpane-availability-PowerToys.Peek.UI.exe-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("PowerToys.Peek.UI.exe");
+        let value = Settings {
+            path: path.to_string_lossy().into_owned(),
+            ..Default::default()
+        };
+        assert!(resolved(&value).is_none());
+        std::fs::write(&path, b"availability fixture").unwrap();
+        assert_eq!(resolved(&value), Some(path.clone()));
+        std::fs::remove_file(&path).unwrap();
+        assert!(resolved(&value).is_none());
+        std::fs::remove_dir(&dir).unwrap();
+    }
+
     #[test]
     fn quicklook_keeps_namespace_parsing_names() {
         let item = ShellIdentity::Namespace {

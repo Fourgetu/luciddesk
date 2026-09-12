@@ -18,7 +18,8 @@ pub(super) fn enabled(store: &WorkspaceStore) -> Result<bool, String> {
         .preference("search_enabled")
         .map_err(|e| e.to_string())?
         .as_deref()
-        != Some("0"))
+        != Some("0")
+        && resolved(&settings()).is_some())
 }
 pub(super) fn set_enabled(store: &WorkspaceStore, enabled: bool) -> Result<(), String> {
     store
@@ -67,7 +68,11 @@ pub(super) fn resolved(value: &Settings) -> Option<PathBuf> {
     if value.path.is_empty() {
         detect()
     } else {
-        Some(PathBuf::from(&value.path))
+        Some(PathBuf::from(&value.path)).filter(|p| {
+            p.is_file()
+                && p.file_name()
+                    .is_some_and(|n| n.eq_ignore_ascii_case("Everything.exe"))
+        })
     }
 }
 pub(super) fn launch() -> Result<(), String> {
@@ -114,6 +119,25 @@ pub(super) fn browse(owner: isize) -> Result<Option<String>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn executable_availability_tracks_configured_path() {
+        let dir = std::env::temp_dir().join(format!(
+            "lucidpane-availability-Everything.exe-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Everything.exe");
+        let value = Settings {
+            path: path.to_string_lossy().into_owned(),
+        };
+        assert!(resolved(&value).is_none());
+        std::fs::write(&path, b"availability fixture").unwrap();
+        assert_eq!(resolved(&value), Some(path.clone()));
+        std::fs::remove_file(&path).unwrap();
+        assert!(resolved(&value).is_none());
+        std::fs::remove_dir(&dir).unwrap();
+    }
 
     #[test]
     fn settings_preserve_unicode_paths_and_reject_invalid_flags() {

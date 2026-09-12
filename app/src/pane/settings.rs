@@ -72,6 +72,7 @@ struct Control {
     action: Action,
     selected: bool,
     toggle: bool,
+    enabled: bool,
 }
 struct Scene {
     text: Vec<(Rect, String, usize)>,
@@ -165,6 +166,7 @@ impl Scene {
             label: text.into(),
             action,
             selected,
+            enabled: true,
             toggle: false,
         });
     }
@@ -546,6 +548,30 @@ impl Painter {
                     }
                 }
                 for (i, c) in s.controls.iter().enumerate() {
+                    if !c.enabled && c.toggle {
+                        let r = c.bounds;
+                        t.draw_rounded_rect(
+                            &RoundedRect {
+                                rect: r,
+                                radius_x: 12.0,
+                                radius_y: 12.0,
+                            },
+                            &border,
+                            1.0,
+                        );
+                        t.fill_ellipse(
+                            &Ellipse {
+                                center: Vector2 {
+                                    x: r.left + 12.0,
+                                    y: (r.top + r.bottom) / 2.0,
+                                },
+                                radius_x: 7.0,
+                                radius_y: 7.0,
+                            },
+                            &muted,
+                        );
+                        continue;
+                    }
                     if let Action::Radius(value)
                     | Action::Opacity(value)
                     | Action::Strength(value)
@@ -1383,7 +1409,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     let hit = scene
                         .controls
                         .iter()
-                        .position(|c| contains(&c.bounds, x, y));
+                        .position(|c| c.enabled && contains(&c.bounds, x, y));
                     hover = hit;
                     if msg == WM_LBUTTONDOWN {
                         pressed = hit;
@@ -1509,6 +1535,11 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                                 }
                             }
                         });
+                        for _ in 0..n {
+                            if scene.controls[focus.unwrap()].enabled { break; }
+                            let i = focus.unwrap();
+                            focus = Some(if backwards { (i + n - 1) % n } else { (i + 1) % n });
+                        }
                     } else if wp == VK_SPACE as usize || wp == VK_RETURN as usize {
                         activate = focus;
                     }
@@ -1572,6 +1603,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
             if let Some(c) = activate
                 .filter(|_| available)
                 .and_then(|i| scene.controls.get(i))
+                .filter(|c| c.enabled)
             {
                 match &c.action {
                     Action::StyleInput(percentage) => {

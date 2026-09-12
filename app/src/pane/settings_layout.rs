@@ -111,6 +111,7 @@ pub(super) fn scene(
                 label: String::new(),
                 action: Action::Channel(channel as u8, value),
                 selected: false,
+                enabled: true,
                 toggle: false,
             });
             s.text(
@@ -228,6 +229,7 @@ pub(super) fn scene(
                 label: String::new(),
                 action: Action::Opacity(value),
                 selected: false,
+                enabled: true,
                 toggle: false,
             });
             s.button(
@@ -245,6 +247,7 @@ pub(super) fn scene(
                 label: String::new(),
                 action: Action::Strength(value),
                 selected: false,
+                enabled: true,
                 toggle: false,
             });
             s.text(
@@ -291,6 +294,7 @@ pub(super) fn scene(
             label: String::new(),
             action: Action::Radius(radius),
             selected: false,
+            enabled: true,
             toggle: false,
         });
         s.text(
@@ -318,6 +322,7 @@ pub(super) fn scene(
                 label: String::new(),
                 action: Action::Change(event.clone()),
                 selected: *enabled,
+                enabled: true,
                 toggle: true,
             });
         }
@@ -336,7 +341,8 @@ pub(super) fn scene(
             bounds: Rect::from_xywh(x + w - 70.0, 108.0, 46.0, 24.0),
             label: String::new(),
             action: Action::PeekEnable,
-            selected: value.enabled,
+            selected: value.enabled && peek::resolved(&value).is_some(),
+            enabled: peek::resolved(&value).is_some(),
             toggle: true,
         });
         s.text(
@@ -408,7 +414,8 @@ pub(super) fn scene(
             bounds: Rect::from_xywh(x + w - 70.0, 108.0, 46.0, 24.0),
             label: String::new(),
             action: Action::Change(Event::ToggleSearch),
-            selected: search_enabled,
+            selected: search_enabled && everything_settings::resolved(&value).is_some(),
+            enabled: everything_settings::resolved(&value).is_some(),
             toggle: true,
         });
         s.text(

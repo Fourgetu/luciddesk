@@ -578,6 +578,9 @@ pub(super) fn handle(
         Event::New | Event::EnableSearch | Event::MapFolder(_)
     ) {
         let search = matches!(event, Event::EnableSearch);
+        if search && everything_settings::resolved(&everything_settings::settings()).is_none() {
+            return Ok(false);
+        }
         if search {
             let existing = state
                 .borrow()
