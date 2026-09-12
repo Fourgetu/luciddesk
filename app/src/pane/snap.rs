@@ -149,6 +149,41 @@ pub fn resize(
 mod tests {
     use super::*;
     #[test]
+    fn short_search_pane_escapes_peer_corner_during_slow_drag() {
+        use windows_sys::Win32::Foundation::POINT;
+        for scale in [1, 2] {
+            let peer = RECT {
+                left: 0,
+                top: 0,
+                right: 400 * scale,
+                bottom: 400 * scale,
+            };
+            let bounds = RECT {
+                left: peer.right + 5,
+                top: peer.bottom - 56 * scale,
+                right: peer.right + 5 + 360 * scale,
+                bottom: peer.bottom,
+            };
+            let origin = DragOrigin::new(bounds, POINT::default());
+            for distance in 1..=30 * scale {
+                let mut proposal = origin.proposal(POINT {
+                    x: distance,
+                    y: distance,
+                });
+                snap(&mut proposal, &[peer], None, 5, 14 * scale);
+                if distance <= 14 * scale {
+                    assert_eq!((proposal.left, proposal.top), (bounds.left, bounds.top));
+                } else {
+                    assert_eq!(
+                        (proposal.left, proposal.top),
+                        (bounds.left + distance, bounds.top + distance)
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn resizing_adjacent_panes_aligns_only_dragged_edges() {
         use windows_sys::Win32::UI::WindowsAndMessaging::*;
         for scale in [1, 2] {

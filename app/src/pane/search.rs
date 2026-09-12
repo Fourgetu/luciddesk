@@ -40,6 +40,7 @@ const TOP: f32 = 56.0;
 const ROW: f32 = 48.0;
 const VISIBLE: usize = 8;
 const EDIT_PROPERTY: windows_sys::core::PCWSTR = windows_sys::w!("LucidPane.SearchInput");
+#[cfg(test)]
 fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(Some(0)).collect()
 }
@@ -283,12 +284,6 @@ impl Editor {
             SetWindowSubclass(owner, Some(input_color_proc), 1, 0);
             SetWindowSubclass(hwnd, Some(input_proc), 1, 0);
             SendMessageW(hwnd, EM_SETLIMITTEXT, 16384, 0);
-            SendMessageW(
-                hwnd,
-                EM_SETCUEBANNER,
-                1,
-                wide("搜索文件…").as_ptr() as isize,
-            );
         }
         Ok(Self {
             hwnd,
@@ -305,7 +300,7 @@ impl Editor {
         }
         let font = unsafe {
             CreateFontW(
-                -((16 * dpi / 96) as i32),
+                -((14 * dpi / 96) as i32),
                 0,
                 0,
                 0,
@@ -318,7 +313,7 @@ impl Editor {
                 0,
                 ANTIALIASED_QUALITY as u32,
                 0,
-                windows_sys::w!("Segoe UI"),
+                windows_sys::w!("Microsoft YaHei UI"),
             )
         };
         if !font.is_null() {
@@ -402,6 +397,9 @@ unsafe extern "system" fn input_color_proc(
     _: usize,
 ) -> LRESULT {
     let editor = edit(owner);
+    if msg == WM_MOUSEACTIVATE && !editor.is_null() && unsafe { GetFocus() } == editor {
+        return MA_NOACTIVATE as isize;
+    }
     if matches!(msg, WM_CTLCOLOREDIT | WM_CTLCOLORSTATIC)
         && !editor.is_null()
         && lp == editor as isize
@@ -436,6 +434,15 @@ unsafe extern "system" fn input_proc(
     _: usize,
 ) -> LRESULT {
     let owner = unsafe { GetParent(hwnd) };
+    if msg == WM_MOUSEACTIVATE && unsafe { GetFocus() } == hwnd {
+        return MA_NOACTIVATE as isize;
+    }
+    if msg == WM_SETCURSOR {
+        unsafe {
+            SetCursor(LoadCursorW(std::ptr::null_mut(), IDC_IBEAM));
+        }
+        return 1;
+    }
     if msg == WM_ERASEBKGND {
         unsafe {
             let mut rect = RECT::default();
@@ -510,15 +517,16 @@ struct Drawing {
     name: windows_canvas::TextFormat,
     path: windows_canvas::TextFormat,
     icon: windows_canvas::TextFormat,
+    placeholder: windows_canvas::TextFormat,
 }
 impl Drawing {
     fn new(hwnd: HWND) -> Result<Self, String> {
         use windows_canvas::{ParagraphAlignment, TextFormat, WordWrapping};
-        let name = TextFormat::new("Segoe UI", 15.0)
+        let name = TextFormat::new("Microsoft YaHei UI", 13.0)
             .map_err(|e| e.to_string())?
             .with_paragraph_alignment(ParagraphAlignment::Center)
             .with_word_wrapping(WordWrapping::NoWrap);
-        let path = TextFormat::new("Segoe UI", 12.0)
+        let path = TextFormat::new("Microsoft YaHei UI", 11.0)
             .map_err(|e| e.to_string())?
             .with_paragraph_alignment(ParagraphAlignment::Center)
             .with_word_wrapping(WordWrapping::NoWrap);
@@ -529,6 +537,10 @@ impl Drawing {
                 .map_err(|e| e.to_string())?,
             name,
             path,
+            placeholder: TextFormat::new("Microsoft YaHei UI", 14.0)
+                .map_err(|e| e.to_string())?
+                .with_paragraph_alignment(ParagraphAlignment::Center)
+                .with_word_wrapping(WordWrapping::NoWrap),
             icon: TextFormat::new("Segoe Fluent Icons", 20.0)
                 .map_err(|e| e.to_string())?
                 .with_alignment(windows_canvas::TextAlignment::Center)
@@ -589,6 +601,14 @@ impl Drawing {
                 &Rect::from_xywh(12.0, 0.0, 28.0, TOP),
                 &dim,
             );
+            if unsafe { GetWindowTextLengthW(edit(hwnd)) } == 0 {
+                target.clipped_text(
+                    "搜索文件…",
+                    &self.placeholder,
+                    &Rect::from_xywh(44.0, 0.0, (w - 62.0).max(0.0), TOP),
+                    &dim,
+                );
+            }
             if !state.query.is_empty() {
                 target.fill_rect(&Rect::from_xywh(12.0, TOP, w - 24.0, 1.0), &line);
                 if state.entries.is_empty() {
@@ -623,21 +643,23 @@ impl Drawing {
                         .unwrap_or(entry.path.as_os_str())
                         .to_string_lossy();
                     let parent = entry.path.parent().unwrap_or(&entry.path).to_string_lossy();
-                    let path = if entry.folder {
-                        format!("文件夹 · {parent}")
-                    } else {
-                        parent.into_owned()
-                    };
+                    let path = parent;
+                    target.clipped_text(
+                        if entry.folder { "\u{e8b7}" } else { "\u{e8a5}" },
+                        &self.icon,
+                        &Rect::from_xywh(16.0, y, 20.0, ROW - 2.0),
+                        &dim,
+                    );
                     target.clipped_text(
                         &name,
                         &self.name,
-                        &Rect::from_xywh(18.0, y, w - 36.0, 24.0),
+                        &Rect::from_xywh(46.0, y + 2.0, (w - 64.0).max(0.0), 22.0),
                         &text,
                     );
                     target.clipped_text(
                         &path,
                         &self.path,
-                        &Rect::from_xywh(18.0, y + 24.0, w - 36.0, 19.0),
+                        &Rect::from_xywh(46.0, y + 24.0, (w - 64.0).max(0.0), 18.0),
                         &dim,
                     );
                 }
@@ -746,6 +768,22 @@ fn resize(hwnd: HWND, state: &mut Search) {
     invalidate(hwnd);
 }
 
+fn search_frame_hit(bounds: RECT, point: POINT, scale: f32, locked: bool) -> u32 {
+    let x = point.x as f32 / scale;
+    let y = point.y as f32 / scale;
+    let width = bounds.right as f32 / scale;
+    let edge = 5.0_f32.min(width / 2.0);
+    if x < edge {
+        HTLEFT
+    } else if x >= width - edge {
+        HTRIGHT
+    } else if !locked && y < TOP && (x < 40.0 || x > width - 12.0 || y < 5.0 || y >= TOP - 5.0) {
+        HTCAPTION
+    } else {
+        HTCLIENT
+    }
+}
+
 pub(super) fn create(
     rect: RectDip,
     model: Rc<RefCell<GroupModel>>,
@@ -759,10 +797,11 @@ pub(super) fn create(
     let mut drawing: Option<Drawing> = None;
     let mut state = Search::new();
     let mut last_click: Option<(usize, Instant)> = None;
+    let mut move_origin: Option<super::snap::DragOrigin> = None;
     let window = windows_window::Window::new("Everything 搜索")
-        .style(WS_POPUP)
+        .style(WS_POPUP | WS_THICKFRAME)
         .ex_style(WS_EX_TOOLWINDOW | WS_EX_NOREDIRECTIONBITMAP)
-        .size(rect.width.clamp(320.0, 640.0) as i32, TOP as i32)
+        .size(rect.width.max(1.0) as i32, TOP as i32)
         .on_message(move |raw, msg, wp, lp| {
             let hwnd = raw.cast();
             match msg {
@@ -790,16 +829,61 @@ pub(super) fn create(
                         ScreenToClient(hwnd, &raw mut p);
                         GetClientRect(hwnd, &raw mut r);
                     }
-                    let s = scale(hwnd);
-                    let x = p.x as f32 / s;
-                    let y = p.y as f32 / s;
-                    return Some(if y < TOP
-                        && (x < 40.0 || x > r.right as f32 / s - 12.0 || y < 10.0 || y > 46.0)
+                    return Some(
+                        search_frame_hit(r, p, scale(hwnd), model.borrow().locked) as isize
+                    );
+                }
+                WM_SETCURSOR if lp as u16 as u32 == HTCLIENT => {
+                    let mut point = POINT::default();
+                    unsafe {
+                        GetCursorPos(&raw mut point);
+                        ScreenToClient(hwnd, &raw mut point);
+                        SetCursor(LoadCursorW(
+                            std::ptr::null_mut(),
+                            if point.y as f32 / scale(hwnd) < TOP {
+                                IDC_IBEAM
+                            } else {
+                                IDC_ARROW
+                            },
+                        ));
+                    }
+                    return Some(1);
+                }
+                WM_GETMINMAXINFO if lp != 0 => {
+                    let info = unsafe { &mut *(lp as *mut MINMAXINFO) };
+                    info.ptMinTrackSize.x = 1;
+                    info.ptMinTrackSize.y = (TOP * scale(hwnd)).round() as i32;
+                    return Some(0);
+                }
+                WM_ENTERSIZEMOVE => {
+                    let mut bounds = RECT::default();
+                    let mut pointer = POINT::default();
+                    move_origin = if unsafe { GetWindowRect(hwnd, &raw mut bounds) } != 0
+                        && unsafe { GetCursorPos(&raw mut pointer) } != 0
                     {
-                        HTCAPTION
+                        Some(super::snap::DragOrigin::new(bounds, pointer))
                     } else {
-                        HTCLIENT
-                    } as isize);
+                        None
+                    };
+                    return Some(0);
+                }
+                WM_MOVING if lp != 0 => {
+                    if let Some(origin) = &move_origin {
+                        let mut pointer = POINT::default();
+                        if unsafe { GetCursorPos(&raw mut pointer) } != 0 {
+                            unsafe {
+                                *(lp as *mut RECT) = origin.proposal(pointer);
+                            }
+                        }
+                    }
+                    (callback.borrow_mut())(Event::Moving(lp as *mut RECT));
+                    return Some(1);
+                }
+                WM_SIZING if lp != 0 => {
+                    let bounds = unsafe { &mut *(lp as *mut RECT) };
+                    let proposal = *bounds;
+                    (callback.borrow_mut())(Event::Sizing(bounds, proposal, wp as u32));
+                    return Some(1);
                 }
                 WM_WINDOWPOSCHANGED | WM_SIZE => {
                     if let Some(input) = input.borrow().as_ref() {
@@ -835,6 +919,7 @@ pub(super) fn create(
                     return Some(0);
                 }
                 WM_EXITSIZEMOVE => {
+                    move_origin = None;
                     resize(hwnd, &mut state);
                     let mut r = RECT::default();
                     unsafe {
@@ -870,6 +955,7 @@ pub(super) fn create(
                 }
                 INPUT => {
                     let value = text(edit(hwnd));
+                    invalidate(hwnd);
                     if value.trim() != state.query {
                         state.change(value);
                         resize(hwnd, &mut state);
@@ -940,7 +1026,9 @@ pub(super) fn create(
                         };
                         unsafe {
                             MapWindowPoints(hwnd, editor, &raw mut point, 1);
-                            SetFocus(editor);
+                            if GetFocus() != editor {
+                                SetFocus(editor);
+                            }
                             let position =
                                 (point.x as u16 as usize) | ((point.y as u16 as usize) << 16);
                             SendMessageW(editor, msg, wp, position as isize);
@@ -1055,6 +1143,10 @@ pub(super) fn create(
                 }
                 WM_CONTEXTMENU => {
                     let items = state.selected();
+                    let (theme, backdrop) = {
+                        let m = model.borrow();
+                        (m.theme, m.backdrop)
+                    };
                     let event = Rc::clone(&callback);
                     let owner = hwnd as isize;
                     super::window::defer_action(move || {
@@ -1062,48 +1154,28 @@ pub(super) fn create(
                         if unsafe { IsWindow(hwnd) } == 0 {
                             return;
                         }
-                        let menu = unsafe { CreatePopupMenu() };
-                        if menu.is_null() {
-                            return;
-                        }
                         let mut point = POINT::default();
                         unsafe {
                             GetCursorPos(&raw mut point);
                         }
+                        let mut rows = Vec::new();
                         if !items.is_empty() {
-                            for (id, label) in [
-                                (OPEN, "打开"),
-                                (LOCATION, "打开文件位置"),
-                                (COPY, "复制"),
-                                (CUT, "剪切"),
-                                (DELETE, "删除"),
-                                (PEEK, "Peek 预览"),
+                            for (id, label, shortcut) in [
+                                (OPEN, "打开", "Enter"),
+                                (LOCATION, "打开文件位置", ""),
+                                (COPY, "复制", "Ctrl+C"),
+                                (CUT, "剪切", "Ctrl+X"),
+                                (DELETE, "删除", "Del"),
+                                (PEEK, "预览", ""),
                             ] {
-                                unsafe {
-                                    AppendMenuW(menu, MF_STRING, id, wide(label).as_ptr());
-                                }
+                                rows.push(super::menu::entry(id as i32, label, "", shortcut));
                             }
-                            unsafe {
-                                AppendMenuW(menu, MF_SEPARATOR, 0, std::ptr::null());
-                            }
+                            rows.push(super::menu::entry(0, "", "", ""));
                         }
-                        unsafe {
-                            AppendMenuW(menu, MF_STRING, 201, wide("设置").as_ptr());
-                            AppendMenuW(menu, MF_STRING, 202, wide("关闭搜索面板").as_ptr());
-                        }
-                        let command = unsafe {
-                            TrackPopupMenuEx(
-                                menu,
-                                TPM_RETURNCMD | TPM_RIGHTBUTTON,
-                                point.x,
-                                point.y,
-                                hwnd,
-                                std::ptr::null(),
-                            )
-                        };
-                        unsafe {
-                            DestroyMenu(menu);
-                        }
+                        rows.push(super::menu::entry(201, "设置", "", ""));
+                        rows.push(super::menu::entry(202, "关闭搜索面板", "", ""));
+                        let command =
+                            super::menu::show_entries(hwnd, point, false, theme, backdrop, rows);
                         match command {
                             201 => {
                                 (event.borrow_mut())(Event::Settings);
@@ -1161,7 +1233,7 @@ pub(super) fn create(
             std::ptr::null_mut(),
             (rect.x * s) as i32,
             (rect.y * s) as i32,
-            (rect.width.clamp(320.0, 640.0) * s) as i32,
+            (rect.width.max(1.0) * s) as i32,
             (TOP * s) as i32,
             SWP_NOZORDER | SWP_NOACTIVATE,
         );
@@ -1177,6 +1249,42 @@ pub(super) fn create(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn compact_search_edges_resize_and_icon_drags_at_each_scale() {
+        use super::*;
+        for scale in [1.0, 1.5, 2.0] {
+            let bounds = RECT {
+                right: (360.0 * scale) as i32,
+                bottom: (TOP * scale) as i32,
+                ..Default::default()
+            };
+            for (x, y, expected) in [
+                (2.0, 20.0, HTLEFT),
+                (358.0, 20.0, HTRIGHT),
+                (24.0, 20.0, HTCAPTION),
+                (100.0, 20.0, HTCLIENT),
+            ] {
+                let point = POINT {
+                    x: (x * scale) as i32,
+                    y: (y * scale) as i32,
+                };
+                assert_eq!(search_frame_hit(bounds, point, scale, false), expected);
+            }
+            assert_eq!(
+                search_frame_hit(
+                    bounds,
+                    POINT {
+                        x: (24.0 * scale) as i32,
+                        y: (20.0 * scale) as i32
+                    },
+                    scale,
+                    true
+                ),
+                HTCLIENT
+            );
+        }
+    }
+
     use super::*;
     fn populated_search() -> Search {
         let mut state = Search::new();
@@ -1306,6 +1414,24 @@ mod tests {
             assert_eq!(GetFocus(), edit(hwnd));
             assert_eq!(GetCapture(), edit(hwnd));
             SendMessageW(edit(hwnd), WM_LBUTTONUP, 0, 0);
+        }
+        // Widths outside the old 320..640 range survive resize and persistence.
+        for width in [280.0, 720.0] {
+            unsafe {
+                SetWindowPos(
+                    hwnd,
+                    std::ptr::null_mut(),
+                    0,
+                    0,
+                    (width * scale(hwnd)) as i32,
+                    (TOP * scale(hwnd)) as i32,
+                    SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
+                );
+                SendMessageW(hwnd, WM_EXITSIZEMOVE, 0, 0);
+            }
+            let saved = app.borrow().store.load_workspace().unwrap();
+            let panel = saved.panels().iter().find(|p| p.is_search()).unwrap();
+            assert!((panel.rect().width - width).abs() < 1.0);
         }
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()

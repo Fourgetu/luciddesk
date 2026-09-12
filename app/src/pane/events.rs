@@ -622,7 +622,7 @@ pub(super) fn handle(
             if search {
                 panel.set_search(true);
                 panel.set_title("Everything 搜索".to_string());
-                panel.set_rect(RectDip::new(240.0, 240.0, 480.0, 200.0));
+                panel.set_rect(RectDip::new(240.0, 240.0, 360.0, 200.0));
             }
             s.workspace.add_panel(panel).map_err(|e| e.to_string())?;
             if s.workspace.appearance().is_none() {
