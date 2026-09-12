@@ -189,17 +189,12 @@ fn enumerate_shell_folder(
         }
     }
 
-    items.sort_by(|left, right| {
-        right
-            .attributes
-            .folder
-            .cmp(&left.attributes.folder)
-            .then_with(|| {
-                left.display_name
-                    .to_lowercase()
-                    .cmp(&right.display_name.to_lowercase())
-            })
-            .then_with(|| left.display_name.cmp(&right.display_name))
+    items.sort_by_cached_key(|item| {
+        (
+            !item.attributes.folder,
+            item.display_name.to_lowercase(),
+            item.display_name.clone(),
+        )
     });
     Ok(items)
 }

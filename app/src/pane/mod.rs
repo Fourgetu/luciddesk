@@ -69,6 +69,8 @@ pub struct Item {
 pub struct ItemDetails {
     pub kind: String,
     pub modified: String,
+    pub folder: bool,
+    pub modified_time: Option<std::time::SystemTime>,
 }
 
 fn same_items(left: &[Item], right: &[Item]) -> bool {

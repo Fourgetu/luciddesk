@@ -801,6 +801,7 @@ mod tests {
         model.items[0].details = super::super::ItemDetails {
             kind: "文本文档".into(),
             modified: "2026/09/12 16:30".into(),
+            ..Default::default()
         };
         model.items = vec![model.items[0].clone(); 20];
         let mut renderer = Renderer::new().unwrap();

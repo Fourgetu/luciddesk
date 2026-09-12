@@ -104,6 +104,8 @@ impl Source {
                                             details: ItemDetails {
                                                 kind: file_type(&entry.identity),
                                                 modified: modified_text(entry.modified),
+                                                folder: entry.attributes.folder,
+                                                modified_time: entry.modified,
                                             },
                                             identity: entry.identity,
                                             label: entry.display_name,
@@ -193,7 +195,13 @@ pub(super) fn ensure(state: &mut PaneApp, id: PanelId) -> Result<(), String> {
 pub(super) fn poll(state: &mut PaneApp) {
     let mut changed = false;
     for source in state.folders.values_mut() {
+        let mut latest = None;
         while let Ok(result) = source.updates.try_recv() {
+            latest = Some(result);
+        }
+        // Each update is a complete snapshot. Sort and publish only the newest
+        // one when the UI was busy while several scans completed.
+        if let Some(result) = latest {
             source.loading = false;
             match result {
                 Ok(items) => {
@@ -218,12 +226,10 @@ fn sort_items(items: &mut Vec<Item>, sort: (u8, bool)) {
     let mut sorted: Vec<_> = std::mem::take(items)
         .into_iter()
         .map(|item| {
-            let metadata = item
-                .identity
-                .file_system_path()
-                .and_then(|p| p.metadata().ok());
-            let folder = metadata.as_ref().is_some_and(|m| m.is_dir());
-            let modified = metadata.and_then(|m| m.modified().ok());
+            // Reuse the worker's Shell snapshot; sorting must not touch disk
+            // on the UI thread (especially for network folders).
+            let folder = item.details.folder;
+            let modified = item.details.modified_time;
             let name = item.label.to_lowercase();
             (folder, name, modified, item)
         })
@@ -447,6 +453,42 @@ pub(super) fn request_picker(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sorting_uses_snapshot_metadata_without_accessing_paths() {
+        let make = |label: &str, folder, seconds: Option<u64>| Item {
+            identity: ShellIdentity::Namespace {
+                parsing_name: format!("test:{label}"),
+            },
+            label: label.into(),
+            image: None,
+            details: ItemDetails {
+                folder,
+                modified_time: seconds.map(|s| std::time::UNIX_EPOCH + Duration::from_secs(s)),
+                ..Default::default()
+            },
+        };
+        let mut items = vec![
+            make("z-folder", true, None),
+            make("a-new", false, Some(20)),
+            make("z-old", false, Some(10)),
+        ];
+        sort_items(&mut items, (2, false));
+        assert_eq!(
+            items.iter().map(|i| i.label.as_str()).collect::<Vec<_>>(),
+            ["z-folder", "z-old", "a-new"]
+        );
+        sort_items(&mut items, (2, true));
+        assert_eq!(
+            items.iter().map(|i| i.label.as_str()).collect::<Vec<_>>(),
+            ["z-folder", "a-new", "z-old"]
+        );
+        sort_items(&mut items, (0, false));
+        assert_eq!(
+            items.iter().map(|i| i.label.as_str()).collect::<Vec<_>>(),
+            ["z-folder", "a-new", "z-old"]
+        );
+    }
 
     #[test]
     fn navigation_and_sort_keep_the_mapping_and_back_history() {

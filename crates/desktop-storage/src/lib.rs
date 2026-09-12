@@ -32,7 +32,9 @@ impl WorkspaceStore {
     /// Returns an error if the database update fails.
     pub fn save_preference(&self, key: &str, value: &str) -> Result<(), StoreError> {
         self.connection.execute(
-            "INSERT OR REPLACE INTO metadata(key,value) VALUES (?1,?2)",
+            "INSERT INTO metadata(key,value) VALUES (?1,?2)
+             ON CONFLICT(key) DO UPDATE SET value=excluded.value
+             WHERE metadata.value != excluded.value",
             params![key, value],
         )?;
         Ok(())
@@ -227,14 +229,13 @@ impl WorkspaceStore {
     /// # Errors
     /// Returns an error if the metadata update fails.
     pub fn save_pane_options(&self, options: desktop_core::PaneOptions) -> Result<(), StoreError> {
-        self.connection.execute(
-            "INSERT OR REPLACE INTO metadata(key,value) VALUES ('pane_options',?1)",
-            [format!(
+        self.save_preference(
+            "pane_options",
+            &format!(
                 "{}|{}|{}",
                 options.corner_radius, options.border, options.snap
-            )],
-        )?;
-        Ok(())
+            ),
+        )
     }
 
     /// Replaces the persisted workspace in one transaction.
@@ -751,6 +752,23 @@ impl From<rusqlite::Error> for StoreError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn unchanged_preferences_do_not_count_as_database_changes() {
+        let store = WorkspaceStore::open_in_memory().unwrap();
+        store.save_preference("test", "first").unwrap();
+        let changes = store.change_count();
+        store.save_preference("test", "first").unwrap();
+        assert_eq!(store.change_count(), changes);
+        store.save_preference("test", "second").unwrap();
+        assert_eq!(store.change_count(), changes + 1);
+        assert_eq!(store.preference("test").unwrap().as_deref(), Some("second"));
+        let options = Workspace::new().pane_options();
+        store.save_pane_options(options).unwrap();
+        let changes = store.change_count();
+        store.save_pane_options(options).unwrap();
+        assert_eq!(store.change_count(), changes);
+    }
+
     #[test]
     fn material_strength_round_trips_and_remembers_each_material() {
         let mut store = WorkspaceStore::open_in_memory().unwrap();
