@@ -1,12 +1,170 @@
 //! Group commands and their persisted state transitions.
 use super::*;
 
+pub(super) fn activate_with(
+    state: &Rc<RefCell<PaneApp>>,
+    id: PanelId,
+    index: usize,
+    open: impl FnOnce(isize, &ShellIdentity) -> Result<(), String> + 'static,
+) -> Result<(), String> {
+    let target = {
+        let s = state.borrow();
+        s.views.iter().find(|view| view.id == id).and_then(|view| {
+            view.model
+                .borrow()
+                .items
+                .get(index)
+                .map(|item| (view.window.hwnd() as isize, item.identity.clone()))
+        })
+    };
+    if let Some((owner, identity)) = target {
+        // Shell execution can pump messages for every pane. Run after both
+        // the app borrows and the current window/event callbacks have returned.
+        if !window::post_action(owner as _, move || {
+            if unsafe { IsWindow(owner as _) } == 0 {
+                return;
+            }
+            if let Err(error) = open(owner, &identity) {
+                window::error(&error);
+            }
+        }) {
+            return Err("无法安排打开项目".into());
+        }
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_lines)]
 pub(super) fn handle(
     state: &Rc<RefCell<PaneApp>>,
     id: PanelId,
     event: Event,
 ) -> Result<bool, String> {
+    if let Event::Peek = event {
+        let index = {
+            let s = state.borrow();
+            s.views.iter().find(|view| view.id == id).and_then(|view| {
+                let model = view.model.borrow();
+                if model.collapsed {
+                    return None;
+                }
+                model
+                    .selected
+                    .filter(|index| model.selection.contains(index))
+                    .or_else(|| model.selection.iter().next().copied())
+            })
+        };
+        if let Some(index) = index {
+            let weak = Rc::downgrade(state);
+            activate_with(state, id, index, move |owner, identity| {
+                let Some(state) = weak.upgrade() else {
+                    return Ok(());
+                };
+                hybrid::menu(&state.borrow(), true)?;
+                let result = peek::open(owner, identity);
+                let restored = hybrid::menu(&state.borrow(), false).map(|_| ());
+                result.and(restored)
+            })?;
+        }
+        return Ok(false);
+    }
+    if let Event::FileCommand(command) = event {
+        let target = {
+            let s = state.borrow();
+            s.views.iter().find(|view| view.id == id).map(|view| {
+                let model = view.model.borrow();
+                (view.window.hwnd(), model.selected_identities())
+            })
+        };
+        if let Some((owner, identity)) = target {
+            if !window::post_action(owner.cast(), move || {
+                if unsafe { IsWindow(owner.cast()) } == 0 {
+                    return;
+                }
+                if let Err(error) = desktop_shell::invoke_file_commands(
+                    windows::Win32::Foundation::HWND(owner.cast()),
+                    &identity,
+                    command,
+                ) {
+                    window::error(&format!("文件操作失败：{error}"));
+                }
+            }) {
+                return Err("无法安排文件操作".into());
+            }
+        }
+        return Ok(false);
+    }
+    if let Event::ActivateSelection = event {
+        let indices: Vec<_> = {
+            let s = state.borrow();
+            s.views
+                .iter()
+                .find(|view| view.id == id)
+                .map(|view| view.model.borrow().selection.iter().copied().collect())
+                .unwrap_or_default()
+        };
+        for index in indices {
+            activate_with(state, id, index, |owner, identity| {
+                open_shell_identity(owner, identity).map_err(|error| error.to_string())
+            })?;
+        }
+        return Ok(false);
+    }
+    if let Event::Activate(index) = event {
+        activate_with(state, id, index, |owner, identity| {
+            open_shell_identity(owner, identity).map_err(|error| error.to_string())
+        })?;
+        return Ok(false);
+    }
+    if matches!(event, Event::RenameTitle | Event::SetTitle(_))
+        && state
+            .borrow()
+            .workspace
+            .panel(id)
+            .is_some_and(|panel| panel.locked())
+    {
+        return Ok(false);
+    }
+    if matches!(
+        event,
+        Event::SetCornerRadius(_) | Event::ToggleBorder | Event::ToggleSnap
+    ) {
+        let mut s = state.borrow_mut();
+        let old = s.workspace.pane_options();
+        let mut options = old;
+        match event {
+            Event::SetCornerRadius(radius) => {
+                options.corner_radius = radius.min(desktop_core::PaneOptions::MAX_CORNER_RADIUS)
+            }
+            Event::ToggleBorder => options.border = !options.border,
+            Event::ToggleSnap => options.snap = !options.snap,
+            _ => unreachable!(),
+        }
+        s.workspace.set_pane_options(options);
+        if options == old {
+            return Ok(false);
+        }
+        if let Err(error) = s
+            .store
+            .save_pane_options(options)
+            .map_err(|e| e.to_string())
+        {
+            s.workspace.set_pane_options(old);
+            return Err(error);
+        }
+        for view in &s.views {
+            view.model.borrow_mut().options = options;
+            unsafe {
+                InvalidateRect(view.window.hwnd().cast(), std::ptr::null(), 0);
+            }
+        }
+        if let Some(window) = &s.settings {
+            unsafe {
+                InvalidateRect(window.hwnd().cast(), std::ptr::null(), 0);
+            }
+        }
+        return Ok(false);
+    }
     if matches!(event, Event::Settings) {
         settings::show(state, id)?;
         return Ok(false);
@@ -100,7 +258,23 @@ pub(super) fn handle(
         return Ok(false);
     }
     if let Event::PaneItemFocus = event {
-        hybrid::clear_desktop_selection(&state.borrow())?;
+        let s = state.borrow();
+        for view in s.views.iter().filter(|view| view.id != id) {
+            let mut model = view.model.borrow_mut();
+            if model.selected.is_some() || !model.selection.is_empty() || model.focused {
+                model.clear_selection();
+                model.focused = false;
+                drop(model);
+                unsafe {
+                    windows_sys::Win32::Graphics::Gdi::InvalidateRect(
+                        view.window.hwnd().cast(),
+                        std::ptr::null(),
+                        0,
+                    );
+                }
+            }
+        }
+        hybrid::clear_desktop_selection(&s)?;
         return Ok(false);
     }
     if let Event::MenuSelection(allow) = event {
@@ -211,8 +385,27 @@ pub(super) fn handle(
         | Event::MenuSelection(_)
         | Event::ItemMenuEnded(_)
         | Event::RenameItem(_) => unreachable!("Handled before borrowing PaneApp"),
-        Event::Theme(_) | Event::Material(_) => {
+        Event::Theme(_)
+        | Event::Material(_)
+        | Event::SetCornerRadius(_)
+        | Event::ToggleBorder
+        | Event::ToggleSnap => {
             unreachable!("Handled before borrowing PaneApp")
+        }
+        Event::ToggleLocked => {
+            let panel = s.workspace.panel_mut(id).ok_or("分组不存在")?;
+            let enabled = !panel.locked();
+            panel.set_locked(enabled);
+            if let Err(error) = save(&mut s) {
+                s.workspace.panel_mut(id).unwrap().set_locked(!enabled);
+                return Err(error);
+            }
+            if let Some(view) = s.views.iter().find(|v| v.id == id) {
+                view.model.borrow_mut().locked = enabled;
+                unsafe {
+                    InvalidateRect(view.window.hwnd().cast(), std::ptr::null(), 0);
+                }
+            }
         }
         Event::ToggleTopmost => {
             let panel = s.workspace.panel_mut(id).ok_or("分组不存在")?;
@@ -231,6 +424,9 @@ pub(super) fn handle(
         }
         Event::Refresh => hybrid::refresh_icons(&mut s),
         Event::Moving(rect) => {
+            if !s.workspace.pane_options().snap {
+                return Ok(false);
+            }
             let peers: Vec<_> = s
                 .views
                 .iter()
@@ -286,13 +482,8 @@ pub(super) fn handle(
                 hybrid::tick(&mut s)?;
             }
         }
-        Event::Activate(index) => {
-            if let Some(view) = s.views.iter().find(|v| v.id == id)
-                && let Some(item) = view.model.borrow().items.get(index)
-            {
-                open_shell_identity(view.window.hwnd() as isize, &item.identity)
-                    .map_err(|e| e.to_string())?;
-            }
+        Event::Activate(_) | Event::ActivateSelection | Event::Peek | Event::FileCommand(_) => {
+            unreachable!("Handled before borrowing PaneApp")
         }
         Event::Geometry(rect) => {
             if s.workspace.panel(id).is_none() {
@@ -406,7 +597,7 @@ pub(super) fn handle(
             if let Some((target, at)) = target {
                 transfer(&mut s, id, index, target, at)?;
                 for view in &s.views {
-                    view.model.borrow_mut().selected = None;
+                    view.model.borrow_mut().clear_selection();
                 }
                 refresh_views(&mut s);
             } else if hybrid::release(&mut s, id, index, point)? {
@@ -417,4 +608,32 @@ pub(super) fn handle(
         Event::New => unreachable!(),
     }
     Ok(false)
+}
+
+/// Preview only; the settings gesture commits its final value separately.
+pub(super) fn preview_radius(state: &mut PaneApp, radius: u8) {
+    let mut options = state.workspace.pane_options();
+    if options.corner_radius == radius {
+        return;
+    }
+    options.corner_radius = radius;
+    state.workspace.set_pane_options(options);
+    for view in &state.views {
+        view.model.borrow_mut().options = options;
+        unsafe {
+            InvalidateRect(view.window.hwnd().cast(), std::ptr::null(), 0);
+        }
+    }
+}
+
+pub(super) fn commit_radius(state: &mut PaneApp, original: u8) -> Result<(), String> {
+    let options = state.workspace.pane_options();
+    if options.corner_radius == original {
+        return Ok(());
+    }
+    if let Err(error) = state.store.save_pane_options(options) {
+        preview_radius(state, original);
+        return Err(error.to_string());
+    }
+    Ok(())
 }

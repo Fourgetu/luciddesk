@@ -13,18 +13,26 @@ pub const HEADER: f32 = 38.0;
 // Label top relative to the icon-size baseline, shared by paint and geometry.
 pub const LABEL_OFFSET: f32 = 6.0;
 pub const PADDING: f32 = 12.0;
+pub const HEADER_BUTTONS_WIDTH: f32 = 102.0;
+
+pub fn header_button_x(width: f32, button: usize) -> f32 {
+    // Visual order: lock, collapse, menu; retain the existing action IDs.
+    let position = match button {
+        1 => 2,
+        2 => 0,
+        _ => 1,
+    };
+    width - HEADER_BUTTONS_WIDTH + position as f32 * 32.0
+}
 
 pub fn header_button(width: f32, x: f32, y: f32) -> Option<usize> {
     if !(5.0..33.0).contains(&y) {
         return None;
     }
-    if (width - 38.0..width - 10.0).contains(&x) {
-        Some(1)
-    } else if (width - 70.0..width - 42.0).contains(&x) {
-        Some(0)
-    } else {
-        None
-    }
+    (0..3).find(|&button| {
+        let left = header_button_x(width, button);
+        (left..left + 28.0).contains(&x)
+    })
 }
 
 impl Grid {

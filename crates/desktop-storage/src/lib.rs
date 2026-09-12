@@ -14,6 +14,29 @@ pub struct WorkspaceStore {
 }
 
 impl WorkspaceStore {
+    /// Reads an optional application preference.
+    /// # Errors
+    /// Returns an error if the database query fails.
+    pub fn preference(&self, key: &str) -> Result<Option<String>, StoreError> {
+        Ok(self
+            .connection
+            .query_row("SELECT value FROM metadata WHERE key=?1", [key], |row| {
+                row.get(0)
+            })
+            .optional()?)
+    }
+
+    /// Saves an application preference atomically.
+    /// # Errors
+    /// Returns an error if the database update fails.
+    pub fn save_preference(&self, key: &str, value: &str) -> Result<(), StoreError> {
+        self.connection.execute(
+            "INSERT OR REPLACE INTO metadata(key,value) VALUES (?1,?2)",
+            params![key, value],
+        )?;
+        Ok(())
+    }
+
     /// Opens or creates a `LucidPane` workspace database.
     ///
     /// # Errors
@@ -140,16 +163,66 @@ impl WorkspaceStore {
             };
             workspace.set_appearance_defaults(theme, backdrop);
         }
+        let options = self
+            .connection
+            .query_row(
+                "SELECT value FROM metadata WHERE key = 'pane_options'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        if let Some(value) = options {
+            let parts = value.split('|').collect::<Vec<_>>();
+            let [radius, border, snap] = parts.as_slice() else {
+                return Err(StoreError::InvalidData("invalid pane options".into()));
+            };
+            let invalid = || StoreError::InvalidData("invalid pane options".into());
+            let corner_radius = match *radius {
+                "true" => 7,
+                "false" => 0,
+                value => value.parse::<u8>().map_err(|_| invalid())?,
+            };
+            if corner_radius > desktop_core::PaneOptions::MAX_CORNER_RADIUS {
+                return Err(invalid());
+            }
+            workspace.set_pane_options(desktop_core::PaneOptions {
+                corner_radius,
+                border: border.parse().map_err(|_| invalid())?,
+                snap: snap.parse().map_err(|_| invalid())?,
+            });
+        }
         Ok(workspace)
+    }
+
+    /// Updates only global pane options.
+    ///
+    /// # Errors
+    /// Returns an error if the metadata update fails.
+    pub fn save_pane_options(&self, options: desktop_core::PaneOptions) -> Result<(), StoreError> {
+        self.connection.execute(
+            "INSERT OR REPLACE INTO metadata(key,value) VALUES ('pane_options',?1)",
+            [format!(
+                "{}|{}|{}",
+                options.corner_radius, options.border, options.snap
+            )],
+        )?;
+        Ok(())
     }
 
     /// Replaces the persisted workspace in one transaction.
     ///
     /// # Errors
-    ///
-    /// Returns an error when any panel cannot be serialized or committed.
+    /// Returns an error when serialization or commit fails.
     pub fn save_workspace(&mut self, workspace: &Workspace) -> Result<(), StoreError> {
         let transaction = self.connection.transaction()?;
+        let options = workspace.pane_options();
+        transaction.execute(
+            "INSERT OR REPLACE INTO metadata(key,value) VALUES ('pane_options',?1)",
+            [format!(
+                "{}|{}|{}",
+                options.corner_radius, options.border, options.snap
+            )],
+        )?;
         transaction.execute("DELETE FROM metadata WHERE key = 'appearance'", [])?;
         if let Some((theme, backdrop)) = workspace.appearance() {
             let theme = match theme {
@@ -668,6 +741,49 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(count, 1);
+        }
+    }
+
+    #[test]
+    fn option_update_does_not_rewrite_workspace_rows() {
+        let mut store = WorkspaceStore::open_in_memory().unwrap();
+        let workspace = Workspace::from_panels(vec![Panel::new(
+            PanelId::new(1),
+            "Keep",
+            RectDip::default(),
+        )])
+        .unwrap();
+        store.save_workspace(&workspace).unwrap();
+        store.connection.execute_batch("CREATE TRIGGER forbid_panel_delete BEFORE DELETE ON panels BEGIN SELECT RAISE(ABORT, 'unexpected workspace rewrite'); END;").unwrap();
+        let options = desktop_core::PaneOptions {
+            corner_radius: 24,
+            ..desktop_core::PaneOptions::DEFAULT
+        };
+        store.save_pane_options(options).unwrap();
+        let restored = store.load_workspace().unwrap();
+        assert_eq!(restored.panels(), workspace.panels());
+        assert_eq!(restored.pane_options(), options);
+    }
+
+    #[test]
+    fn pane_options_round_trip_without_panels() {
+        let mut store = WorkspaceStore::open_in_memory().unwrap();
+        assert_eq!(
+            store.load_workspace().unwrap().pane_options(),
+            desktop_core::PaneOptions::DEFAULT
+        );
+        for bits in 0..8 {
+            let options = desktop_core::PaneOptions {
+                corner_radius: if bits & 1 != 0 { 24 } else { 0 },
+                border: bits & 2 != 0,
+                snap: bits & 4 != 0,
+            };
+            let mut workspace = Workspace::new();
+            workspace.set_pane_options(options);
+            store.save_workspace(&workspace).unwrap();
+            let reopened = WorkspaceStore::from_connection(store.connection).unwrap();
+            assert_eq!(reopened.load_workspace().unwrap().pane_options(), options);
+            store = reopened;
         }
     }
 

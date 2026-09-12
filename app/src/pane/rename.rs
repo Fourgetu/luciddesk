@@ -237,7 +237,9 @@ unsafe fn resize(edit: HWND, pointer: *mut Editor) {
                 y: (5.0 * scale).round() as i32,
             };
             ClientToScreen(editor.owner, &raw mut origin);
-            let width = (client.right - (80.0 * scale).round() as i32).max(1);
+            let width = (client.right
+                - ((super::layout::HEADER_BUTTONS_WIDTH + 10.0) * scale).round() as i32)
+                .max(1);
             let height = (28.0 * scale).round() as i32;
             let mut before = RECT::default();
             GetWindowRect(edit, &raw mut before);
@@ -603,6 +605,7 @@ mod tests {
     fn inline_editor_tracks_label_and_escape_cleans_up_without_a_dialog() {
         let identity = identity("网易云音乐.lnk");
         let model = Rc::new(RefCell::new(GroupModel {
+            options: desktop_core::PaneOptions::default(),
             theme: desktop_core::PanelTheme::System,
             dark: true,
 
@@ -610,8 +613,10 @@ mod tests {
             hovered_item: None,
             focused: true,
             auto_hide: false,
+            locked: false,
             reveal: 1.0,
             hovered_button: None,
+            pressed_button: None,
             backdrop: desktop_core::Backdrop::Acrylic,
             native_material: false,
             title: "测试".into(),
@@ -622,6 +627,8 @@ mod tests {
             }],
             icon_size: 48.0,
             selected: Some(0),
+            selection: [0].into_iter().collect(),
+            selection_anchor: Some(0),
             renaming: None,
             scroll: 0,
             collapsed: false,

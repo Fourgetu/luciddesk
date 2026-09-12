@@ -10,13 +10,16 @@ mod assets;
 mod canvas;
 mod composition;
 mod drag_image;
+mod drop_description;
 mod drop_target;
 mod events;
 mod hybrid;
+mod keyboard;
 mod label;
 mod layout;
 pub(crate) mod menu;
 mod native_graphics;
+mod peek;
 mod rename;
 mod render;
 mod settings;
@@ -84,7 +87,10 @@ struct PaneApp {
     receiver: mpsc::Receiver<Loaded>,
 }
 
-type Loaded = Vec<(String, assets::Pixels)>;
+struct Loaded {
+    requested: Vec<String>,
+    images: Vec<(String, assets::Pixels)>,
+}
 
 #[derive(Clone)]
 enum Event {
@@ -99,6 +105,10 @@ enum Event {
     Refresh,
     ToggleAutoHide,
     ToggleTopmost,
+    ToggleLocked,
+    SetCornerRadius(u8),
+    ToggleBorder,
+    ToggleSnap,
     Theme(desktop_core::PanelTheme),
     SetCollapsed(bool),
     Moving(*mut RECT),
@@ -106,6 +116,9 @@ enum Event {
     Tick,
     New,
     Activate(usize),
+    ActivateSelection,
+    Peek,
+    FileCommand(desktop_shell::FileCommand),
     Drop { index: usize, point: POINT },
     Geometry(RectDip),
     Collapse,
@@ -143,6 +156,7 @@ fn create_view(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> 
         (s.workspace.panel(id).unwrap().clone(), items_for(&s, id))
     };
     let model = Rc::new(RefCell::new(GroupModel {
+        options: state.borrow().workspace.pane_options(),
         theme: panel.theme(),
         dark: theme::is_dark(panel.theme()),
 
@@ -150,14 +164,18 @@ fn create_view(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> 
         hovered_item: None,
         focused: false,
         auto_hide: panel.auto_hide(),
+        locked: panel.locked(),
         reveal: if panel.collapsed() { 0.0 } else { 1.0 },
         hovered_button: None,
+        pressed_button: None,
         backdrop: panel.backdrop(),
         native_material: false,
         title: panel.title().to_string(),
         items,
         icon_size: 48.0,
         selected: None,
+        selection: Default::default(),
+        selection_anchor: None,
         renaming: None,
         scroll: 0,
         collapsed: panel.collapsed(),
@@ -196,17 +214,7 @@ fn refresh_changed_views(state: &mut PaneApp, force: bool) {
         if !force && same_items(&model.items, &items) && !model.loading {
             continue;
         }
-        let selected = model
-            .selected
-            .and_then(|index| model.items.get(index))
-            .map(|item| item.identity.clone());
-        model.items = items;
-        model.selected = selected.and_then(|identity| {
-            model
-                .items
-                .iter()
-                .position(|item| item.identity == identity)
-        });
+        model.replace_items(items);
         model.hovered_item = None;
         let hwnd = view.window.hwnd().cast();
         let mut bounds = RECT::default();

@@ -21,6 +21,7 @@ pub struct Renderer {
     offscreen_device: Option<windows_canvas::GpuDevice>,
     labels: windows_canvas::TextFormat,
     title: windows_canvas::TextFormat,
+    icons: windows_canvas::TextFormat,
     target: Option<(u32, u32, Option<canvas::Offscreen>, ID2D1DeviceContext)>,
     images: HashMap<String, ImageBitmap>,
     states: HashMap<(u32, u32, u32, i32), windows_canvas::Bitmap>,
@@ -133,6 +134,10 @@ impl Renderer {
             offscreen_device: None,
             labels,
             title,
+            icons: canvas_result(TextFormat::new("Segoe Fluent Icons", 12.0))?
+                .with_alignment(windows_canvas::TextAlignment::Center)
+                .with_paragraph_alignment(ParagraphAlignment::Center)
+                .with_word_wrapping(WordWrapping::NoWrap),
             target: None,
             images: HashMap::new(),
             states: HashMap::new(),
@@ -190,9 +195,13 @@ impl Renderer {
             self.states.clear();
         }
         self.target = Some((width, height, None, target.clone()));
-        // Models and the inventory own live sources. Drop obsolete GPU images after a reload.
+        let live: std::collections::HashSet<_> = model
+            .items
+            .iter()
+            .filter_map(|item| item.image.as_ref().map(Arc::as_ptr))
+            .collect();
         self.images
-            .retain(|_, (source, _, _)| Arc::strong_count(source) > 1);
+            .retain(|_, (source, _, _)| live.contains(&Arc::as_ptr(source)));
         self.draw(width, height, scale, model)
     }
 
@@ -223,29 +232,46 @@ impl Renderer {
                 target.clear(ColorF::new(0.0, 0.0, 0.0, 0.0));
                 let rounded = RoundedRect {
                     rect: Rect::from_xywh(0.5, 0.5, w - 1.0, h - 1.0),
-                    radius_x: 7.0,
-                    radius_y: 7.0,
+                    radius_x: f32::from(model.options.corner_radius),
+                    radius_y: f32::from(model.options.corner_radius),
                 };
                 {
                     target.fill_rounded_rect(&rounded, &background);
-                    target.draw_rounded_rect(&rounded, &outline, 1.0);
+                    if model.options.border {
+                        target.draw_rounded_rect(&rounded, &outline, 1.0);
+                    }
                     let title = &model.title;
                     target.clipped_text(
                         title,
                         &self.title,
-                        &Rect::from_xywh(14.0, 0.0, w - 86.0, HEADER),
+                        &Rect::from_xywh(
+                            14.0,
+                            0.0,
+                            (w - super::layout::HEADER_BUTTONS_WIDTH - 16.0).max(0.0),
+                            HEADER,
+                        ),
                         &white,
                     );
-                    for button in 0..2 {
-                        let x = w - 70.0 + button as f32 * 32.0;
-                        if model.hovered_button == Some(button) {
+                    for button in 0..3 {
+                        let x = super::layout::header_button_x(w, button);
+                        let hovered = model.hovered_button == Some(button);
+                        let glyph = canvas_result(target.create_solid_brush(ColorF::new(
+                            ink,
+                            ink,
+                            ink,
+                            if hovered { 0.95 } else { 0.72 },
+                        )))?;
+                        if hovered {
+                            let fill = canvas_result(
+                                target.create_solid_brush(ColorF::new(ink, ink, ink, 0.07)),
+                            )?;
                             target.fill_rounded_rect(
                                 &RoundedRect {
-                                    rect: Rect::from_xywh(x, 5.0, 28.0, 28.0),
-                                    radius_x: 6.0,
-                                    radius_y: 6.0,
+                                    rect: Rect::from_xywh(x + 1.0, 6.0, 26.0, 26.0),
+                                    radius_x: 5.0,
+                                    radius_y: 5.0,
                                 },
-                                &selection,
+                                &fill,
                             );
                         }
                         let center = x + 14.0;
@@ -259,19 +285,19 @@ impl Renderer {
                             for pair in points.windows(2) {
                                 target.draw_line(
                                     Vector2 {
-                                        x: pair[0].0,
-                                        y: pair[0].1,
+                                        x: center + (pair[0].0 - center) * 1.25,
+                                        y: 19.0 + (pair[0].1 - 19.0) * 1.25,
                                     },
                                     Vector2 {
-                                        x: pair[1].0,
-                                        y: pair[1].1,
+                                        x: center + (pair[1].0 - center) * 1.25,
+                                        y: 19.0 + (pair[1].1 - 19.0) * 1.25,
                                     },
-                                    &white,
+                                    &glyph,
                                     1.5,
                                 );
                             }
-                        } else {
-                            for offset in [-4.0, 0.0, 4.0] {
+                        } else if button == 1 {
+                            for offset in [-4.5, 0.0, 4.5] {
                                 target.fill_ellipse(
                                     &Ellipse {
                                         center: Vector2 {
@@ -281,9 +307,16 @@ impl Renderer {
                                         radius_x: 1.1,
                                         radius_y: 1.1,
                                     },
-                                    &white,
+                                    &glyph,
                                 );
                             }
+                        } else {
+                            target.clipped_text(
+                                if model.locked { "\u{e72e}" } else { "\u{e785}" },
+                                &self.icons,
+                                &Rect::from_xywh(x, 5.0, 28.0, 28.0),
+                                &glyph,
+                            );
                         }
                     }
                 }
@@ -301,8 +334,8 @@ impl Renderer {
                         let selection_height = bounds.height;
                         let selection_width = bounds.width;
                         let selection_x = bounds.x;
-                        if model.selected == Some(index) || model.hovered_item == Some(index) {
-                            let state = if model.selected == Some(index) {
+                        if model.selection.contains(&index) || model.hovered_item == Some(index) {
+                            let state = if model.selection.contains(&index) {
                                 if !model.focused {
                                     5
                                 } else if model.hovered_item == Some(index) {
@@ -328,6 +361,11 @@ impl Renderer {
                                     key.0,
                                     key.1,
                                 ))?;
+                                if self.states.len() >= 64 {
+                                    if let Some(old) = self.states.keys().next().copied() {
+                                        self.states.remove(&old);
+                                    }
+                                }
                                 self.states.insert(key, bitmap);
                             }
                             if let Some(bitmap) = self.states.get(&key) {
@@ -353,7 +391,7 @@ impl Renderer {
                                         radius_x: 0.0,
                                         radius_y: 0.0,
                                     },
-                                    if model.selected == Some(index) {
+                                    if model.selection.contains(&index) {
                                         if model.focused { &selection } else { &inactive }
                                     } else {
                                         &hover
@@ -487,7 +525,7 @@ mod tests {
             height: 48,
             data,
         }));
-        model.selected = None;
+        model.clear_selection();
         model.hovered_item = None;
         let mut renderer = Renderer::new().unwrap();
         for scale in [1.0, 1.25, 1.5, 2.0, 1.0] {
@@ -553,6 +591,7 @@ mod tests {
 
     fn sample_model() -> GroupModel {
         GroupModel {
+            options: desktop_core::PaneOptions::default(),
             theme: desktop_core::PanelTheme::Dark,
             dark: true,
 
@@ -560,8 +599,10 @@ mod tests {
             hovered_item: None,
             focused: true,
             auto_hide: false,
+            locked: false,
             reveal: 1.0,
             hovered_button: None,
+            pressed_button: None,
             backdrop: desktop_core::Backdrop::Acrylic,
             native_material: true,
             title: "透明度验证".into(),
@@ -578,11 +619,33 @@ mod tests {
             }],
             icon_size: 48.0,
             selected: None,
+            selection: Default::default(),
+            selection_anchor: None,
             renaming: None,
             scroll: 0,
             collapsed: false,
             loading: false,
         }
+    }
+
+    #[test]
+    fn pane_border_and_corners_can_be_disabled_independently() {
+        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let mut renderer = Renderer::new().unwrap();
+        let mut model = sample_model();
+        model.items.clear();
+        model.title.clear();
+        model.native_material = true;
+        let bordered = renderer.pixels(320, 200, 1.0, &model).unwrap();
+        model.options.border = false;
+        let borderless = renderer.pixels(320, 200, 1.0, &model).unwrap();
+        assert!(bordered[160 * 4 + 3] > borderless[160 * 4 + 3]);
+        model.native_material = false;
+        let rounded = renderer.pixels(320, 200, 1.0, &model).unwrap();
+        model.options.corner_radius = 0;
+        let square = renderer.pixels(320, 200, 1.0, &model).unwrap();
+        let corner = (320 + 1) * 4 + 3;
+        assert!(square[corner] > rounded[corner]);
     }
 
     #[test]
@@ -748,6 +811,15 @@ mod tests {
                 assert_eq!(gpu.images.len(), 1);
                 surface.end_frame().unwrap();
             }
+            // An inventory or another pane can still own the pixels after this
+            // pane loses the item. Its GPU upload must nevertheless be released.
+            let retained_source = updated.items[0].image.clone().unwrap();
+            updated.items.clear();
+            let target = surface.begin_frame(400, 240).unwrap();
+            gpu.paint(&target, 400, 240, 1.0, &updated).unwrap();
+            assert!(gpu.images.is_empty());
+            assert!(!retained_source.data.is_empty());
+            surface.end_frame().unwrap();
             // Menus upload CPU-rendered pixels through the same Canvas surface.
             // Alternate that path with native drawing to catch lingering buffer
             // references and context state that would make ResizeBuffers fail.

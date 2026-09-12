@@ -6,6 +6,41 @@ use windows_canvas::ColorF;
 use windows::core::Result;
 use windows_canvas::{TextAlignment, TextFormat, TextLayout, WordWrapping};
 
+struct LayoutCache<K, V> {
+    entries: std::collections::HashMap<K, (V, u64)>,
+    clock: u64,
+}
+
+impl<K: Eq + std::hash::Hash + Clone, V: Clone> LayoutCache<K, V> {
+    fn new() -> Self {
+        Self {
+            entries: Default::default(),
+            clock: 0,
+        }
+    }
+    fn get(&mut self, key: &K) -> Option<V> {
+        self.clock += 1;
+        self.entries.get_mut(key).map(|(value, used)| {
+            *used = self.clock;
+            value.clone()
+        })
+    }
+    fn insert(&mut self, key: K, value: V) {
+        self.clock += 1;
+        if self.entries.len() >= 1024 && !self.entries.contains_key(&key) {
+            if let Some(old) = self
+                .entries
+                .iter()
+                .min_by_key(|(_, (_, used))| *used)
+                .map(|(key, _)| key.clone())
+            {
+                self.entries.remove(&old);
+            }
+        }
+        self.entries.insert(key, (value, self.clock));
+    }
+}
+
 pub struct Label {
     pub pixels: Pixels,
     #[cfg(test)]
@@ -14,14 +49,14 @@ pub struct Label {
 }
 
 pub fn layout(text: &str, width: u32, dpi: u32, lines: u32) -> Result<(TextLayout, f32)> {
-    use std::{cell::RefCell, collections::HashMap};
+    use std::cell::RefCell;
     thread_local! {
-        static CACHE: RefCell<HashMap<(String, u32, u32, u32), (TextLayout, f32)>> = RefCell::new(HashMap::new());
+        static CACHE: RefCell<LayoutCache<(String, u32, u32, u32), (TextLayout, f32)>> = RefCell::new(LayoutCache::new());
     }
     let key = (text.to_owned(), width, dpi, lines);
     CACHE.with(|cache| {
-        if let Some(value) = cache.borrow().get(&key) {
-            return Ok(value.clone());
+        if let Some(value) = cache.borrow_mut().get(&key) {
+            return Ok(value);
         }
         let scale = dpi.max(48) as f32 / 96.0;
         let (_, size) = super::assets::font();
@@ -39,9 +74,6 @@ pub fn layout(text: &str, width: u32, dpi: u32, lines: u32) -> Result<(TextLayou
         ))?;
         let height = (layout.metrics().height.min(max_height) * scale).ceil();
         let mut cache = cache.borrow_mut();
-        if cache.len() >= 1024 {
-            cache.clear();
-        }
         cache.insert(key, (layout.clone(), height));
         Ok((layout, height))
     })
@@ -58,7 +90,7 @@ pub fn raster(text: &str, width: u32, dpi: u32, max_lines: u32) -> Option<Label>
     let padding = (2.0 * scale).ceil() as u32;
     let text_height = height as u32;
     let height = text_height + padding * 2;
-    let device = windows_canvas::GpuDevice::new().ok()?;
+    let device = super::native_graphics::gpu_device().ok()?;
     let bitmap = canvas::Offscreen::new(&device, width, height).ok()?;
     canvas::draw(&bitmap.target, scale, |frame| {
         frame.clear(ColorF {
@@ -198,22 +230,37 @@ pub fn content_height(text: &str, width: u32) -> f32 {
 }
 
 pub fn content_height_at_dpi(text: &str, width: u32, dpi: u32) -> f32 {
-    use std::{cell::RefCell, collections::BTreeMap};
+    use std::cell::RefCell;
     thread_local! {
-        static HEIGHTS: RefCell<BTreeMap<(String, u32, u32), f32>> = RefCell::new(BTreeMap::new());
+        static HEIGHTS: RefCell<LayoutCache<(String, u32, u32), f32>> = RefCell::new(LayoutCache::new());
     }
     HEIGHTS.with(|cache| {
         let key = (text.to_owned(), width, dpi);
-        if let Some(height) = cache.borrow().get(&key) {
-            return *height;
+        if let Some(height) = cache.borrow_mut().get(&key) {
+            return height;
         }
         let height =
             layout(text, width, dpi, 2).map_or(16.0 * dpi as f32 / 96.0, |(_, height)| height);
         let mut cache = cache.borrow_mut();
-        if cache.len() >= 1024 {
-            cache.clear();
-        }
         cache.insert(key, height);
         height
     })
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::LayoutCache;
+    #[test]
+    fn evicts_one_least_recent_entry_and_preserves_hot_entries() {
+        let mut cache = LayoutCache::new();
+        for key in 0..1024 {
+            cache.insert(key, key);
+        }
+        assert_eq!(cache.get(&0), Some(0));
+        cache.insert(1024, 1024);
+        assert_eq!(cache.entries.len(), 1024);
+        assert_eq!(cache.get(&1), None);
+        assert_eq!(cache.get(&0), Some(0));
+        assert_eq!(cache.get(&1023), Some(1023));
+    }
 }

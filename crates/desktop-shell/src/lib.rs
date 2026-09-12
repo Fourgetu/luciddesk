@@ -1,11 +1,14 @@
 pub use desktop_core::ShellIdentity;
+mod file_command;
 mod native_layout;
 mod native_menu;
 mod rename;
+pub use file_command::{FileCommand, invoke_file_command, invoke_file_commands};
 pub use native_layout::{
-    NativeDesktopSnapshot, native_desktop_snapshot, native_desktop_snapshot_background,
+    NativeDesktopReader, NativeDesktopRevision, NativeDesktopSnapshot, native_desktop_snapshot,
 };
-pub use native_menu::{MenuInvocation, show_desktop_item_menu};
+pub use native_menu::peek_desktop_item;
+pub use native_menu::{MenuInvocation, show_desktop_item_menu, show_desktop_items_menu};
 pub use rename::rename_shell_identity;
 use std::ffi::{OsStr, c_void};
 use std::fmt;
@@ -497,15 +500,28 @@ pub fn drag_shell_identities(
         let mut identities = Vec::new();
         for index in 0..count {
             let shell_item = items.GetItemAt(index)?;
-            let mut entry = desktop_shell_item(&shell_item).map_err(|e| {
-                windows::core::Error::new(windows::Win32::Foundation::E_FAIL, e.to_string())
-            })?;
-            if let Ok(parsing_name) = shell_item_name(&shell_item, SIGDN_DESKTOPABSOLUTEPARSING)
-                && parsing_name.starts_with("::{")
+            // DragEnter runs during the cross-process preview handoff. Only
+            // resolve names here: opening files for IDs and reading metadata
+            // delays that handoff. The target matches these names against its
+            // existing inventory and keeps the inventory's stable identities.
+            let parsing_name =
+                shell_item_name(&shell_item, SIGDN_DESKTOPABSOLUTEPARSING).map_err(|e| {
+                    windows::core::Error::new(windows::Win32::Foundation::E_FAIL, e.to_string())
+                })?;
+            let identity = if parsing_name.starts_with("::{") {
+                ShellIdentity::Namespace { parsing_name }
+            } else if let Ok(path) = shell_item_name(&shell_item, SIGDN_FILESYSPATH)
+                && !path.is_empty()
             {
-                entry.identity = ShellIdentity::Namespace { parsing_name };
-            }
-            identities.push(entry.identity);
+                ShellIdentity::FileSystem {
+                    path: PathBuf::from(path),
+                    volume_id: None,
+                    file_id: None,
+                }
+            } else {
+                ShellIdentity::Namespace { parsing_name }
+            };
+            identities.push(identity);
         }
         Ok(identities)
     }

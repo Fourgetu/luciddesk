@@ -2,8 +2,10 @@
 mod input;
 mod lifetime;
 pub use input::MenuInvocation;
+mod peek;
 mod performance;
 mod selection;
+pub use peek::peek_desktop_item;
 pub(crate) use selection::update_hints;
 
 use desktop_core::ShellIdentity;
@@ -120,12 +122,23 @@ pub fn show_desktop_item_menu(
     point: POINT,
     invocation: MenuInvocation,
 ) -> Result<()> {
+    show_desktop_items_menu(owner, std::slice::from_ref(identity), point, invocation)
+}
+
+/// Opens the Explorer menu for the complete desktop selection.
+/// # Errors
+/// Returns errors resolving any selected item or showing the Shell menu.
+pub fn show_desktop_items_menu(
+    owner: HWND,
+    identities: &[ShellIdentity],
+    point: POINT,
+    invocation: MenuInvocation,
+) -> Result<()> {
+    if identities.is_empty() {
+        return Ok(());
+    }
     let _active = ActiveMenu::acquire()?;
     let mut timings = performance::Timings::new();
-    let name = match identity {
-        ShellIdentity::FileSystem { path, .. } => path.to_string_lossy().into_owned(),
-        ShellIdentity::Namespace { parsing_name } => parsing_name.clone(),
-    };
     unsafe {
         let shell: IShellWindows = CoCreateInstance(&ShellWindows, None, CLSCTX_ALL)?;
         let mut desktop_hwnd = 0;
@@ -141,7 +154,12 @@ pub fn show_desktop_item_menu(
         let view = browser.QueryActiveShellView()?;
         let folder: IFolderView2 = view.cast()?;
         timings.mark("explorer-connected");
-        let index = selection::resolve(&folder, &name)?;
+        let indices: Vec<_> = identities
+            .iter()
+            .map(|identity| {
+                selection::resolve(&folder, &identity.activation_name().to_string_lossy())
+            })
+            .collect::<Result<_>>()?;
         timings.mark("target-resolved");
         let site: IContextMenuSite = view.cast()?;
         let hwnd = view.GetWindow()?.0;
@@ -166,10 +184,15 @@ pub fn show_desktop_item_menu(
         focus_trace("target-before", owner, return_focus.desktop, None);
         // Prepare the hidden menu target before activating the desktop, instead
         // of activating its old selection and immediately replacing it.
-        folder.SelectItem(
-            index,
-            (SVSI_SELECT.0 | SVSI_FOCUSED.0 | SVSI_DESELECTOTHERS.0).cast_unsigned(),
-        )?;
+        for (at, index) in indices.into_iter().enumerate() {
+            let flags = SVSI_SELECT.0
+                | if at == 0 {
+                    SVSI_FOCUSED.0 | SVSI_DESELECTOTHERS.0
+                } else {
+                    0
+                };
+            folder.SelectItem(index, flags.cast_unsigned())?;
+        }
         timings.mark("target-selected");
         focus_trace("target-after", owner, return_focus.desktop, None);
         if AllowSetForegroundWindow(pid) == 0

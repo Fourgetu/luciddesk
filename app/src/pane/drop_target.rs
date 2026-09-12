@@ -21,6 +21,7 @@ struct Target {
     helper: Option<IDropTargetHelper>,
     accept: Accept,
     items: RefCell<Vec<ShellIdentity>>,
+    description: RefCell<Option<Rc<super::drop_description::QuietDescription>>>,
 }
 impl IDropTarget_Impl for Target_Impl {
     fn DragEnter(
@@ -30,22 +31,46 @@ impl IDropTarget_Impl for Target_Impl {
         point: &POINTL,
         effect: *mut DROPEFFECT,
     ) -> Result<()> {
+        let screen = POINT {
+            x: point.x,
+            y: point.y,
+        };
+        // Explorer has already left its old target. Hand off the existing image
+        // before decoding Shell objects, which may synchronously call Explorer.
+        // This provisional effect is visual only; update_effect below decides
+        // what we return to the source, and Drop validates again before commit.
+        let preview_effect = unsafe { *effect & DROPEFFECT_LINK };
+        if let (Some(helper), Some(data)) = (&self.helper, data.as_ref()) {
+            unsafe {
+                let _ = helper.DragEnter(self.hwnd, data, &raw const screen, preview_effect);
+            }
+        }
+        drop(self.description.take());
         let items = data
             .as_ref()
             .and_then(|d| desktop_shell::drag_shell_identities(d).ok())
             .unwrap_or_default();
         *self.items.borrow_mut() = items;
         self.update_effect(effect);
-        if let (Some(helper), Some(data)) = (&self.helper, data.as_ref()) {
-            // Explorer's drag image (including its label) needs an OLE helper on
-            // every target it enters, even though collection drops only link.
-            let point = POINT {
-                x: point.x,
-                y: point.y,
-            };
+        if unsafe { *effect != DROPEFFECT_NONE } {
+            *self.description.borrow_mut() = data
+                .as_ref()
+                .map(|data| Rc::new(super::drop_description::QuietDescription::new(data)));
+        }
+        let description = self.description.borrow().clone();
+        if let Some(description) = description {
+            description.suppress();
+        }
+        // Correct rejected/offered effects and apply the quiet caption without
+        // tearing down and recreating the helper's image.
+        if let Some(helper) = &self.helper {
             unsafe {
-                let _ = helper.DragEnter(self.hwnd, data, &raw const point, *effect);
+                let _ = helper.DragOver(&raw const screen, *effect);
             }
+        }
+        let description = self.description.borrow().clone();
+        if let Some(description) = description {
+            description.suppress();
         }
         Ok(())
     }
@@ -56,6 +81,10 @@ impl IDropTarget_Impl for Target_Impl {
         effect: *mut DROPEFFECT,
     ) -> Result<()> {
         self.update_effect(effect);
+        let description = self.description.borrow().clone();
+        if let Some(description) = description {
+            description.suppress();
+        }
         if let Some(helper) = &self.helper {
             let point = POINT {
                 x: point.x,
@@ -64,6 +93,10 @@ impl IDropTarget_Impl for Target_Impl {
             unsafe {
                 let _ = helper.DragOver(&raw const point, *effect);
             }
+        }
+        let description = self.description.borrow().clone();
+        if let Some(description) = description {
+            description.suppress();
         }
         Ok(())
     }
@@ -74,6 +107,7 @@ impl IDropTarget_Impl for Target_Impl {
                 let _ = helper.DragLeave();
             }
         }
+        drop(self.description.take());
         Ok(())
     }
     fn Drop(
@@ -103,6 +137,7 @@ impl IDropTarget_Impl for Target_Impl {
                 let _ = helper.Drop(data, &raw const point, *effect);
             }
         }
+        drop(self.description.take());
         Ok(())
     }
 }
@@ -140,6 +175,7 @@ impl Registration {
             },
             accept: Rc::new(accept),
             items: RefCell::new(Vec::new()),
+            description: RefCell::new(None),
         }
         .into();
         unsafe {
@@ -203,6 +239,7 @@ mod tests {
             helper: Some(Helper(events.clone()).into()),
             accept: Rc::new(|_, _| false),
             items: RefCell::new(Vec::new()),
+            description: RefCell::new(None),
         }
         .into();
         unsafe {
@@ -231,9 +268,11 @@ mod tests {
             *events.borrow(),
             [
                 ("enter", -640, 230),
+                ("over", -640, 230),
                 ("over", -620, 240),
                 ("leave", 0, 0),
                 ("enter", -640, 230),
+                ("over", -640, 230),
                 ("drop", -640, 230)
             ]
         );

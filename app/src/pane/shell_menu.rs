@@ -2,15 +2,15 @@
 use desktop_core::ShellIdentity;
 use windows_sys::Win32::Foundation::{HWND, POINT};
 
-pub fn show(
+pub fn show_many(
     owner: HWND,
-    identity: &ShellIdentity,
+    identities: &[ShellIdentity],
     point: POINT,
     keyboard: bool,
 ) -> Result<(), String> {
-    desktop_shell::show_desktop_item_menu(
+    desktop_shell::show_desktop_items_menu(
         windows::Win32::Foundation::HWND(owner),
-        identity,
+        identities,
         windows::Win32::Foundation::POINT {
             x: point.x,
             y: point.y,

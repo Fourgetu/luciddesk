@@ -12,7 +12,7 @@ use super::{composition::Surface, render::Renderer};
 use desktop_core::Backdrop;
 use std::{cell::Cell, rc::Rc, time::Instant};
 use windows_sys::Win32::{
-    Foundation::{HWND, POINT},
+    Foundation::{HWND, POINT, RECT},
     Graphics::Gdi::*,
     UI::{HiDpi::GetDpiForWindow, Input::KeyboardAndMouse::*, WindowsAndMessaging::*},
 };
@@ -303,6 +303,19 @@ pub fn show(
                 }
                 break;
             }
+            if message.hwnd == owner && message.message == WM_LBUTTONDOWN {
+                let mut bounds = RECT::default();
+                GetClientRect(owner, &raw mut bounds);
+                let owner_scale = GetDpiForWindow(owner).max(96) as f32 / 96.0;
+                let x = f32::from((message.lParam as u16).cast_signed()) / owner_scale;
+                let y = f32::from(((message.lParam >> 16) as u16).cast_signed()) / owner_scale;
+                if super::layout::header_button(bounds.right as f32 / owner_scale, x, y) == Some(1)
+                {
+                    // Consume the toggle click before the owner can arm another
+                    // menu open on mouse-up. Other outside clicks still dispatch.
+                    break;
+                }
+            }
             TranslateMessage(&raw const message);
             DispatchMessageW(&raw const message);
         }
@@ -317,6 +330,78 @@ pub fn show(
 mod tests {
     use super::*;
     use windows_sys::Win32::System::{ProcessStatus::*, Threading::*};
+
+    #[test]
+    #[ignore = "Opens a real menu; run in an interactive desktop session"]
+    fn owner_menu_button_dismisses_without_rearming() {
+        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let clicks = Rc::new(Cell::new(0));
+        let pulses = Rc::new(Cell::new(0));
+        let observed_clicks = Rc::clone(&clicks);
+        let observed_pulses = Rc::clone(&pulses);
+        let owner = windows_window::Window::new("Menu toggle fixture")
+            .style(WS_POPUP)
+            .size(320, 240)
+            .on_message(move |raw, msg, _, _| {
+                let hwnd = raw.cast();
+                match msg {
+                    WM_DESTROY => Some(0),
+                    WM_LBUTTONDOWN => {
+                        observed_clicks.set(observed_clicks.get() + 1);
+                        Some(0)
+                    }
+                    WM_TIMER => {
+                        observed_pulses.set(observed_pulses.get() + 1);
+                        unsafe {
+                            if observed_pulses.get() == 1 {
+                                let mut bounds = RECT::default();
+                                GetClientRect(hwnd, &raw mut bounds);
+                                let scale = GetDpiForWindow(hwnd).max(96) as f32 / 96.0;
+                                let x = ((super::super::layout::header_button_x(
+                                    bounds.right as f32 / scale,
+                                    1,
+                                ) + 14.0)
+                                    * scale) as isize;
+                                let point = (((19.0 * scale) as isize) << 16) | x;
+                                PostMessageW(hwnd, WM_LBUTTONDOWN, 0, point);
+                            } else {
+                                let popup = GetLastActivePopup(hwnd);
+                                if popup != hwnd {
+                                    PostMessageW(popup, WM_CLOSE, 0, 0);
+                                }
+                            }
+                        }
+                        Some(0)
+                    }
+                    _ => None,
+                }
+            })
+            .create()
+            .unwrap();
+        let hwnd = owner.hwnd().cast();
+        unsafe {
+            SetTimer(hwnd, 99, 160, None);
+        }
+        assert_eq!(
+            show(
+                hwnd,
+                POINT { x: 40, y: 40 },
+                true,
+                false,
+                desktop_core::PanelTheme::Dark
+            ),
+            0
+        );
+        unsafe {
+            KillTimer(hwnd, 99);
+        }
+        assert_eq!(
+            pulses.get(),
+            1,
+            "toggle click must close without the watchdog"
+        );
+        assert_eq!(clicks.get(), 0, "owner must not arm another menu open");
+    }
 
     #[test]
     #[ignore = "Opens real menus repeatedly; run alone in an interactive desktop session"]

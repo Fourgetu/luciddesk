@@ -3,6 +3,7 @@ use super::*;
 
 #[allow(clippy::struct_excessive_bools)]
 pub struct GroupModel {
+    pub options: desktop_core::PaneOptions,
     pub theme: desktop_core::PanelTheme,
     pub dark: bool,
 
@@ -10,14 +11,19 @@ pub struct GroupModel {
     pub hovered_item: Option<usize>,
     pub focused: bool,
     pub auto_hide: bool,
+    pub locked: bool,
     pub reveal: f32,
     pub hovered_button: Option<usize>,
+    pub pressed_button: Option<usize>,
     pub backdrop: desktop_core::Backdrop,
     pub native_material: bool,
     pub title: String,
     pub items: Vec<Item>,
     pub icon_size: f32,
+    // Keyboard focus may point to an unselected item after Ctrl+navigation.
     pub selected: Option<usize>,
+    pub selection: std::collections::BTreeSet<usize>,
+    pub selection_anchor: Option<usize>,
     pub renaming: Option<ShellIdentity>,
     pub scroll: usize,
     pub collapsed: bool,
@@ -25,6 +31,82 @@ pub struct GroupModel {
 }
 
 impl GroupModel {
+    pub(super) fn clear_selection(&mut self) {
+        self.selected = None;
+        self.selection.clear();
+        self.selection_anchor = None;
+    }
+
+    pub(super) fn select_item(&mut self, index: usize, ctrl: bool, shift: bool) {
+        if index >= self.items.len() {
+            return;
+        }
+        if shift {
+            let anchor = self
+                .selection_anchor
+                .or(self.selected)
+                .unwrap_or(index)
+                .min(self.items.len() - 1);
+            if !ctrl {
+                self.selection.clear();
+            }
+            self.selection.extend(anchor.min(index)..=anchor.max(index));
+            self.selection_anchor = Some(anchor);
+        } else {
+            if ctrl {
+                if !self.selection.remove(&index) {
+                    self.selection.insert(index);
+                }
+            } else {
+                self.selection.clear();
+                self.selection.insert(index);
+            }
+            self.selection_anchor = Some(index);
+        }
+        self.selected = Some(index);
+    }
+
+    pub(super) fn select_all(&mut self) {
+        self.selection = (0..self.items.len()).collect();
+        if !self.items.is_empty() {
+            self.selected = Some(self.selected.unwrap_or(0).min(self.items.len() - 1));
+            self.selection_anchor = self.selected;
+        } else {
+            self.clear_selection();
+        }
+    }
+
+    pub(super) fn selected_identities(&self) -> Vec<ShellIdentity> {
+        self.selection
+            .iter()
+            .filter_map(|&index| self.items.get(index))
+            .map(|item| item.identity.clone())
+            .collect()
+    }
+
+    pub(super) fn replace_items(&mut self, items: Vec<Item>) {
+        let focus = self
+            .selected
+            .and_then(|i| self.items.get(i))
+            .map(|i| i.identity.clone());
+        let anchor = self
+            .selection_anchor
+            .and_then(|i| self.items.get(i))
+            .map(|i| i.identity.clone());
+        let identities = self.selected_identities();
+        self.items = items;
+        self.selected =
+            focus.and_then(|identity| self.items.iter().position(|i| i.identity == identity));
+        self.selection_anchor =
+            anchor.and_then(|identity| self.items.iter().position(|i| i.identity == identity));
+        self.selection = self
+            .items
+            .iter()
+            .enumerate()
+            .filter_map(|(index, item)| identities.contains(&item.identity).then_some(index))
+            .collect();
+    }
+
     pub(super) fn resize_cell(&self) -> (f32, f32) {
         let grid = layout::Grid::system(0.0, 0.0, self.icon_size, self.spacing);
         (grid.cell_width, grid.cell_height)

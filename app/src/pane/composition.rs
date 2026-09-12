@@ -11,6 +11,7 @@ use windows_canvas::{GpuDevice, ID2D1DeviceContext, SwapChain};
 
 pub struct Surface {
     rounded_backdrop: Option<HWND>,
+    pub pane_corner_radius: u8,
     dark: bool,
     opacity: std::cell::Cell<f32>,
     acrylic: Option<super::acrylic::Acrylic>,
@@ -86,6 +87,7 @@ impl Surface {
             let _ = set_attribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &corner);
             Ok(Self {
                 rounded_backdrop: None,
+                pane_corner_radius: 7,
                 dark: true,
                 opacity: std::cell::Cell::new(initial_opacity),
                 acrylic: None,
@@ -157,8 +159,16 @@ impl Surface {
         if let (Some(hwnd), Some(acrylic)) = (self.rounded_backdrop, &mut self.acrylic) {
             let scale =
                 unsafe { windows_sys::Win32::UI::HiDpi::GetDpiForWindow(hwnd.0) } as f32 / 96.0;
-            // The renderer's outline has a 7 DIP radius and a half-DIP stroke outset.
-            acrylic.round_corners(width, height, 7.5 * scale)?;
+            // Include the outline's half-DIP outset when clipping the backdrop.
+            acrylic.round_corners(
+                width,
+                height,
+                if self.pane_corner_radius == 0 {
+                    0.0
+                } else {
+                    (f32::from(self.pane_corner_radius) + 0.5) * scale
+                },
+            )?;
         }
         Ok(())
     }

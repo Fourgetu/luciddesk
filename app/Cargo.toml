@@ -18,7 +18,7 @@ desktop-window.workspace = true
 desktop-hook.workspace = true
 windows = { workspace = true, features = ["UI_ViewManagement"] }
 windows-core = "0.62.2"
-windows-sys.workspace = true
+windows-sys = { workspace = true, features = ["Win32_System_ProcessStatus", "Win32_Security"] }
 windows-window.workspace = true
 windows-numerics.workspace = true
 windows-canvas = { version = "=0.100.0", default-features = false }

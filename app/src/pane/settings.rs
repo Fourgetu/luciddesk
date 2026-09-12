@@ -25,6 +25,12 @@ enum Action {
     Previous,
     Next,
     Change(Event),
+    Radius(u8),
+    PeekEnable,
+    PeekBrowse,
+    PeekDetect,
+    PeekShortcut,
+    PeekReset,
 }
 struct Control {
     bounds: Rect,
@@ -37,6 +43,12 @@ struct Scene {
     text: Vec<(Rect, String, usize)>,
     cards: Vec<Rect>,
     controls: Vec<Control>,
+}
+
+fn radius_from_pointer(bounds: Rect, x: f32) -> u8 {
+    let progress =
+        ((x - bounds.left - 8.0) / (bounds.right - bounds.left - 16.0).max(1.0)).clamp(0.0, 1.0);
+    (progress * f32::from(desktop_core::PaneOptions::MAX_CORNER_RADIUS)).round() as u8
 }
 
 fn contains(r: &Rect, x: f32, y: f32) -> bool {
@@ -359,6 +371,62 @@ impl Painter {
                     t.draw_rounded_rect(&rr, &border, 1.0);
                 }
                 for (i, c) in s.controls.iter().enumerate() {
+                    if let Action::Radius(value) = c.action {
+                        let r = c.bounds;
+                        let cy = (r.top + r.bottom) / 2.0;
+                        let left = r.left + 8.0;
+                        let right = r.right - 8.0;
+                        let cx = left + (right - left) * f32::from(value) / 24.0;
+                        let rail = RoundedRect {
+                            rect: Rect::from_xywh(left, cy - 2.0, right - left, 4.0),
+                            radius_x: 2.0,
+                            radius_y: 2.0,
+                        };
+                        t.fill_rounded_rect(&rail, &muted);
+                        let filled = RoundedRect {
+                            rect: Rect::from_xywh(left, cy - 2.0, (cx - left).max(0.0), 4.0),
+                            radius_x: 2.0,
+                            radius_y: 2.0,
+                        };
+                        t.fill_rounded_rect(&filled, &accent);
+                        t.fill_ellipse(
+                            &Ellipse {
+                                center: Vector2 { x: cx, y: cy },
+                                radius_x: 8.0,
+                                radius_y: 8.0,
+                            },
+                            &card,
+                        );
+                        t.draw_ellipse(
+                            &Ellipse {
+                                center: Vector2 { x: cx, y: cy },
+                                radius_x: 8.0,
+                                radius_y: 8.0,
+                            },
+                            &border,
+                            1.0,
+                        );
+                        t.fill_ellipse(
+                            &Ellipse {
+                                center: Vector2 { x: cx, y: cy },
+                                radius_x: 5.0,
+                                radius_y: 5.0,
+                            },
+                            &accent,
+                        );
+                        if focus == Some(i) {
+                            t.draw_rounded_rect(
+                                &RoundedRect {
+                                    rect: r,
+                                    radius_x: 5.0,
+                                    radius_y: 5.0,
+                                },
+                                &accent,
+                                2.0,
+                            );
+                        }
+                        continue;
+                    }
                     let navigation = matches!(c.action, Action::Page(_));
                     let caption = matches!(c.action, Action::Window(_));
                     let material = matches!(c.action, Action::Change(Event::Material(_)));
@@ -631,14 +699,19 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 .unwrap_or((PanelTheme::System, Backdrop::Mica)),
         )
     };
+    let mut options = state.borrow().workspace.pane_options();
     let painter = Painter::new().map_err(|e| e.to_string())?;
     let mut surface: Option<composition::Surface> = None;
     let mut page = 0;
+    let mut recording_peek = false;
     let mut selected = id;
     let mut hover = None;
     let mut focus = None;
     let mut keyboard_focus = false;
     let mut pressed = None;
+    let mut radius_original = None;
+    let mut cached_scene = None;
+    let mut scene_key = None;
     let mut toggle_motion = std::collections::HashMap::<usize, ToggleMotion>::new();
     let window = windows_window::Window::new("LucidPane 设置")
         .size(900, 520)
@@ -671,6 +744,11 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     }
                     return Some(0);
                 };
+                if let Some(original) = radius_original.take() {
+                    if let Err(error) = events::commit_radius(&mut owner, original) {
+                        window::error(&error);
+                    }
+                }
                 let window = if owner
                     .settings
                     .as_ref()
@@ -769,13 +847,20 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     | WM_LBUTTONDOWN
                     | WM_LBUTTONUP
                     | WM_CAPTURECHANGED
+                    | WM_CANCELMODE
                     | WM_TIMER
                     | WM_KEYDOWN
+                    | WM_SYSKEYDOWN
             ) {
                 return None;
             }
+            let mut snapshot_changed = false;
             let available = if let Ok(state) = state.try_borrow() {
-                panels = state.workspace.panels().to_vec();
+                if panels != state.workspace.panels() {
+                    panels = state.workspace.panels().to_vec();
+                    snapshot_changed = true;
+                }
+                options = state.workspace.pane_options();
                 appearance = state
                     .workspace
                     .appearance()
@@ -796,12 +881,43 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 GetClientRect(hwnd, &raw mut bounds);
             }
             let (w, h) = (bounds.right as f32 / scale, bounds.bottom as f32 / scale);
-            let scene = with_titlebar(
-                scene(w, h - TITLE_HEIGHT, page, panel, panels.len(), appearance),
-                w,
+            let key = (
+                w.to_bits(),
+                h.to_bits(),
+                page,
+                selected,
+                appearance,
+                options,
+                peek::settings(),
+                recording_peek,
                 unsafe { IsZoomed(hwnd) } != 0,
             );
+            let scene_changed = snapshot_changed || scene_key.as_ref() != Some(&key);
+            if scene_changed {
+                cached_scene = Some(with_titlebar(
+                    scene(
+                        w,
+                        h - TITLE_HEIGHT,
+                        page,
+                        panel,
+                        panels.len(),
+                        appearance,
+                        options,
+                    ),
+                    w,
+                    key.8,
+                ));
+                scene_key = Some(key);
+            }
+            if recording_peek {
+                for control in &mut cached_scene.as_mut().unwrap().controls {
+                    if matches!(control.action, Action::PeekShortcut) { control.label = "按下快捷键…".into(); }
+                }
+            }
+            let scene = cached_scene.as_ref().unwrap();
+            let interaction_before = (hover, focus, keyboard_focus, pressed);
             let mut activate = None;
+            let mut radius_change = None;
             match msg {
                 WM_PAINT => {
                     let now = std::time::Instant::now();
@@ -918,6 +1034,11 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                             SetCapture(hwnd);
                         }
                     }
+                    if let Some(control) = pressed.and_then(|i| scene.controls.get(i)) {
+                        if matches!(control.action, Action::Radius(_)) {
+                            radius_change = Some(radius_from_pointer(control.bounds, x));
+                        }
+                    }
                     if msg == WM_LBUTTONUP {
                         if pressed.take() == hit {
                             activate = hit;
@@ -927,15 +1048,44 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         }
                     }
                 }
-                WM_CAPTURECHANGED => {
+                WM_CAPTURECHANGED | WM_CANCELMODE => {
                     pressed = None;
                 }
-                WM_KEYDOWN => {
+                WM_KEYDOWN | WM_SYSKEYDOWN => {
+                    if recording_peek {
+                        if lp & (1 << 30) != 0 { return Some(0); }
+                        let key = wp as u16;
+                        if matches!(key, VK_CONTROL | VK_SHIFT | VK_MENU | VK_LWIN | VK_RWIN) { return Some(0); }
+                        if key != VK_ESCAPE {
+                            let bits = peek::modifier_bits(&keyboard::Modifiers::current());
+                            if !peek::valid_shortcut(key, bits) {
+                                window::error("此快捷键与现有操作冲突或不受支持，请使用字母、数字、功能键或空格，可搭配 Ctrl、Shift、Alt。");
+                                return Some(0);
+                            }
+                            let mut value = peek::settings(); value.key = key; value.modifiers = bits;
+                            if let Err(error) = peek::save(&state.borrow().store, value) { window::error(&error); }
+                        }
+                        recording_peek = false;
+                        unsafe { InvalidateRect(hwnd, std::ptr::null(), 0); }
+                        return Some(0);
+                    }
+                    if msg == WM_SYSKEYDOWN { return None; }
                     if wp == VK_ESCAPE as usize {
                         unsafe {
                             PostMessageW(hwnd, WM_CLOSE, 0, 0);
                         }
                         return Some(0);
+                    }
+                    if let Some(control) = focus.and_then(|i| scene.controls.get(i)) {
+                        if let Action::Radius(value) = control.action {
+                            radius_change = match wp as u16 {
+                                VK_LEFT => Some(value.saturating_sub(1)),
+                                VK_RIGHT => Some((value + 1).min(24)),
+                                VK_HOME => Some(0),
+                                VK_END => Some(24),
+                                _ => None,
+                            };
+                        }
                     }
                     if wp == VK_TAB as usize || wp == VK_DOWN as usize || wp == VK_UP as usize {
                         keyboard_focus = true;
@@ -960,11 +1110,48 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 }
                 _ => return None,
             }
+            if let Some(radius) = radius_change.filter(|_| available) {
+                if msg == WM_KEYDOWN {
+                    if let Err(error) = handle(&state, selected, Event::SetCornerRadius(radius)) {
+                        window::error(&error);
+                    }
+                } else {
+                    let mut owner = state.borrow_mut();
+                    radius_original.get_or_insert(owner.workspace.pane_options().corner_radius);
+                    events::preview_radius(&mut owner, radius);
+                }
+            }
+            if available && matches!(msg, WM_LBUTTONUP | WM_CAPTURECHANGED | WM_CANCELMODE) {
+                if let Some(original) = radius_original.take() {
+                    if let Err(error) = events::commit_radius(&mut state.borrow_mut(), original) {
+                        window::error(&error);
+                    }
+                }
+            }
             if let Some(c) = activate
                 .filter(|_| available)
                 .and_then(|i| scene.controls.get(i))
             {
                 match &c.action {
+                    Action::PeekShortcut => { recording_peek = true; }
+                    Action::PeekEnable | Action::PeekBrowse | Action::PeekDetect | Action::PeekReset => {
+                        let mut value = peek::settings();
+                        let result = (|| -> Result<(), String> {
+                            match c.action {
+                                Action::PeekEnable => value.enabled = !value.enabled,
+                                Action::PeekBrowse => {
+                                    let Some(path) = peek::browse(hwnd as isize)? else { return Ok(()); };
+                                    value.path = path;
+                                }
+                                Action::PeekDetect => { value.path.clear(); }
+                                Action::PeekReset => { value.key = VK_SPACE; value.modifiers = 0; }
+                                _ => unreachable!(),
+                            }
+                            peek::save(&state.borrow().store, value)
+                        })();
+                        if let Err(error) = result { window::error(&error); }
+                        scene_key = None;
+                    }
                     Action::Window(command) => unsafe {
                         let command = if *command == SC_MAXIMIZE && IsZoomed(hwnd) != 0 {
                             SC_RESTORE
@@ -974,6 +1161,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         PostMessageW(hwnd, WM_SYSCOMMAND, command as usize, 0);
                     },
                     Action::Page(value) => {
+                        recording_peek = false;
                         page = *value;
                         toggle_motion.clear();
                         focus = None;
@@ -984,6 +1172,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     Action::Next => {
                         selected = panels[(at + 1) % panels.len()].id();
                     }
+                    Action::Radius(_) => {}
                     Action::Change(event) => {
                         if let Err(e) = handle(&state, selected, event.clone()) {
                             window::error(&e);
@@ -991,7 +1180,13 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     }
                 }
             }
-            if msg != WM_PAINT {
+            if msg != WM_PAINT
+                && (scene_changed
+                    || interaction_before != (hover, focus, keyboard_focus, pressed)
+                    || activate.is_some()
+                    || radius_change.is_some_and(|radius| radius != options.corner_radius)
+                    || matches!(msg, WM_SIZE | WM_ACTIVATE | WM_TIMER))
+            {
                 unsafe {
                     InvalidateRect(hwnd, std::ptr::null(), 0);
                 }
@@ -1103,6 +1298,7 @@ mod tests {
                 None,
                 0,
                 (PanelTheme::Dark, Backdrop::Mica),
+                desktop_core::PaneOptions::default(),
             ),
             1040.0,
             false,
@@ -1123,7 +1319,7 @@ mod tests {
         {
             let device = windows_canvas::GpuDevice::new_warp().unwrap();
             for scale in [1.0, 1.5, 2.0] {
-                for page in 0..3 {
+                for page in 0..5 {
                     for dark in [false, true] {
                         let s = with_titlebar(
                             scene(
@@ -1133,6 +1329,7 @@ mod tests {
                                 Some(&panel),
                                 2,
                                 (PanelTheme::System, Backdrop::Mica),
+                                desktop_core::PaneOptions::default(),
                             ),
                             940.0,
                             false,
@@ -1172,7 +1369,7 @@ mod tests {
                         let pixels = bitmap.pixels().unwrap();
                         assert!(pixels.chunks_exact(4).all(|p| p[3] == 255));
                         assert_eq!(pixels[0] < 128, dark);
-                        if scale == 1.0 && page == 0 {
+                        if scale == 1.0 && page <= 1 {
                             // Standalone raster for visual review, independent of the live desktop.
                             let mut bmp = vec![0u8; 54];
                             bmp[0..2].copy_from_slice(b"BM");
@@ -1186,10 +1383,11 @@ mod tests {
                             bmp.extend(pixels);
                             let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                                 .join("../target")
-                                .join(if dark {
-                                    "settings-dark.bmp"
-                                } else {
-                                    "settings-light.bmp"
+                                .join(match (page, dark) {
+                                    (1, true) => "settings-pane-dark.bmp",
+                                    (1, false) => "settings-pane-light.bmp",
+                                    (_, true) => "settings-dark.bmp",
+                                    (_, false) => "settings-light.bmp",
                                 });
                             std::fs::write(path, bmp).unwrap();
                         }
@@ -1227,10 +1425,11 @@ mod tests {
             let empty = scene(
                 960.0,
                 650.0,
-                1,
+                2,
                 None,
                 0,
                 (PanelTheme::System, Backdrop::Mica),
+                desktop_core::PaneOptions::default(),
             );
             assert!(
                 empty

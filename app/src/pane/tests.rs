@@ -63,14 +63,103 @@ fn test_state() -> PaneApp {
 }
 
 #[test]
+fn activation_releases_state_and_model_before_shell_reentry() {
+    // Pumping real windows leaves native rendering state in this UI thread.
+    // Isolate this message-loop regression from the other GPU/window fixtures.
+    const CHILD: &str = "LUCIDPANE_ACTIVATION_TEST_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "pane::tests::activation_releases_state_and_model_before_shell_reentry",
+                "--test-threads=1",
+            ])
+            .env(CHILD, "1")
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while child.try_wait().unwrap().is_none() {
+            if std::time::Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("Activation regression timed out");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
+    let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let state = Rc::new(RefCell::new(test_state()));
+    create_view(&state, PanelId::new(1)).unwrap();
+    create_view(&state, PanelId::new(2)).unwrap();
+    let model = Rc::clone(&state.borrow().views[0].model);
+    let expected = model.borrow().items[0].identity.clone();
+    let called = Rc::new(std::cell::Cell::new(false));
+    let observed = Rc::clone(&called);
+    let reentrant = Rc::clone(&state);
+    events::activate_with(&state, PanelId::new(1), 0, move |_, identity| {
+        assert_eq!(identity, &expected);
+        assert!(reentrant.try_borrow_mut().is_ok());
+        assert!(model.try_borrow_mut().is_ok());
+        // Simulate Shell pumping an event for a different pane.
+        handle(
+            &reentrant,
+            PanelId::new(2),
+            Event::Geometry(RectDip::default()),
+        )
+        .unwrap();
+        observed.set(true);
+        Ok(())
+    })
+    .unwrap();
+    assert!(!called.get(), "Opening must wait until the caller returns");
+    // The action is already queued; no sleeping or WM_TIMER dispatch is needed.
+    unsafe {
+        use windows_sys::Win32::UI::WindowsAndMessaging::*;
+        let mut message = MSG::default();
+        let hwnd = state.borrow().views[0].window.hwnd().cast();
+        assert_ne!(
+            PeekMessageW(
+                &mut message,
+                hwnd,
+                window::RUN_POSTED_ACTION,
+                window::RUN_POSTED_ACTION,
+                PM_REMOVE
+            ),
+            0
+        );
+        DispatchMessageW(&message);
+    }
+    assert!(called.get());
+    let views = std::mem::take(&mut state.borrow_mut().views);
+    for view in &views {
+        window::prepare_close(view.window.hwnd().cast());
+    }
+    drop(views);
+}
+
+#[test]
 fn snapped_content_bottom_and_scrollbar_use_the_same_row_metrics() {
     let mut model = GroupModel {
+        options: desktop_core::PaneOptions::default(),
         theme: desktop_core::PanelTheme::Dark,
         dark: true,
         hovered_item: None,
         hovered_button: None,
+        pressed_button: None,
         focused: false,
         auto_hide: false,
+        locked: false,
         reveal: 1.0,
         backdrop: desktop_core::Backdrop::Mica,
         native_material: false,
@@ -79,6 +168,8 @@ fn snapped_content_bottom_and_scrollbar_use_the_same_row_metrics() {
         icon_size: 48.0,
         spacing: (88.0, 96.0),
         selected: None,
+        selection: Default::default(),
+        selection_anchor: None,
         renaming: None,
         scroll: 0,
         collapsed: false,
@@ -167,12 +258,15 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
     };
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
     let model = Rc::new(RefCell::new(GroupModel {
+        options: desktop_core::PaneOptions::default(),
         theme: desktop_core::PanelTheme::Dark,
         dark: true,
         hovered_item: None,
         hovered_button: None,
+        pressed_button: None,
         focused: false,
         auto_hide: false,
+        locked: false,
         reveal: 1.0,
         backdrop: desktop_core::Backdrop::Mica,
         native_material: false,
@@ -181,6 +275,8 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
         icon_size: 48.0,
         spacing: (88.0, 96.0),
         selected: None,
+        selection: Default::default(),
+        selection_anchor: None,
         renaming: None,
         scroll: 0,
         collapsed: false,
@@ -197,12 +293,29 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
         .collect();
     let focus_events = Rc::new(std::cell::Cell::new(0));
     let observed = Rc::clone(&focus_events);
+    let lock_events = Rc::new(std::cell::Cell::new(0));
+    let observed_locks = Rc::clone(&lock_events);
+    let keyboard_events = Rc::new(RefCell::new(Vec::new()));
+    let observed_keyboard = Rc::clone(&keyboard_events);
     let pane = window::create(
         RectDip::new(40.0, 40.0, 200.0, 160.0),
         Rc::clone(&model),
         move |event| {
+            if matches!(
+                event,
+                Event::Activate(_)
+                    | Event::ActivateSelection
+                    | Event::RenameItem(_)
+                    | Event::Refresh
+                    | Event::FileCommand(_)
+            ) {
+                observed_keyboard.borrow_mut().push(event.clone());
+            }
             if matches!(event, Event::PaneItemFocus) {
                 observed.set(observed.get() + 1);
+            }
+            if matches!(event, Event::ToggleLocked) {
+                observed_locks.set(observed_locks.get() + 1);
             }
             false
         },
@@ -211,6 +324,7 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
     let hwnd = pane.hwnd().cast();
     for selected in [None, Some(3)] {
         model.borrow_mut().selected = selected;
+        model.borrow_mut().selection = selected.into_iter().collect();
         model.borrow_mut().scroll = 1;
         unsafe {
             SendMessageW(hwnd, WM_KILLFOCUS, 0, 0);
@@ -227,11 +341,38 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
             assert_eq!(focus_events.get(), before, "key={key:x}");
         }
     }
-    model.borrow_mut().selected = Some(0);
+    model.borrow_mut().select_item(0, false, false);
     unsafe {
         SendMessageW(hwnd, WM_KEYDOWN, 0x27, 0);
     } // Right still navigates.
     assert_eq!(model.borrow().selected, Some(1));
+    unsafe {
+        SendMessageW(hwnd, WM_KEYDOWN, 0x23, 0); // End
+    }
+    assert_eq!(model.borrow().selected, Some(5));
+    assert!(model.borrow().scroll > 0);
+    unsafe {
+        SendMessageW(hwnd, WM_KEYDOWN, 0x24, 0); // Home
+    }
+    assert_eq!(model.borrow().selected, Some(0));
+    assert_eq!(model.borrow().scroll, 0);
+    unsafe {
+        SendMessageW(hwnd, WM_KEYDOWN, 0x0d, 0);
+        SendMessageW(hwnd, WM_KEYDOWN, 0x0d, 1 << 30); // held Enter is ignored
+        SendMessageW(hwnd, WM_KEYDOWN, 0x71, 0);
+        SendMessageW(hwnd, WM_KEYDOWN, 0x74, 0);
+        SendMessageW(hwnd, WM_KEYDOWN, 0x2e, 0);
+        SendMessageW(hwnd, WM_KEYDOWN, 0x2e, 1 << 30); // held Delete is ignored
+    }
+    assert!(matches!(
+        keyboard_events.borrow().as_slice(),
+        [
+            Event::ActivateSelection,
+            Event::RenameItem(_),
+            Event::Refresh,
+            Event::FileCommand(desktop_shell::FileCommand::Delete)
+        ]
+    ));
     unsafe {
         SendMessageW(hwnd, WM_KEYDOWN, 0x1b, 0);
     } // Escape still clears.
@@ -240,6 +381,48 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
         SendMessageW(hwnd, WM_KEYDOWN, 0x41, 0);
     }
     assert_eq!(model.borrow().selected, None);
+    // Set modifiers only in this disposable UI test thread and restore them
+    // before returning. No synthetic global keyboard input is sent.
+    let chord = |key: usize, ctrl: bool, shift: bool| unsafe {
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetKeyboardState, SetKeyboardState};
+        let mut saved = [0u8; 256];
+        assert_ne!(GetKeyboardState(saved.as_mut_ptr()), 0);
+        let mut pressed = saved;
+        for key in [0x10, 0x11, 0xa0, 0xa1, 0xa2, 0xa3] {
+            pressed[key] = 0;
+        }
+        pressed[0x11] = if ctrl { 0x80 } else { 0 };
+        pressed[0x10] = if shift { 0x80 } else { 0 };
+        assert_ne!(SetKeyboardState(pressed.as_ptr()), 0);
+        SendMessageW(hwnd, WM_KEYDOWN, key, 0);
+        assert_ne!(SetKeyboardState(saved.as_ptr()), 0);
+    };
+    chord(0x41, true, false);
+    assert_eq!(
+        model.borrow().selection.iter().copied().collect::<Vec<_>>(),
+        (0..6).collect::<Vec<_>>()
+    );
+    chord(0x24, false, false); // Home resets selection.
+    chord(0x27, false, true); // Shift+Right extends range.
+    assert_eq!(
+        model.borrow().selection.iter().copied().collect::<Vec<_>>(),
+        vec![0, 1]
+    );
+    chord(0x27, true, false); // Ctrl+Right moves focus, not selection.
+    assert_eq!(model.borrow().selected, Some(2));
+    assert_eq!(
+        model.borrow().selection.iter().copied().collect::<Vec<_>>(),
+        vec![0, 1]
+    );
+    chord(0x20, true, false); // Ctrl+Space toggles focused item.
+    assert_eq!(
+        model.borrow().selection.iter().copied().collect::<Vec<_>>(),
+        vec![0, 1, 2]
+    );
+    chord(0x23, true, true); // Ctrl+Shift+End adds the range.
+    assert_eq!(model.borrow().selection.len(), 6);
+    chord(0x1b, false, false);
+    assert!(model.borrow().selection.is_empty());
     // Keep a real popup open past the fold duration and inspect the pane
     // before dismissing it. The old in-callback modal loop loses its ticks.
     unsafe {
@@ -308,7 +491,7 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
         let mut rect = windows_sys::Win32::Foundation::RECT::default();
         GetClientRect(hwnd, &raw mut rect);
         let dpi = windows_sys::Win32::UI::HiDpi::GetDpiForWindow(hwnd).max(96) as f32 / 96.0;
-        let x = rect.right - (24.0 * dpi) as i32;
+        let x = ((layout::header_button_x(rect.right as f32 / dpi, 1) + 14.0) * dpi) as i32;
         let y = (19.0 * dpi) as i32;
         let position = ((y as isize) << 16) | x as isize;
         for leave in [WM_NCMOUSEMOVE, WM_MOUSELEAVE] {
@@ -320,6 +503,26 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
         }
     }
     // Empty panes keep the proposed size even inside the grid magnet.
+    unsafe {
+        use windows_sys::Win32::UI::WindowsAndMessaging::*;
+        let mut rect = RECT::default();
+        GetClientRect(hwnd, &raw mut rect);
+        let dpi = windows_sys::Win32::UI::HiDpi::GetDpiForWindow(hwnd).max(96) as f32 / 96.0;
+        let x = ((layout::header_button_x(rect.right as f32 / dpi, 2) + 14.0) * dpi) as isize;
+        let position = (((19.0 * dpi) as isize) << 16) | x;
+        SendMessageW(hwnd, WM_LBUTTONDOWN, 0, position);
+        assert_eq!(model.borrow().pressed_button, Some(2));
+        assert_eq!(lock_events.get(), 0);
+        SendMessageW(hwnd, WM_LBUTTONUP, 0, 0);
+        assert_eq!(lock_events.get(), 0, "release outside cancels the click");
+        assert_eq!(model.borrow().pressed_button, None);
+        SendMessageW(hwnd, WM_LBUTTONDOWN, 0, position);
+        SendMessageW(hwnd, WM_LBUTTONUP, 0, position);
+        assert_eq!(lock_events.get(), 1);
+        SendMessageW(hwnd, WM_LBUTTONDOWN, 0, position);
+        SendMessageW(hwnd, WM_CANCELMODE, 0, 0);
+        assert_eq!(model.borrow().pressed_button, None);
+    }
     model.borrow_mut().items.clear();
     unsafe {
         use windows_sys::Win32::UI::WindowsAndMessaging::*;
@@ -370,12 +573,15 @@ fn pane_layer_switch_and_wallpaper_material_initialize() {
     use windows_sys::Win32::UI::WindowsAndMessaging::{GWL_EXSTYLE, GetWindowLongW, WS_EX_TOPMOST};
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
     let model = Rc::new(RefCell::new(GroupModel {
+        options: desktop_core::PaneOptions::default(),
         theme: desktop_core::PanelTheme::Dark,
         dark: true,
         hovered_item: None,
         hovered_button: None,
+        pressed_button: None,
         focused: false,
         auto_hide: false,
+        locked: false,
         reveal: 1.0,
         backdrop: desktop_core::Backdrop::Mica,
         native_material: false,
@@ -384,6 +590,8 @@ fn pane_layer_switch_and_wallpaper_material_initialize() {
         icon_size: 48.0,
         spacing: (88.0, 96.0),
         selected: None,
+        selection: Default::default(),
+        selection_anchor: None,
         renaming: None,
         scroll: 0,
         collapsed: false,
@@ -606,6 +814,104 @@ fn closing_groups_releases_items_and_persists_an_empty_workspace() {
 }
 
 #[test]
+fn pane_options_apply_globally_and_can_disable_snapping() {
+    let state = Rc::new(RefCell::new(test_state()));
+    let id = PanelId::new(1);
+    for event in [
+        Event::SetCornerRadius(0),
+        Event::ToggleBorder,
+        Event::ToggleSnap,
+    ] {
+        handle(&state, id, event).unwrap();
+    }
+    let options = desktop_core::PaneOptions {
+        corner_radius: 0,
+        border: false,
+        snap: false,
+    };
+    assert_eq!(state.borrow().workspace.pane_options(), options);
+    assert_eq!(
+        state
+            .borrow()
+            .store
+            .load_workspace()
+            .unwrap()
+            .pane_options(),
+        options
+    );
+    let mut rect = RECT {
+        left: 7,
+        top: 11,
+        right: 307,
+        bottom: 211,
+    };
+    handle(&state, id, Event::Moving(&raw mut rect)).unwrap();
+    assert_eq!(
+        (rect.left, rect.top, rect.right, rect.bottom),
+        (7, 11, 307, 211)
+    );
+    handle(&state, PanelId::new(2), Event::ToggleSnap).unwrap();
+    assert!(state.borrow().workspace.pane_options().snap);
+    handle(&state, id, Event::SetCornerRadius(255)).unwrap();
+    assert_eq!(state.borrow().workspace.pane_options().corner_radius, 24);
+    handle(&state, id, Event::SetCornerRadius(11)).unwrap();
+    assert_eq!(
+        state
+            .borrow()
+            .store
+            .load_workspace()
+            .unwrap()
+            .pane_options()
+            .corner_radius,
+        11
+    );
+}
+
+#[test]
+fn locked_panel_rejects_title_changes_until_unlocked() {
+    let state = Rc::new(RefCell::new(test_state()));
+    let id = PanelId::new(1);
+    let original = state
+        .borrow()
+        .workspace
+        .panel(id)
+        .unwrap()
+        .title()
+        .to_string();
+    handle(&state, id, Event::ToggleLocked).unwrap();
+    handle(&state, id, Event::RenameTitle).unwrap();
+    handle(&state, id, Event::SetTitle("Blocked".into())).unwrap();
+    assert_eq!(
+        state.borrow().workspace.panel(id).unwrap().title(),
+        original
+    );
+    assert_eq!(
+        state
+            .borrow()
+            .store
+            .load_workspace()
+            .unwrap()
+            .panel(id)
+            .unwrap()
+            .title(),
+        original
+    );
+    handle(&state, id, Event::ToggleLocked).unwrap();
+    handle(&state, id, Event::SetTitle("Renamed".into())).unwrap();
+    assert_eq!(
+        state
+            .borrow()
+            .store
+            .load_workspace()
+            .unwrap()
+            .panel(id)
+            .unwrap()
+            .title(),
+        "Renamed"
+    );
+}
+
+#[test]
 fn appearance_is_global_while_behavior_remains_per_group() {
     let state = Rc::new(RefCell::new(test_state()));
     let id = PanelId::new(1);
@@ -621,6 +927,7 @@ fn appearance_is_global_while_behavior_remains_per_group() {
         Event::Material(desktop_core::Backdrop::Acrylic),
         Event::ToggleAutoHide,
         Event::ToggleTopmost,
+        Event::ToggleLocked,
     ] {
         handle(&state, id, event).unwrap();
     }
@@ -631,11 +938,13 @@ fn appearance_is_global_while_behavior_remains_per_group() {
     assert_eq!(panel.backdrop(), desktop_core::Backdrop::Acrylic);
     assert_eq!(panel.auto_hide(), !before.auto_hide());
     assert_eq!(panel.always_on_top(), !before.always_on_top());
+    assert_eq!(panel.locked(), !before.locked());
     let other_stored = stored.panel(PanelId::new(2)).unwrap();
     assert_eq!(other_stored.theme(), desktop_core::PanelTheme::Dark);
     assert_eq!(other_stored.backdrop(), desktop_core::Backdrop::Acrylic);
     assert_eq!(other_stored.auto_hide(), other.auto_hide());
     assert_eq!(other_stored.always_on_top(), other.always_on_top());
+    assert_eq!(other_stored.locked(), other.locked());
     assert_eq!(
         stored.appearance(),
         Some((
@@ -643,6 +952,71 @@ fn appearance_is_global_while_behavior_remains_per_group() {
             desktop_core::Backdrop::Acrylic
         ))
     );
+}
+
+#[test]
+fn corner_slider_drags_to_both_limits_and_saves() {
+    use windows_sys::Win32::UI::WindowsAndMessaging::*;
+    let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let state = Rc::new(RefCell::new(test_state()));
+    // This gesture/storage test does not exercise the process-wide WinRT
+    // UISettings factory across short-lived test apartments.
+    state
+        .borrow_mut()
+        .workspace
+        .set_appearance(desktop_core::PanelTheme::Dark, desktop_core::Backdrop::Mica);
+    settings::show(&state, PanelId::new(1)).unwrap();
+    let hwnd = state.borrow().settings.as_ref().unwrap().hwnd().cast();
+    unsafe {
+        let scale = windows_sys::Win32::UI::HiDpi::GetDpiForWindow(hwnd).max(96) as f32 / 96.0;
+        let point = |x: f32, y: f32| (((y * scale) as isize) << 16) | (x * scale) as isize;
+        SendMessageW(hwnd, WM_LBUTTONDOWN, 0, point(100.0, 171.0));
+        SendMessageW(hwnd, WM_LBUTTONUP, 0, point(100.0, 171.0));
+        let mut bounds = RECT::default();
+        GetClientRect(hwnd, &raw mut bounds);
+        let width = bounds.right as f32 / scale;
+        SendMessageW(hwnd, WM_LBUTTONDOWN, 0, point(width - 172.0, 172.0));
+        assert_eq!(state.borrow().workspace.pane_options().corner_radius, 12);
+        SendMessageW(hwnd, WM_MOUSEMOVE, 1, point(width - 300.0, 172.0));
+        assert_eq!(state.borrow().workspace.pane_options().corner_radius, 0);
+        assert_eq!(
+            state
+                .borrow()
+                .store
+                .load_workspace()
+                .unwrap()
+                .pane_options()
+                .corner_radius,
+            desktop_core::PaneOptions::DEFAULT.corner_radius,
+            "drag preview must not write storage"
+        );
+        SendMessageW(hwnd, WM_MOUSEMOVE, 1, point(width - 10.0, 172.0));
+        SendMessageW(hwnd, WM_LBUTTONUP, 0, point(width - 10.0, 172.0));
+        assert_eq!(
+            state
+                .borrow()
+                .store
+                .load_workspace()
+                .unwrap()
+                .pane_options()
+                .corner_radius,
+            24
+        );
+        SendMessageW(hwnd, WM_LBUTTONDOWN, 0, point(width - 172.0, 172.0));
+        SendMessageW(hwnd, WM_CAPTURECHANGED, 0, 0);
+        assert_eq!(
+            state
+                .borrow()
+                .store
+                .load_workspace()
+                .unwrap()
+                .pane_options()
+                .corner_radius,
+            12,
+            "losing capture must finish the preview"
+        );
+        SendMessageW(hwnd, WM_CLOSE, 0, 0);
+    }
 }
 
 #[test]
@@ -772,4 +1146,80 @@ fn reconciliation_preserves_groups_and_appends_new_items_after_existing_order() 
     let before = state.workspace.clone();
     assert!(transfer(&mut state, PanelId::new(1), 0, PanelId::new(999), 0).is_err());
     assert_eq!(state.workspace, before);
+}
+
+#[test]
+fn multiselection_preserves_anchor_toggle_and_file_identity_on_refresh() {
+    let mut model = GroupModel {
+        options: desktop_core::PaneOptions::default(),
+        theme: desktop_core::PanelTheme::Dark,
+        dark: true,
+        hovered_item: None,
+        hovered_button: None,
+        pressed_button: None,
+        focused: false,
+        auto_hide: false,
+        locked: false,
+        reveal: 1.0,
+        backdrop: desktop_core::Backdrop::Mica,
+        native_material: false,
+        title: "Sizing test".into(),
+        items: vec![],
+        icon_size: 48.0,
+        spacing: (88.0, 96.0),
+        selected: None,
+        selection: Default::default(),
+        selection_anchor: None,
+        renaming: None,
+        scroll: 0,
+        collapsed: false,
+        loading: false,
+    };
+    model.items = (0..8)
+        .map(|i| Item {
+            identity: ShellIdentity::Namespace {
+                parsing_name: format!("selection:{i}"),
+            },
+            label: i.to_string(),
+            image: None,
+        })
+        .collect();
+    model.select_item(2, false, false);
+    model.select_item(5, false, true);
+    assert_eq!(
+        model.selection.iter().copied().collect::<Vec<_>>(),
+        vec![2, 3, 4, 5]
+    );
+    model.select_item(3, false, true);
+    assert_eq!(
+        model.selection.iter().copied().collect::<Vec<_>>(),
+        vec![2, 3]
+    );
+    model.select_item(7, true, false);
+    model.select_item(2, true, false);
+    assert_eq!(
+        model.selection.iter().copied().collect::<Vec<_>>(),
+        vec![3, 7]
+    );
+    let identities = model.selected_identities();
+    let mut items = model.items.clone();
+    items.reverse();
+    items.retain(|item| item.label != "2");
+    model.replace_items(items);
+    assert_eq!(
+        model
+            .selected_identities()
+            .into_iter()
+            .collect::<std::collections::HashSet<_>>(),
+        identities
+            .into_iter()
+            .collect::<std::collections::HashSet<_>>()
+    );
+    assert_eq!(model.selected, None);
+    assert_eq!(model.selection_anchor, None);
+    model.clear_selection();
+    assert!(model.selected_identities().is_empty());
+    model.replace_items(vec![]);
+    model.select_all();
+    assert!(model.selection.is_empty());
 }

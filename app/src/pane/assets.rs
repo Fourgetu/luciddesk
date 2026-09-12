@@ -17,14 +17,16 @@ pub struct Pixels {
     pub data: Vec<u8>,
 }
 
-pub const RECYCLE_NAME: &str = "::{645FF040-5081-101B-9F08-00AA002F954E}";
+/// Windows Shell parsing name for the virtual Recycle Bin, not a filesystem path.
+/// Its CLSID is fixed across Windows versions, display languages, and architectures.
+pub(super) const RECYCLE_BIN_PARSING_NAME: &str = "::{645FF040-5081-101B-9F08-00AA002F954E}";
 
 pub fn load(identity: &ShellIdentity, size: i32) -> windows::core::Result<Pixels> {
     let name = match identity {
         ShellIdentity::FileSystem { path, .. } => path.to_string_lossy().into_owned(),
         ShellIdentity::Namespace { parsing_name } => parsing_name.clone(),
     };
-    if name.eq_ignore_ascii_case(RECYCLE_NAME) {
+    if name.eq_ignore_ascii_case(RECYCLE_BIN_PARSING_NAME) {
         return recycle_icon(size);
     }
     let name: Vec<_> = name.encode_utf16().chain(Some(0)).collect();

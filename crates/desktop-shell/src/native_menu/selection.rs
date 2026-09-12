@@ -31,7 +31,7 @@ pub(crate) fn update_hints(items: impl Iterator<Item = (String, i32)>) {
     }
 }
 
-fn matches(item: &IShellItem, target: &IShellItem) -> Result<bool> {
+pub(super) fn matches(item: &IShellItem, target: &IShellItem) -> Result<bool> {
     unsafe {
         Ok(item.Compare(
             target,

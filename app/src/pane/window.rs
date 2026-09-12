@@ -18,13 +18,14 @@ use windows_sys::Win32::Graphics::Gdi::{
 use windows_sys::Win32::UI::Controls::WM_MOUSELEAVE;
 use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    ReleaseCapture, SetCapture, SetFocus, VK_DOWN, VK_ESCAPE, VK_LEFT, VK_RETURN, VK_RIGHT, VK_UP,
+    ReleaseCapture, SetCapture, SetFocus, VK_APPS,
 };
 #[allow(clippy::wildcard_imports)]
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 use windows_window::Window;
 pub const ANIMATE_FOLD: u32 = WM_APP + 10;
 const SYNC_POINTER: u32 = WM_APP + 11;
+pub(super) const RUN_POSTED_ACTION: u32 = WM_APP + 12;
 const DESKTOP_LAYER: windows_sys::core::PCWSTR = windows_sys::w!("LucidPane.DesktopLayer");
 const CLOSING_PANE: windows_sys::core::PCWSTR = windows_sys::w!("LucidPane.ClosingPane");
 
@@ -96,7 +97,7 @@ fn sync_pointer(hwnd: HWND, model: &RefCell<GroupModel>) {
             windows_sys::Win32::Graphics::Gdi::ScreenToClient(hwnd, &raw mut p);
         }
         let m = model.borrow();
-        let in_client = frame_hit(client(hwnd), p, scale(hwnd), m.collapsed) == HTCLIENT;
+        let in_client = frame_hit(client(hwnd), p, scale(hwnd), m.collapsed, m.locked) == HTCLIENT;
         drop(m);
         if in_client {
             update_pointer(hwnd, model, Some(p));
@@ -146,7 +147,7 @@ fn update_pointer(hwnd: HWND, model: &RefCell<GroupModel>, pointer: Option<POINT
     }
 }
 
-fn frame_hit(r: RECT, p: POINT, scale: f32, collapsed: bool) -> u32 {
+fn frame_hit(r: RECT, p: POINT, scale: f32, collapsed: bool, locked: bool) -> u32 {
     let border = (5.0 * scale) as i32;
     match (
         p.x < border,
@@ -162,7 +163,11 @@ fn frame_hit(r: RECT, p: POINT, scale: f32, collapsed: bool) -> u32 {
         (_, true, _, _) => HTRIGHT,
         (_, _, true, _) => HTTOP,
         (_, _, _, true) => HTBOTTOM,
-        _ if p.y as f32 / scale < HEADER && p.x as f32 / scale < r.right as f32 / scale - 70.0 => {
+        _ if !locked
+            && p.y as f32 / scale < HEADER
+            && p.x as f32 / scale
+                < r.right as f32 / scale - super::layout::HEADER_BUTTONS_WIDTH =>
+        {
             HTCAPTION
         }
         _ => HTCLIENT,
@@ -172,6 +177,51 @@ fn frame_hit(r: RECT, p: POINT, scale: f32, collapsed: bool) -> u32 {
 #[cfg(test)]
 mod hit_tests {
     use super::*;
+
+    #[test]
+    fn locked_pane_blocks_moving_but_preserves_resize_hit_targets() {
+        for scale in [1.0, 1.25, 1.5, 2.0] {
+            for collapsed in [false, true] {
+                let height = if collapsed { HEADER } else { 300.0 };
+                let r = RECT {
+                    left: 0,
+                    top: 0,
+                    right: (240.0 * scale) as i32,
+                    bottom: (height * scale) as i32,
+                };
+                for x in [1.0, 100.0, 216.0, 239.0] {
+                    for y in [1.0, 19.0, height - 1.0] {
+                        let p = POINT {
+                            x: (x * scale) as i32,
+                            y: (y * scale) as i32,
+                        };
+                        let unlocked = frame_hit(r, p, scale, collapsed, false);
+                        assert_eq!(
+                            frame_hit(r, p, scale, collapsed, true),
+                            if unlocked == HTCAPTION {
+                                HTCLIENT
+                            } else {
+                                unlocked
+                            }
+                        );
+                    }
+                }
+                assert_eq!(
+                    frame_hit(
+                        r,
+                        POINT {
+                            x: (100.0 * scale) as i32,
+                            y: (19.0 * scale) as i32
+                        },
+                        scale,
+                        collapsed,
+                        false
+                    ),
+                    HTCAPTION
+                );
+            }
+        }
+    }
 
     #[test]
     fn collapsed_header_has_buttons_and_dragging_but_no_vertical_resize() {
@@ -191,6 +241,7 @@ mod hit_tests {
                     },
                     scale,
                     collapsed,
+                    false,
                 )
             };
             for y in [1.0, 19.0, 37.0] {
@@ -210,11 +261,33 @@ mod hit_tests {
 
 thread_local! {
     static DEFERRED: RefCell<std::collections::HashMap<usize, Box<dyn FnOnce()>>> = RefCell::new(std::collections::HashMap::new());
+    static POSTED: RefCell<std::collections::HashMap<(isize, usize), Box<dyn FnOnce()>>> = RefCell::new(std::collections::HashMap::new());
+    static NEXT_ACTION: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+// Dispatch in the subclass, outside the windows-window callback, so Shell can
+// pump messages without detaching the pane's normal event handler.
+pub(super) fn post_action(hwnd: HWND, action: impl FnOnce() + 'static) -> bool {
+    let Some(token) = NEXT_ACTION.with(|next| {
+        let token = next.get().checked_add(1)?;
+        next.set(token);
+        Some(token)
+    }) else {
+        return false;
+    };
+    let key = (hwnd as isize, token);
+    POSTED.with(|queue| queue.borrow_mut().insert(key, Box::new(action)));
+    if unsafe { PostMessageW(hwnd, RUN_POSTED_ACTION, token, 0) } == 0 {
+        let action = POSTED.with(|queue| queue.borrow_mut().remove(&key));
+        drop(action);
+        return false;
+    }
+    true
 }
 
 // A thread timer runs after the current window callback has returned. Modal
 // menus then pump pane messages with its windows-window handler installed.
-fn defer_menu(action: impl FnOnce() + 'static) -> bool {
+pub(super) fn defer_action(action: impl FnOnce() + 'static) -> bool {
     unsafe extern "system" fn dispatch(_: HWND, _: u32, timer: usize, _: u32) {
         unsafe {
             KillTimer(std::ptr::null_mut(), timer);
@@ -274,6 +347,29 @@ unsafe extern "system" fn borderless_proc(
     id: usize,
     _data: usize,
 ) -> isize {
+    if message == RUN_POSTED_ACTION {
+        let action = POSTED.with(|queue| queue.borrow_mut().remove(&(hwnd as isize, wparam)));
+        if let Some(action) = action {
+            action();
+        }
+        return 0;
+    }
+    if message == WM_NCDESTROY {
+        // Release cancelled closures outside the queue borrow; their captured
+        // values may themselves destroy windows and reenter this procedure.
+        let cancelled = POSTED.with(|queue| {
+            let mut queue = queue.borrow_mut();
+            let keys: Vec<_> = queue
+                .keys()
+                .copied()
+                .filter(|key| key.0 == hwnd as isize)
+                .collect();
+            keys.into_iter()
+                .filter_map(|key| queue.remove(&key))
+                .collect::<Vec<_>>()
+        });
+        drop(cancelled);
+    }
     if message == WM_DESTROY && unsafe { !GetPropW(hwnd, CLOSING_PANE).is_null() } {
         return 0;
     }
@@ -520,8 +616,12 @@ where
                         windows_sys::Win32::Graphics::Gdi::ScreenToClient(hwnd, &raw mut p);
                     }
                     let r = client(hwnd);
-                    let hit = frame_hit(r, p, scale(hwnd), model.borrow().collapsed);
+                    let m = model.borrow();
+                    let hit = frame_hit(r, p, scale(hwnd), m.collapsed, m.locked);
                     Some(isize::try_from(hit).unwrap_or_default())
+                }
+                WM_SYSCOMMAND if model.borrow().locked && wparam as u32 & 0xfff0 == SC_MOVE => {
+                    Some(0)
                 }
                 WM_GETMINMAXINFO => {
                     let info = unsafe { &mut *(lparam as *mut MINMAXINFO) };
@@ -596,6 +696,7 @@ where
                                 )?);
                             }
                             let surface = surface.as_mut().unwrap();
+                            surface.pane_corner_radius = model.borrow().options.corner_radius;
                             surface
                                 .theme(windows::Win32::Foundation::HWND(hwnd), model.borrow().dark);
                             {
@@ -710,29 +811,39 @@ where
                     let s = scale(hwnd);
                     let r = client(hwnd);
                     if p.y as f32 / s < HEADER {
-                        match super::layout::header_button(
+                        let button = super::layout::header_button(
                             r.right as f32 / s,
                             p.x as f32 / s,
                             p.y as f32 / s,
-                        ) {
-                            Some(1) => unsafe {
-                                PostMessageW(hwnd, WM_CONTEXTMENU, 0, -1);
-                            },
-                            Some(0) => {
-                                event(Event::Collapse);
+                        );
+                        model.borrow_mut().pressed_button = button;
+                        update_pointer(hwnd, &model, Some(p));
+                        if button.is_some() {
+                            unsafe {
+                                SetCapture(hwnd);
                             }
-                            _ => {}
                         }
+                        invalidate(hwnd);
                     } else {
                         let selected = {
                             let m = model.borrow();
                             m.hit(grid(hwnd, &m), p.x as f32 / s, p.y as f32 / s, s)
                         };
-                        model.borrow_mut().selected = selected;
+                        let modifiers = super::keyboard::Modifiers::current();
+                        {
+                            let mut m = model.borrow_mut();
+                            if let Some(index) = selected {
+                                m.select_item(index, modifiers.ctrl, modifiers.shift);
+                            } else if !modifiers.ctrl && !modifiers.shift {
+                                m.clear_selection();
+                            }
+                        }
                         if selected.is_some() {
                             event(Event::PaneItemFocus);
                         }
-                        drag = selected.map(|index| (index, p, false));
+                        drag = selected
+                            .filter(|_| !modifiers.ctrl && !modifiers.shift)
+                            .map(|index| (index, p, false));
                         drag_identity =
                             selected.map(|index| model.borrow().items[index].identity.clone());
                         unsafe {
@@ -813,6 +924,36 @@ where
                     Some(0)
                 }
                 WM_LBUTTONUP => {
+                    let pressed = model.borrow_mut().pressed_button.take();
+                    if let Some(button) = pressed {
+                        let p = point(lparam);
+                        let s = scale(hwnd);
+                        let released = super::layout::header_button(
+                            client(hwnd).right as f32 / s,
+                            p.x as f32 / s,
+                            p.y as f32 / s,
+                        );
+                        unsafe {
+                            ReleaseCapture();
+                        }
+                        update_pointer(hwnd, &model, Some(p));
+                        invalidate(hwnd);
+                        if released == Some(button) {
+                            match button {
+                                0 => {
+                                    event(Event::Collapse);
+                                }
+                                1 => unsafe {
+                                    PostMessageW(hwnd, WM_CONTEXTMENU, 0, -1);
+                                },
+                                2 => {
+                                    event(Event::ToggleLocked);
+                                }
+                                _ => {}
+                            }
+                        }
+                        return Some(0);
+                    }
                     let old = drag.take();
                     drag_image = None;
                     unsafe {
@@ -838,6 +979,13 @@ where
                     Some(0)
                 }
                 WM_CAPTURECHANGED | WM_CANCELMODE => {
+                    model.borrow_mut().pressed_button = None;
+                    if message == WM_CANCELMODE {
+                        unsafe {
+                            ReleaseCapture();
+                        }
+                    }
+                    invalidate(hwnd);
                     drag = None;
                     drag_image = None;
                     Some(0)
@@ -873,62 +1021,124 @@ where
                     invalidate(hwnd);
                     Some(0)
                 }
-                WM_KEYDOWN if wparam == 0x71 => {
-                    let identity = {
-                        let m = model.borrow();
-                        m.selected
-                            .and_then(|i| m.items.get(i))
-                            .map(|i| i.identity.clone())
+                WM_KEYUP if wparam == usize::from(VK_APPS) => Some(0),
+                WM_KEYDOWN | WM_SYSKEYDOWN => {
+                    use super::keyboard::{self, Command, Modifiers};
+                    if model.borrow().renaming.is_some() {
+                        return None;
+                    }
+                    let modifiers = Modifiers::current();
+                    let repeated = lparam & (1 << 30) != 0;
+                    let Some(command) = u16::try_from(wparam).ok().and_then(|key| {
+                        if super::peek::matches(key, &modifiers, repeated) {
+                            Some(Command::Peek)
+                        } else {
+                            keyboard::command(key, &modifiers, repeated)
+                        }
+                    }) else {
+                        return None;
                     };
-                    if let Some(identity) = identity {
-                        event(Event::RenameItem(identity));
-                    }
-                    Some(0)
-                }
-                WM_KEYDOWN if wparam == usize::from(VK_ESCAPE) => {
-                    if drag.take().is_some() {
-                        drag_image = None;
-                        unsafe {
-                            ReleaseCapture();
+                    match command {
+                        Command::Cancel => {
+                            if drag.take().is_some() {
+                                drag_identity = None;
+                                drag_image = None;
+                                unsafe {
+                                    ReleaseCapture();
+                                }
+                            } else {
+                                model.borrow_mut().clear_selection();
+                            }
+                            invalidate(hwnd);
                         }
-                    } else {
-                        model.borrow_mut().selected = None;
-                        invalidate(hwnd);
-                    }
-                    Some(0)
-                }
-                WM_KEYDOWN if wparam == usize::from(VK_RETURN) => {
-                    let selected = model.borrow().selected;
-                    if let Some(index) = selected {
-                        event(Event::Activate(index));
-                    }
-                    Some(0)
-                }
-                WM_KEYDOWN if (usize::from(VK_LEFT)..=usize::from(VK_DOWN)).contains(&wparam) => {
-                    let mut m = model.borrow_mut();
-                    let grid = grid(hwnd, &m);
-                    if !m.items.is_empty() {
-                        let at = m.selected.unwrap_or(0);
-                        let next = match wparam as u16 {
-                            VK_LEFT => at.saturating_sub(1),
-                            VK_RIGHT => (at + 1).min(m.items.len() - 1),
-                            VK_UP => at.saturating_sub(grid.columns),
-                            VK_DOWN => (at + grid.columns).min(m.items.len() - 1),
-                            _ => at,
-                        };
-                        m.selected = Some(next);
-                        let row = next / grid.columns;
-                        if row < m.scroll {
-                            m.scroll = row;
-                        } else if row >= m.scroll + grid.visible_rows {
-                            m.scroll = row - grid.visible_rows + 1;
+                        Command::Open => {
+                            event(Event::ActivateSelection);
+                        }
+                        Command::Peek => {
+                            event(Event::Peek);
+                        }
+                        Command::Rename => {
+                            let identity = {
+                                let m = model.borrow();
+                                if m.selection.len() == 1 {
+                                    m.selection
+                                        .first()
+                                        .and_then(|i| m.items.get(*i))
+                                        .map(|i| i.identity.clone())
+                                } else {
+                                    None
+                                }
+                            };
+                            if let Some(identity) = identity {
+                                event(Event::RenameItem(identity));
+                            }
+                        }
+                        Command::SelectAll => {
+                            model.borrow_mut().select_all();
+                            if !model.borrow().selection.is_empty() {
+                                event(Event::PaneItemFocus);
+                            }
+                            invalidate(hwnd);
+                        }
+                        Command::ToggleSelection => {
+                            let mut m = model.borrow_mut();
+                            let index = m.selected.or_else(|| (!m.items.is_empty()).then_some(0));
+                            if let Some(index) = index {
+                                m.select_item(index, true, false);
+                            }
+                            drop(m);
+                            if index.is_some() {
+                                event(Event::PaneItemFocus);
+                            }
+                            invalidate(hwnd);
+                        }
+                        Command::Refresh => {
+                            event(Event::Refresh);
+                        }
+                        Command::File(command) => {
+                            event(Event::FileCommand(command));
+                        }
+                        Command::Menu => unsafe {
+                            PostMessageW(hwnd, WM_CONTEXTMENU, hwnd as usize, -1);
+                        },
+                        Command::Navigate(key) => {
+                            let mut m = model.borrow_mut();
+                            if m.collapsed {
+                                return Some(0);
+                            }
+                            let grid = grid(hwnd, &m);
+                            let next = keyboard::next_selection(
+                                key,
+                                m.selected,
+                                m.items.len(),
+                                grid.columns,
+                                grid.visible_rows,
+                            );
+                            if let Some(next) = next {
+                                if modifiers.ctrl && !modifiers.shift {
+                                    if m.selection_anchor.is_none() {
+                                        m.selection_anchor = m.selected;
+                                    }
+                                    m.selected = Some(next);
+                                } else {
+                                    m.select_item(next, modifiers.ctrl, modifiers.shift);
+                                }
+                                let row = next / grid.columns.max(1);
+                                let rows = grid.visible_rows.max(1);
+                                if row < m.scroll {
+                                    m.scroll = row;
+                                } else if row >= m.scroll + rows {
+                                    m.scroll = row - rows + 1;
+                                }
+                                m.scroll = m.scroll.min(grid.max_scroll(m.items.len()));
+                            }
+                            drop(m);
+                            if next.is_some() {
+                                event(Event::PaneItemFocus);
+                            }
+                            invalidate(hwnd);
                         }
                     }
-                    drop(m);
-                    {
-                        event(Event::PaneItemFocus);
-                    }
-                    invalidate(hwnd);
                     Some(0)
                 }
                 WM_CONTEXTMENU => {
@@ -940,7 +1150,7 @@ where
                     let model = Rc::clone(&model);
                     let events = Rc::clone(&events);
                     let window_state = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) };
-                    if !defer_menu(move || {
+                    if !defer_action(move || {
                         let _activity = activity;
                         if unsafe { IsWindow(hwnd) } == 0
                             || unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } != window_state
@@ -951,7 +1161,10 @@ where
                         let mut anchor = point(lparam);
                         let index = if lparam == -1 {
                             if wparam != 0 {
-                                model.borrow().selected
+                                let m = model.borrow();
+                                m.selected
+                                    .filter(|i| m.selection.contains(i))
+                                    .or_else(|| m.selection.first().copied())
                             } else {
                                 None
                             }
@@ -969,10 +1182,13 @@ where
                             )
                         };
                         if let Some(index) = index {
-                            let identity = {
+                            let (identity, identities) = {
                                 let mut m = model.borrow_mut();
+                                if !m.selection.contains(&index) {
+                                    m.select_item(index, false, false);
+                                }
                                 m.selected = Some(index);
-                                m.items[index].identity.clone()
+                                (m.items[index].identity.clone(), m.selected_identities())
                             };
                             if lparam == -1 {
                                 unsafe {
@@ -981,8 +1197,12 @@ where
                             }
                             invalidate(hwnd);
                             event(Event::MenuSelection(true));
-                            let result =
-                                super::shell_menu::show(hwnd, &identity, anchor, lparam == -1);
+                            let result = super::shell_menu::show_many(
+                                hwnd,
+                                &identities,
+                                anchor,
+                                lparam == -1,
+                            );
                             event(Event::ItemMenuEnded(identity));
                             if let Err(message) = result {
                                 error(&message);
@@ -995,7 +1215,11 @@ where
                             let m = model.borrow();
                             (m.auto_hide, m.theme)
                         };
+                        update_pointer(hwnd, &model, None);
+                        invalidate(hwnd);
                         let command = menu(hwnd, lparam, auto_hide, theme);
+                        update_pointer(hwnd, &model, None);
+                        invalidate(hwnd);
                         match command {
                             1 => {
                                 event(Event::New);

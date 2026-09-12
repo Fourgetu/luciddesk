@@ -10,9 +10,19 @@ use windows::core::Interface;
 
 use super::Pidl;
 
+/// Explorer-owned item IDs and view metrics, without opening desktop files.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct NativeDesktopRevision {
+    icon_size: i32,
+    spacing: (i32, i32),
+    dpi: u32,
+    item_ids: Vec<Vec<u8>>,
+}
+
 /// Read-only capture of Explorer's visible items and icon metrics. Never changes folder flags.
 #[derive(Clone, Debug)]
 pub struct NativeDesktopSnapshot {
+    pub revision: NativeDesktopRevision,
     pub icon_size: i32,
     pub spacing: (i32, i32),
     pub dpi: u32,
@@ -25,49 +35,118 @@ pub struct NativeDesktopSnapshot {
 /// # Errors
 /// Returns an error when Explorer's desktop COM view cannot be reached.
 pub fn native_desktop_snapshot() -> Result<NativeDesktopSnapshot, String> {
-    capture_desktop_snapshot(false)
+    capture_desktop_snapshot()
 }
 
-/// Read-only inventory for a worker STA. Yields between batches so Explorer can
-/// service mouse input while the controller performs its periodic audit.
-/// # Errors
-/// Returns an error when Explorer's desktop COM view cannot be reached.
-pub fn native_desktop_snapshot_background() -> Result<NativeDesktopSnapshot, String> {
-    capture_desktop_snapshot(true)
+/// Read only Explorer's in-memory item IDs on a worker STA. Metadata is resolved
+/// by the full snapshot only after a revision change has been detected.
+#[derive(Default)]
+pub struct NativeDesktopReader {
+    shell: Option<IShellWindows>,
 }
 
-fn capture_desktop_snapshot(paced: bool) -> Result<NativeDesktopSnapshot, String> {
+impl NativeDesktopReader {
+    /// Must be used and dropped within the caller's initialized COM apartment.
+    /// Failed queries discard the cached connection so the next check reconnects.
+    ///
+    /// # Errors
+    /// Returns an error when Explorer's desktop COM view cannot be reached.
+    pub fn revision(&mut self) -> Result<NativeDesktopRevision, String> {
+        let result = self.capture_revision();
+        if result.is_err() {
+            self.shell = None;
+        }
+        result.map_err(|error| format!("读取桌面项目标识失败：{error}"))
+    }
+
+    fn capture_revision(&mut self) -> windows::core::Result<NativeDesktopRevision> {
+        if self.shell.is_none() {
+            self.shell = Some(unsafe { CoCreateInstance(&ShellWindows, None, CLSCTX_ALL)? });
+        }
+        capture_revision(self.shell.as_ref().unwrap())
+    }
+}
+
+fn capture_revision(shell: &IShellWindows) -> windows::core::Result<NativeDesktopRevision> {
+    let capture = || -> windows::core::Result<NativeDesktopRevision> {
+        let (folder, hwnd) = desktop_folder(shell)?;
+        let mut revision = revision_header(&folder, hwnd)?;
+        for index in 0..unsafe { folder.ItemCount(SVGIO_ALLVIEW)? } {
+            if index > 0 && index % 8 == 0 {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            let pidl = Pidl(unsafe { folder.Item(index)? });
+            revision.item_ids.push(item_id(&pidl));
+        }
+        Ok(revision)
+    };
+    capture()
+}
+
+fn revision_header(
+    folder: &IFolderView2,
+    hwnd: windows::Win32::Foundation::HWND,
+) -> windows::core::Result<NativeDesktopRevision> {
+    unsafe {
+        let mut icon_size = 48;
+        let mut mode = windows::Win32::UI::Shell::FOLDERVIEWMODE::default();
+        folder.GetViewModeAndIconSize(&raw mut mode, &raw mut icon_size)?;
+        let mut spacing = POINT::default();
+        folder.GetSpacing(&raw mut spacing)?;
+        Ok(NativeDesktopRevision {
+            icon_size,
+            spacing: (spacing.x, spacing.y),
+            dpi: windows_sys::Win32::UI::HiDpi::GetDpiForWindow(hwnd.0).max(96),
+            item_ids: Vec::new(),
+        })
+    }
+}
+
+fn item_id(pidl: &Pidl) -> Vec<u8> {
+    if pidl.0.is_null() {
+        return Vec::new();
+    }
+    unsafe {
+        let size = windows::Win32::UI::Shell::ILGetSize(Some(pidl.0)) as usize;
+        std::slice::from_raw_parts(pidl.0.cast::<u8>(), size).to_vec()
+    }
+}
+
+fn desktop_folder(
+    shell: &IShellWindows,
+) -> windows::core::Result<(IFolderView2, windows::Win32::Foundation::HWND)> {
+    unsafe {
+        let mut desktop_hwnd = 0;
+        let dispatch = shell.FindWindowSW(
+            &VARIANT::from(CSIDL_DESKTOP.cast_signed()),
+            &VARIANT::default(),
+            SWC_DESKTOP,
+            &raw mut desktop_hwnd,
+            SWFO_NEEDDISPATCH,
+        )?;
+        let provider: IServiceProvider = dispatch.cast()?;
+        let browser: IShellBrowser = provider.QueryService(&SID_STopLevelBrowser)?;
+        let view = browser.QueryActiveShellView()?;
+        let folder: IFolderView2 = view.cast()?;
+        let hwnd = view.GetWindow()?;
+        Ok((folder, hwnd))
+    }
+}
+
+fn capture_desktop_snapshot() -> Result<NativeDesktopSnapshot, String> {
     unsafe {
         let capture = || -> windows::core::Result<NativeDesktopSnapshot> {
             let shell: IShellWindows = CoCreateInstance(&ShellWindows, None, CLSCTX_ALL)?;
-            let mut desktop_hwnd = 0;
-            let dispatch = shell.FindWindowSW(
-                &VARIANT::from(CSIDL_DESKTOP.cast_signed()),
-                &VARIANT::default(),
-                SWC_DESKTOP,
-                &raw mut desktop_hwnd,
-                SWFO_NEEDDISPATCH,
-            )?;
-            let provider: IServiceProvider = dispatch.cast()?;
-            let browser: IShellBrowser = provider.QueryService(&SID_STopLevelBrowser)?;
-            let view = browser.QueryActiveShellView()?;
-            let folder: IFolderView2 = view.cast()?;
+            let (folder, hwnd) = desktop_folder(&shell)?;
             let parent: windows::Win32::UI::Shell::IShellFolder = folder.GetFolder()?;
-            let hwnd = view.GetWindow()?;
             let mut origin = windows_sys::Win32::Foundation::POINT::default();
             windows_sys::Win32::Graphics::Gdi::ClientToScreen(hwnd.0, &raw mut origin);
-            let mut icon_size = 48;
-            let mut mode = windows::Win32::UI::Shell::FOLDERVIEWMODE::default();
-            folder.GetViewModeAndIconSize(&raw mut mode, &raw mut icon_size)?;
-            let mut spacing = POINT::default();
-            folder.GetSpacing(&raw mut spacing)?;
+            let mut revision = revision_header(&folder, hwnd)?;
             let mut items = Vec::new();
             let mut view_indices = Vec::new();
             for index in 0..folder.ItemCount(SVGIO_ALLVIEW)? {
-                if paced && index > 0 && index % 8 == 0 {
-                    std::thread::sleep(std::time::Duration::from_millis(1));
-                }
                 let pidl = Pidl(folder.Item(index)?);
+                revision.item_ids.push(item_id(&pidl));
                 let position = folder.GetItemPosition(pidl.0)?;
                 let item: windows::Win32::UI::Shell::IShellItem =
                     windows::Win32::UI::Shell::SHCreateItemWithParent(None, &parent, pidl.0)?;
@@ -86,9 +165,10 @@ fn capture_desktop_snapshot(paced: bool) -> Result<NativeDesktopSnapshot, String
                 }
             }
             Ok(NativeDesktopSnapshot {
-                icon_size,
-                spacing: (spacing.x, spacing.y),
-                dpi: windows_sys::Win32::UI::HiDpi::GetDpiForWindow(hwnd.0).max(96),
+                icon_size: revision.icon_size,
+                spacing: revision.spacing,
+                dpi: revision.dpi,
+                revision,
                 items,
                 view_indices,
             })
@@ -106,5 +186,30 @@ fn capture_desktop_snapshot(paced: bool) -> Result<NativeDesktopSnapshot, String
             },
         ));
         Ok(snapshot)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "Reads live Explorer; run in an interactive session with the desktop unchanged"]
+    fn background_revision_matches_full_snapshot() {
+        let _sta = crate::ShellApartment::initialize_sta().unwrap();
+        let snapshot = native_desktop_snapshot().unwrap();
+        let revision = std::thread::spawn(|| {
+            let _sta = crate::ShellApartment::initialize_sta().unwrap();
+            let mut reader = NativeDesktopReader::default();
+            let first = reader.revision().unwrap();
+            assert_eq!(reader.revision().unwrap(), first);
+            // Simulate invalidating a stale connection without restarting Explorer.
+            reader.shell = None;
+            assert_eq!(reader.revision().unwrap(), first);
+            first
+        })
+        .join()
+        .unwrap();
+        assert_eq!(revision, snapshot.revision);
     }
 }

@@ -7,6 +7,7 @@ pub(super) fn scene(
     panel: Option<&Panel>,
     count: usize,
     appearance: (PanelTheme, Backdrop),
+    options: desktop_core::PaneOptions,
 ) -> Scene {
     let mut s = Scene {
         text: vec![],
@@ -16,7 +17,9 @@ pub(super) fn scene(
     s.text(Rect::from_xywh(28.0, 26.0, 172.0, 32.0), "LucidPane", 2);
     for (i, (name, icon)) in [
         ("个性化", "\u{e790}"),
+        ("面板外观", "\u{e790}"),
         ("分组行为", "\u{e8b7}"),
+        ("Peek 速览", "\u{e721}"),
         ("关于", "\u{e946}"),
     ]
     .iter()
@@ -35,7 +38,7 @@ pub(super) fn scene(
     let w = width - x - 24.0;
     s.text(
         Rect::from_xywh(x, 28.0, w, 44.0),
-        ["个性化", "分组行为", "关于"][page],
+        ["个性化", "面板外观", "分组行为", "Peek 速览", "关于"][page],
         3,
     );
     if page == 0 {
@@ -88,6 +91,73 @@ pub(super) fn scene(
             );
         }
     } else if page == 1 {
+        s.text(
+            Rect::from_xywh(x, 76.0, w, 24.0),
+            format!("所有分组 · {count}"),
+            0,
+        );
+        s.cards.push(Rect::from_xywh(x, 108.0, w, 64.0));
+        s.text(
+            Rect::from_xywh(x + 18.0, 116.0, w - 258.0, 24.0),
+            "圆角大小",
+            1,
+        );
+        s.text(
+            Rect::from_xywh(x + 18.0, 140.0, w - 258.0, 24.0),
+            "0–24，0 为直角",
+            0,
+        );
+        let radius = options.corner_radius;
+        s.controls.push(Control {
+            bounds: Rect::from_xywh(x + w - 238.0, 123.0, 180.0, 34.0),
+            label: String::new(),
+            action: Action::Radius(radius),
+            selected: false,
+            toggle: false,
+        });
+        s.text(
+            Rect::from_xywh(x + w - 42.0, 123.0, 30.0, 34.0),
+            radius.to_string(),
+            1,
+        );
+        for (i, (title, description, enabled, event)) in [
+            (
+                "边框",
+                "显示面板轮廓线",
+                options.border,
+                Event::ToggleBorder,
+            ),
+            (
+                "自动吸附",
+                "移动时对齐面板与屏幕边缘",
+                options.snap,
+                Event::ToggleSnap,
+            ),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let y = 184.0 + i as f32 * 76.0;
+            s.cards.push(Rect::from_xywh(x, y, w, 64.0));
+            s.text(
+                Rect::from_xywh(x + 18.0, y + 8.0, w - 100.0, 24.0),
+                *title,
+                1,
+            );
+            s.text(
+                Rect::from_xywh(x + 18.0, y + 32.0, w - 100.0, 24.0),
+                *description,
+                0,
+            );
+            s.controls.push(Control {
+                bounds: Rect::from_xywh(x + w - 70.0, y + 20.0, 46.0, 24.0),
+                label: String::new(),
+                action: Action::Change(event.clone()),
+                selected: *enabled,
+                toggle: true,
+            });
+        }
+    } else if page == 2 {
         let Some(panel) = panel else {
             s.cards.push(Rect::from_xywh(x, 88.0, w, 116.0));
             s.text(
@@ -168,6 +238,71 @@ pub(super) fn scene(
                 toggle: true,
             });
         }
+    } else if page == 3 {
+        let value = peek::settings();
+        s.cards.push(Rect::from_xywh(x, 88.0, w, 64.0));
+        s.text(
+            Rect::from_xywh(x + 18.0, 96.0, w - 110.0, 24.0),
+            "启用 Peek",
+            1,
+        );
+        s.text(
+            Rect::from_xywh(x + 18.0, 122.0, w - 110.0, 22.0),
+            "在分组中使用快捷键预览选中的项目",
+            0,
+        );
+        s.controls.push(Control {
+            bounds: Rect::from_xywh(x + w - 70.0, 108.0, 46.0, 24.0),
+            label: String::new(),
+            action: Action::PeekEnable,
+            selected: value.enabled,
+            toggle: true,
+        });
+        s.cards.push(Rect::from_xywh(x, 164.0, w, 138.0));
+        s.text(
+            Rect::from_xywh(x + 18.0, 174.0, w - 36.0, 26.0),
+            if value.path.is_empty() {
+                "Peek 路径 · 自动检测"
+            } else {
+                "Peek 路径 · 自定义"
+            },
+            1,
+        );
+        let path = peek::resolved(&value)
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "未检测到 Peek，请安装 PowerToys 或浏览选择程序".into());
+        s.text(Rect::from_xywh(x + 18.0, 208.0, w - 36.0, 36.0), path, 0);
+        s.button(
+            Rect::from_xywh(x + 18.0, 254.0, 110.0, 34.0),
+            "浏览…",
+            Action::PeekBrowse,
+            false,
+        );
+        s.button(
+            Rect::from_xywh(x + 140.0, 254.0, 110.0, 34.0),
+            "自动检测",
+            Action::PeekDetect,
+            false,
+        );
+        s.cards.push(Rect::from_xywh(x, 314.0, w, 96.0));
+        s.text(Rect::from_xywh(x + 18.0, 322.0, 90.0, 26.0), "快捷键", 1);
+        s.button(
+            Rect::from_xywh(x + 114.0, 324.0, w - 250.0, 34.0),
+            &peek::shortcut_label(&value),
+            Action::PeekShortcut,
+            false,
+        );
+        s.button(
+            Rect::from_xywh(x + w - 124.0, 324.0, 106.0, 34.0),
+            "恢复默认",
+            Action::PeekReset,
+            false,
+        );
+        s.text(
+            Rect::from_xywh(x + 18.0, 370.0, w - 36.0, 24.0),
+            "点击录入快捷键，Esc 取消；仅在分组中生效",
+            0,
+        );
     } else {
         s.cards.push(Rect::from_xywh(x, 88.0, w, 152.0));
         s.text(

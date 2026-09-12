@@ -367,9 +367,32 @@ impl Panel {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PaneOptions {
+    pub corner_radius: u8,
+    pub border: bool,
+    pub snap: bool,
+}
+
+impl PaneOptions {
+    pub const MAX_CORNER_RADIUS: u8 = 24;
+    pub const DEFAULT: Self = Self {
+        corner_radius: 7,
+        border: true,
+        snap: true,
+    };
+}
+
+impl Default for PaneOptions {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Workspace {
     appearance: Option<(PanelTheme, Backdrop)>,
+    pane_options: PaneOptions,
     panels: Vec<Panel>,
     desktop_items: Vec<DesktopItem>,
 }
@@ -381,11 +404,19 @@ impl Default for Workspace {
 }
 
 impl Workspace {
+    pub const fn pane_options(&self) -> PaneOptions {
+        self.pane_options
+    }
+    pub fn set_pane_options(&mut self, options: PaneOptions) {
+        self.pane_options = options;
+    }
+
     #[must_use]
     pub const fn new() -> Self {
         Self {
             panels: Vec::new(),
             appearance: None,
+            pane_options: PaneOptions::DEFAULT,
             desktop_items: Vec::new(),
         }
     }
@@ -405,6 +436,7 @@ impl Workspace {
         Ok(Self {
             panels,
             appearance: None,
+            pane_options: PaneOptions::DEFAULT,
             desktop_items: Vec::new(),
         })
     }
