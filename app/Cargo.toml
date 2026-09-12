@@ -24,6 +24,7 @@ windows-numerics.workspace = true
 windows-canvas = { version = "=0.100.0", default-features = false }
 canvas-core = { package = "windows-core", version = "=0.100.0", default-features = false }
 windows-animation = "=0.100.0"
+windows-version = "=0.100.0"
 desktop-graphics = { path = "../crates/desktop-graphics" }
 
 [dev-dependencies]

@@ -137,6 +137,7 @@ dependencies = [
  "windows-core 0.62.2",
  "windows-numerics 0.3.1",
  "windows-sys",
+ "windows-version",
  "windows-window",
 ]
 
@@ -394,6 +395,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3949bd5b99cafdf1c7ca86b43ca564028dfe27d66958f2470940f73d86d75b37"
 dependencies = [
  "windows-link 0.2.1",
+]
+
+[[package]]
+name = "windows-version"
+version = "0.100.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5d2a42ae19ff386c4680514519a225a2a99bcfada6aff0ab3766f928ff84365"
+dependencies = [
+ "windows-link 0.100.0",
 ]
 
 [[package]]

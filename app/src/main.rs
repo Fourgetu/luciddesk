@@ -1,5 +1,6 @@
 #![windows_subsystem = "windows"]
 
+mod diagnostics;
 mod hook_runtime;
 mod pane;
 mod tray;
@@ -19,6 +20,7 @@ fn main() -> Result<(), String> {
     let Some(_instance) = Instance::acquire()? else {
         return Ok(());
     };
+    let _ = diagnostics::system();
     let path = database_path()?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;

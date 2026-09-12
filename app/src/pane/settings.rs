@@ -55,6 +55,7 @@ use windows_sys::Win32::UI::Controls::WM_MOUSELEAVE;
 #[derive(Clone)]
 enum Action {
     ProjectHome,
+    CopyDiagnostics,
     Window(u32),
     Page(usize),
     Change(Event),
@@ -1001,6 +1002,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
     let mut cached_scene = None;
     let mut scene_key = None;
     let mut desktop_status = String::new();
+    let mut diagnostics_copied = false;
     let mut backup_status = String::new();
     let mut toggle_timer_running = false;
     let mut toggle_motion = std::collections::HashMap::<usize, ToggleMotion>::new();
@@ -1277,8 +1279,9 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     );
                 if page == 6 { body.text(Rect::from_xywh(248.0, 408.0, w - 282.0, 48.0), &backup_status, 0); }
                 if page == 5 {
-                    body.text(Rect::from_xywh(264.0, 304.0, w - 304.0, 40.0), &desktop_status, 0);
-                    body.button(Rect::from_xywh(264.0, 350.0, 150.0, 34.0), "重新连接桌面", Action::Change(Event::RetryDesktop), false);
+                    body.button(Rect::from_xywh(426.0, 374.0, 132.0, 34.0), if diagnostics_copied { "已复制" } else { "复制诊断" }, Action::CopyDiagnostics, false);
+                    body.text(Rect::from_xywh(264.0, 320.0, w - 304.0, 40.0), &desktop_status, 0);
+                    body.button(Rect::from_xywh(264.0, 374.0, 150.0, 34.0), "重新连接桌面", Action::Change(Event::RetryDesktop), false);
                 }
                 cached_scene = Some(with_titlebar(body, w, key.9));
                 scene_key = Some(key);
@@ -1620,6 +1623,13 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         let value = solid_style(&state.borrow().store, dark);
                         if let Err(error) = handle(&state, selected, Event::Material(value)) { window::error(&error); }
                     }
+                    Action::CopyDiagnostics => {
+                        let report = format!("{}Desktop: {}\r\n", crate::diagnostics::report(), desktop_status);
+                        match crate::diagnostics::copy(hwnd as isize, &report) {
+                            Ok(()) => { diagnostics_copied = true; scene_key = None; }
+                            Err(error) => window::error(&error.to_string()),
+                        }
+                    }
                     Action::ProjectHome => {
                         if let Err(error) = desktop_shell::open_shell_identity(hwnd as isize, &desktop_core::ShellIdentity::Namespace {
                             parsing_name: "https://git.bbkingdom.fun:30443/yuchen95/LucidPane".into(),
@@ -1678,6 +1688,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     Action::Page(value) => {
                         recording_peek = false;
                         recording_search = false;
+                        diagnostics_copied = false;
                         page = *value;
                         toggle_motion.clear();
                         focus = None;

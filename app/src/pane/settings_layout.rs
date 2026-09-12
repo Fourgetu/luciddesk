@@ -522,14 +522,19 @@ pub(super) fn scene(
             ),
             0,
         );
+        s.text(
+            Rect::from_xywh(x + 28.0, 232.0, w - 56.0, 24.0),
+            crate::diagnostics::system().summary(),
+            0,
+        );
         s.button(
-            Rect::from_xywh(x + 16.0, 254.0, 132.0, 34.0),
+            Rect::from_xywh(x + 16.0, 270.0, 132.0, 34.0),
             "项目主页",
             Action::ProjectHome,
             false,
         );
         s.text(
-            Rect::from_xywh(x + 160.0, 254.0, (w - 176.0).max(1.0), 34.0),
+            Rect::from_xywh(x + 160.0, 270.0, (w - 176.0).max(1.0), 34.0),
             "MIT / Apache-2.0",
             0,
         );
