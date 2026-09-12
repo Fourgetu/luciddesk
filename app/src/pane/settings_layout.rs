@@ -239,9 +239,19 @@ pub(super) fn scene(
             });
         }
         if let Some(path) = panel.folder() {
+            s.button(
+                Rect::from_xywh(x + w - 128.0, 324.0, 110.0, 26.0),
+                if panel.folder_list() {
+                    "切换图标视图"
+                } else {
+                    "切换列表视图"
+                },
+                Action::Change(Event::ToggleFolderView),
+                false,
+            );
             s.cards.push(Rect::from_xywh(x, 316.0, w, 108.0));
             s.text(
-                Rect::from_xywh(x + 18.0, 324.0, w - 36.0, 26.0),
+                Rect::from_xywh(x + 18.0, 324.0, w - 156.0, 26.0),
                 "文件夹面板 · 源文件夹",
                 1,
             );

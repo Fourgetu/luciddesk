@@ -114,6 +114,35 @@ fn folder_pane_creation_switch_and_close_preserve_real_files() {
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     assert_eq!(state.borrow().views[0].model.borrow().items.len(), 2);
+    assert!(state.borrow().views[0].model.borrow().is_list());
+    state.borrow().views[0]
+        .model
+        .borrow_mut()
+        .select_item(0, false, false);
+    handle(&state, id, Event::ToggleFolderView).unwrap();
+    assert!(!state.borrow().views[0].model.borrow().is_list());
+    assert!(
+        !state
+            .borrow()
+            .store
+            .load_workspace()
+            .unwrap()
+            .panel(id)
+            .unwrap()
+            .folder_list()
+    );
+    assert_eq!(state.borrow().views[0].model.borrow().selected, Some(0));
+    handle(&state, id, Event::ToggleFolderView).unwrap();
+    assert!(
+        state
+            .borrow()
+            .store
+            .load_workspace()
+            .unwrap()
+            .panel(id)
+            .unwrap()
+            .folder_list()
+    );
     assert_eq!(
         state
             .borrow()
@@ -239,6 +268,7 @@ fn activation_releases_state_and_model_before_shell_reentry() {
 #[test]
 fn snapped_content_bottom_and_scrollbar_use_the_same_row_metrics() {
     let mut model = GroupModel {
+        folder_list: false,
         folder: None,
         folder_status: None,
         options: desktop_core::PaneOptions::default(),
@@ -268,6 +298,7 @@ fn snapped_content_bottom_and_scrollbar_use_the_same_row_metrics() {
     for label in ["Short", "Warhammer 40,000 ????"] {
         model.items = (0..10)
             .map(|i| Item {
+                details: Default::default(),
                 identity: ShellIdentity::Namespace {
                     parsing_name: format!("test-{i}"),
                 },
@@ -348,6 +379,7 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
     };
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
     let model = Rc::new(RefCell::new(GroupModel {
+        folder_list: false,
         folder: None,
         folder_status: None,
         options: desktop_core::PaneOptions::default(),
@@ -376,6 +408,7 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
     }));
     model.borrow_mut().items = (0..6)
         .map(|index| Item {
+            details: Default::default(),
             identity: ShellIdentity::Namespace {
                 parsing_name: format!("test:{index}"),
             },
@@ -665,6 +698,7 @@ fn pane_layer_switch_and_wallpaper_material_initialize() {
     use windows_sys::Win32::UI::WindowsAndMessaging::{GWL_EXSTYLE, GetWindowLongW, WS_EX_TOPMOST};
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
     let model = Rc::new(RefCell::new(GroupModel {
+        folder_list: false,
         folder: None,
         folder_status: None,
         options: desktop_core::PaneOptions::default(),
@@ -1245,6 +1279,7 @@ fn reconciliation_preserves_groups_and_appends_new_items_after_existing_order() 
 #[test]
 fn multiselection_preserves_anchor_toggle_and_file_identity_on_refresh() {
     let mut model = GroupModel {
+        folder_list: false,
         folder: None,
         folder_status: None,
         options: desktop_core::PaneOptions::default(),
@@ -1273,6 +1308,7 @@ fn multiselection_preserves_anchor_toggle_and_file_identity_on_refresh() {
     };
     model.items = (0..8)
         .map(|i| Item {
+            details: Default::default(),
             identity: ShellIdentity::Namespace {
                 parsing_name: format!("selection:{i}"),
             },

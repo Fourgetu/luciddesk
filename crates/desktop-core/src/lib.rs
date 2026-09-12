@@ -263,6 +263,7 @@ pub enum PanelTheme {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Panel {
+    folder_list: bool,
     folder: Option<PathBuf>,
     theme: PanelTheme,
     always_on_top: bool,
@@ -281,6 +282,7 @@ impl Panel {
         Self {
             id,
             folder: None,
+            folder_list: true,
             title: title.into(),
             rect,
             collapsed: false,
@@ -305,6 +307,14 @@ impl Panel {
 
     pub fn set_folder(&mut self, path: Option<PathBuf>) {
         self.folder = path;
+    }
+
+    #[must_use]
+    pub const fn folder_list(&self) -> bool {
+        self.folder_list
+    }
+    pub const fn set_folder_list(&mut self, enabled: bool) {
+        self.folder_list = enabled;
     }
 
     #[must_use]

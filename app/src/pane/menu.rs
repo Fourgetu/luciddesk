@@ -45,7 +45,7 @@ pub fn show(
     anchored: bool,
     auto_hide: bool,
     theme: desktop_core::PanelTheme,
-    folder: bool,
+    folder: Option<bool>,
 ) -> i32 {
     let dark = super::theme::is_dark(theme);
     let mut rows = vec![
@@ -69,12 +69,22 @@ pub fn show(
         entry(18, "设置", "", ""),
         entry(4, "退出 LucidPane", "", ""),
     ];
-    if folder {
+    if let Some(list) = folder {
         rows.splice(
             2..2,
             [
                 entry(20, "打开源文件夹", "", ""),
                 entry(21, "更换文件夹…", "", ""),
+                entry(
+                    22,
+                    if list {
+                        "切换为图标视图"
+                    } else {
+                        "切换为列表视图"
+                    },
+                    "",
+                    "",
+                ),
                 entry(9, "刷新", "", "F5"),
             ],
         );
@@ -401,7 +411,7 @@ mod tests {
                 true,
                 false,
                 desktop_core::PanelTheme::Dark,
-                false
+                None
             ),
             0
         );
@@ -456,7 +466,7 @@ mod tests {
                         false,
                         false,
                         desktop_core::PanelTheme::Dark,
-                        false
+                        None
                     ),
                     0
                 );

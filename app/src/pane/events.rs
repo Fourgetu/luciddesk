@@ -40,6 +40,28 @@ pub(super) fn handle(
     id: PanelId,
     event: Event,
 ) -> Result<bool, String> {
+    if matches!(event, Event::ToggleFolderView) {
+        let mut s = state.borrow_mut();
+        let old = s.workspace.clone();
+        let panel = s.workspace.panel_mut(id).ok_or("面板已关闭")?;
+        if panel.folder().is_none() {
+            return Ok(false);
+        }
+        let enabled = !panel.folder_list();
+        panel.set_folder_list(enabled);
+        if let Err(error) = save(&mut s) {
+            s.workspace = old;
+            return Err(error);
+        }
+        if let Some(view) = s.views.iter().find(|v| v.id == id) {
+            let mut model = view.model.borrow_mut();
+            model.folder_list = enabled;
+            model.scroll = 0;
+            model.hovered_item = None;
+        }
+        refresh_changed_views(&mut s, true);
+        return Ok(false);
+    }
     if matches!(event, Event::FileDrag) {
         let target = {
             let s = state.borrow();
@@ -471,7 +493,8 @@ pub(super) fn handle(
     }
     let mut s = state.borrow_mut();
     match event {
-        Event::FileDrag
+        Event::ToggleFolderView
+        | Event::FileDrag
         | Event::NewFolder
         | Event::MapFolder(_)
         | Event::ChangeFolder

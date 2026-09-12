@@ -21,6 +21,7 @@ pub struct Renderer {
     offscreen_device: Option<windows_canvas::GpuDevice>,
     labels: windows_canvas::TextFormat,
     title: windows_canvas::TextFormat,
+    details: windows_canvas::TextFormat,
     icons: windows_canvas::TextFormat,
     target: Option<(u32, u32, Option<canvas::Offscreen>, ID2D1DeviceContext)>,
     images: HashMap<String, ImageBitmap>,
@@ -129,11 +130,16 @@ impl Renderer {
         let title = canvas_result(TextFormat::new(&family, size + 1.0))?
             .with_paragraph_alignment(ParagraphAlignment::Center)
             .with_word_wrapping(WordWrapping::NoWrap);
+        let details = canvas_result(TextFormat::new(&family, 12.0))?
+            .with_paragraph_alignment(ParagraphAlignment::Center)
+            .with_word_wrapping(WordWrapping::NoWrap);
+        canvas::ellipsis(&details)?;
         Ok(Self {
             #[cfg(test)]
             offscreen_device: None,
             labels,
             title,
+            details,
             icons: canvas_result(TextFormat::new("Segoe Fluent Icons", 12.0))?
                 .with_alignment(windows_canvas::TextAlignment::Center)
                 .with_paragraph_alignment(ParagraphAlignment::Center)
@@ -325,8 +331,38 @@ impl Renderer {
                         Rect::from_xywh(6.0, HEADER, w - 12.0, (h - HEADER - 6.0).max(0.0))
                     });
                     let grid = model.grid(w, h);
+                    let list = model.is_list();
+                    let columns = super::layout::list_columns(grid.cell_width);
+                    if list {
+                        for (column, name) in ["文件名", "类型", "修改时间"].iter().enumerate()
+                        {
+                            target.clipped_text(
+                                name,
+                                &self.details,
+                                &Rect::from_xywh(
+                                    super::layout::PADDING + columns[column],
+                                    grid.content_top - super::layout::LIST_HEADER,
+                                    (columns[column + 1] - columns[column] - 8.0).max(1.0),
+                                    super::layout::LIST_HEADER,
+                                ),
+                                &dim,
+                            );
+                        }
+                        target.fill_rect(
+                            &Rect::from_xywh(
+                                super::layout::PADDING,
+                                grid.content_top - 1.0,
+                                grid.cell_width,
+                                1.0,
+                            ),
+                            &hover,
+                        );
+                    }
                     for (index, item) in model.items.iter().enumerate() {
                         let (x, y) = model.cell(grid, index);
+                        if list && y < grid.content_top {
+                            continue;
+                        }
                         if y + grid.cell_height <= { HEADER } || y >= h {
                             continue;
                         }
@@ -433,9 +469,20 @@ impl Renderer {
                                 }
                             }
                             let (iw, ih) = (size.0 as f32 / scale, size.1 as f32 / scale);
-                            let left = ((x + (grid.cell_width - iw) / 2.0) * scale).round() / scale;
-                            let top =
-                                ((y + 2.0 + (grid.icon_size - ih) / 2.0) * scale).round() / scale;
+                            let left = ((if list {
+                                x + 4.0
+                            } else {
+                                x + (grid.cell_width - iw) / 2.0
+                            }) * scale)
+                                .round()
+                                / scale;
+                            let top = ((if list {
+                                y + (grid.cell_height - ih) / 2.0
+                            } else {
+                                y + 2.0 + (grid.icon_size - ih) / 2.0
+                            }) * scale)
+                                .round()
+                                / scale;
                             target.draw_bitmap(
                                 &self.images[&key].1,
                                 &Rect::from_xywh(left, top, iw, ih),
@@ -443,6 +490,29 @@ impl Renderer {
                             );
                         }
 
+                        if list {
+                            for (column, text) in
+                                [&item.label, &item.details.kind, &item.details.modified]
+                                    .iter()
+                                    .enumerate()
+                            {
+                                if column == 0 && model.renaming.as_ref() == Some(&item.identity) {
+                                    continue;
+                                }
+                                target.clipped_text(
+                                    text,
+                                    &self.details,
+                                    &Rect::from_xywh(
+                                        x + columns[column],
+                                        y,
+                                        (columns[column + 1] - columns[column] - 8.0).max(1.0),
+                                        grid.cell_height,
+                                    ),
+                                    if column == 0 { &white } else { &dim },
+                                );
+                            }
+                            continue;
+                        }
                         if model.renaming.as_ref() == Some(&item.identity) {
                             continue;
                         }
@@ -514,6 +584,62 @@ impl Renderer {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn folder_list_columns_render_and_share_scrolled_hit_geometry() {
+        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let mut model = sample_model();
+        model.folder = Some(std::path::PathBuf::from(r"C:\Documents"));
+        model.folder_list = true;
+        model.items[0].label = "项目进度报告.txt".into();
+        model.items[0].details = super::super::ItemDetails {
+            kind: "文本文档".into(),
+            modified: "2026/09/12 16:30".into(),
+        };
+        model.items = vec![model.items[0].clone(); 20];
+        let mut renderer = Renderer::new().unwrap();
+        for scale in [1.0, 1.25, 1.5, 2.0] {
+            model.scroll = 3;
+            let grid = model.grid(480.0, 300.0);
+            let (x, y) = model.cell(grid, 3);
+            assert_eq!(grid.columns, 1);
+            assert_eq!(model.hit(grid, x + 4.0, y + 10.0, scale), Some(3));
+            assert_eq!(
+                model.hit(grid, x + grid.cell_width - 4.0, y + 10.0, scale),
+                Some(3)
+            );
+            assert_eq!(model.hit(grid, x + 20.0, y - 2.0, scale), None);
+            assert_eq!(
+                model.hit(grid, x + 20.0, y + grid.cell_height + 2.0, scale),
+                Some(4)
+            );
+            let width = (480.0 * scale) as u32;
+            let height = (300.0 * scale) as u32;
+            let pixels = renderer.pixels(width, height, scale, &model).unwrap();
+            let mut blank = model.clone();
+            for item in &mut blank.items {
+                item.label.clear();
+                item.details = Default::default();
+            }
+            let empty = renderer.pixels(width, height, scale, &blank).unwrap();
+            let columns = super::super::layout::list_columns(grid.cell_width);
+            for column in 0..3 {
+                let changed = (((y + 2.0) * scale) as u32
+                    ..((y + grid.cell_height - 2.0) * scale) as u32)
+                    .any(|row| {
+                        (((x + columns[column]) * scale) as u32
+                            ..((x + columns[column + 1] - 8.0) * scale) as u32)
+                            .any(|col| {
+                                let at = ((row * width + col) * 4) as usize;
+                                pixels[at..at + 4] != empty[at..at + 4]
+                            })
+                    });
+                assert!(
+                    changed,
+                    "column {column} must contain rendered text at scale {scale}"
+                );
+            }
+        }
+    }
     use super::*;
 
     #[test]
@@ -599,6 +725,7 @@ mod tests {
 
     fn sample_model() -> GroupModel {
         GroupModel {
+            folder_list: false,
             folder: None,
             folder_status: None,
             options: desktop_core::PaneOptions::default(),
@@ -617,6 +744,7 @@ mod tests {
             native_material: true,
             title: "透明度验证".into(),
             items: vec![Item {
+                details: Default::default(),
                 identity: ShellIdentity::Namespace {
                     parsing_name: "test:opaque-icon".into(),
                 },

@@ -642,6 +642,9 @@ where
                     Some(0)
                 }
                 WM_SIZING => {
+                    if model.borrow().is_list() {
+                        return None;
+                    }
                     let rect = unsafe { &mut *(lparam as *mut RECT) };
                     let m = model.borrow();
                     if m.items.is_empty() {
@@ -1246,11 +1249,17 @@ where
                         };
                         update_pointer(hwnd, &model, None);
                         invalidate(hwnd);
-                        let is_folder = model.borrow().folder.is_some();
+                        let is_folder = {
+                            let model = model.borrow();
+                            model.folder.as_ref().map(|_| model.folder_list)
+                        };
                         let command = menu(hwnd, lparam, auto_hide, theme, is_folder);
                         update_pointer(hwnd, &model, None);
                         invalidate(hwnd);
                         match command {
+                            22 => {
+                                event(Event::ToggleFolderView);
+                            }
                             19 => {
                                 event(Event::NewFolder);
                             }
@@ -1361,7 +1370,7 @@ fn menu(
     lparam: isize,
     auto_hide: bool,
     theme: desktop_core::PanelTheme,
-    folder: bool,
+    folder: Option<bool>,
 ) -> i32 {
     let anchored = lparam == -1;
     let mut anchor = point(lparam);

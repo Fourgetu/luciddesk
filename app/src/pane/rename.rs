@@ -140,7 +140,7 @@ fn show_editor(
             WS_POPUP
                 | if title { 0 } else { WS_BORDER }
                 | WS_TABSTOP
-                | if title {
+                | if title || model.borrow().is_list() {
                     ES_LEFT as u32 | ES_AUTOHSCROLL as u32
                 } else {
                     ES_CENTER as u32
@@ -296,9 +296,20 @@ unsafe fn resize(edit: HWND, pointer: *mut Editor) {
     let scale = unsafe { GetDpiForWindow(editor.owner) }.max(96) as f32 / 96.0;
     let grid = model.grid(client.right as f32 / scale, client.bottom as f32 / scale);
     let (x, y) = model.cell(grid, index);
-    let center = (x + grid.cell_width / 2.0) * scale;
-    let top = ((y + grid.icon_size + { super::layout::LABEL_OFFSET }) * scale).round() as i32 - 2;
-    let maximum = (grid.cell_width * scale).round() as i32;
+    let list = model.is_list();
+    let columns = super::layout::list_columns(grid.cell_width);
+    let (left, available, top) = if list {
+        (x + columns[0], columns[1] - columns[0] - 8.0, y + 2.0)
+    } else {
+        (
+            x,
+            grid.cell_width,
+            y + grid.icon_size + super::layout::LABEL_OFFSET - 2.0 / scale,
+        )
+    };
+    let center = (left + available / 2.0) * scale;
+    let top = (top * scale).round() as i32;
+    let maximum = (available * scale).round() as i32;
     drop(model);
     unsafe {
         let dc = GetDC(edit);
@@ -316,15 +327,27 @@ unsafe fn resize(edit: HWND, pointer: *mut Editor) {
             value.as_mut_ptr(),
             -1,
             &raw mut bounds,
-            DT_CALCRECT | DT_WORDBREAK | DT_EDITCONTROL | DT_NOPREFIX,
+            DT_CALCRECT
+                | (if list { DT_SINGLELINE } else { DT_WORDBREAK })
+                | DT_EDITCONTROL
+                | DT_NOPREFIX,
         );
         SelectObject(dc, old);
         ReleaseDC(edit, dc);
-        let width = (bounds.right - bounds.left + 8).clamp(24, maximum.max(24));
+        let width = if list {
+            maximum.max(24)
+        } else {
+            (bounds.right - bounds.left + 8).clamp(24, maximum.max(24))
+        };
         let height = (bounds.bottom - bounds.top)
             .max(metrics.tmHeight)
             .min(metrics.tmHeight.max(1) * 6)
             + 4;
+        let height = if list {
+            height.min(((super::layout::LIST_ROW - 4.0) * scale) as i32)
+        } else {
+            height
+        };
         let left =
             ((center - width as f32 / 2.0).round() as i32).clamp(0, (client.right - width).max(0));
         let mut before = RECT::default();
@@ -605,6 +628,7 @@ mod tests {
     fn inline_editor_tracks_label_and_escape_cleans_up_without_a_dialog() {
         let identity = identity("网易云音乐.lnk");
         let model = Rc::new(RefCell::new(GroupModel {
+            folder_list: false,
             folder: None,
             folder_status: None,
             options: desktop_core::PaneOptions::default(),
@@ -623,6 +647,7 @@ mod tests {
             native_material: false,
             title: "测试".into(),
             items: vec![super::super::Item {
+                details: Default::default(),
                 identity: identity.clone(),
                 label: "网易云音乐".into(),
                 image: None,

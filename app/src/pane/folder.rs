@@ -98,6 +98,10 @@ impl Source {
                                                     .map(Arc::new)
                                             });
                                         let item = Item {
+                                            details: ItemDetails {
+                                                kind: file_type(&entry.identity),
+                                                modified: modified_text(entry.modified),
+                                            },
                                             identity: entry.identity,
                                             label: entry.display_name,
                                             image,
@@ -228,6 +232,65 @@ pub(super) fn identity(path: PathBuf) -> ShellIdentity {
     }
 }
 
+fn file_type(identity: &ShellIdentity) -> String {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::UI::Shell::{SHFILEINFOW, SHGFI_TYPENAME, SHGetFileInfoW};
+    let path: Vec<_> = identity
+        .activation_name()
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+    let mut info = SHFILEINFOW::default();
+    if unsafe {
+        SHGetFileInfoW(
+            path.as_ptr(),
+            0,
+            &raw mut info,
+            size_of::<SHFILEINFOW>() as u32,
+            SHGFI_TYPENAME,
+        )
+    } == 0
+    {
+        return "—".into();
+    }
+    let name = info.szTypeName;
+    String::from_utf16_lossy(&name[..name.iter().position(|c| *c == 0).unwrap_or(name.len())])
+}
+
+fn modified_text(value: Option<std::time::SystemTime>) -> String {
+    use windows_sys::Win32::{
+        Foundation::{FILETIME, SYSTEMTIME},
+        System::Time::{FileTimeToSystemTime, SystemTimeToTzSpecificLocalTimeEx},
+    };
+    let Some(time) = value else {
+        return "—".into();
+    };
+    let epoch = 116_444_736_000_000_000u128;
+    let ticks = match time.duration_since(std::time::UNIX_EPOCH) {
+        Ok(duration) => epoch.checked_add(duration.as_nanos() / 100),
+        Err(error) => epoch.checked_sub(error.duration().as_nanos() / 100),
+    }
+    .and_then(|ticks| u64::try_from(ticks).ok());
+    let Some(ticks) = ticks else {
+        return "—".into();
+    };
+    let file = FILETIME {
+        dwLowDateTime: ticks as u32,
+        dwHighDateTime: (ticks >> 32) as u32,
+    };
+    let mut utc = SYSTEMTIME::default();
+    let mut local = SYSTEMTIME::default();
+    if unsafe { FileTimeToSystemTime(&file, &raw mut utc) } == 0
+        || unsafe { SystemTimeToTzSpecificLocalTimeEx(std::ptr::null(), &utc, &raw mut local) } == 0
+    {
+        return "—".into();
+    }
+    format!(
+        "{:04}/{:02}/{:02} {:02}:{:02}",
+        local.wYear, local.wMonth, local.wDay, local.wHour, local.wMinute
+    )
+}
+
 pub(super) fn accepts_copy(items: &[ShellIdentity], destination: &Path) -> bool {
     let destination = destination.to_string_lossy().to_lowercase();
     !items.is_empty()
@@ -334,6 +397,9 @@ mod tests {
             .find(|item| item.identity.file_system_path() == Some(root.join("first.txt").as_path()))
             .unwrap();
         assert!(first.image.is_some());
+        assert!(!first.details.kind.is_empty());
+        assert_ne!(first.details.kind, "—");
+        assert_eq!(first.details.modified.len(), 16);
         std::fs::rename(root.join("first.txt"), root.join("renamed.txt")).unwrap();
         wait(&mut source, &|result| {
             result.as_ref().is_ok_and(|items| {

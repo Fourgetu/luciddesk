@@ -1,6 +1,7 @@
 //! A single layout is shared by painting, hit testing, scrolling and keyboard navigation.
 #[derive(Clone, Copy, Debug)]
 pub struct Grid {
+    pub content_top: f32,
     pub columns: usize,
     pub cell_width: f32,
     pub cell_height: f32,
@@ -10,6 +11,20 @@ pub struct Grid {
 }
 
 pub const HEADER: f32 = 38.0;
+pub const LIST_HEADER: f32 = 28.0;
+pub const LIST_ROW: f32 = 32.0;
+
+/// Relative column boundaries: icon/name, type, modified date, right edge.
+pub fn list_columns(width: f32) -> [f32; 4] {
+    let modified = (width * 0.35).clamp(100.0, 150.0);
+    let kind = (width * 0.22).clamp(60.0, 120.0);
+    [
+        30.0_f32.min(width * 0.2),
+        (width - modified - kind).max(60.0).min(width * 0.55),
+        (width - modified).max(90.0).min(width * 0.8),
+        width,
+    ]
+}
 // Label top relative to the icon-size baseline, shared by paint and geometry.
 pub const LABEL_OFFSET: f32 = 6.0;
 pub const PADDING: f32 = 12.0;
@@ -36,10 +51,23 @@ pub fn header_button(width: f32, x: f32, y: f32) -> Option<usize> {
 }
 
 impl Grid {
+    pub fn list(width: f32, height: f32) -> Self {
+        let top = HEADER + PADDING + LIST_HEADER;
+        Self {
+            content_top: top,
+            columns: 1,
+            cell_width: (width - PADDING * 2.0).max(1.0),
+            cell_height: LIST_ROW,
+            icon_size: 20.0,
+            visible_rows: ((height - top - PADDING) / LIST_ROW).floor().max(1.0) as usize,
+            scroll_limit: None,
+        }
+    }
     pub fn system(width: f32, height: f32, icon_size: f32, spacing: (f32, f32)) -> Self {
         let cell_width = spacing.0.max(icon_size + 16.0);
         let cell_height = spacing.1.max(icon_size + 34.0);
         Self {
+            content_top: HEADER + PADDING,
             scroll_limit: None,
             columns: ((width - PADDING * 2.0) / cell_width).floor().max(1.0) as usize,
             cell_width,
@@ -54,20 +82,20 @@ impl Grid {
     pub fn cell(self, index: usize, scroll: usize) -> (f32, f32) {
         (
             PADDING + (index % self.columns) as f32 * self.cell_width,
-            HEADER + PADDING + ((index / self.columns) as f32 - scroll as f32) * self.cell_height,
+            self.content_top + ((index / self.columns) as f32 - scroll as f32) * self.cell_height,
         )
     }
 
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     pub fn hit(self, x: f32, y: f32, scroll: usize, count: usize) -> Option<usize> {
-        if x < PADDING || y < HEADER + PADDING {
+        if x < PADDING || y < self.content_top {
             return None;
         }
         let column = ((x - PADDING) / self.cell_width).floor() as usize;
         if column >= self.columns {
             return None;
         }
-        let row = ((y - HEADER - PADDING) / self.cell_height).floor() as usize + scroll;
+        let row = ((y - self.content_top) / self.cell_height).floor() as usize + scroll;
         let index = row * self.columns + column;
         (index < count).then_some(index)
     }

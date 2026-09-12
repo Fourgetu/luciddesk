@@ -94,6 +94,11 @@ impl WorkspaceStore {
         }
         drop(statement);
         for panel in &mut panels {
+            panel.set_folder_list(
+                self.preference(&format!("panel_folder_view:{}", panel.id().get()))?
+                    .as_deref()
+                    != Some("icons"),
+            );
             panel.set_folder(
                 self.preference(&format!("panel_folder:{}", panel.id().get()))?
                     .map(PathBuf::from),
@@ -220,8 +225,19 @@ impl WorkspaceStore {
     pub fn save_workspace(&mut self, workspace: &Workspace) -> Result<(), StoreError> {
         let transaction = self.connection.transaction()?;
         transaction.execute("DELETE FROM metadata WHERE key GLOB 'panel_folder:*'", [])?;
+        transaction.execute(
+            "DELETE FROM metadata WHERE key GLOB 'panel_folder_view:*'",
+            [],
+        )?;
         for panel in workspace.panels() {
             if let Some(folder) = panel.folder() {
+                transaction.execute(
+                    "INSERT INTO metadata(key,value) VALUES (?1,?2)",
+                    params![
+                        format!("panel_folder_view:{}", panel.id().get()),
+                        if panel.folder_list() { "list" } else { "icons" }
+                    ],
+                )?;
                 transaction.execute(
                     "INSERT INTO metadata(key,value) VALUES (?1,?2)",
                     params![
@@ -674,9 +690,29 @@ mod tests {
                 .is_none()
         );
         assert!(loaded.desktop_items().is_empty());
+        assert!(
+            loaded
+                .panel(desktop_core::PanelId::new(2))
+                .unwrap()
+                .folder_list()
+        );
+        workspace
+            .panel_mut(desktop_core::PanelId::new(2))
+            .unwrap()
+            .set_folder_list(false);
+        store.save_workspace(&workspace).unwrap();
+        assert!(
+            !store
+                .load_workspace()
+                .unwrap()
+                .panel(desktop_core::PanelId::new(2))
+                .unwrap()
+                .folder_list()
+        );
         workspace.remove_panel(desktop_core::PanelId::new(2));
         store.save_workspace(&workspace).unwrap();
         assert!(store.preference("panel_folder:2").unwrap().is_none());
+        assert!(store.preference("panel_folder_view:2").unwrap().is_none());
         assert_eq!(store.preference("peek").unwrap().as_deref(), Some("keep"));
     }
     use super::{SCHEMA_VERSION, WorkspaceStore};

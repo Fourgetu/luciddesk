@@ -50,15 +50,23 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 
 #[derive(Clone)]
 pub struct Item {
+    pub details: ItemDetails,
     pub identity: ShellIdentity,
     pub label: String,
     pub image: Option<Arc<assets::Pixels>>,
+}
+
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct ItemDetails {
+    pub kind: String,
+    pub modified: String,
 }
 
 fn same_items(left: &[Item], right: &[Item]) -> bool {
     left.len() == right.len()
         && left.iter().zip(right).all(|(a, b)| {
             a.identity == b.identity
+                && a.details == b.details
                 && a.label == b.label
                 && match (&a.image, &b.image) {
                     (Some(a), Some(b)) => Arc::ptr_eq(a, b),
@@ -127,6 +135,7 @@ enum Event {
     Peek,
     FileCommand(desktop_shell::FileCommand),
     FileDrag,
+    ToggleFolderView,
     Drop { index: usize, point: POINT },
     Geometry(RectDip),
     Collapse,
@@ -162,6 +171,7 @@ fn items_for(state: &PaneApp, id: PanelId) -> Vec<Item> {
     items
         .into_iter()
         .map(|(_, item)| Item {
+            details: Default::default(),
             identity: item.identity().clone(),
             label: item.display_name().to_string(),
             image: state.images.get(&item.identity().persistent_key()).cloned(),
@@ -176,6 +186,7 @@ fn create_view(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> 
         (s.workspace.panel(id).unwrap().clone(), items_for(&s, id))
     };
     let model = Rc::new(RefCell::new(GroupModel {
+        folder_list: panel.folder_list(),
         folder: panel.folder().map(Path::to_path_buf),
         folder_status: None,
         options: state.borrow().workspace.pane_options(),

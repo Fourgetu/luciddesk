@@ -2,7 +2,9 @@
 use super::*;
 
 #[allow(clippy::struct_excessive_bools)]
+#[derive(Clone)]
 pub struct GroupModel {
+    pub folder_list: bool,
     pub folder: Option<std::path::PathBuf>,
     pub folder_status: Option<String>,
     pub options: desktop_core::PaneOptions,
@@ -33,6 +35,9 @@ pub struct GroupModel {
 }
 
 impl GroupModel {
+    pub(super) fn is_list(&self) -> bool {
+        self.folder.is_some() && self.folder_list
+    }
     pub(super) fn clear_selection(&mut self) {
         self.selected = None;
         self.selection.clear();
@@ -110,11 +115,17 @@ impl GroupModel {
     }
 
     pub(super) fn resize_cell(&self) -> (f32, f32) {
+        if self.is_list() {
+            return (396.0, layout::LIST_ROW);
+        }
         let grid = layout::Grid::system(0.0, 0.0, self.icon_size, self.spacing);
         (grid.cell_width, grid.cell_height)
     }
 
     pub(super) fn row_contents(&self, grid: layout::Grid) -> Vec<f32> {
+        if self.is_list() {
+            return vec![layout::LIST_ROW; self.items.len()];
+        }
         self.items
             .chunks(grid.columns)
             .map(|items| {
@@ -133,6 +144,9 @@ impl GroupModel {
     }
 
     pub(super) fn grid(&self, width: f32, height: f32) -> layout::Grid {
+        if self.is_list() {
+            return layout::Grid::list(width, height);
+        }
         let mut grid = layout::Grid::system(width, height, self.icon_size, self.spacing);
         if !self.items.is_empty() {
             let rows = self.row_contents(grid);
@@ -155,6 +169,14 @@ impl GroupModel {
     }
     pub(super) fn selection_bounds(&self, grid: layout::Grid, index: usize, scale: f32) -> RectDip {
         let (x, y) = self.cell(grid, index);
+        if self.is_list() {
+            return RectDip {
+                x,
+                y,
+                width: grid.cell_width,
+                height: grid.cell_height,
+            };
+        }
         let height = theme::selection_height(
             grid.icon_size,
             label::content_height_at_dpi(
