@@ -14,6 +14,7 @@ pub(super) fn scene(
         text: vec![],
         cards: vec![],
         controls: vec![],
+        previews: vec![],
     };
     s.text(Rect::from_xywh(28.0, 26.0, 172.0, 32.0), "LucidPane", 2);
     for (i, (name, icon)) in [
@@ -33,7 +34,7 @@ pub(super) fn scene(
             Rect::from_xywh(12.0, y, 200.0, 38.0),
             name,
             Action::Page(i),
-            page == i,
+            page == i || (page == 7 && i == 0),
         );
         s.text(Rect::from_xywh(30.0, y, 22.0, 38.0), *icon, 4);
     }
@@ -49,9 +50,101 @@ pub(super) fn scene(
             "Everything 搜索",
             "关于",
             "备份与恢复",
+            "配色",
         ][page],
         3,
     );
+    if page == 7 {
+        let Backdrop::Solid { color, opacity } = appearance.1 else {
+            return s;
+        };
+        s.text(
+            Rect::from_xywh(x, 78.0, w, 24.0),
+            "预览效果，选择或微调颜色",
+            0,
+        );
+        s.button(
+            Rect::from_xywh(x + w - 86.0, 34.0, 86.0, 32.0),
+            "‹ 返回",
+            Action::Page(0),
+            false,
+        );
+        let pw = 184.0;
+        s.cards.push(Rect::from_xywh(x, 116.0, pw, 120.0));
+        s.previews.push((
+            Rect::from_xywh(x + 12.0, 128.0, pw - 24.0, 72.0),
+            color,
+            opacity,
+        ));
+        s.text(
+            Rect::from_xywh(x + 14.0, 206.0, pw - 28.0, 22.0),
+            format!("面板预览 · {}%", (opacity * 100.0).round() as u8),
+            0,
+        );
+        let px = x + pw + 20.0;
+        let palette_width = w - pw - 20.0;
+        s.text(
+            Rect::from_xywh(px, 116.0, palette_width, 24.0),
+            "预设配色",
+            1,
+        );
+        for (i, value) in [
+            0x181b20, 0xf5f6f8, 0x24364b, 0x32463d, 0x51405c, 0x5b3838, 0x745839, 0x416c78,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let cw = (palette_width - 24.0) / 4.0;
+            s.button(
+                Rect::from_xywh(
+                    px + (i % 4) as f32 * (cw + 8.0),
+                    148.0 + (i / 4) as f32 * 46.0,
+                    cw,
+                    36.0,
+                ),
+                "",
+                Action::ColorPreset(value),
+                color == value,
+            );
+        }
+        s.cards.push(Rect::from_xywh(x, 248.0, w, 132.0));
+        for (channel, name) in ["红 R", "绿 G", "蓝 B"].into_iter().enumerate() {
+            let value = ((color >> ((2 - channel) * 8)) & 255) as u8;
+            let y = 258.0 + channel as f32 * 40.0;
+            s.text(Rect::from_xywh(x + 16.0, y, 48.0, 30.0), name, 0);
+            s.controls.push(Control {
+                bounds: Rect::from_xywh(x + 74.0, y, w - 150.0, 30.0),
+                label: String::new(),
+                action: Action::Channel(channel as u8, value),
+                selected: false,
+                toggle: false,
+            });
+            s.text(
+                Rect::from_xywh(x + w - 52.0, y, 40.0, 30.0),
+                value.to_string(),
+                0,
+            );
+        }
+        s.text(Rect::from_xywh(x, 396.0, 52.0, 32.0), "HEX", 0);
+        s.button(
+            Rect::from_xywh(x + 54.0, 396.0, 126.0, 32.0),
+            &format!("#{color:06X}"),
+            Action::StyleInput(false),
+            false,
+        );
+        s.text(
+            Rect::from_xywh(x + 192.0, 396.0, w - 304.0, 32.0),
+            "Enter 确认",
+            0,
+        );
+        s.button(
+            Rect::from_xywh(x + w - 104.0, 396.0, 104.0, 32.0),
+            "恢复默认",
+            Action::SolidReset,
+            false,
+        );
+        return s;
+    }
     if page == 0 {
         s.text(
             Rect::from_xywh(x, 76.0, w, 24.0),
@@ -108,43 +201,50 @@ pub(super) fn scene(
         .enumerate()
         {
             s.button(
-                Rect::from_xywh(x + j as f32 * (bw + 12.0), 228.0 + extra, bw, 128.0),
+                Rect::from_xywh(x + j as f32 * (bw + 12.0), 228.0 + extra, bw, 108.0),
                 name,
                 Action::Change(Event::Material(*value)),
                 appearance.1.kind() == value.kind(),
             );
         }
         if let Backdrop::Solid { color, opacity } = appearance.1 {
-            let y = 366.0 + extra;
+            let y = 364.0 + extra;
+            s.cards.push(Rect::from_xywh(x, y - 12.0, w, 96.0));
+            s.previews
+                .push((Rect::from_xywh(x + 14.0, y, 30.0, 30.0), color, opacity));
             s.button(
-                Rect::from_xywh(x, y, 112.0, 30.0),
+                Rect::from_xywh(x + 54.0, y, 112.0, 30.0),
                 &format!("#{color:06X}"),
                 Action::StyleInput(false),
                 false,
             );
             s.button(
-                Rect::from_xywh(x + 124.0, y, 100.0, 30.0),
-                "选择颜色",
+                Rect::from_xywh(x + 178.0, y, 100.0, 30.0),
+                "编辑配色",
                 Action::SolidColor,
                 false,
             );
             s.button(
-                Rect::from_xywh(x + w - 100.0, y, 100.0, 30.0),
+                Rect::from_xywh(x + w - 114.0, y, 100.0, 30.0),
                 "恢复默认",
                 Action::SolidReset,
                 false,
             );
             let value = (opacity * 100.0).round() as u8;
-            s.text(Rect::from_xywh(x, y + 40.0, 100.0, 30.0), "不透明度", 0);
+            s.text(
+                Rect::from_xywh(x + 14.0, y + 42.0, 100.0, 30.0),
+                "面板不透明度",
+                0,
+            );
             s.controls.push(Control {
-                bounds: Rect::from_xywh(x + 106.0, y + 40.0, w - 196.0, 30.0),
+                bounds: Rect::from_xywh(x + 124.0, y + 42.0, w - 224.0, 30.0),
                 label: String::new(),
                 action: Action::Opacity(value),
                 selected: false,
                 toggle: false,
             });
             s.button(
-                Rect::from_xywh(x + w - 78.0, y + 40.0, 78.0, 30.0),
+                Rect::from_xywh(x + w - 86.0, y + 42.0, 72.0, 30.0),
                 &format!("{value}%"),
                 Action::StyleInput(true),
                 false,

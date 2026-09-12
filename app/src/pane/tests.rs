@@ -1287,7 +1287,6 @@ fn corner_slider_drags_to_both_limits_and_saves() {
     }
 }
 
-#[test]
 fn solid_settings_edit_preview_save_and_remember_style() {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_RETURN;
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
@@ -1315,7 +1314,7 @@ fn solid_settings_edit_preview_save_and_remember_style() {
         state.borrow().workspace.appearance().unwrap().1,
         desktop_core::Backdrop::Solid { .. }
     ));
-    click(290.0, 410.0);
+    click(330.0, 414.0);
     enter("#1234AB");
     click(840.0, 450.0);
     enter("50");
@@ -1337,6 +1336,38 @@ fn solid_settings_edit_preview_save_and_remember_style() {
     click(455.0, 315.0); // Mica
     click(815.0, 315.0);
     assert_eq!(state.borrow().workspace.appearance().unwrap().1, solid);
+    click(470.0, 414.0); // Open the in-app color page.
+    let before_color = state.borrow().store.change_count();
+    let rgb_point = ((300.0 * scale) as isize) << 16 | ((600.0 * scale) as isize & 0xffff);
+    unsafe {
+        SendMessageW(hwnd, WM_LBUTTONDOWN, 1, rgb_point);
+    }
+    assert_eq!(state.borrow().store.change_count(), before_color);
+    unsafe {
+        SendMessageW(hwnd, WM_LBUTTONUP, 0, rgb_point);
+    }
+    let changed = state
+        .borrow()
+        .store
+        .load_workspace()
+        .unwrap()
+        .appearance()
+        .unwrap()
+        .1;
+    let desktop_core::Backdrop::Solid { color, opacity } = changed else {
+        panic!("solid lost");
+    };
+    assert_eq!(opacity, 0.5);
+    assert_eq!(color & 0xffff, 0x34ab);
+    assert_ne!(color >> 16, 0x12);
+    unsafe {
+        SendMessageW(hwnd, WM_KEYDOWN, 0x1b, 0);
+        SendMessageW(hwnd, WM_PAINT, 0, 0);
+    }
+    assert!(
+        state.borrow().settings.is_some(),
+        "Escape should leave the picker, not close settings"
+    );
     let before = state.borrow().store.change_count();
     let point = ((450.0 * scale) as isize) << 16 | ((480.0 * scale) as isize & 0xffff);
     unsafe {
@@ -1493,6 +1524,8 @@ fn settings_window_applies_clicks_and_closes_without_exiting() {
             );
         }
     }
+    // Keep composition-window scenarios on the same STA and dispatcher lifetime.
+    solid_settings_edit_preview_save_and_remember_style();
 }
 
 #[test]

@@ -49,6 +49,8 @@ enum Action {
     Change(Event),
     Radius(u8),
     Opacity(u8),
+    Channel(u8, u8),
+    ColorPreset(u32),
     SolidColor,
     SolidReset,
     StyleInput(bool),
@@ -75,6 +77,7 @@ struct Scene {
     text: Vec<(Rect, String, usize)>,
     cards: Vec<Rect>,
     controls: Vec<Control>,
+    previews: Vec<(Rect, u32, f32)>,
 }
 
 fn radius_from_pointer(bounds: Rect, x: f32) -> u8 {
@@ -124,23 +127,19 @@ fn edited_solid(backdrop: Backdrop, percentage: bool, text: &str) -> Option<Back
     Some(Backdrop::Solid { color, opacity })
 }
 
-fn choose_solid_color(hwnd: windows_sys::Win32::Foundation::HWND, color: u32) -> Option<u32> {
-    use windows_sys::Win32::UI::Controls::Dialogs::*;
-    let swap = |v: u32| ((v & 255) << 16) | (v & 0xff00) | (v >> 16);
-    let mut custom = [0xffffffu32; 16];
-    let mut dialog = CHOOSECOLORW {
-        lStructSize: size_of::<CHOOSECOLORW>() as u32,
-        hwndOwner: hwnd,
-        rgbResult: swap(color),
-        lpCustColors: custom.as_mut_ptr(),
-        Flags: CC_RGBINIT | CC_FULLOPEN,
-        ..Default::default()
-    };
-    if unsafe { ChooseColorW(&raw mut dialog) } != 0 {
-        Some(swap(dialog.rgbResult))
-    } else {
-        None
+fn settings_backdrop(backdrop: Backdrop, dark: bool) -> Backdrop {
+    match backdrop {
+        Backdrop::Solid { .. } => Backdrop::Solid {
+            color: if dark { 0x202020 } else { 0xf3f3f3 },
+            opacity: 1.0,
+        },
+        other => other,
     }
+}
+
+fn color_channel(color: u32, channel: u8, value: u8) -> u32 {
+    let shift = (2 - u32::from(channel.min(2))) * 8;
+    (color & !(255 << shift)) | (u32::from(value) << shift)
 }
 
 fn contains(r: &Rect, x: f32, y: f32) -> bool {
@@ -230,6 +229,10 @@ fn with_titlebar(mut scene: Scene, width: f32, maximized: bool) -> Scene {
         r.bottom += TITLE_HEIGHT;
     }
     for r in &mut scene.cards {
+        r.top += TITLE_HEIGHT;
+        r.bottom += TITLE_HEIGHT;
+    }
+    for (r, _, _) in &mut scene.previews {
         r.top += TITLE_HEIGHT;
         r.bottom += TITLE_HEIGHT;
     }
@@ -462,16 +465,86 @@ impl Painter {
                     t.fill_rounded_rect(&rr, &card);
                     t.draw_rounded_rect(&rr, &border, 1.0);
                 }
+                for (r, rgb, opacity) in &s.previews {
+                    let light = canvas_result(t.create_solid_brush(color(if dark {
+                        0x41454b
+                    } else {
+                        0xffffff
+                    })))?;
+                    let shade = canvas_result(t.create_solid_brush(color(if dark {
+                        0x30343a
+                    } else {
+                        0xdfe3e8
+                    })))?;
+                    let tint = canvas_result(t.create_solid_brush(ColorF {
+                        a: *opacity,
+                        ..color(*rgb)
+                    }))?;
+                    let cols = ((r.right - r.left) / 12.0).ceil() as usize;
+                    let rows = ((r.bottom - r.top) / 12.0).ceil() as usize;
+                    for row in 0..rows {
+                        for col in 0..cols {
+                            let x = r.left + col as f32 * 12.0;
+                            let y = r.top + row as f32 * 12.0;
+                            t.fill_rect(
+                                &Rect::from_xywh(
+                                    x,
+                                    y,
+                                    12.0f32.min(r.right - x),
+                                    12.0f32.min(r.bottom - y),
+                                ),
+                                if (row + col) % 2 == 0 { &light } else { &shade },
+                            );
+                        }
+                    }
+                    t.fill_rect(r, &tint);
+                    t.draw_rounded_rect(
+                        &RoundedRect {
+                            rect: *r,
+                            radius_x: 0.0,
+                            radius_y: 0.0,
+                        },
+                        &border,
+                        1.0,
+                    );
+                    for i in 0..if r.bottom - r.top >= 64.0 { 3 } else { 0 } {
+                        t.fill_rounded_rect(
+                            &RoundedRect {
+                                rect: Rect::from_xywh(
+                                    r.left + 16.0 + i as f32 * 42.0,
+                                    r.top + 18.0,
+                                    26.0,
+                                    26.0,
+                                ),
+                                radius_x: 5.0,
+                                radius_y: 5.0,
+                            },
+                            &accent,
+                        );
+                        t.fill_rect(
+                            &Rect::from_xywh(
+                                r.left + 18.0 + i as f32 * 42.0,
+                                r.top + 51.0,
+                                22.0,
+                                2.0,
+                            ),
+                            &ink,
+                        );
+                    }
+                }
                 for (i, c) in s.controls.iter().enumerate() {
-                    if let Action::Radius(value) | Action::Opacity(value) = c.action {
+                    if let Action::Radius(value)
+                    | Action::Opacity(value)
+                    | Action::Channel(_, value) = c.action
+                    {
                         let r = c.bounds;
                         let cy = (r.top + r.bottom) / 2.0;
                         let left = r.left + 8.0;
                         let right = r.right - 8.0;
-                        let max = if matches!(c.action, Action::Opacity(_)) {
-                            100.0
-                        } else {
-                            24.0
+                        let max = match c.action {
+                            Action::Opacity(_) => 100.0,
+                            Action::Channel(_, _) => 255.0,
+                            _ => 24.0,
                         };
                         let cx = left + (right - left) * f32::from(value) / max;
                         let rail = RoundedRect {
@@ -479,13 +552,41 @@ impl Painter {
                             radius_x: 2.0,
                             radius_y: 2.0,
                         };
-                        t.fill_rounded_rect(&rail, &muted);
+                        t.fill_rounded_rect(&rail, &border);
                         let filled = RoundedRect {
                             rect: Rect::from_xywh(left, cy - 2.0, (cx - left).max(0.0), 4.0),
                             radius_x: 2.0,
                             radius_y: 2.0,
                         };
-                        t.fill_rounded_rect(&filled, &accent);
+                        let channel_brush = if let Action::Channel(channel, _) = c.action {
+                            Some(canvas_result(t.create_solid_brush(color(match channel {
+                                0 => {
+                                    if dark {
+                                        0xef8d8d
+                                    } else {
+                                        0xb83d42
+                                    }
+                                }
+                                1 => {
+                                    if dark {
+                                        0x8dccaa
+                                    } else {
+                                        0x287b50
+                                    }
+                                }
+                                _ => {
+                                    if dark {
+                                        0x88baf0
+                                    } else {
+                                        0x266eae
+                                    }
+                                }
+                            })))?)
+                        } else {
+                            None
+                        };
+                        let slider_ink = channel_brush.as_ref().unwrap_or(&accent);
+                        t.fill_rounded_rect(&filled, slider_ink);
                         t.fill_ellipse(
                             &Ellipse {
                                 center: Vector2 { x: cx, y: cy },
@@ -509,7 +610,7 @@ impl Painter {
                                 radius_x: 5.0,
                                 radius_y: 5.0,
                             },
-                            &accent,
+                            slider_ink,
                         );
                         if focus == Some(i) {
                             t.draw_rounded_rect(
@@ -524,7 +625,7 @@ impl Painter {
                         }
                         continue;
                     }
-                    let navigation = matches!(c.action, Action::Page(_));
+                    let navigation = matches!(c.action, Action::Page(_)) && c.bounds.left < 224.0;
                     let caption = matches!(c.action, Action::Window(_));
                     let material = matches!(c.action, Action::Change(Event::Material(_)));
                     let rr = RoundedRect {
@@ -576,7 +677,11 @@ impl Painter {
                     if (!navigation && !caption) || focus == Some(i) {
                         t.draw_rounded_rect(
                             &rr,
-                            if focus == Some(i) { &accent } else { &border },
+                            if focus == Some(i) || c.selected {
+                                &accent
+                            } else {
+                                &border
+                            },
                             if focus == Some(i) { 2.0 } else { 1.0 },
                         );
                     }
@@ -595,13 +700,32 @@ impl Painter {
                             &accent,
                         );
                     }
+                    if let Action::ColorPreset(value) = c.action {
+                        if c.selected {
+                            t.draw_rounded_rect(&rr, &accent, 2.0);
+                        }
+                        let chip = canvas_result(t.create_solid_brush(color(value)))?;
+                        t.fill_rounded_rect(
+                            &RoundedRect {
+                                rect: Rect::from_xywh(
+                                    c.bounds.left + 5.0,
+                                    c.bounds.top + 5.0,
+                                    c.bounds.right - c.bounds.left - 10.0,
+                                    c.bounds.bottom - c.bounds.top - 10.0,
+                                ),
+                                radius_x: 3.0,
+                                radius_y: 3.0,
+                            },
+                            &chip,
+                        );
+                    }
                     if material {
                         let r = c.bounds;
                         let inner = Rect::from_xywh(
                             r.left + 14.0,
                             r.top + 12.0,
                             r.right - r.left - 28.0,
-                            72.0,
+                            56.0,
                         );
                         let tint = match c.action {
                             Action::Change(Event::Material(Backdrop::Acrylic)) => 0x5e819d,
@@ -630,10 +754,10 @@ impl Painter {
                             ..color(if dark { 0x242832 } else { 0xf1f5fb })
                         }))?;
                         let preview = Rect::from_xywh(
-                            inner.left + 10.0,
-                            inner.top + 10.0,
-                            inner.right - inner.left - 20.0,
-                            52.0,
+                            inner.left + 8.0,
+                            inner.top + 8.0,
+                            inner.right - inner.left - 16.0,
+                            40.0,
                         );
                         t.fill_rounded_rect(
                             &RoundedRect {
@@ -643,28 +767,38 @@ impl Painter {
                             },
                             &glass,
                         );
-                        t.fill_rect(
-                            &Rect::from_xywh(preview.left + 10.0, preview.top + 10.0, 42.0, 3.0),
+                        let center_x = (preview.left + preview.right) * 0.5;
+                        t.fill_rounded_rect(
+                            &RoundedRect {
+                                rect: Rect::from_xywh(
+                                    center_x - 14.0,
+                                    preview.top + 8.0,
+                                    28.0,
+                                    2.0,
+                                ),
+                                radius_x: 1.0,
+                                radius_y: 1.0,
+                            },
                             &muted,
                         );
                         for j in 0..3 {
                             t.fill_rounded_rect(
                                 &RoundedRect {
                                     rect: Rect::from_xywh(
-                                        preview.left + 8.0 + j as f32 * 20.0,
-                                        preview.top + 29.0,
-                                        16.0,
-                                        16.0,
+                                        preview.left + 8.0 + j as f32 * 18.0,
+                                        preview.top + 20.0,
+                                        12.0,
+                                        12.0,
                                     ),
-                                    radius_x: 4.0,
-                                    radius_y: 4.0,
+                                    radius_x: 3.0,
+                                    radius_y: 3.0,
                                 },
                                 &accent,
                             );
                         }
                         let center = Vector2 {
                             x: r.left + 23.0,
-                            y: r.top + 106.0,
+                            y: r.bottom - 18.0,
                         };
                         t.draw_ellipse(
                             &Ellipse {
@@ -690,9 +824,9 @@ impl Painter {
                             &self.formats[1],
                             &Rect::from_xywh(
                                 r.left + 42.0,
-                                r.top + 89.0,
+                                r.bottom - 35.0,
                                 r.right - r.left - 50.0,
-                                34.0,
+                                30.0,
                             ),
                             &ink,
                         );
@@ -1118,6 +1252,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
             let mut activate = None;
             let mut radius_change = None;
             let mut opacity_change = None;
+            let mut channel_change = None;
             match msg {
                 WM_PAINT => {
                     let now = std::time::Instant::now();
@@ -1168,7 +1303,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                             }
                             let surface = surface.as_mut().unwrap();
                             surface.theme(windows::Win32::Foundation::HWND(hwnd), dark);
-                            surface.material(windows::Win32::Foundation::HWND(hwnd), appearance.1);
+                            surface.material(windows::Win32::Foundation::HWND(hwnd), settings_backdrop(appearance.1, dark));
                             let Some(target) =
                                 surface.try_begin_frame(bounds.right as u32, bounds.bottom as u32)? else {
                                     return Ok(());
@@ -1237,6 +1372,10 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         }
                     }
                     if let Some(control) = pressed.and_then(|i| scene.controls.get(i)) {
+                        if let Action::Channel(channel, _) = control.action {
+                            let fraction = ((x - control.bounds.left - 8.0) / (control.bounds.right - control.bounds.left - 16.0).max(1.0)).clamp(0.0, 1.0);
+                            channel_change = Some((channel, (fraction * 255.0).round() as u8));
+                        }
                         if matches!(control.action, Action::Opacity(_)) {
                             opacity_change = Some((((x - control.bounds.left - 8.0) / (control.bounds.right - control.bounds.left - 16.0).max(1.0)).clamp(0.0, 1.0) * 100.0).round() as u8);
                         }
@@ -1288,12 +1427,23 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     }
                     if msg == WM_SYSKEYDOWN { return None; }
                     if wp == VK_ESCAPE as usize {
+                        if page == 7 {
+                            page = 0; scene_key = None; focus = None;
+                            unsafe { InvalidateRect(hwnd, std::ptr::null(), 0); }
+                            return Some(0);
+                        }
                         unsafe {
                             PostMessageW(hwnd, WM_CLOSE, 0, 0);
                         }
                         return Some(0);
                     }
                     if let Some(control) = focus.and_then(|i| scene.controls.get(i)) {
+                        if let Action::Channel(channel, value) = control.action {
+                            channel_change = match wp as u16 {
+                                VK_LEFT => Some(value.saturating_sub(1)), VK_RIGHT => Some(value.saturating_add(1)),
+                                VK_HOME => Some(0), VK_END => Some(255), _ => None,
+                            }.map(|value| (channel, value));
+                        }
                         if let Action::Opacity(value) = control.action {
                             opacity_change = match wp as u16 {
                                 VK_LEFT => Some(value.saturating_sub(1)), VK_RIGHT => Some((value + 1).min(100)),
@@ -1332,6 +1482,17 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     }
                 }
                 _ => return None,
+            }
+            if let Some((channel, value)) = channel_change.filter(|_| available) {
+                if let Backdrop::Solid { color, opacity } = appearance.1 {
+                    let backdrop = Backdrop::Solid { color: color_channel(color, channel, value), opacity };
+                    if msg == WM_KEYDOWN {
+                        if let Err(error) = handle(&state, selected, Event::Material(backdrop)) { window::error(&error); }
+                    } else {
+                        material_original.get_or_insert(appearance.1);
+                        events::preview_material(&mut state.borrow_mut(), backdrop);
+                    }
+                }
             }
             if let Some(value) = opacity_change.filter(|_| available) {
                 if let Backdrop::Solid { color, .. } = appearance.1 {
@@ -1376,11 +1537,10 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         style_input = Some((*percentage, String::new()));
                         scene_key = None;
                     }
-                    Action::SolidColor => {
-                        if let Backdrop::Solid { color, opacity } = appearance.1 {
-                            if let Some(color) = choose_solid_color(hwnd, color) {
-                                if let Err(error) = handle(&state, selected, Event::Material(Backdrop::Solid { color, opacity })) { window::error(&error); }
-                            }
+                    Action::SolidColor => { page = 7; focus = None; hover = None; scene_key = None; }
+                    Action::ColorPreset(color) => {
+                        if let Backdrop::Solid { opacity, .. } = appearance.1 {
+                            if let Err(error) = handle(&state, selected, Event::Material(Backdrop::Solid { color: *color, opacity })) { window::error(&error); }
                         }
                     }
                     Action::SolidReset => {
@@ -1459,7 +1619,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     Action::Next => {
                         selected = panels[(at + 1) % panels.len()].id();
                     }
-                    Action::Radius(_) | Action::Opacity(_) => {}
+                    Action::Radius(_) | Action::Opacity(_) | Action::Channel(_, _) => {}
                     Action::Change(event) => {
                         if let Err(e) = handle(&state, selected, event.clone()) {
                             window::error(&e);
@@ -1535,6 +1695,65 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn settings_opacity_is_independent_and_rgb_preserves_other_channels() {
+        for dark in [false, true] {
+            for color in [0x123456, 0x7d4441, 0xffffff] {
+                for opacity in [0.0, 0.5, 1.0] {
+                    assert_eq!(
+                        settings_backdrop(Backdrop::Solid { color, opacity }, dark),
+                        Backdrop::Solid {
+                            color: if dark { 0x202020 } else { 0xf3f3f3 },
+                            opacity: 1.0
+                        }
+                    );
+                }
+            }
+        }
+        assert_eq!(
+            settings_backdrop(Backdrop::Acrylic, true),
+            Backdrop::Acrylic
+        );
+        assert_eq!(color_channel(0x123456, 0, 255), 0xff3456);
+        assert_eq!(color_channel(0x123456, 1, 0), 0x120056);
+        assert_eq!(color_channel(0x123456, 2, 255), 0x1234ff);
+        let picker = with_titlebar(
+            scene(
+                800.0,
+                480.0 - TITLE_HEIGHT,
+                7,
+                None,
+                0,
+                false,
+                (
+                    PanelTheme::Dark,
+                    Backdrop::Solid {
+                        color: 0x123456,
+                        opacity: 0.5,
+                    },
+                ),
+                Default::default(),
+            ),
+            800.0,
+            false,
+        );
+        assert!(
+            picker
+                .controls
+                .iter()
+                .all(|c| c.bounds.right <= 800.0 && c.bounds.bottom <= 480.0)
+        );
+        assert_eq!(
+            picker
+                .controls
+                .iter()
+                .filter(|c| matches!(c.action, Action::Channel(_, _)))
+                .count(),
+            3
+        );
+        assert_eq!(picker.previews.len(), 1);
+    }
+
     #[test]
     fn solid_controls_fit_minimum_settings_size() {
         let s = with_titlebar(
@@ -1672,7 +1891,7 @@ mod tests {
         {
             let device = windows_canvas::GpuDevice::new_warp().unwrap();
             for scale in [1.0, 1.5, 2.0] {
-                for page in 0..7 {
+                for page in 0..8 {
                     for dark in [false, true] {
                         let s = with_titlebar(
                             scene(
@@ -1684,7 +1903,7 @@ mod tests {
                                 true,
                                 (
                                     PanelTheme::System,
-                                    if page == 0 {
+                                    if page == 0 || page == 7 {
                                         Backdrop::Solid {
                                             color: 0x24364b,
                                             opacity: 0.85,
@@ -1733,7 +1952,7 @@ mod tests {
                         let pixels = bitmap.pixels().unwrap();
                         assert!(pixels.chunks_exact(4).all(|p| p[3] == 255));
                         assert_eq!(pixels[0] < 128, dark);
-                        if scale == 1.0 && (page <= 1 || page == 5) {
+                        if scale == 1.0 && (page <= 1 || page == 5 || page == 7) {
                             // Standalone raster for visual review, independent of the live desktop.
                             let mut bmp = vec![0u8; 54];
                             bmp[0..2].copy_from_slice(b"BM");
@@ -1748,6 +1967,8 @@ mod tests {
                             let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                                 .join("../target")
                                 .join(match (page, dark) {
+                                    (7, true) => "settings-colors-dark.bmp",
+                                    (7, false) => "settings-colors-light.bmp",
                                     (5, true) => "settings-about-dark.bmp",
                                     (5, false) => "settings-about-light.bmp",
                                     (1, true) => "settings-pane-dark.bmp",
