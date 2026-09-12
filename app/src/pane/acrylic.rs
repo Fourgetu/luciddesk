@@ -213,6 +213,17 @@ impl Acrylic {
         self.root.SetOpacity(opacity)
     }
 
+    pub fn fade_in(&self) -> Result<()> {
+        let animation = self._runtime.compositor.CreateScalarKeyFrameAnimation()?;
+        animation.InsertKeyFrame(0.0, 0.0)?;
+        animation.InsertKeyFrame(1.0, 1.0)?;
+        animation.SetDuration(windows::Foundation::TimeSpan {
+            Duration: 1_600_000, // 160 ms, driven entirely by the compositor.
+        })?;
+        self.root
+            .StartAnimation(&windows::core::HSTRING::from("Opacity"), &animation)
+    }
+
     #[cfg(test)]
     pub fn assert_content_visible(&self) {
         assert!(self._target.IsTopmost().unwrap());

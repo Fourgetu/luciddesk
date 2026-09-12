@@ -68,6 +68,16 @@ impl Surface {
         Self::create(hwnd, 1.0, gpu_device()?, true)
     }
 
+    pub fn fade_in(&self) -> Result<()> {
+        // Only a shared tree can animate content and material atomically.
+        if self.layer.is_none()
+            && let Some(acrylic) = &self.acrylic
+        {
+            acrylic.fade_in()?;
+        }
+        Ok(())
+    }
+
     pub fn new_pane(hwnd: HWND) -> Result<Self> {
         let mut surface = Self::new(hwnd)?;
         Self::disable_window_shadow(hwnd)?;

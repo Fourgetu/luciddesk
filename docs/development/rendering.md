@@ -67,11 +67,15 @@ Settings attaches its swap chain above its material in one WinRT composition
 visual tree. Before showing the HWND it sets `DWMWA_CLOAK`; unlike `SW_HIDE`,
 cloaking allows DWM to compose the window without displaying partial content.
 After showing without activation, a short-lived timer polls `RequestCommitAsync`.
-Once the commit completes, `DwmFlush` synchronizes presentation, then the window
-is uncloaked and activated. The timer is removed immediately; a one-second
+Once the material commit completes, a 160 ms opacity animation is attached to
+the shared root if Windows client-area animations are enabled. Its initial
+frame is committed while still cloaked to avoid a full-opacity flash. Then
+`DwmFlush` synchronizes presentation and the window is uncloaked and activated.
+The compositor animates content and material together without app repainting.
+The timer is removed immediately on reveal; a one-second
 failure deadline prevents an indefinitely inaccessible settings window.
 This is a composition fence, not an API guarantee that every host backdrop
 implementation has finished sampling. Opening-frame captures are required when
-changing this sequence. No opaque cover, material fade, CPU readback or persistent
+changing this sequence. No opaque cover, separate material fade, CPU readback or persistent
 render loop is used. Plain-translucent mode hides only the material visuals so
 content sharing the tree stays visible.

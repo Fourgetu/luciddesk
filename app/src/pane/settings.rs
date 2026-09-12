@@ -19,6 +19,12 @@ const SELECT_PANEL: u32 = WM_APP + 95;
 const PREPARE_REVEAL: u32 = WM_APP + 96;
 const REVEAL_TIMER: usize = 0x4c5055;
 
+struct PendingReveal {
+    started: std::time::Instant,
+    ready: Box<dyn Fn() -> bool>,
+    fade: bool,
+}
+
 unsafe fn cloak(
     hwnd: windows_sys::Win32::Foundation::HWND,
     hidden: bool,
@@ -724,7 +730,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
     let mut options = state.borrow().workspace.pane_options();
     let painter = Painter::new().map_err(|e| e.to_string())?;
     let mut surface: Option<composition::Surface> = None;
-    let mut reveal: Option<(std::time::Instant, Box<dyn Fn() -> bool>)> = None;
+    let mut reveal: Option<PendingReveal> = None;
     let mut page = if state
         .borrow()
         .runtime
@@ -767,7 +773,13 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
             if msg == PREPARE_REVEAL {
                 let ready = surface.as_ref().and_then(|s| s.commit_ready().ok())
                     .unwrap_or_else(|| Box::new(|| true));
-                reveal = Some((std::time::Instant::now(), ready));
+                let mut animations = 1i32;
+                unsafe {
+                    SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, (&raw mut animations).cast(), 0);
+                }
+                reveal = Some(PendingReveal {
+                    started: std::time::Instant::now(), ready, fade: animations != 0,
+                });
                 unsafe {
                     if SetTimer(hwnd, REVEAL_TIMER, USER_TIMER_MINIMUM, None) == 0 {
                         reveal = None;
@@ -778,7 +790,20 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 return Some(0);
             }
             if msg == WM_TIMER && wp == REVEAL_TIMER {
-                if reveal.as_ref().is_some_and(|(started, ready)| ready() || started.elapsed().as_secs() >= 1) {
+                if let Some(pending) = &mut reveal {
+                    let timed_out = pending.started.elapsed().as_secs() >= 1;
+                    if !(pending.ready)() && !timed_out { return Some(0); }
+                    if pending.fade && !timed_out {
+                        pending.fade = false;
+                        // Commit the initial animation frame while still cloaked,
+                        // so uncloaking cannot briefly expose full-opacity content.
+                        if let Some(surface) = &surface
+                            && let Ok(ready) = surface.fade_in().and_then(|()| surface.commit_ready())
+                        {
+                            pending.ready = ready;
+                            return Some(0);
+                        }
+                    }
                     reveal = None;
                     unsafe {
                         KillTimer(hwnd, REVEAL_TIMER);
