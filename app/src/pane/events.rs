@@ -729,7 +729,7 @@ pub(super) fn handle(
                 hybrid::refresh_icons(&mut s);
             }
         }
-        Event::Moving(rect) => {
+        Event::Moving(rect) | Event::Sizing(rect, _, _) => {
             if !s.workspace.pane_options().snap {
                 return Ok(false);
             }
@@ -737,6 +737,11 @@ pub(super) fn handle(
                 .views
                 .iter()
                 .filter(|view| view.id != id)
+                .filter(|view| unsafe {
+                    windows_sys::Win32::UI::WindowsAndMessaging::IsWindowVisible(
+                        view.window.hwnd().cast(),
+                    ) != 0
+                })
                 .filter_map(|view| {
                     let mut bounds = RECT::default();
                     (unsafe { GetWindowRect(view.window.hwnd().cast(), &raw mut bounds) } != 0)
@@ -746,6 +751,19 @@ pub(super) fn handle(
             if let Some(view) = s.views.iter().find(|view| view.id == id) {
                 let scale =
                     unsafe { GetDpiForWindow(view.window.hwnd().cast()) }.max(96) as f32 / 96.0;
+                if let Event::Sizing(_, proposal, edge) = event {
+                    unsafe {
+                        snap::resize(
+                            &mut *rect,
+                            &proposal,
+                            edge,
+                            &peers,
+                            5,
+                            (14.0 * scale).round() as i32,
+                        );
+                    }
+                    return Ok(false);
+                }
                 unsafe {
                     use windows_sys::Win32::Graphics::Gdi::{
                         GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromRect,

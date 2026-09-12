@@ -642,12 +642,12 @@ where
                     Some(0)
                 }
                 WM_SIZING => {
-                    if model.borrow().is_list() {
-                        return None;
-                    }
                     let rect = unsafe { &mut *(lparam as *mut RECT) };
+                    let proposal = *rect;
                     let m = model.borrow();
-                    if m.items.is_empty() {
+                    if m.is_list() || m.items.is_empty() {
+                        drop(m);
+                        event(Event::Sizing(rect, proposal, wparam as u32));
                         return Some(1);
                     }
                     let s = scale(hwnd);
@@ -681,6 +681,10 @@ where
                         m.collapsed,
                         &rows[start..],
                     );
+                    drop(m);
+                    // Peer alignment wins over content-grid snapping, using the
+                    // unsnapped Windows proposal to preserve the release distance.
+                    event(Event::Sizing(rect, proposal, wparam as u32));
                     Some(1)
                 }
                 WM_PAINT => {

@@ -137,6 +137,7 @@ enum Event {
     Theme(desktop_core::PanelTheme),
     SetCollapsed(bool),
     Moving(*mut RECT),
+    Sizing(*mut RECT, RECT, u32),
     Material(desktop_core::Backdrop),
     Tick,
     New,
