@@ -25,6 +25,19 @@ struct PendingReveal {
     fade: bool,
 }
 
+// windows-window::create calls ShowWindow before returning the HWND. Suppress
+// that first show until placement, custom frame and composition are prepared.
+unsafe fn defer_initial_show(msg: u32, lp: isize, prepared: bool) -> bool {
+    if msg != WM_WINDOWPOSCHANGING || prepared {
+        return false;
+    }
+    unsafe {
+        let position = &mut *(lp as *mut WINDOWPOS);
+        position.flags = (position.flags & !SWP_SHOWWINDOW) | SWP_NOACTIVATE;
+    }
+    true
+}
+
 unsafe fn cloak(
     hwnd: windows_sys::Win32::Foundation::HWND,
     hidden: bool,
@@ -1011,12 +1024,17 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
     let mut desktop_status = String::new();
     let mut backup_status = String::new();
     let mut toggle_motion = std::collections::HashMap::<usize, ToggleMotion>::new();
+    let prepared = Rc::new(std::cell::Cell::new(false));
+    let show_prepared = Rc::clone(&prepared);
     let window = windows_window::Window::new("LucidPane 设置")
         .size(900, 520)
         .style(WS_OVERLAPPEDWINDOW)
         .ex_style(WS_EX_APPWINDOW | WS_EX_NOREDIRECTIONBITMAP)
         .on_message(move |raw, msg, wp, lp| {
             let hwnd = raw.cast();
+            if unsafe { defer_initial_show(msg, lp, show_prepared.get()) } {
+                return Some(0);
+            }
             if msg == WM_NCCALCSIZE || msg == WM_NCPAINT {
                 return Some(0);
             }
@@ -1755,9 +1773,11 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
         // Cloaking keeps the visible HWND in DWM composition without exposing
         // a partial frame. A hidden HWND cannot prepare host backdrop sampling.
         if cloak(hwnd, true).is_ok() {
+            prepared.set(true);
             ShowWindow(hwnd, SW_SHOWNOACTIVATE);
             PostMessageW(hwnd, PREPARE_REVEAL, 0, 0);
         } else {
+            prepared.set(true);
             ShowWindow(hwnd, SW_SHOW);
             SetForegroundWindow(hwnd);
         }
@@ -1769,6 +1789,32 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn initial_library_show_remains_hidden_until_prepared() {
+        let prepared = Rc::new(std::cell::Cell::new(false));
+        let callback_prepared = Rc::clone(&prepared);
+        let window = windows_window::Window::new("LucidPane initial visibility test")
+            .style(WS_OVERLAPPEDWINDOW)
+            .on_message(move |_, msg, _, lp| {
+                if unsafe { defer_initial_show(msg, lp, callback_prepared.get()) }
+                    || msg == WM_DESTROY
+                {
+                    Some(0)
+                } else {
+                    None
+                }
+            })
+            .create()
+            .unwrap();
+        unsafe {
+            assert_eq!(IsWindowVisible(window.hwnd().cast()), 0);
+            prepared.set(true);
+            ShowWindow(window.hwnd().cast(), SW_SHOWNOACTIVATE);
+            assert_ne!(IsWindowVisible(window.hwnd().cast()), 0);
+        }
+    }
+
     #[test]
     fn settings_opacity_is_independent_and_rgb_preserves_other_channels() {
         for dark in [false, true] {
