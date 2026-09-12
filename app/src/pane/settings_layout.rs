@@ -394,7 +394,7 @@ pub(super) fn scene(
             0,
         );
     } else if page == 4 {
-        for y in [248.0, 324.0] {
+        for y in [248.0] {
             s.separators
                 .push(Rect::from_xywh(x + 18.0, y, w - 36.0, 1.0));
         }
@@ -434,19 +434,7 @@ pub(super) fn scene(
             0,
         );
         s.text(
-            Rect::from_xywh(x + 18.0, 270.0, w - 110.0, 32.0),
-            "按需启动 Everything",
-            1,
-        );
-        s.controls.push(Control {
-            bounds: Rect::from_xywh(x + w - 70.0, 274.0, 46.0, 24.0),
-            label: String::new(),
-            action: Action::EverythingAutoStart,
-            selected: value.auto_start,
-            toggle: true,
-        });
-        s.text(
-            Rect::from_xywh(x + 18.0, 340.0, w - 36.0, 26.0),
+            Rect::from_xywh(x + 18.0, 264.0, w - 36.0, 26.0),
             if value.path.is_empty() {
                 "程序路径 · 自动"
             } else {
@@ -457,21 +445,21 @@ pub(super) fn scene(
         let path = everything_settings::resolved(&value)
             .map(|p| p.to_string_lossy().into_owned())
             .unwrap_or_else(|| "未找到 Everything，请选择程序".into());
-        s.text(Rect::from_xywh(x + 18.0, 370.0, w - 36.0, 24.0), path, 0);
+        s.text(Rect::from_xywh(x + 18.0, 294.0, w - 36.0, 24.0), path, 0);
         s.button(
-            Rect::from_xywh(x + 18.0, 398.0, 110.0, 34.0),
+            Rect::from_xywh(x + 18.0, 322.0, 110.0, 34.0),
             "浏览…",
             Action::EverythingBrowse,
             false,
         );
         s.button(
-            Rect::from_xywh(x + 140.0, 398.0, 110.0, 34.0),
+            Rect::from_xywh(x + 140.0, 322.0, 110.0, 34.0),
             "自动检测",
             Action::EverythingDetect,
             false,
         );
         s.button(
-            Rect::from_xywh(x + w - 128.0, 398.0, 110.0, 34.0),
+            Rect::from_xywh(x + w - 128.0, 322.0, 110.0, 34.0),
             "启动",
             Action::EverythingLaunch,
             false,

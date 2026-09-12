@@ -62,7 +62,6 @@ enum Action {
     SearchShortcut,
     SearchReset,
     PeekReset,
-    EverythingAutoStart,
     EverythingBrowse,
     EverythingDetect,
     EverythingLaunch,
@@ -1601,11 +1600,10 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                             parsing_name: "https://git.bbkingdom.fun:30443/yuchen95/LucidPane".into(),
                         }) { window::error(&error.to_string()); }
                     }
-                    Action::EverythingAutoStart | Action::EverythingBrowse | Action::EverythingDetect | Action::EverythingLaunch => {
+                    Action::EverythingBrowse | Action::EverythingDetect | Action::EverythingLaunch => {
                         let mut value = everything_settings::settings();
                         let result = (|| -> Result<(), String> {
                             match c.action {
-                                Action::EverythingAutoStart => value.auto_start = !value.auto_start,
                                 Action::EverythingBrowse => {
                                     let Some(path) = everything_settings::browse(hwnd as isize)? else { return Ok(()); };
                                     value.path = path;

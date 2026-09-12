@@ -146,22 +146,7 @@ pub(super) fn query(search: &str, offset: u32) -> Result<Page, String> {
     if search.encode_utf16().count() > 16_384 || search.contains('\0') {
         return Err("搜索内容过长或无效".into());
     }
-    let mut target = instance();
-    if target.is_null() && super::everything_settings::settings().auto_start {
-        // Serialize startup across search panes, then recheck in case another
-        // worker has already started the IPC instance.
-        static START: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let _guard = START.lock().unwrap();
-        target = instance();
-        if target.is_null() {
-            super::everything_settings::launch()?;
-            let deadline = Instant::now() + Duration::from_secs(5);
-            while target.is_null() && Instant::now() < deadline {
-                std::thread::sleep(Duration::from_millis(100));
-                target = instance();
-            }
-        }
-    }
+    let target = instance();
     if target.is_null() {
         return Err("未连接 Everything，请启动 Everything 并启用 IPC，然后刷新。".into());
     }

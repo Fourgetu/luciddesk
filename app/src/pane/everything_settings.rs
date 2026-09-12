@@ -7,7 +7,6 @@ use std::{
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(super) struct Settings {
     pub path: String,
-    pub auto_start: bool,
 }
 static SETTINGS: LazyLock<RwLock<Settings>> = LazyLock::new(|| RwLock::new(Settings::default()));
 pub(super) fn settings() -> Settings {
@@ -28,14 +27,8 @@ pub(super) fn set_enabled(store: &WorkspaceStore, enabled: bool) -> Result<(), S
 }
 fn decode(raw: &str) -> Option<Settings> {
     let (flag, path) = raw.split_once('\n')?;
-    Some(Settings {
-        path: path.into(),
-        auto_start: match flag {
-            "0" => false,
-            "1" => true,
-            _ => return None,
-        },
-    })
+    // Accept the legacy startup flag only to preserve existing executable paths.
+    matches!(flag, "0" | "1").then(|| Settings { path: path.into() })
 }
 pub(super) fn load(store: &WorkspaceStore) -> Result<(), String> {
     *SETTINGS.write().unwrap() = store
@@ -47,10 +40,7 @@ pub(super) fn load(store: &WorkspaceStore) -> Result<(), String> {
 }
 pub(super) fn save(store: &WorkspaceStore, value: Settings) -> Result<(), String> {
     store
-        .save_preference(
-            "everything",
-            &format!("{}\n{}", u8::from(value.auto_start), value.path),
-        )
+        .save_preference("everything", &format!("0\n{}", value.path))
         .map_err(|e| e.to_string())?;
     *SETTINGS.write().unwrap() = value;
     Ok(())
@@ -124,12 +114,12 @@ pub(super) fn browse(owner: isize) -> Result<Option<String>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn settings_preserve_unicode_paths_and_reject_invalid_flags() {
         assert_eq!(
             decode("1\nD:\\应用\\Everything.exe"),
             Some(Settings {
-                auto_start: true,
                 path: "D:\\应用\\Everything.exe".into()
             })
         );
