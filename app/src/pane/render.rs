@@ -31,6 +31,7 @@ pub struct Renderer {
     title: windows_canvas::TextFormat,
     title_layout: Option<TitleLayout>,
     details: windows_canvas::TextFormat,
+    menu_shortcut: windows_canvas::TextFormat,
     icons: windows_canvas::TextFormat,
     target: Option<(u32, u32, Option<canvas::Offscreen>, ID2D1DeviceContext)>,
     images: HashMap<String, ImageBitmap>,
@@ -113,15 +114,23 @@ impl Renderer {
                         &hover,
                     );
                 }
+                let trailing_width = if row.trailing.is_empty() { 0.0 } else { 72.0 };
                 for (label, left, available) in [
                     (row.icon, 12.0, 20.0),
-                    (row.label, 38.0, width - 68.0),
-                    (row.trailing, width - 28.0, 20.0),
+                    (row.label, 38.0, width - 50.0 - trailing_width),
                 ] {
                     target.clipped_text(
                         label,
                         &self.title,
                         &Rect::from_xywh(left, top, available, super::menu::ROW_HEIGHT),
+                        &text,
+                    );
+                }
+                if trailing_width > 0.0 {
+                    target.clipped_text(
+                        row.trailing,
+                        &self.menu_shortcut,
+                        &Rect::from_xywh(width - 76.0, top, 64.0, super::menu::ROW_HEIGHT),
                         &text,
                     );
                 }
@@ -152,6 +161,10 @@ impl Renderer {
             title,
             title_layout: None,
             details,
+            menu_shortcut: canvas_result(TextFormat::new(&family, 12.0))?
+                .with_alignment(TextAlignment::Trailing)
+                .with_paragraph_alignment(ParagraphAlignment::Center)
+                .with_word_wrapping(WordWrapping::NoWrap),
             icons: canvas_result(TextFormat::new("Segoe Fluent Icons", 12.0))?
                 .with_alignment(windows_canvas::TextAlignment::Center)
                 .with_paragraph_alignment(ParagraphAlignment::Center)

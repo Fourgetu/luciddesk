@@ -1310,9 +1310,9 @@ where
                             // discard every image and trigger a visible reload.
                             return;
                         }
-                        let (auto_hide, locked, theme) = {
+                        let (auto_hide, locked, theme, backdrop) = {
                             let m = model.borrow();
-                            (m.auto_hide, m.locked, m.theme)
+                            (m.auto_hide, m.locked, m.theme, m.backdrop)
                         };
                         update_pointer(hwnd, &model, None);
                         invalidate(hwnd);
@@ -1320,7 +1320,8 @@ where
                             let model = model.borrow();
                             model.folder.as_ref().map(|_| model.folder_list)
                         };
-                        let command = menu(hwnd, lparam, auto_hide, locked, theme, is_folder);
+                        let command =
+                            menu(hwnd, lparam, auto_hide, locked, theme, backdrop, is_folder);
                         update_pointer(hwnd, &model, None);
                         invalidate(hwnd);
                         match command {
@@ -1444,6 +1445,7 @@ fn menu(
     auto_hide: bool,
     locked: bool,
     theme: desktop_core::PanelTheme,
+    backdrop: desktop_core::Backdrop,
     folder: Option<bool>,
 ) -> i32 {
     let anchored = lparam == -1;
@@ -1458,7 +1460,9 @@ fn menu(
             ClientToScreen(hwnd, &raw mut anchor);
         }
     }
-    super::menu::show(hwnd, anchor, anchored, auto_hide, locked, theme, folder)
+    super::menu::show(
+        hwnd, anchor, anchored, auto_hide, locked, theme, backdrop, folder,
+    )
 }
 pub fn error(message: &str) {
     unsafe {

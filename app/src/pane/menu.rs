@@ -1,4 +1,4 @@
-//! WinUI-inspired composition flyout. Uses the same acrylic/content pipeline as panes.
+//! WinUI-inspired composition flyout. Uses the owning pane material with default properties.
 #![allow(
     clippy::wildcard_imports,
     clippy::fn_params_excessive_bools,
@@ -30,12 +30,28 @@ pub fn row_top(rows: &[Entry], index: usize) -> f32 {
         .map(|row| if row.id == 0 { 7.0 } else { ROW_HEIGHT })
         .sum::<f32>()
 }
-fn entry(id: i32, label: &'static str, icon: &'static str, trailing: &'static str) -> Entry {
+pub(super) fn entry(
+    id: i32,
+    label: &'static str,
+    icon: &'static str,
+    trailing: &'static str,
+) -> Entry {
     Entry {
         id,
         label,
         icon,
         trailing,
+    }
+}
+
+fn default_material(backdrop: Backdrop, dark: bool) -> Backdrop {
+    match backdrop {
+        Backdrop::Solid { .. } => Backdrop::Solid {
+            color: if dark { 0x181b20 } else { 0xf5f6f8 },
+            opacity: 0.85,
+        },
+        Backdrop::Translucent { .. } => Backdrop::Translucent { opacity: 1.0 },
+        other => other.base(),
     }
 }
 
@@ -46,9 +62,9 @@ pub fn show(
     auto_hide: bool,
     locked: bool,
     theme: desktop_core::PanelTheme,
+    backdrop: Backdrop,
     folder: Option<bool>,
 ) -> i32 {
-    let dark = super::theme::is_dark(theme);
     let mut rows = vec![
         entry(1, "新建分组", "", ""),
         entry(19, "新建文件夹面板…", "", ""),
@@ -101,12 +117,30 @@ pub fn show(
             ],
         );
     }
+    show_entries(owner, anchor, anchored, theme, backdrop, rows)
+}
+
+pub(super) fn show_entries(
+    owner: HWND,
+    anchor: POINT,
+    anchored: bool,
+    theme: desktop_core::PanelTheme,
+    backdrop: Backdrop,
+    rows: Vec<Entry>,
+) -> i32 {
+    let dark = super::theme::is_dark(theme);
+    let backdrop = default_material(backdrop, dark);
     let scale = unsafe { GetDpiForWindow(owner) }.max(96) as f32 / 96.0;
     let mut animate = 1i32;
     unsafe {
         SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, (&raw mut animate).cast(), 0);
     }
-    let width = (216.0 * scale).round() as i32;
+    let menu_width = if rows.iter().any(|row| !row.trailing.is_empty()) {
+        232.0
+    } else {
+        216.0
+    };
+    let width = (menu_width * scale).round() as i32;
     let height = ((row_top(&rows, rows.len()) + 4.0) * scale).round() as i32;
     let mut monitor = MONITORINFO {
         cbSize: size_of::<MONITORINFO>() as u32,
@@ -139,7 +173,7 @@ pub fn show(
     let mut fade_finished = animate == 0;
     let window = windows_window::Window::new("分组菜单")
         .style(WS_POPUP)
-        .ex_style(WS_EX_TOOLWINDOW | WS_EX_NOREDIRECTIONBITMAP)
+        .ex_style(WS_EX_TOOLWINDOW | WS_EX_NOREDIRECTIONBITMAP | WS_EX_TOPMOST)
         .size(width, height)
         .on_message(move |raw, message, wparam, lparam| {
             let hwnd = raw.cast();
@@ -167,10 +201,7 @@ pub fn show(
                                 if fade_finished { 1.0 } else { 0.0 },
                             )?;
                             value.theme(windows::Win32::Foundation::HWND(hwnd), dark);
-                            value.material(
-                                windows::Win32::Foundation::HWND(hwnd),
-                                Backdrop::Acrylic,
-                            );
+                            value.material(windows::Win32::Foundation::HWND(hwnd), backdrop);
                             surface = Some(value);
                         }
                         let value = surface.as_mut().unwrap();
@@ -319,12 +350,12 @@ pub fn show(
         SetWindowLongPtrW(hwnd, GWLP_HWNDPARENT, owner as isize);
         // Prepare the complete first frame while the popup is still hidden.
         // Neither the content target nor the material starts at full opacity.
-        SetWindowPos(hwnd, HWND_TOP, left, top, width, height, SWP_NOACTIVATE);
+        SetWindowPos(hwnd, HWND_TOPMOST, left, top, width, height, SWP_NOACTIVATE);
         SendMessageW(hwnd, WM_PAINT, 0, 0);
         if done.get() {
             return 0;
         }
-        SetWindowPos(hwnd, HWND_TOP, left, top, width, height, SWP_SHOWWINDOW);
+        SetWindowPos(hwnd, HWND_TOPMOST, left, top, width, height, SWP_SHOWWINDOW);
         SetForegroundWindow(hwnd);
         SetFocus(hwnd);
         if animate != 0 {
@@ -339,7 +370,7 @@ pub fn show(
                 }
                 break;
             }
-            if message.hwnd == owner && message.message == WM_LBUTTONDOWN {
+            if anchored && message.hwnd == owner && message.message == WM_LBUTTONDOWN {
                 let mut bounds = RECT::default();
                 GetClientRect(owner, &raw mut bounds);
                 let owner_scale = GetDpiForWindow(owner).max(96) as f32 / 96.0;
@@ -373,6 +404,8 @@ mod tests {
         let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
         let clicks = Rc::new(Cell::new(0));
         let pulses = Rc::new(Cell::new(0));
+        let topmost = Rc::new(Cell::new(false));
+        let observed_topmost = Rc::clone(&topmost);
         let observed_clicks = Rc::clone(&clicks);
         let observed_pulses = Rc::clone(&pulses);
         let owner = windows_window::Window::new("Menu toggle fixture")
@@ -390,6 +423,15 @@ mod tests {
                         observed_pulses.set(observed_pulses.get() + 1);
                         unsafe {
                             if observed_pulses.get() == 1 {
+                                let popup =
+                                    FindWindowW(std::ptr::null(), windows_sys::w!("分组菜单"));
+                                observed_topmost.set(
+                                    !popup.is_null()
+                                        && GetWindow(popup, GW_OWNER) == hwnd
+                                        && GetWindowLongW(popup, GWL_EXSTYLE) as u32
+                                            & WS_EX_TOPMOST
+                                            != 0,
+                                );
                                 let mut bounds = RECT::default();
                                 GetClientRect(hwnd, &raw mut bounds);
                                 let scale = GetDpiForWindow(hwnd).max(96) as f32 / 96.0;
@@ -426,6 +468,7 @@ mod tests {
                 false,
                 false,
                 desktop_core::PanelTheme::Dark,
+                Backdrop::Acrylic,
                 None
             ),
             0
@@ -439,6 +482,7 @@ mod tests {
             "toggle click must close without the watchdog"
         );
         assert_eq!(clicks.get(), 0, "owner must not arm another menu open");
+        assert!(topmost.get(), "menu must be above topmost panes");
     }
 
     #[test]
@@ -482,6 +526,7 @@ mod tests {
                         false,
                         false,
                         desktop_core::PanelTheme::Dark,
+                        Backdrop::Mica,
                         None
                     ),
                     0
