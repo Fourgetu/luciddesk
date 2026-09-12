@@ -85,11 +85,24 @@ pub(super) fn scene(
             );
         }
         s.text(Rect::from_xywh(x, 192.0 + extra, w, 28.0), "窗口材质", 1);
-        let bw = (w - 24.0) / 3.0;
+        let solid = if matches!(appearance.1, Backdrop::Solid { .. }) {
+            appearance.1
+        } else {
+            Backdrop::Solid {
+                color: if theme::is_dark(appearance.0) {
+                    0x181b20
+                } else {
+                    0xf5f6f8
+                },
+                opacity: 0.85,
+            }
+        };
+        let bw = (w - 36.0) / 4.0;
         for (j, (name, value)) in [
             ("亚克力", Backdrop::Acrylic),
             ("Mica", Backdrop::Mica),
             ("Mica Alt", Backdrop::MicaAlt),
+            ("纯色", solid),
         ]
         .iter()
         .enumerate()
@@ -98,7 +111,43 @@ pub(super) fn scene(
                 Rect::from_xywh(x + j as f32 * (bw + 12.0), 228.0 + extra, bw, 128.0),
                 name,
                 Action::Change(Event::Material(*value)),
-                appearance.1 == *value,
+                appearance.1.kind() == value.kind(),
+            );
+        }
+        if let Backdrop::Solid { color, opacity } = appearance.1 {
+            let y = 366.0 + extra;
+            s.button(
+                Rect::from_xywh(x, y, 112.0, 30.0),
+                &format!("#{color:06X}"),
+                Action::StyleInput(false),
+                false,
+            );
+            s.button(
+                Rect::from_xywh(x + 124.0, y, 100.0, 30.0),
+                "选择颜色",
+                Action::SolidColor,
+                false,
+            );
+            s.button(
+                Rect::from_xywh(x + w - 100.0, y, 100.0, 30.0),
+                "恢复默认",
+                Action::SolidReset,
+                false,
+            );
+            let value = (opacity * 100.0).round() as u8;
+            s.text(Rect::from_xywh(x, y + 40.0, 100.0, 30.0), "不透明度", 0);
+            s.controls.push(Control {
+                bounds: Rect::from_xywh(x + 106.0, y + 40.0, w - 196.0, 30.0),
+                label: String::new(),
+                action: Action::Opacity(value),
+                selected: false,
+                toggle: false,
+            });
+            s.button(
+                Rect::from_xywh(x + w - 78.0, y + 40.0, 78.0, 30.0),
+                &format!("{value}%"),
+                Action::StyleInput(true),
+                false,
             );
         }
     } else if page == 1 {

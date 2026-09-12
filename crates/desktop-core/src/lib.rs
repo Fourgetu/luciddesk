@@ -7,6 +7,7 @@ use std::path::PathBuf;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Backdrop {
     Translucent { opacity: f32 },
+    Solid { color: u32, opacity: f32 },
     Mica,
     MicaAlt,
     Acrylic,
@@ -710,6 +711,7 @@ impl Backdrop {
     pub const fn kind(self) -> BackdropKind {
         match self {
             Self::Translucent { .. } => BackdropKind::Translucent,
+            Self::Solid { .. } => BackdropKind::Solid,
             Self::Mica => BackdropKind::Mica,
             Self::MicaAlt => BackdropKind::MicaAlt,
             Self::Acrylic => BackdropKind::Acrylic,
@@ -734,6 +736,7 @@ pub enum BackdropKind {
     MicaAlt,
     Acrylic,
     Translucent,
+    Solid,
 }
 
 impl BackdropKind {
@@ -744,6 +747,7 @@ impl BackdropKind {
             Self::MicaAlt => "Mica Alt",
             Self::Acrylic => "Desktop Acrylic",
             Self::Translucent => "Translucent",
+            Self::Solid => "Solid",
         }
     }
 }

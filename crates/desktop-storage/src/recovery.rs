@@ -91,11 +91,11 @@ mod tests {
         );
         assert_eq!(
             store.preference("schema_version").unwrap().as_deref(),
-            Some("10")
+            Some("11")
         );
         drop(store);
         let prefix = format!(
-            "{}.before-v10-",
+            "{}.before-v11-",
             path.file_stem().unwrap().to_string_lossy()
         );
         let backup = std::fs::read_dir(path.parent().unwrap())
@@ -180,6 +180,36 @@ mod tests {
         std::fs::remove_file(path).unwrap();
     }
     #[test]
+    fn restore_v10_backup_migrates_copy_without_modifying_source() {
+        let path = temp("v10-solid");
+        let mut source = WorkspaceStore::open_in_memory().unwrap();
+        let mut workspace = desktop_core::Workspace::new();
+        workspace
+            .add_panel(desktop_core::Panel::new(
+                desktop_core::PanelId::new(7),
+                "Keep",
+                desktop_core::RectDip::new(20.0, 40.0, 300.0, 200.0),
+            ))
+            .unwrap();
+        source.save_workspace(&workspace).unwrap();
+        source.connection.execute_batch("ALTER TABLE panels DROP COLUMN color; UPDATE metadata SET value='10' WHERE key='schema_version'").unwrap();
+        source.export_backup(&path).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        let mut restored = WorkspaceStore::open_in_memory().unwrap();
+        restored.restore_backup(&path).unwrap();
+        assert_eq!(
+            restored.load_workspace().unwrap().panels(),
+            workspace.panels()
+        );
+        assert_eq!(
+            restored.preference("schema_version").unwrap().as_deref(),
+            Some("11")
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn invalid_restore_does_not_change_live_configuration_or_source() {
         let path = temp("invalid");
         std::fs::write(&path, b"not a SQLite database").unwrap();
@@ -221,13 +251,13 @@ mod tests {
         {
             let store = WorkspaceStore::open(&path).unwrap();
             store.save_preference("sentinel", "v9 data").unwrap();
-            store.connection.execute_batch("DROP TABLE monitor_layouts; UPDATE metadata SET value='9' WHERE key='schema_version'").unwrap();
+            store.connection.execute_batch("ALTER TABLE panels DROP COLUMN color; DROP TABLE monitor_layouts; UPDATE metadata SET value='9' WHERE key='schema_version'").unwrap();
         }
         {
             let store = WorkspaceStore::open(&path).unwrap();
             assert_eq!(
                 store.preference("schema_version").unwrap().as_deref(),
-                Some("10")
+                Some("11")
             );
             assert_eq!(
                 store.preference("sentinel").unwrap().as_deref(),
@@ -236,7 +266,7 @@ mod tests {
             assert!(store.monitor_layout("unknown").unwrap().is_empty());
         }
         let prefix = format!(
-            "{}.before-v10-",
+            "{}.before-v11-",
             path.file_stem().unwrap().to_string_lossy()
         );
         let backups: Vec<_> = std::fs::read_dir(path.parent().unwrap())

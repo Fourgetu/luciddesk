@@ -48,6 +48,10 @@ enum Action {
     Next,
     Change(Event),
     Radius(u8),
+    Opacity(u8),
+    SolidColor,
+    SolidReset,
+    StyleInput(bool),
     PeekEnable,
     PeekBrowse,
     PeekDetect,
@@ -77,6 +81,66 @@ fn radius_from_pointer(bounds: Rect, x: f32) -> u8 {
     let progress =
         ((x - bounds.left - 8.0) / (bounds.right - bounds.left - 16.0).max(1.0)).clamp(0.0, 1.0);
     (progress * f32::from(desktop_core::PaneOptions::MAX_CORNER_RADIUS)).round() as u8
+}
+
+fn solid_style(store: &desktop_storage::WorkspaceStore, dark: bool) -> Backdrop {
+    if let Ok(Some(value)) = store.preference("solid_style") {
+        if let Some((color, opacity)) = value.split_once('|') {
+            if let (Ok(color), Ok(opacity)) = (color.parse::<u32>(), opacity.parse::<f32>()) {
+                if color <= 0xffffff && opacity.is_finite() && (0.0..=1.0).contains(&opacity) {
+                    return Backdrop::Solid { color, opacity };
+                }
+            }
+        }
+    }
+    Backdrop::Solid {
+        color: if dark { 0x181b20 } else { 0xf5f6f8 },
+        opacity: 0.85,
+    }
+}
+
+fn edited_solid(backdrop: Backdrop, percentage: bool, text: &str) -> Option<Backdrop> {
+    let Backdrop::Solid {
+        mut color,
+        mut opacity,
+    } = backdrop
+    else {
+        return None;
+    };
+    if percentage {
+        let value = text.trim().trim_end_matches('%').parse::<u8>().ok()?;
+        if value > 100 {
+            return None;
+        }
+        opacity = f32::from(value) / 100.0;
+    } else {
+        let text = text.trim();
+        let text = text.strip_prefix('#').unwrap_or(text);
+        if text.len() != 6 || !text.is_ascii() {
+            return None;
+        }
+        color = u32::from_str_radix(text, 16).ok()?;
+    }
+    Some(Backdrop::Solid { color, opacity })
+}
+
+fn choose_solid_color(hwnd: windows_sys::Win32::Foundation::HWND, color: u32) -> Option<u32> {
+    use windows_sys::Win32::UI::Controls::Dialogs::*;
+    let swap = |v: u32| ((v & 255) << 16) | (v & 0xff00) | (v >> 16);
+    let mut custom = [0xffffffu32; 16];
+    let mut dialog = CHOOSECOLORW {
+        lStructSize: size_of::<CHOOSECOLORW>() as u32,
+        hwndOwner: hwnd,
+        rgbResult: swap(color),
+        lpCustColors: custom.as_mut_ptr(),
+        Flags: CC_RGBINIT | CC_FULLOPEN,
+        ..Default::default()
+    };
+    if unsafe { ChooseColorW(&raw mut dialog) } != 0 {
+        Some(swap(dialog.rgbResult))
+    } else {
+        None
+    }
 }
 
 fn contains(r: &Rect, x: f32, y: f32) -> bool {
@@ -399,12 +463,17 @@ impl Painter {
                     t.draw_rounded_rect(&rr, &border, 1.0);
                 }
                 for (i, c) in s.controls.iter().enumerate() {
-                    if let Action::Radius(value) = c.action {
+                    if let Action::Radius(value) | Action::Opacity(value) = c.action {
                         let r = c.bounds;
                         let cy = (r.top + r.bottom) / 2.0;
                         let left = r.left + 8.0;
                         let right = r.right - 8.0;
-                        let cx = left + (right - left) * f32::from(value) / 24.0;
+                        let max = if matches!(c.action, Action::Opacity(_)) {
+                            100.0
+                        } else {
+                            24.0
+                        };
+                        let cx = left + (right - left) * f32::from(value) / max;
                         let rail = RoundedRect {
                             rect: Rect::from_xywh(left, cy - 2.0, right - left, 4.0),
                             radius_x: 2.0,
@@ -537,6 +606,7 @@ impl Painter {
                         let tint = match c.action {
                             Action::Change(Event::Material(Backdrop::Acrylic)) => 0x5e819d,
                             Action::Change(Event::Material(Backdrop::Mica)) => 0x646b85,
+                            Action::Change(Event::Material(Backdrop::Solid { color, .. })) => color,
                             _ => 0x7e718d,
                         };
                         let swatch = canvas_result(t.create_solid_brush(color(tint)))?;
@@ -750,6 +820,8 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
     let mut keyboard_focus = false;
     let mut pressed = None;
     let mut radius_original = None;
+    let mut material_original = None;
+    let mut style_input: Option<(bool, String)> = None;
     let mut cached_scene = None;
     let mut scene_key = None;
     let mut desktop_status = String::new();
@@ -770,6 +842,30 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
             let Some(state) = weak.upgrade() else {
                 return Some(0);
             };
+            if let Some((percentage, text)) = &mut style_input {
+                if msg == WM_CHAR {
+                    if wp == 8 { text.pop(); }
+                    else if let Some(c) = char::from_u32(wp as u32) {
+                        if (c.is_ascii_hexdigit() || c == '#' || c == '%') && text.len() < 8 { text.push(c); }
+                    }
+                    scene_key = None;
+                    unsafe { InvalidateRect(hwnd, std::ptr::null(), 0); }
+                    return Some(0);
+                }
+                if msg == WM_KEYDOWN {
+                    if wp == VK_ESCAPE as usize { style_input = None; }
+                    else if wp == VK_RETURN as usize {
+                        if let Some(value) = edited_solid(appearance.1, *percentage, text) {
+                            if let Err(error) = handle(&state, selected, Event::Material(value)) { window::error(&error); }
+                            style_input = None;
+                        } else { window::error("请输入 6 位 HEX 颜色或 0–100 的百分比。"); }
+                    } else { return Some(0); }
+                    scene_key = None;
+                    unsafe { InvalidateRect(hwnd, std::ptr::null(), 0); }
+                    return Some(0);
+                }
+                if msg == WM_LBUTTONDOWN { style_input = None; scene_key = None; }
+            }
             if msg == PREPARE_REVEAL {
                 let ready = surface.as_ref().and_then(|s| s.commit_ready().ok())
                     .unwrap_or_else(|| Box::new(|| true));
@@ -830,6 +926,9 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     }
                     return Some(0);
                 };
+                if let Some(original) = material_original.take() {
+                    if let Err(error) = events::commit_material(&mut owner, original) { window::error(&error); }
+                }
                 if let Some(original) = radius_original.take() {
                     if let Err(error) = events::commit_radius(&mut owner, original) {
                         window::error(&error);
@@ -1009,10 +1108,16 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     if (recording_peek && matches!(control.action, Action::PeekShortcut)) || (recording_search && matches!(control.action, Action::SearchShortcut)) { control.label = "按下快捷键…".into(); }
                 }
             }
+            if let Some((percentage, text)) = &style_input {
+                for control in &mut cached_scene.as_mut().unwrap().controls {
+                    if matches!(control.action, Action::StyleInput(p) if p == *percentage) { control.label = format!("{text}|"); }
+                }
+            }
             let scene = cached_scene.as_ref().unwrap();
             let interaction_before = (hover, focus, keyboard_focus, pressed);
             let mut activate = None;
             let mut radius_change = None;
+            let mut opacity_change = None;
             match msg {
                 WM_PAINT => {
                     let now = std::time::Instant::now();
@@ -1132,6 +1237,9 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         }
                     }
                     if let Some(control) = pressed.and_then(|i| scene.controls.get(i)) {
+                        if matches!(control.action, Action::Opacity(_)) {
+                            opacity_change = Some((((x - control.bounds.left - 8.0) / (control.bounds.right - control.bounds.left - 16.0).max(1.0)).clamp(0.0, 1.0) * 100.0).round() as u8);
+                        }
                         if matches!(control.action, Action::Radius(_)) {
                             radius_change = Some(radius_from_pointer(control.bounds, x));
                         }
@@ -1186,6 +1294,12 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         return Some(0);
                     }
                     if let Some(control) = focus.and_then(|i| scene.controls.get(i)) {
+                        if let Action::Opacity(value) = control.action {
+                            opacity_change = match wp as u16 {
+                                VK_LEFT => Some(value.saturating_sub(1)), VK_RIGHT => Some((value + 1).min(100)),
+                                VK_HOME => Some(0), VK_END => Some(100), _ => None,
+                            };
+                        }
                         if let Action::Radius(value) = control.action {
                             radius_change = match wp as u16 {
                                 VK_LEFT => Some(value.saturating_sub(1)),
@@ -1219,6 +1333,22 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 }
                 _ => return None,
             }
+            if let Some(value) = opacity_change.filter(|_| available) {
+                if let Backdrop::Solid { color, .. } = appearance.1 {
+                    let backdrop = Backdrop::Solid { color, opacity: f32::from(value) / 100.0 };
+                    if msg == WM_KEYDOWN {
+                        if let Err(error) = handle(&state, selected, Event::Material(backdrop)) { window::error(&error); }
+                    } else {
+                        material_original.get_or_insert(appearance.1);
+                        events::preview_material(&mut state.borrow_mut(), backdrop);
+                    }
+                }
+            }
+            if available && matches!(msg, WM_LBUTTONUP | WM_CAPTURECHANGED | WM_CANCELMODE) {
+                if let Some(original) = material_original.take() {
+                    if let Err(error) = events::commit_material(&mut state.borrow_mut(), original) { window::error(&error); }
+                }
+            }
             if let Some(radius) = radius_change.filter(|_| available) {
                 if msg == WM_KEYDOWN {
                     if let Err(error) = handle(&state, selected, Event::SetCornerRadius(radius)) {
@@ -1242,6 +1372,25 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 .and_then(|i| scene.controls.get(i))
             {
                 match &c.action {
+                    Action::StyleInput(percentage) => {
+                        style_input = Some((*percentage, String::new()));
+                        scene_key = None;
+                    }
+                    Action::SolidColor => {
+                        if let Backdrop::Solid { color, opacity } = appearance.1 {
+                            if let Some(color) = choose_solid_color(hwnd, color) {
+                                if let Err(error) = handle(&state, selected, Event::Material(Backdrop::Solid { color, opacity })) { window::error(&error); }
+                            }
+                        }
+                    }
+                    Action::SolidReset => {
+                        let value = Backdrop::Solid { color: if dark { 0x181b20 } else { 0xf5f6f8 }, opacity: 0.85 };
+                        if let Err(error) = handle(&state, selected, Event::Material(value)) { window::error(&error); }
+                    }
+                    Action::Change(Event::Material(Backdrop::Solid { .. })) => {
+                        let value = solid_style(&state.borrow().store, dark);
+                        if let Err(error) = handle(&state, selected, Event::Material(value)) { window::error(&error); }
+                    }
                     Action::ProjectHome => {
                         if let Err(error) = desktop_shell::open_shell_identity(hwnd as isize, &desktop_core::ShellIdentity::Namespace {
                             parsing_name: "https://git.bbkingdom.fun:30443/yuchen95/LucidPane".into(),
@@ -1310,7 +1459,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     Action::Next => {
                         selected = panels[(at + 1) % panels.len()].id();
                     }
-                    Action::Radius(_) => {}
+                    Action::Radius(_) | Action::Opacity(_) => {}
                     Action::Change(event) => {
                         if let Err(e) = handle(&state, selected, event.clone()) {
                             window::error(&e);
@@ -1386,6 +1535,62 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn solid_controls_fit_minimum_settings_size() {
+        let s = with_titlebar(
+            scene(
+                800.0,
+                480.0 - TITLE_HEIGHT,
+                0,
+                None,
+                0,
+                false,
+                (
+                    PanelTheme::Dark,
+                    Backdrop::Solid {
+                        color: 0x24364b,
+                        opacity: 0.5,
+                    },
+                ),
+                Default::default(),
+            ),
+            800.0,
+            false,
+        );
+        for control in &s.controls {
+            assert!(control.bounds.right <= 800.0 && control.bounds.bottom <= 480.0);
+        }
+        assert!(
+            s.controls
+                .iter()
+                .any(|c| matches!(c.action, Action::Opacity(50)))
+        );
+    }
+
+    #[test]
+    fn solid_inputs_validate_color_and_opacity_without_changing_other_channels() {
+        let solid = Backdrop::Solid {
+            color: 0x123456,
+            opacity: 0.85,
+        };
+        assert_eq!(
+            edited_solid(solid, false, "#A1b2C3"),
+            Some(Backdrop::Solid {
+                color: 0xa1b2c3,
+                opacity: 0.85
+            })
+        );
+        for value in ["0", "50%", "100"] {
+            assert!(edited_solid(solid, true, value).is_some());
+        }
+        for value in ["101", "-1", "NaN", ""] {
+            assert!(edited_solid(solid, true, value).is_none());
+        }
+        for value in ["123", "GG0000", "1234567"] {
+            assert!(edited_solid(solid, false, value).is_none());
+        }
+    }
+
     #[test]
     fn switch_thumb_stays_centered_with_equal_end_insets() {
         for (width, height) in [(42.0, 22.0), (48.0, 24.0)] {
@@ -1477,7 +1682,17 @@ mod tests {
                                 Some(&panel),
                                 2,
                                 true,
-                                (PanelTheme::System, Backdrop::Mica),
+                                (
+                                    PanelTheme::System,
+                                    if page == 0 {
+                                        Backdrop::Solid {
+                                            color: 0x24364b,
+                                            opacity: 0.85,
+                                        }
+                                    } else {
+                                        Backdrop::Mica
+                                    },
+                                ),
                                 desktop_core::PaneOptions::default(),
                             ),
                             940.0,

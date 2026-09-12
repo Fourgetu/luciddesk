@@ -188,13 +188,15 @@ impl Surface {
         }
         let kind = match material {
             Backdrop::Mica | Backdrop::MicaAlt => DWMSBT_NONE,
-            Backdrop::Acrylic | Backdrop::Translucent { .. } => DWMSBT_NONE,
+            Backdrop::Acrylic | Backdrop::Translucent { .. } | Backdrop::Solid { .. } => {
+                DWMSBT_NONE
+            }
         };
         self.native = unsafe { set_attribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &kind).is_ok() }
             && kind != DWMSBT_NONE;
         if matches!(
             material,
-            Backdrop::Acrylic | Backdrop::Mica | Backdrop::MicaAlt
+            Backdrop::Acrylic | Backdrop::Mica | Backdrop::MicaAlt | Backdrop::Solid { .. }
         ) {
             if self.acrylic.is_none() {
                 self.acrylic =
@@ -403,6 +405,18 @@ mod animation_tests {
                 Backdrop::Acrylic,
                 Backdrop::Mica,
                 Backdrop::MicaAlt,
+                Backdrop::Solid {
+                    color: 0x123456,
+                    opacity: 0.0,
+                },
+                Backdrop::Solid {
+                    color: 0x123456,
+                    opacity: 0.5,
+                },
+                Backdrop::Solid {
+                    color: 0x123456,
+                    opacity: 1.0,
+                },
                 Backdrop::Translucent { opacity: 0.8 },
                 Backdrop::Acrylic,
             ] {
@@ -412,6 +426,13 @@ mod animation_tests {
                     !matches!(material, Backdrop::Translucent { .. })
                 );
                 surface.acrylic.as_ref().unwrap().assert_content_visible();
+                if let Backdrop::Solid { color, opacity } = material {
+                    surface
+                        .acrylic
+                        .as_ref()
+                        .unwrap()
+                        .assert_solid_color(color, opacity);
+                }
                 surface.resize(320, 200).unwrap();
             }
         }

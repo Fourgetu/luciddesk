@@ -1013,3 +1013,41 @@ pub(super) fn commit_radius(state: &mut PaneApp, original: u8) -> Result<(), Str
     }
     Ok(())
 }
+
+/// Update only memory and visuals during a continuous material gesture.
+pub(super) fn preview_material(state: &mut PaneApp, backdrop: desktop_core::Backdrop) {
+    if state
+        .workspace
+        .appearance()
+        .is_some_and(|(_, old)| old == backdrop)
+    {
+        return;
+    }
+    let theme = state
+        .workspace
+        .appearance()
+        .map_or(desktop_core::PanelTheme::System, |v| v.0);
+    state.workspace.set_appearance(theme, backdrop);
+    for view in &state.views {
+        view.model.borrow_mut().backdrop = backdrop;
+        unsafe {
+            InvalidateRect(view.window.hwnd().cast(), std::ptr::null(), 0);
+        }
+    }
+    if let Some(window) = &state.settings {
+        unsafe {
+            InvalidateRect(window.hwnd().cast(), std::ptr::null(), 0);
+        }
+    }
+}
+
+pub(super) fn commit_material(
+    state: &mut PaneApp,
+    original: desktop_core::Backdrop,
+) -> Result<(), String> {
+    if let Err(error) = save(state) {
+        preview_material(state, original);
+        return Err(error);
+    }
+    Ok(())
+}

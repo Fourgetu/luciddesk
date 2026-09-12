@@ -79,3 +79,14 @@ implementation has finished sampling. Opening-frame captures are required when
 changing this sequence. No opaque cover, separate material fade, CPU readback or persistent
 render loop is used. Plain-translucent mode hides only the material visuals so
 content sharing the tree stays visible.
+
+
+### Solid material
+
+`Backdrop::Solid` carries RGB and a background-only opacity. It uses a
+`CompositionColorBrush` with a transparent tint visual, without creating a host
+backdrop or wallpaper brush for this material. Existing content visuals and
+corner clips are reused; content opacity stays independent. Slider gestures
+update visuals in memory and commit the workspace once on release. The storage
+schema v11 adds a nullable color column, preserving existing v8-v10 material
+values on migration and retaining the last solid style in metadata.

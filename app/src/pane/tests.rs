@@ -1288,6 +1288,80 @@ fn corner_slider_drags_to_both_limits_and_saves() {
 }
 
 #[test]
+fn solid_settings_edit_preview_save_and_remember_style() {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_RETURN;
+    use windows_sys::Win32::UI::WindowsAndMessaging::*;
+    let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let state = Rc::new(RefCell::new(test_state()));
+    settings::show(&state, PanelId::new(1)).unwrap();
+    let hwnd = state.borrow().settings.as_ref().unwrap().hwnd().cast();
+    let scale = unsafe { GetDpiForWindow(hwnd) }.max(96) as f32 / 96.0;
+    let click = |x: f32, y: f32| unsafe {
+        let point = (((y * scale) as isize) << 16) | ((x * scale) as isize & 0xffff);
+        SendMessageW(hwnd, WM_PAINT, 0, 0);
+        SendMessageW(hwnd, WM_LBUTTONDOWN, 1, point);
+        SendMessageW(hwnd, WM_LBUTTONUP, 0, point);
+        SendMessageW(hwnd, WM_PAINT, 0, 0);
+    };
+    let enter = |text: &str| unsafe {
+        for c in text.chars() {
+            SendMessageW(hwnd, WM_CHAR, c as usize, 0);
+        }
+        SendMessageW(hwnd, WM_KEYDOWN, VK_RETURN as usize, 0);
+        SendMessageW(hwnd, WM_PAINT, 0, 0);
+    };
+    click(815.0, 315.0); // Fourth material card, including custom titlebar.
+    assert!(matches!(
+        state.borrow().workspace.appearance().unwrap().1,
+        desktop_core::Backdrop::Solid { .. }
+    ));
+    click(290.0, 410.0);
+    enter("#1234AB");
+    click(840.0, 450.0);
+    enter("50");
+    let solid = desktop_core::Backdrop::Solid {
+        color: 0x1234ab,
+        opacity: 0.5,
+    };
+    assert_eq!(
+        state
+            .borrow()
+            .store
+            .load_workspace()
+            .unwrap()
+            .appearance()
+            .unwrap()
+            .1,
+        solid
+    );
+    click(455.0, 315.0); // Mica
+    click(815.0, 315.0);
+    assert_eq!(state.borrow().workspace.appearance().unwrap().1, solid);
+    let before = state.borrow().store.change_count();
+    let point = ((450.0 * scale) as isize) << 16 | ((480.0 * scale) as isize & 0xffff);
+    unsafe {
+        SendMessageW(hwnd, WM_LBUTTONDOWN, 1, point);
+        SendMessageW(hwnd, WM_MOUSEMOVE, 1, point + (60.0 * scale) as isize);
+    }
+    assert_eq!(
+        state.borrow().store.change_count(),
+        before,
+        "drag must not write database"
+    );
+    unsafe {
+        SendMessageW(hwnd, WM_LBUTTONUP, 0, point);
+    }
+    assert!(state.borrow().store.change_count() > before);
+    assert_eq!(
+        state.borrow().store.load_workspace().unwrap().appearance(),
+        state.borrow().workspace.appearance()
+    );
+    unsafe {
+        SendMessageW(hwnd, WM_CLOSE, 0, 0);
+    }
+}
+
+#[test]
 fn settings_window_applies_clicks_and_closes_without_exiting() {
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();

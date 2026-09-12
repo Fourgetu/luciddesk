@@ -44,7 +44,9 @@ pub struct Acrylic {
 impl Acrylic {
     #[allow(dead_code)] // Used by the standalone backdrop probe.
     pub fn new(hwnd: HWND) -> Result<Self> {
-        Self::new_with_opacity(hwnd, 1.0)
+        let material = Self::new_with_opacity(hwnd, 1.0)?;
+        material.material(desktop_core::Backdrop::Acrylic, true)?;
+        Ok(material)
     }
 
     pub fn new_with_opacity(hwnd: HWND, initial_opacity: f32) -> Result<Self> {
@@ -95,7 +97,7 @@ impl Acrylic {
         root.SetRelativeSizeAdjustment(Vector2 { X: 1.0, Y: 1.0 })?;
         let backdrop = compositor.CreateSpriteVisual()?;
         backdrop.SetRelativeSizeAdjustment(Vector2 { X: 1.0, Y: 1.0 })?;
-        backdrop.SetBrush(&compositor.CreateHostBackdropBrush()?)?;
+        backdrop.SetBrush(&compositor.CreateColorBrush()?)?;
         let tint = compositor.CreateSpriteVisual()?;
         tint.SetRelativeSizeAdjustment(Vector2 { X: 1.0, Y: 1.0 })?;
         tint.SetBrush(&compositor.CreateColorBrushWithColor(Color {
@@ -153,6 +155,38 @@ impl Acrylic {
 
     pub fn material(&self, material: desktop_core::Backdrop, dark: bool) -> Result<()> {
         let compositor = &self._runtime.compositor;
+        if let desktop_core::Backdrop::Solid { color, opacity } = material {
+            let set_color =
+                |visual: &windows::UI::Composition::SpriteVisual, color: Color| -> Result<()> {
+                    if let Ok(brush) = visual
+                        .Brush()?
+                        .cast::<windows::UI::Composition::CompositionColorBrush>()
+                    {
+                        brush.SetColor(color)
+                    } else {
+                        visual.SetBrush(&compositor.CreateColorBrushWithColor(color)?)
+                    }
+                };
+            set_color(
+                &self.backdrop,
+                Color {
+                    A: (opacity.clamp(0.0, 1.0) * 255.0).round() as u8,
+                    R: (color >> 16) as u8,
+                    G: (color >> 8) as u8,
+                    B: color as u8,
+                },
+            )?;
+            set_color(
+                &self.tint,
+                Color {
+                    A: 0,
+                    R: 0,
+                    G: 0,
+                    B: 0,
+                },
+            )?;
+            return self.visible(true);
+        }
         let wallpaper = matches!(
             material,
             desktop_core::Backdrop::Mica | desktop_core::Backdrop::MicaAlt
@@ -222,6 +256,22 @@ impl Acrylic {
         })?;
         self.root
             .StartAnimation(&windows::core::HSTRING::from("Opacity"), &animation)
+    }
+
+    #[cfg(test)]
+    pub fn assert_solid_color(&self, color: u32, opacity: f32) {
+        let brush: windows::UI::Composition::CompositionColorBrush =
+            self.backdrop.Brush().unwrap().cast().unwrap();
+        let actual = brush.Color().unwrap();
+        assert_eq!(
+            (actual.R, actual.G, actual.B),
+            ((color >> 16) as u8, (color >> 8) as u8, color as u8)
+        );
+        assert_eq!(actual.A, (opacity * 255.0).round() as u8);
+        let tint: windows::UI::Composition::CompositionColorBrush =
+            self.tint.Brush().unwrap().cast().unwrap();
+        assert_eq!(tint.Color().unwrap().A, 0);
+        assert_eq!(self.content.as_ref().unwrap().Opacity().unwrap(), 1.0);
     }
 
     #[cfg(test)]

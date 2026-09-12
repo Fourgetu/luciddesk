@@ -7,7 +7,7 @@ use std::error::Error;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-const SCHEMA_VERSION: i64 = 10;
+const SCHEMA_VERSION: i64 = 11;
 mod recovery;
 
 pub struct WorkspaceStore {
@@ -53,8 +53,8 @@ impl WorkspaceStore {
             )
             .optional()
             .unwrap_or(None);
-        if matches!(version.as_deref(), Some("8" | "9")) {
-            let backup = recovery::unique_backup_path(path, "before-v10");
+        if matches!(version.as_deref(), Some("8" | "9" | "10")) {
+            let backup = recovery::unique_backup_path(path, "before-v11");
             connection.backup(rusqlite::MAIN_DB, backup, None)?;
         }
         Self::from_connection(connection)
@@ -84,7 +84,7 @@ impl WorkspaceStore {
     pub fn load_workspace(&self) -> Result<Workspace, StoreError> {
         let mut statement = self.connection.prepare(
             "SELECT id, title, x, y, width, height, \
-             collapsed, locked, backdrop_kind, opacity FROM panels ORDER BY id",
+             collapsed, locked, backdrop_kind, opacity, color FROM panels ORDER BY id",
         )?;
         let rows = statement.query_map([], |row| {
             let raw_id: i64 = row.get(0)?;
@@ -98,6 +98,7 @@ impl WorkspaceStore {
                 locked: row.get(7)?,
                 backdrop_kind,
                 opacity,
+                color: row.get(10)?,
             })
         })?;
 
@@ -170,7 +171,7 @@ impl WorkspaceStore {
             .optional()?;
         if let Some(value) = appearance {
             let parts: Vec<_> = value.split('|').collect();
-            if parts.len() != 3 {
+            if parts.len() != 3 && parts.len() != 4 {
                 return Err(StoreError::InvalidData("invalid appearance".into()));
             }
             let theme = match parts[0] {
@@ -178,16 +179,16 @@ impl WorkspaceStore {
                 "dark" => desktop_core::PanelTheme::Dark,
                 _ => desktop_core::PanelTheme::System,
             };
-            let backdrop = match parts[1] {
-                "mica" => Backdrop::Mica,
-                "mica_alt" => Backdrop::MicaAlt,
-                "acrylic" => Backdrop::Acrylic,
-                _ => Backdrop::Translucent {
-                    opacity: parts[2].parse().map_err(|_| {
-                        StoreError::InvalidData("invalid appearance opacity".into())
-                    })?,
-                },
-            };
+            let opacity = parts[2]
+                .parse()
+                .map_err(|_| StoreError::InvalidData("invalid opacity".into()))?;
+            let color = parts
+                .get(3)
+                .filter(|v| !v.is_empty())
+                .map(|v| v.parse::<u32>())
+                .transpose()
+                .map_err(|_| StoreError::InvalidData("invalid color".into()))?;
+            let backdrop = decode_backdrop(parts[1], Some(opacity), color)?;
             workspace.set_appearance_defaults(theme, backdrop);
         }
         let options = self
@@ -287,10 +288,22 @@ impl WorkspaceStore {
                 desktop_core::PanelTheme::Light => "light",
                 desktop_core::PanelTheme::Dark => "dark",
             };
-            let (kind, opacity) = encode_backdrop(backdrop);
+            let (kind, opacity, color) = encode_backdrop(backdrop);
+            decode_backdrop(kind, opacity, color)?;
+            if let Backdrop::Solid { color, opacity } = backdrop {
+                transaction.execute(
+                    "INSERT OR REPLACE INTO metadata(key,value) VALUES ('solid_style',?1)",
+                    [format!("{color}|{opacity}")],
+                )?;
+            }
+
             transaction.execute(
                 "INSERT INTO metadata(key,value) VALUES ('appearance',?1)",
-                [format!("{theme}|{kind}|{}", opacity.unwrap_or(1.0))],
+                [format!(
+                    "{theme}|{kind}|{}|{}",
+                    opacity.unwrap_or(1.0),
+                    color.map(|v| v.to_string()).unwrap_or_default()
+                )],
             )?;
         }
         transaction.execute("DELETE FROM desktop_items", [])?;
@@ -322,12 +335,15 @@ fn initialize_schema(connection: &Connection) -> Result<(), StoreError> {
                 |row| row.get(0),
             )
             .optional()?;
-        if matches!(version.as_deref(), Some("8" | "9")) {
+        if matches!(version.as_deref(), Some("8" | "9" | "10")) {
             let transaction = connection.unchecked_transaction()?;
             if version.as_deref() == Some("8") {
                 recovery::migrate_v8(&transaction)?;
             }
-            transaction.execute_batch(recovery::LAYOUT_SCHEMA)?;
+            if version.as_deref() != Some("10") {
+                transaction.execute_batch(recovery::LAYOUT_SCHEMA)?;
+            }
+            transaction.execute_batch("ALTER TABLE panels ADD COLUMN color INTEGER;")?;
             transaction.execute(
                 "UPDATE metadata SET value=?1 WHERE key='schema_version'",
                 [SCHEMA_VERSION.to_string()],
@@ -337,7 +353,7 @@ fn initialize_schema(connection: &Connection) -> Result<(), StoreError> {
         }
         if version.as_deref() != Some(SCHEMA_VERSION.to_string().as_str()) {
             return Err(StoreError::InvalidData(format!(
-                "配置版本 {} 暂不支持；当前支持 v8、v9 升级至 v{SCHEMA_VERSION}。原配置未修改，请保留数据库用于迁移",
+                "配置版本 {} 暂不支持；当前支持 v8、v9、v10 升级至 v{SCHEMA_VERSION}。原配置未修改，请保留数据库用于迁移",
                 version.as_deref().unwrap_or("missing"),
             )));
         }
@@ -359,7 +375,8 @@ fn initialize_schema(connection: &Connection) -> Result<(), StoreError> {
              collapsed INTEGER NOT NULL,
              locked INTEGER NOT NULL,
              backdrop_kind TEXT NOT NULL,
-             opacity REAL
+             opacity REAL,
+             color INTEGER
          );
          CREATE TABLE IF NOT EXISTS panel_theme (
              panel_id INTEGER PRIMARY KEY REFERENCES panels(id) ON DELETE CASCADE,
@@ -402,13 +419,14 @@ fn initialize_schema(connection: &Connection) -> Result<(), StoreError> {
 fn insert_panel(transaction: &Transaction<'_>, panel: &Panel) -> Result<(), StoreError> {
     let id = i64::try_from(panel.id().get())
         .map_err(|_| StoreError::InvalidData("panel id exceeds SQLite range".into()))?;
-    let (backdrop_kind, opacity) = encode_backdrop(panel.backdrop());
+    let (backdrop_kind, opacity, color) = encode_backdrop(panel.backdrop());
+    decode_backdrop(backdrop_kind, opacity, color)?;
     let rect = panel.rect();
     transaction.execute(
         "INSERT INTO panels(
              id, title, x, y, width, height,
-             collapsed, locked, backdrop_kind, opacity
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+             collapsed, locked, backdrop_kind, opacity, color
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         params![
             id,
             panel.title(),
@@ -420,6 +438,7 @@ fn insert_panel(transaction: &Transaction<'_>, panel: &Panel) -> Result<(), Stor
             panel.locked(),
             backdrop_kind,
             opacity,
+            color,
         ],
     )?;
     transaction.execute(
@@ -624,13 +643,38 @@ fn required<T>(value: Option<T>, label: &str) -> Result<T, StoreError> {
     value.ok_or_else(|| StoreError::InvalidData(format!("missing {label}")))
 }
 
-fn encode_backdrop(backdrop: Backdrop) -> (&'static str, Option<f32>) {
+fn encode_backdrop(backdrop: Backdrop) -> (&'static str, Option<f32>, Option<u32>) {
     match backdrop {
-        Backdrop::Mica => ("mica", None),
-        Backdrop::MicaAlt => ("mica_alt", None),
-        Backdrop::Acrylic => ("acrylic", None),
-        Backdrop::Translucent { opacity } => ("translucent", Some(opacity)),
+        Backdrop::Mica => ("mica", None, None),
+        Backdrop::MicaAlt => ("mica_alt", None, None),
+        Backdrop::Acrylic => ("acrylic", None, None),
+        Backdrop::Translucent { opacity } => ("translucent", Some(opacity), None),
+        Backdrop::Solid { color, opacity } => ("solid", Some(opacity), Some(color)),
     }
+}
+
+fn decode_backdrop(
+    kind: &str,
+    opacity: Option<f32>,
+    color: Option<u32>,
+) -> Result<Backdrop, StoreError> {
+    let opacity = opacity.unwrap_or(0.86);
+    if !opacity.is_finite() || !(0.0..=1.0).contains(&opacity) {
+        return Err(StoreError::InvalidData("invalid backdrop opacity".into()));
+    }
+    Ok(match kind {
+        "mica" => Backdrop::Mica,
+        "mica_alt" => Backdrop::MicaAlt,
+        "acrylic" => Backdrop::Acrylic,
+        "translucent" => Backdrop::Translucent { opacity },
+        "solid" => {
+            let color = color
+                .filter(|v| *v <= 0xffffff)
+                .ok_or_else(|| StoreError::InvalidData("invalid solid color".into()))?;
+            Backdrop::Solid { color, opacity }
+        }
+        _ => return Err(StoreError::InvalidData(format!("unknown backdrop {kind}"))),
+    })
 }
 
 struct PersistedPanel {
@@ -641,21 +685,14 @@ struct PersistedPanel {
     locked: bool,
     backdrop_kind: String,
     opacity: Option<f32>,
+    color: Option<u32>,
 }
 
 impl PersistedPanel {
     fn into_panel(self) -> Result<Panel, StoreError> {
         let id = u64::try_from(self.id)
             .map_err(|_| StoreError::InvalidData("panel id is negative".into()))?;
-        let backdrop = match self.backdrop_kind.as_str() {
-            "mica" => Backdrop::Mica,
-            "mica_alt" => Backdrop::MicaAlt,
-            "acrylic" => Backdrop::Acrylic,
-            "translucent" => Backdrop::Translucent {
-                opacity: self.opacity.unwrap_or(0.86),
-            },
-            kind => return Err(StoreError::InvalidData(format!("unknown backdrop {kind}"))),
-        };
+        let backdrop = decode_backdrop(&self.backdrop_kind, self.opacity, self.color)?;
 
         let mut panel = Panel::new(PanelId::new(id), self.title, self.rect);
         panel.set_collapsed(self.collapsed);
@@ -697,6 +734,74 @@ impl From<rusqlite::Error> for StoreError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn solid_style_round_trips_and_survives_switching_material() {
+        let mut store = WorkspaceStore::open_in_memory().unwrap();
+        let mut workspace = Workspace::new();
+        workspace
+            .add_panel(Panel::new(
+                PanelId::new(1),
+                "Solid",
+                RectDip::new(0.0, 0.0, 300.0, 200.0),
+            ))
+            .unwrap();
+        for opacity in [0.0, 0.5, 1.0] {
+            let solid = Backdrop::Solid {
+                color: 0x1234ab,
+                opacity,
+            };
+            workspace.set_appearance(desktop_core::PanelTheme::Dark, solid);
+            store.save_workspace(&workspace).unwrap();
+            let restored = store.load_workspace().unwrap();
+            assert_eq!(restored.appearance(), workspace.appearance());
+            assert_eq!(restored.panels()[0].backdrop(), solid);
+        }
+        workspace.set_appearance(desktop_core::PanelTheme::Dark, Backdrop::Mica);
+        store.save_workspace(&workspace).unwrap();
+        assert_eq!(
+            store.preference("solid_style").unwrap().as_deref(),
+            Some("1193131|1")
+        );
+        for opacity in [f32::NAN, -0.1, 1.1] {
+            workspace.set_appearance(
+                desktop_core::PanelTheme::Dark,
+                Backdrop::Solid {
+                    color: 0x1234ab,
+                    opacity,
+                },
+            );
+            assert!(store.save_workspace(&workspace).is_err());
+            assert_eq!(
+                store.load_workspace().unwrap().appearance().unwrap().1,
+                Backdrop::Mica
+            );
+        }
+    }
+
+    #[test]
+    fn v10_color_migration_and_old_backup_preserve_layout() {
+        let mut store = WorkspaceStore::open_in_memory().unwrap();
+        let mut workspace = Workspace::new();
+        workspace
+            .add_panel(Panel::new(
+                PanelId::new(3),
+                "Before",
+                RectDip::new(12.0, 24.0, 360.0, 240.0),
+            ))
+            .unwrap();
+        store.save_workspace(&workspace).unwrap();
+        store.connection.execute_batch("ALTER TABLE panels DROP COLUMN color; UPDATE metadata SET value='10' WHERE key='schema_version';").unwrap();
+        let restored = WorkspaceStore::from_connection(store.connection).unwrap();
+        assert_eq!(
+            restored.load_workspace().unwrap().panels(),
+            workspace.panels()
+        );
+        assert_eq!(
+            restored.preference("schema_version").unwrap().as_deref(),
+            Some("11")
+        );
+    }
+
     #[test]
     fn search_panes_round_trip_and_do_not_retain_folder_sources() {
         use desktop_core::{Panel, PanelId, RectDip, Workspace};
@@ -884,7 +989,7 @@ mod tests {
 
     #[test]
     fn rejects_other_schema_versions_without_modifying_data() {
-        for version in ["1", "7", "11"] {
+        for version in ["1", "7", "12"] {
             let connection = Connection::open_in_memory().unwrap();
             connection
                 .execute_batch("CREATE TABLE metadata(key TEXT PRIMARY KEY, value TEXT NOT NULL);")
