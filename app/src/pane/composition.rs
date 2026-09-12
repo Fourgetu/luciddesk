@@ -22,7 +22,7 @@ pub struct Surface {
     #[cfg(test)]
     context: ID3D11DeviceContext,
     drawing: ID2D1DeviceContext,
-    layer: desktop_graphics::Layer,
+    layer: Option<desktop_graphics::Layer>,
     swap: SwapChain,
     material: Option<Backdrop>,
     pub native: bool,
@@ -40,16 +40,32 @@ impl Surface {
         if self.opacity.get() == opacity {
             return Ok(());
         }
-        canvas_result(self.layer.opacity(opacity))?;
+        if let Some(layer) = &self.layer {
+            canvas_result(layer.opacity(opacity))?;
+        }
         if let Some(acrylic) = &self.acrylic {
             acrylic.opacity(opacity)?;
         }
-        canvas_result(self.layer.commit())?;
+        if let Some(layer) = &self.layer {
+            canvas_result(layer.commit())?;
+        }
         self.opacity.set(opacity);
         Ok(())
     }
     pub fn new(hwnd: HWND) -> Result<Self> {
         Self::new_with_opacity(hwnd, 1.0)
+    }
+
+    pub fn commit_ready(&self) -> Result<Box<dyn Fn() -> bool>> {
+        if let Some(acrylic) = &self.acrylic {
+            acrylic.commit_ready()
+        } else {
+            Ok(Box::new(|| true))
+        }
+    }
+
+    pub fn new_settings(hwnd: HWND) -> Result<Self> {
+        Self::create(hwnd, 1.0, gpu_device()?, true)
     }
 
     pub fn new_pane(hwnd: HWND) -> Result<Self> {
@@ -67,6 +83,15 @@ impl Surface {
     }
 
     fn new_with_device(hwnd: HWND, initial_opacity: f32, device: GpuDevice) -> Result<Self> {
+        Self::create(hwnd, initial_opacity, device, false)
+    }
+
+    fn create(
+        hwnd: HWND,
+        initial_opacity: f32,
+        device: GpuDevice,
+        shared_tree: bool,
+    ) -> Result<Self> {
         unsafe {
             let d3d: ID3D11Device = native_interface(device.d3d_device())?;
             #[cfg(test)]
@@ -84,7 +109,23 @@ impl Surface {
                 session.raw().clone()
             };
             let native_swap: IDXGISwapChain1 = native_interface(swap.raw_swap_chain())?;
-            let layer = create_layer(hwnd, &dxgi, &native_swap, initial_opacity)?;
+            let acrylic = if shared_tree {
+                match super::acrylic::Acrylic::new_with_content(hwnd, initial_opacity, &native_swap)
+                {
+                    Ok(material) => Some(material),
+                    Err(error) => {
+                        eprintln!("Shared settings composition unavailable: {error}");
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+            let layer = if acrylic.is_some() {
+                None
+            } else {
+                Some(create_layer(hwnd, &dxgi, &native_swap, initial_opacity)?)
+            };
             let margins = MARGINS {
                 cxLeftWidth: -1,
                 cxRightWidth: -1,
@@ -107,7 +148,7 @@ impl Surface {
                 pane_corner_radius: 7,
                 dark: true,
                 opacity: std::cell::Cell::new(initial_opacity),
-                acrylic: None,
+                acrylic,
                 _device: device,
                 #[cfg(test)]
                 context,
@@ -208,7 +249,10 @@ impl Surface {
                 .UpdateSubresource(&buffer, 0, None, pixels.as_ptr().cast(), width * 4, 0);
         }
         self.end_frame()?;
-        canvas_result(self.layer.commit())
+        if let Some(layer) = &self.layer {
+            canvas_result(layer.commit())?;
+        }
+        Ok(())
     }
 
     /// Canvas owns buffer binding and resizing; the renderer owns the draw bracket.
@@ -328,6 +372,44 @@ impl Drop for Surface {
 #[cfg(test)]
 mod animation_tests {
     use super::*;
+    #[test]
+    fn settings_content_survives_material_changes_and_resize() {
+        use windows_sys::Win32::UI::WindowsAndMessaging::*;
+        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let window = windows_window::Window::new("Settings composition regression")
+            .size(240, 160)
+            .style(WS_POPUP)
+            .ex_style(WS_EX_NOREDIRECTIONBITMAP)
+            .create()
+            .unwrap();
+        let hwnd = HWND(window.hwnd().cast());
+        {
+            let mut surface = Surface::new_settings(hwnd).unwrap();
+            assert!(
+                surface.layer.is_none(),
+                "settings must use one composition target"
+            );
+            for material in [
+                Backdrop::Acrylic,
+                Backdrop::Mica,
+                Backdrop::MicaAlt,
+                Backdrop::Translucent { opacity: 0.8 },
+                Backdrop::Acrylic,
+            ] {
+                surface.material(hwnd, material);
+                assert_eq!(
+                    surface.native,
+                    !matches!(material, Backdrop::Translucent { .. })
+                );
+                surface.acrylic.as_ref().unwrap().assert_content_visible();
+                surface.resize(320, 200).unwrap();
+            }
+        }
+        unsafe {
+            DestroyWindow(hwnd.0);
+        }
+    }
+
     #[test]
     fn warp_surface_draws_resizes_and_defers_without_losing_the_wakeup() {
         use windows_sys::Win32::UI::WindowsAndMessaging::*;

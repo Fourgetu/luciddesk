@@ -16,10 +16,26 @@ use windows_sys::Win32::{
     UI::{HiDpi::GetDpiForWindow, Input::KeyboardAndMouse::*, WindowsAndMessaging::*},
 };
 const SELECT_PANEL: u32 = WM_APP + 95;
+const PREPARE_REVEAL: u32 = WM_APP + 96;
+const REVEAL_TIMER: usize = 0x4c5055;
+
+unsafe fn cloak(
+    hwnd: windows_sys::Win32::Foundation::HWND,
+    hidden: bool,
+) -> windows::core::Result<()> {
+    unsafe {
+        super::native_graphics::set_attribute(
+            windows::Win32::Foundation::HWND(hwnd),
+            windows::Win32::Graphics::Dwm::DWMWA_CLOAK.0,
+            &i32::from(hidden),
+        )
+    }
+}
 use windows_sys::Win32::UI::Controls::WM_MOUSELEAVE;
 
 #[derive(Clone)]
 enum Action {
+    ProjectHome,
     Window(u32),
     Page(usize),
     Previous,
@@ -708,6 +724,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
     let mut options = state.borrow().workspace.pane_options();
     let painter = Painter::new().map_err(|e| e.to_string())?;
     let mut surface: Option<composition::Surface> = None;
+    let mut reveal: Option<(std::time::Instant, Box<dyn Fn() -> bool>)> = None;
     let mut page = if state
         .borrow()
         .runtime
@@ -747,6 +764,31 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
             let Some(state) = weak.upgrade() else {
                 return Some(0);
             };
+            if msg == PREPARE_REVEAL {
+                let ready = surface.as_ref().and_then(|s| s.commit_ready().ok())
+                    .unwrap_or_else(|| Box::new(|| true));
+                reveal = Some((std::time::Instant::now(), ready));
+                unsafe {
+                    if SetTimer(hwnd, REVEAL_TIMER, USER_TIMER_MINIMUM, None) == 0 {
+                        reveal = None;
+                        let _ = cloak(hwnd, false);
+                        SetForegroundWindow(hwnd);
+                    }
+                }
+                return Some(0);
+            }
+            if msg == WM_TIMER && wp == REVEAL_TIMER {
+                if reveal.as_ref().is_some_and(|(started, ready)| ready() || started.elapsed().as_secs() >= 1) {
+                    reveal = None;
+                    unsafe {
+                        KillTimer(hwnd, REVEAL_TIMER);
+                        let _ = windows::Win32::Graphics::Dwm::DwmFlush();
+                        let _ = cloak(hwnd, false);
+                        SetForegroundWindow(hwnd);
+                    }
+                }
+                return Some(0);
+            }
             if msg == SELECT_PANEL {
                 if wp != 0 {
                     selected = PanelId::new(wp as u64);
@@ -931,8 +973,8 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     );
                 if page == 6 { body.text(Rect::from_xywh(248.0, 408.0, w - 282.0, 48.0), &backup_status, 0); }
                 if page == 5 {
-                    body.text(Rect::from_xywh(264.0, 250.0, w - 304.0, 126.0), &desktop_status, 0);
-                    body.button(Rect::from_xywh(264.0, 388.0, 150.0, 34.0), "重新连接桌面", Action::Change(Event::RetryDesktop), false);
+                    body.text(Rect::from_xywh(264.0, 352.0, w - 304.0, 40.0), &desktop_status, 0);
+                    body.button(Rect::from_xywh(264.0, 398.0, 150.0, 34.0), "重新连接桌面", Action::Change(Event::RetryDesktop), false);
                 }
                 cached_scene = Some(with_titlebar(body, w, key.9));
                 scene_key = Some(key);
@@ -987,7 +1029,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     if bounds.right > 0 && bounds.bottom > 0 {
                         let result = (|| -> windows::core::Result<()> {
                             if surface.is_none() {
-                                surface = Some(composition::Surface::new(
+                                surface = Some(composition::Surface::new_settings(
                                     windows::Win32::Foundation::HWND(hwnd),
                                 )?);
                                 composition::Surface::disable_window_shadow(
@@ -1175,6 +1217,11 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 .and_then(|i| scene.controls.get(i))
             {
                 match &c.action {
+                    Action::ProjectHome => {
+                        if let Err(error) = desktop_shell::open_shell_identity(hwnd as isize, &desktop_core::ShellIdentity::Namespace {
+                            parsing_name: "https://git.bbkingdom.fun:30443/yuchen95/LucidPane".into(),
+                        }) { window::error(&error.to_string()); }
+                    }
                     Action::EverythingAutoStart | Action::EverythingBrowse | Action::EverythingDetect | Action::EverythingLaunch => {
                         let mut value = everything_settings::settings();
                         let result = (|| -> Result<(), String> {
@@ -1295,8 +1342,17 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
             );
         }
-        ShowWindow(window.hwnd().cast(), SW_SHOW);
-        SetForegroundWindow(window.hwnd().cast());
+        // Prepare material and content at the final size before exposing the HWND.
+        SendMessageW(hwnd, WM_PAINT, 0, 0);
+        // Cloaking keeps the visible HWND in DWM composition without exposing
+        // a partial frame. A hidden HWND cannot prepare host backdrop sampling.
+        if cloak(hwnd, true).is_ok() {
+            ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            PostMessageW(hwnd, PREPARE_REVEAL, 0, 0);
+        } else {
+            ShowWindow(hwnd, SW_SHOW);
+            SetForegroundWindow(hwnd);
+        }
     }
     state.borrow_mut().settings = Some(window);
     Ok(())
@@ -1437,7 +1493,7 @@ mod tests {
                         let pixels = bitmap.pixels().unwrap();
                         assert!(pixels.chunks_exact(4).all(|p| p[3] == 255));
                         assert_eq!(pixels[0] < 128, dark);
-                        if scale == 1.0 && page <= 1 {
+                        if scale == 1.0 && (page <= 1 || page == 5) {
                             // Standalone raster for visual review, independent of the live desktop.
                             let mut bmp = vec![0u8; 54];
                             bmp[0..2].copy_from_slice(b"BM");
@@ -1452,6 +1508,8 @@ mod tests {
                             let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                                 .join("../target")
                                 .join(match (page, dark) {
+                                    (5, true) => "settings-about-dark.bmp",
+                                    (5, false) => "settings-about-light.bmp",
                                     (1, true) => "settings-pane-dark.bmp",
                                     (1, false) => "settings-pane-light.bmp",
                                     (_, true) => "settings-dark.bmp",

@@ -476,21 +476,46 @@ pub(super) fn scene(
             0,
         );
     } else {
-        s.cards.push(Rect::from_xywh(x, 88.0, w, 152.0));
+        s.cards.push(Rect::from_xywh(x, 88.0, w, 144.0));
         s.text(
-            Rect::from_xywh(x + 28.0, 104.0, w - 56.0, 40.0),
+            Rect::from_xywh(x + 28.0, 98.0, w - 56.0, 36.0),
             "LucidPane",
             3,
         );
         s.text(
-            Rect::from_xywh(x + 28.0, 152.0, w - 56.0, 26.0),
+            Rect::from_xywh(x + 28.0, 140.0, w - 56.0, 26.0),
             concat!("版本 ", env!("CARGO_PKG_VERSION")),
             0,
         );
         s.text(
-            Rect::from_xywh(x + 28.0, 190.0, w - 56.0, 28.0),
-            "混合桌面模式",
+            Rect::from_xywh(x + 28.0, 170.0, w - 56.0, 28.0),
+            "让桌面井然有序，让文件触手可及。",
             1,
+        );
+        s.text(
+            Rect::from_xywh(x + 28.0, 202.0, w - 56.0, 24.0),
+            format!(
+                "预览版 · {} · 构建 {}",
+                std::env::consts::ARCH,
+                env!("LUCIDPANE_BUILD_REVISION")
+            ),
+            0,
+        );
+        s.text(
+            Rect::from_xywh(x + 16.0, 244.0, w - 32.0, 52.0),
+            "桌面分组与文件夹映射 · Everything 搜索\n键盘操作与 Peek 速览 · 布局备份与恢复",
+            0,
+        );
+        s.button(
+            Rect::from_xywh(x + 16.0, 306.0, 132.0, 34.0),
+            "项目主页",
+            Action::ProjectHome,
+            false,
+        );
+        s.text(
+            Rect::from_xywh(x + 160.0, 306.0, (w - 176.0).max(1.0), 34.0),
+            "MIT / Apache-2.0",
+            0,
         );
     }
     s

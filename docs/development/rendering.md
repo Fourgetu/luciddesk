@@ -50,6 +50,7 @@ UI 线程复用 D3D/D2D 设备，同一 DXGI 设备还复用 DirectComposition �
 
 ## 材质与动画
 
+
 背景使用 Windows.UI.Composition 与 HWND 桌面互操作。云母和云母 Alt 采用系统壁纸画刷叠加不同色调，不是完整原生 Mica 控制器；亚克力使用 HostBackdrop 画刷。材质失败时保留普通背景。
 
 菜单淡入由 `windows-animation` 提供统一透明度，同时作用于内容与材质。首帧准备完成后开始计时，延迟帧仍提交终值，失败或系统禁用动画时直接显示。折叠保留现有曲线与真实 HWND 高度更新。
@@ -59,3 +60,18 @@ UI 线程复用 D3D/D2D 设备，同一 DXGI 设备还复用 DirectComposition �
 ## 验证
 
 覆盖多 DPI、透明文字、裁剪失败清理、缓存位图替换、合成读回及淡入首尾状态。构建与测试通过不代替可见桌面的逐帧观察，详细结果见[验证记录](validation.md)。
+
+### Settings first presentation
+
+Settings attaches its swap chain above its material in one WinRT composition
+visual tree. Before showing the HWND it sets `DWMWA_CLOAK`; unlike `SW_HIDE`,
+cloaking allows DWM to compose the window without displaying partial content.
+After showing without activation, a short-lived timer polls `RequestCommitAsync`.
+Once the commit completes, `DwmFlush` synchronizes presentation, then the window
+is uncloaked and activated. The timer is removed immediately; a one-second
+failure deadline prevents an indefinitely inaccessible settings window.
+This is a composition fence, not an API guarantee that every host backdrop
+implementation has finished sampling. Opening-frame captures are required when
+changing this sequence. No opaque cover, material fade, CPU readback or persistent
+render loop is used. Plain-translucent mode hides only the material visuals so
+content sharing the tree stays visible.

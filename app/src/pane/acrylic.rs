@@ -38,6 +38,7 @@ pub struct Acrylic {
     backdrop: windows::UI::Composition::SpriteVisual,
     tint: windows::UI::Composition::SpriteVisual,
     rounded_clip: Option<(CompositionRoundedRectangleGeometry, (u32, u32, f32))>,
+    content: Option<windows::UI::Composition::SpriteVisual>,
 }
 
 impl Acrylic {
@@ -47,6 +48,20 @@ impl Acrylic {
     }
 
     pub fn new_with_opacity(hwnd: HWND, initial_opacity: f32) -> Result<Self> {
+        Self::new_target(hwnd, initial_opacity, false)
+    }
+
+    pub fn new_with_content(
+        hwnd: HWND,
+        initial_opacity: f32,
+        swap: &windows::Win32::Graphics::Dxgi::IDXGISwapChain1,
+    ) -> Result<Self> {
+        let mut material = Self::new_target(hwnd, initial_opacity, true)?;
+        material.attach_content(swap)?;
+        Ok(material)
+    }
+
+    fn new_target(hwnd: HWND, initial_opacity: f32, topmost: bool) -> Result<Self> {
         let runtime = RUNTIME.with(|slot| -> Result<Rc<Runtime>> {
             let mut slot = slot.borrow_mut();
             if let Some(runtime) = slot.as_ref() {
@@ -72,8 +87,9 @@ impl Acrylic {
         }
         let compositor = &runtime.compositor;
         let interop: ICompositorDesktopInterop = compositor.cast()?;
-        // Bottom target is reserved for the material; the D3D content target stays on top.
-        let target = unsafe { interop.CreateDesktopWindowTarget(hwnd, false)? };
+        // A standalone material uses the bottom target; a combined content tree
+        // owns the top target so NOREDIRECTIONBITMAP windows remain visible.
+        let target = unsafe { interop.CreateDesktopWindowTarget(hwnd, topmost)? };
         let root = compositor.CreateContainerVisual()?;
         root.SetOpacity(initial_opacity)?;
         root.SetRelativeSizeAdjustment(Vector2 { X: 1.0, Y: 1.0 })?;
@@ -98,6 +114,7 @@ impl Acrylic {
             backdrop,
             tint,
             rounded_clip: None,
+            content: None,
         })
     }
 
@@ -146,25 +163,61 @@ impl Acrylic {
             compositor.CreateHostBackdropBrush()?
         };
         self.backdrop.SetBrush(&brush)?;
+        let color = Color {
+            A: match material {
+                desktop_core::Backdrop::Mica => 205,
+                desktop_core::Backdrop::MicaAlt => 165,
+                _ => 120,
+            },
+            R: if dark { 24 } else { 245 },
+            G: if dark { 27 } else { 246 },
+            B: if dark { 32 } else { 248 },
+        };
         self.tint
-            .SetBrush(&compositor.CreateColorBrushWithColor(Color {
-                A: match material {
-                    desktop_core::Backdrop::Mica => 205,
-                    desktop_core::Backdrop::MicaAlt => 165,
-                    _ => 120,
-                },
-                R: if dark { 24 } else { 245 },
-                G: if dark { 27 } else { 246 },
-                B: if dark { 32 } else { 248 },
-            })?)?;
+            .SetBrush(&compositor.CreateColorBrushWithColor(color)?)?;
         self.visible(true)
     }
 
     pub fn visible(&self, visible: bool) -> Result<()> {
-        self.root.SetIsVisible(visible)
+        // Content can share this tree; switching to a plain background must
+        // hide only the material, never the application's content visual.
+        self.backdrop.SetIsVisible(visible)?;
+        self.tint.SetIsVisible(visible)
     }
+
+    fn attach_content(
+        &mut self,
+        swap: &windows::Win32::Graphics::Dxgi::IDXGISwapChain1,
+    ) -> Result<()> {
+        use windows::Win32::System::WinRT::Composition::ICompositorInterop;
+        let compositor = &self._runtime.compositor;
+        let interop: ICompositorInterop = compositor.cast()?;
+        let surface = unsafe { interop.CreateCompositionSurfaceForSwapChain(swap)? };
+        let brush = compositor.CreateSurfaceBrushWithSurface(&surface)?;
+        let visual = compositor.CreateSpriteVisual()?;
+        visual.SetRelativeSizeAdjustment(Vector2 { X: 1.0, Y: 1.0 })?;
+        visual.SetBrush(&brush)?;
+        self.root.Children()?.InsertAtTop(&visual)?;
+        self.content = Some(visual);
+        Ok(())
+    }
+
+    pub fn commit_ready(&self) -> Result<Box<dyn Fn() -> bool>> {
+        let commit = self._runtime.compositor.RequestCommitAsync()?;
+        Ok(Box::new(move || {
+            commit.Status().map_or(true, |status| status.0 != 0)
+        }))
+    }
+
     pub fn opacity(&self, opacity: f32) -> Result<()> {
         self.root.SetOpacity(opacity)
+    }
+
+    #[cfg(test)]
+    pub fn assert_content_visible(&self) {
+        assert!(self._target.IsTopmost().unwrap());
+        assert!(self.root.IsVisible().unwrap());
+        assert!(self.content.as_ref().unwrap().IsVisible().unwrap());
     }
 
     #[cfg(test)]

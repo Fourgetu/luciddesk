@@ -1294,6 +1294,36 @@ fn settings_window_applies_clicks_and_closes_without_exiting() {
     let state = Rc::new(RefCell::new(test_state()));
     settings::show(&state, PanelId::new(1)).unwrap();
     let hwnd = state.borrow().settings.as_ref().unwrap().hwnd().cast();
+    // WS_VISIBLE is set during precomposition; the window is usable only after
+    // DWM cloaking is removed. Pump dispatch rather than blocking the compositor.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    loop {
+        let mut cloaked = 0u32;
+        unsafe {
+            windows::Win32::Graphics::Dwm::DwmGetWindowAttribute(
+                windows::Win32::Foundation::HWND(hwnd),
+                windows::Win32::Graphics::Dwm::DWMWA_CLOAKED,
+                (&raw mut cloaked).cast(),
+                4,
+            )
+            .unwrap();
+        }
+        if unsafe { IsWindowVisible(hwnd) } != 0 && cloaked == 0 {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "settings remained cloaked"
+        );
+        let mut message = MSG::default();
+        unsafe {
+            while PeekMessageW(&raw mut message, std::ptr::null_mut(), 0, 0, PM_REMOVE) != 0 {
+                TranslateMessage(&message);
+                DispatchMessageW(&message);
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
     unsafe {
         let mut outer = RECT::default();
         let mut client = RECT::default();
