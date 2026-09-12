@@ -557,18 +557,18 @@ where
                         );
                     }
                     let m = model.borrow();
-                    fold = Some(super::animation::Fold {
-                        from: client(hwnd).bottom as f32 / scale(hwnd),
-                        to: lparam as f32,
-                        from_reveal: m.reveal,
-                        to_reveal: if m.collapsed { 0.0 } else { 1.0 },
-                        started: std::time::Instant::now(),
-                        duration: std::time::Duration::from_millis(if enabled != 0 {
-                            200
+                    fold = Some(super::animation::Fold::new(
+                        client(hwnd).bottom as f32 / scale(hwnd),
+                        lparam as f32,
+                        m.reveal,
+                        if m.collapsed { 0.0 } else { 1.0 },
+                        std::time::Instant::now(),
+                        if enabled != 0 {
+                            super::animation::FOLD_DURATION
                         } else {
-                            0
-                        }),
-                    });
+                            std::time::Duration::ZERO
+                        },
+                    ));
                     drop(m);
                     unsafe {
                         SetTimer(hwnd, 2, USER_TIMER_MINIMUM, None);

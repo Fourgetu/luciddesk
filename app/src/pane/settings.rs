@@ -189,28 +189,7 @@ mod layout;
 use layout::scene;
 
 const TOGGLE_TIMER: usize = 0x4c5054;
-struct ToggleMotion {
-    from: f32,
-    to: f32,
-    started: std::time::Instant,
-}
-impl ToggleMotion {
-    fn sample(&self, now: std::time::Instant) -> f32 {
-        let t = (now.saturating_duration_since(self.started).as_secs_f32() / 0.16).min(1.0);
-        self.from + (self.to - self.from) * (1.0 - (1.0 - t).powi(3))
-    }
-    fn retarget(&mut self, to: f32, now: std::time::Instant, animate: bool) -> f32 {
-        if self.to != to {
-            self.from = self.sample(now);
-            self.to = to;
-            self.started = now;
-        }
-        if !animate {
-            self.from = to;
-        }
-        self.sample(now)
-    }
-}
+use super::animation::Motion as ToggleMotion;
 fn toggle_thumb(bounds: Rect, progress: f32) -> Ellipse {
     let height = bounds.bottom - bounds.top;
     let radius = (height / 2.0 - 4.0).max(1.0);
@@ -1023,6 +1002,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
     let mut scene_key = None;
     let mut desktop_status = String::new();
     let mut backup_status = String::new();
+    let mut toggle_timer_running = false;
     let mut toggle_motion = std::collections::HashMap::<usize, ToggleMotion>::new();
     let prepared = Rc::new(std::cell::Cell::new(false));
     let show_prepared = Rc::clone(&prepared);
@@ -1337,20 +1317,15 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     for (i, control) in scene.controls.iter().enumerate().filter(|(_, c)| c.toggle)
                     {
                         let to = if control.selected { 1.0 } else { 0.0 };
-                        let motion = toggle_motion.entry(i).or_insert(ToggleMotion {
-                            from: to,
-                            to,
-                            started: now,
-                        });
+                        let motion = toggle_motion.entry(i).or_insert_with(|| ToggleMotion::settled(to, now));
                         let value = motion.retarget(to, now, enabled != 0);
                         animating |= (value - to).abs() > 0.0001;
                         positions.insert(i, value);
                     }
                     unsafe {
-                        if animating {
-                            SetTimer(hwnd, TOGGLE_TIMER, USER_TIMER_MINIMUM, None);
-                        } else {
-                            KillTimer(hwnd, TOGGLE_TIMER);
+                        if animating != toggle_timer_running {
+                            toggle_timer_running = animating && SetTimer(hwnd, TOGGLE_TIMER, USER_TIMER_MINIMUM, None) != 0;
+                            if !toggle_timer_running { KillTimer(hwnd, TOGGLE_TIMER); }
                         }
                     }
                     unsafe {
@@ -1955,18 +1930,17 @@ mod tests {
     #[test]
     fn switch_motion_reverses_continuously_and_respects_disabled_animation() {
         let now = std::time::Instant::now();
-        let mut motion = ToggleMotion {
-            from: 0.0,
-            to: 0.0,
-            started: now,
-        };
+        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let mut motion = ToggleMotion::settled(0.0, now);
         assert_eq!(motion.retarget(1.0, now, true), 0.0);
         let halfway = now + std::time::Duration::from_millis(80);
-        let value = motion.sample(halfway);
+        let value = motion.sample(halfway).unwrap();
         assert!(value > 0.0 && value < 1.0);
         assert_eq!(motion.retarget(0.0, halfway, true), value);
         assert_eq!(
-            motion.sample(halfway + std::time::Duration::from_millis(160)),
+            motion
+                .sample(halfway + std::time::Duration::from_millis(160))
+                .unwrap(),
             0.0
         );
         assert_eq!(motion.retarget(1.0, halfway, false), 1.0);

@@ -61,7 +61,9 @@ fn multi_window_render_latency() {
                     340,
                     1.0,
                     &rows,
-                    Some(round % 10),
+                    &(0..rows.len())
+                        .map(|i| if i == round % 10 { 1.0 } else { 0.0 })
+                        .collect::<Vec<_>>(),
                     surface.native,
                     true,
                 )

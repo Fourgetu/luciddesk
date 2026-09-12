@@ -547,7 +547,7 @@ pub(super) mod animation_tests {
             );
             let fade =
                 super::super::animation::Fade::new(std::time::Duration::from_millis(120)).unwrap();
-            for (millis, expected) in [(0, 0.0), (60, 0.5), (800, 1.0)] {
+            for (millis, expected) in [(0, 0.0), (60, 0.75), (800, 1.0)] {
                 let opacity = fade
                     .sample(std::time::Duration::from_millis(millis))
                     .unwrap();

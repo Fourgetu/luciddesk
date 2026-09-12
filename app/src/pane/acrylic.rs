@@ -296,7 +296,7 @@ impl Acrylic {
         animation.InsertKeyFrame(0.0, 0.0)?;
         animation.InsertKeyFrame(1.0, 1.0)?;
         animation.SetDuration(windows::Foundation::TimeSpan {
-            Duration: 1_600_000, // 160 ms, driven entirely by the compositor.
+            Duration: (super::animation::SETTINGS_DURATION.as_nanos() / 100) as i64,
         })?;
         self.root
             .StartAnimation(&windows::core::HSTRING::from("Opacity"), &animation)

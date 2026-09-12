@@ -171,6 +171,11 @@ pub(super) fn show_entries(
     let mut fade_started: Option<Instant> = None;
     let mut fade: Option<super::animation::Fade> = None;
     let mut fade_finished = animate == 0;
+    let mut hover_motion: Vec<_> = rows
+        .iter()
+        .map(|_| super::animation::Motion::settled(0.0, Instant::now()))
+        .collect();
+    let mut hover_timer_running = false;
     let window = windows_window::Window::new("分组菜单")
         .style(WS_POPUP)
         .ex_style(WS_EX_TOOLWINDOW | WS_EX_NOREDIRECTIONBITMAP | WS_EX_TOPMOST)
@@ -209,13 +214,39 @@ pub(super) fn show_entries(
                         else {
                             return Ok(());
                         };
+                        let now = Instant::now();
+                        let mut hovering = false;
+                        let highlights: Vec<_> = hover_motion
+                            .iter_mut()
+                            .enumerate()
+                            .map(|(i, motion)| {
+                                let to = if selected == Some(i) { 1.0 } else { 0.0 };
+                                let value = motion.retarget_with_duration(
+                                    to,
+                                    now,
+                                    animate != 0,
+                                    super::animation::HOVER_DURATION,
+                                );
+                                hovering |= (value - to).abs() > 0.0001;
+                                value
+                            })
+                            .collect();
+                        if hovering != hover_timer_running {
+                            unsafe {
+                                hover_timer_running =
+                                    hovering && SetTimer(hwnd, 2, USER_TIMER_MINIMUM, None) != 0;
+                                if !hover_timer_running {
+                                    KillTimer(hwnd, 2);
+                                }
+                            }
+                        }
                         renderer.paint_flyout(
                             &target,
                             width as u32,
                             height as u32,
                             scale,
                             &rows,
-                            selected,
+                            &highlights,
                             value.native,
                             dark,
                         )?;
@@ -223,8 +254,7 @@ pub(super) fn show_entries(
                         // Start after the first frame is ready: device creation and
                         // rasterization must not consume the animation's time budget.
                         if !fade_finished && fade.is_none() {
-                            match super::animation::Fade::new(std::time::Duration::from_millis(120))
-                            {
+                            match super::animation::Fade::new(super::animation::MENU_DURATION) {
                                 Ok(animation) => {
                                     fade = Some(animation);
                                 }
@@ -308,8 +338,15 @@ pub(super) fn show_entries(
                     }
                     _ => {}
                 },
-                WM_TIMER => {
-                    if !fade_finished {
+                WM_TIMER if wparam == 2 => unsafe {
+                    InvalidateRect(hwnd, std::ptr::null(), 0);
+                },
+                WM_TIMER if wparam == 1 => {
+                    if fade_finished {
+                        unsafe {
+                            KillTimer(hwnd, 1);
+                        }
+                    } else {
                         if let (Some(started), Some(value)) = (fade_started, surface.as_mut()) {
                             let opacity = match fade.as_ref().unwrap().sample(started.elapsed()) {
                                 Ok(opacity) => opacity,
@@ -325,6 +362,7 @@ pub(super) fn show_entries(
                             }
                             if opacity >= 1.0 {
                                 fade_finished = true;
+                                fade = None;
                                 unsafe {
                                     KillTimer(hwnd, 1);
                                 }
@@ -387,6 +425,7 @@ pub(super) fn show_entries(
             DispatchMessageW(&raw const message);
         }
         KillTimer(hwnd, 1);
+        KillTimer(hwnd, 2);
     }
     drop(window);
     debug_assert_eq!(Rc::strong_count(&done), 1, "menu callback was not released");

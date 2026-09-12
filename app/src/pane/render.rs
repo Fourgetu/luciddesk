@@ -52,7 +52,19 @@ impl Renderer {
     ) -> Result<Vec<u8>> {
         self.prepare(width, height, scale)?;
         let (_, _, bitmap, target) = self.target.as_ref().unwrap();
-        self.paint_flyout(target, width, height, scale, rows, selected, native, dark)?;
+        let highlights: Vec<_> = (0..rows.len())
+            .map(|i| if selected == Some(i) { 1.0 } else { 0.0 })
+            .collect();
+        self.paint_flyout(
+            target,
+            width,
+            height,
+            scale,
+            rows,
+            &highlights,
+            native,
+            dark,
+        )?;
         bitmap.as_ref().unwrap().pixels()
     }
 
@@ -63,7 +75,7 @@ impl Renderer {
         height: u32,
         scale: f32,
         rows: &[super::menu::Entry],
-        selected: Option<usize>,
+        highlights: &[f32],
         native: bool,
         dark: bool,
     ) -> Result<()> {
@@ -72,8 +84,6 @@ impl Renderer {
             let text = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 1.0)))?;
             let subtle =
                 canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.13)))?;
-            let hover =
-                canvas_result(target.create_solid_brush(ColorF::new(0.8, 0.88, 1.0, 0.14)))?;
             target.clear(ColorF::new(
                 if dark { 0.09 } else { 0.96 },
                 if dark { 0.10 } else { 0.96 },
@@ -99,7 +109,14 @@ impl Renderer {
                     );
                     continue;
                 }
-                if selected == Some(index) {
+                let progress = highlights.get(index).copied().unwrap_or(0.0);
+                if progress > 0.0 {
+                    let hover = canvas_result(target.create_solid_brush(ColorF::new(
+                        0.8,
+                        0.88,
+                        1.0,
+                        0.14 * progress,
+                    )))?;
                     target.fill_rounded_rect(
                         &RoundedRect {
                             rect: Rect::from_xywh(
