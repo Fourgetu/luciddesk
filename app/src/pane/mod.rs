@@ -13,6 +13,7 @@ mod drag_image;
 mod drop_description;
 mod drop_target;
 mod events;
+mod everything;
 mod folder;
 mod hybrid;
 mod keyboard;
@@ -23,6 +24,7 @@ mod native_graphics;
 mod peek;
 mod rename;
 mod render;
+mod search;
 mod settings;
 use events::handle;
 mod shell_menu;
@@ -125,6 +127,7 @@ enum Event {
     Material(desktop_core::Backdrop),
     Tick,
     New,
+    NewSearch,
     NewFolder,
     MapFolder(std::path::PathBuf),
     ChangeFolder,
@@ -144,6 +147,9 @@ enum Event {
 }
 
 fn items_for(state: &PaneApp, id: PanelId) -> Vec<Item> {
+    if state.workspace.panel(id).is_some_and(Panel::is_search) {
+        return Vec::new();
+    }
     if state
         .workspace
         .panel(id)
@@ -215,7 +221,7 @@ fn create_view(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> 
         loading: panel.folder().is_some() || id == PanelId::new(1),
     }));
     let weak = Rc::downgrade(state);
-    let window = window::create(panel.rect(), Rc::clone(&model), move |event| {
+    let callback = move |event| {
         let Some(state) = weak.upgrade() else {
             return false;
         };
@@ -227,7 +233,12 @@ fn create_view(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> 
                 false
             }
         }
-    })?;
+    };
+    let window = if panel.is_search() {
+        search::create(panel.rect(), Rc::clone(&model), callback)?
+    } else {
+        window::create(panel.rect(), Rc::clone(&model), callback)?
+    };
     window::set_layer(window.hwnd().cast(), panel.always_on_top());
     state.borrow_mut().views.push(View { id, window, model });
     if state.borrow().session.is_some() {
@@ -242,6 +253,9 @@ fn refresh_views(state: &mut PaneApp) {
 
 fn refresh_changed_views(state: &mut PaneApp, force: bool) {
     for view in &state.views {
+        if state.workspace.panel(view.id).is_some_and(Panel::is_search) {
+            continue;
+        }
         let items = items_for(state, view.id);
         let mut model = view.model.borrow_mut();
         if model.folder.is_some() {
@@ -309,7 +323,7 @@ fn remove_panel(workspace: &mut Workspace, id: PanelId) {
 fn set_order(workspace: &mut Workspace, id: PanelId, items: &[Item]) {
     if workspace
         .panel(id)
-        .is_some_and(|panel| panel.folder().is_some())
+        .is_some_and(|panel| panel.folder().is_some() || panel.is_search())
     {
         return;
     }

@@ -272,6 +272,11 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
             return;
         };
         match action {
+            crate::tray::Action::NewSearch => {
+                if let Err(error) = handle(&state, PanelId::new(0), Event::NewSearch) {
+                    window::error(&error);
+                }
+            }
             crate::tray::Action::NewFolder => {
                 if let Err(error) = handle(&state, PanelId::new(0), Event::NewFolder) {
                     window::error(&error);
@@ -315,6 +320,14 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
 }
 
 pub(super) fn register_drop(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> {
+    if state
+        .borrow()
+        .workspace
+        .panel(id)
+        .is_some_and(Panel::is_search)
+    {
+        return Ok(());
+    }
     let hwnd = state
         .borrow()
         .views
@@ -1043,7 +1056,7 @@ fn poll_drag(s: &mut PaneApp) -> Result<(), String> {
                 && !v.model.borrow().collapsed
                 && s.workspace
                     .panel(v.id)
-                    .is_some_and(|panel| panel.folder().is_none())
+                    .is_some_and(|panel| panel.folder().is_none() && !panel.is_search())
         })
         .map(|v| v.id);
     if let Some(id) = target {

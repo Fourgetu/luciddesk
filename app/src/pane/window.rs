@@ -1257,6 +1257,9 @@ where
                         update_pointer(hwnd, &model, None);
                         invalidate(hwnd);
                         match command {
+                            23 => {
+                                event(Event::NewSearch);
+                            }
                             22 => {
                                 event(Event::ToggleFolderView);
                             }

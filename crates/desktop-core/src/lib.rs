@@ -263,6 +263,7 @@ pub enum PanelTheme {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Panel {
+    search: bool,
     folder_list: bool,
     folder: Option<PathBuf>,
     theme: PanelTheme,
@@ -281,6 +282,7 @@ impl Panel {
     pub fn new(id: PanelId, title: impl Into<String>, rect: RectDip) -> Self {
         Self {
             id,
+            search: false,
             folder: None,
             folder_list: true,
             title: title.into(),
@@ -306,7 +308,24 @@ impl Panel {
     }
 
     pub fn set_folder(&mut self, path: Option<PathBuf>) {
+        if path.is_some() {
+            self.search = false;
+        }
         self.folder = path;
+    }
+
+    #[must_use]
+    pub const fn is_search(&self) -> bool {
+        self.search
+    }
+
+    pub fn set_search(&mut self, enabled: bool) {
+        self.search = enabled;
+        if enabled {
+            self.folder = None;
+            self.collapsed = false;
+            self.auto_hide = false;
+        }
     }
 
     #[must_use]

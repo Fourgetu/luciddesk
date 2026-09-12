@@ -377,6 +377,11 @@ pub(super) fn handle(
     if let Event::PaneItemFocus = event {
         let s = state.borrow();
         for view in s.views.iter().filter(|view| view.id != id) {
+            if s.workspace.panel(view.id).is_some_and(Panel::is_search) {
+                unsafe {
+                    PostMessageW(view.window.hwnd().cast(), search::CLEAR_SELECTION, 0, 0);
+                }
+            }
             let mut model = view.model.borrow_mut();
             if model.selected.is_some() || !model.selection.is_empty() || model.focused {
                 model.clear_selection();
@@ -444,7 +449,8 @@ pub(super) fn handle(
         }
         return Ok(false);
     }
-    if matches!(event, Event::New | Event::MapFolder(_)) {
+    if matches!(event, Event::New | Event::NewSearch | Event::MapFolder(_)) {
+        let search = matches!(event, Event::NewSearch);
         let path = if let Event::MapFolder(path) = &event {
             Some(path.clone())
         } else {
@@ -475,6 +481,11 @@ pub(super) fn handle(
                 RectDip::new(240.0, 240.0, 480.0, 360.0),
             );
             panel.set_folder(path.clone());
+            if search {
+                panel.set_search(true);
+                panel.set_title("Everything 搜索".to_string());
+                panel.set_rect(RectDip::new(240.0, 240.0, 860.0, 520.0));
+            }
             s.workspace.add_panel(panel).map_err(|e| e.to_string())?;
             if s.workspace.appearance().is_none() {
                 s.workspace
@@ -494,6 +505,7 @@ pub(super) fn handle(
     let mut s = state.borrow_mut();
     match event {
         Event::ToggleFolderView
+        | Event::NewSearch
         | Event::FileDrag
         | Event::NewFolder
         | Event::MapFolder(_)
@@ -706,6 +718,9 @@ pub(super) fn handle(
                 return Ok(false);
             };
             let target = s.views.iter().rev().find_map(|view| {
+                if s.workspace.panel(view.id).is_some_and(Panel::is_search) {
+                    return None;
+                }
                 let hwnd = view.window.hwnd().cast();
                 if unsafe { WindowFromPoint(point) } != hwnd {
                     return None;

@@ -84,6 +84,42 @@ fn mapped_folder_never_takes_desktop_membership() {
 }
 
 #[test]
+fn search_pane_creation_and_close_preserve_desktop_membership() {
+    let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let state = Rc::new(RefCell::new(test_state()));
+    let original = state.borrow().workspace.desktop_items().to_vec();
+    handle(&state, PanelId::new(0), Event::NewSearch).unwrap();
+    let id = state.borrow().views[0].id;
+    assert!(state.borrow().workspace.panel(id).unwrap().is_search());
+    assert!(
+        state
+            .borrow()
+            .store
+            .load_workspace()
+            .unwrap()
+            .panel(id)
+            .unwrap()
+            .is_search()
+    );
+    assert!(items_for(&state.borrow(), id).is_empty());
+    let source = items_for(&state.borrow(), PanelId::new(1));
+    set_order(&mut state.borrow_mut().workspace, id, &source);
+    assert_eq!(state.borrow().workspace.desktop_items(), original);
+    handle(&state, id, Event::ClosePane).unwrap();
+    assert!(state.borrow().views.is_empty());
+    assert!(
+        state
+            .borrow()
+            .store
+            .load_workspace()
+            .unwrap()
+            .panel(id)
+            .is_none()
+    );
+    assert_eq!(state.borrow().workspace.desktop_items(), original);
+}
+
+#[test]
 fn folder_pane_creation_switch_and_close_preserve_real_files() {
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
     let root = std::env::temp_dir().join(format!(

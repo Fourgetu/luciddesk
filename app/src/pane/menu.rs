@@ -51,6 +51,7 @@ pub fn show(
     let mut rows = vec![
         entry(1, "新建分组", "", ""),
         entry(19, "新建文件夹面板…", "", ""),
+        entry(23, "新建 Everything 搜索面板", "", ""),
         entry(3, "按名称排序", "", ""),
         entry(0, "", "", ""),
         entry(7, "自动收起", if auto_hide { "✓" } else { "" }, ""),

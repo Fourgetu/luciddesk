@@ -103,6 +103,11 @@ impl WorkspaceStore {
                 self.preference(&format!("panel_folder:{}", panel.id().get()))?
                     .map(PathBuf::from),
             );
+            panel.set_search(
+                self.preference(&format!("panel_search:{}", panel.id().get()))?
+                    .as_deref()
+                    == Some("true"),
+            );
             let panel_id = i64::try_from(panel.id().get())
                 .map_err(|_| StoreError::InvalidData("panel id exceeds SQLite range".into()))?;
             let auto_hide = self
@@ -225,11 +230,18 @@ impl WorkspaceStore {
     pub fn save_workspace(&mut self, workspace: &Workspace) -> Result<(), StoreError> {
         let transaction = self.connection.transaction()?;
         transaction.execute("DELETE FROM metadata WHERE key GLOB 'panel_folder:*'", [])?;
+        transaction.execute("DELETE FROM metadata WHERE key GLOB 'panel_search:*'", [])?;
         transaction.execute(
             "DELETE FROM metadata WHERE key GLOB 'panel_folder_view:*'",
             [],
         )?;
         for panel in workspace.panels() {
+            if panel.is_search() {
+                transaction.execute(
+                    "INSERT INTO metadata(key,value) VALUES (?1,'true')",
+                    [format!("panel_search:{}", panel.id().get())],
+                )?;
+            }
             if let Some(folder) = panel.folder() {
                 transaction.execute(
                     "INSERT INTO metadata(key,value) VALUES (?1,?2)",
@@ -653,6 +665,39 @@ impl From<rusqlite::Error> for StoreError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn search_panes_round_trip_and_do_not_retain_folder_sources() {
+        use desktop_core::{Panel, PanelId, RectDip, Workspace};
+        let mut store = super::WorkspaceStore::open_in_memory().unwrap();
+        let mut panel = Panel::new(
+            PanelId::new(7),
+            "Everything",
+            RectDip::new(120.0, 140.0, 860.0, 520.0),
+        );
+        panel.set_folder(Some(std::path::PathBuf::from(r"C:\folder")));
+        panel.set_search(true);
+        assert!(panel.folder().is_none());
+        let mut workspace = Workspace::from_panels(vec![panel]).unwrap();
+        store.save_workspace(&workspace).unwrap();
+        let loaded = store.load_workspace().unwrap();
+        assert_eq!(loaded.panels(), workspace.panels());
+        assert!(loaded.desktop_items().is_empty());
+        workspace
+            .panel_mut(PanelId::new(7))
+            .unwrap()
+            .set_folder(Some(std::path::PathBuf::from(r"C:\folder")));
+        assert!(!workspace.panel(PanelId::new(7)).unwrap().is_search());
+        store.save_workspace(&workspace).unwrap();
+        assert!(store.preference("panel_search:7").unwrap().is_none());
+        workspace
+            .panel_mut(PanelId::new(7))
+            .unwrap()
+            .set_search(true);
+        store.save_workspace(&workspace).unwrap();
+        workspace.remove_panel(PanelId::new(7));
+        store.save_workspace(&workspace).unwrap();
+        assert!(store.preference("panel_search:7").unwrap().is_none());
+    }
     #[test]
     fn folder_sources_survive_reopen_and_are_removed_with_the_panel() {
         let mut store = super::WorkspaceStore::open_in_memory().unwrap();

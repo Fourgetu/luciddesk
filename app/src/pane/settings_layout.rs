@@ -217,6 +217,9 @@ pub(super) fn scene(
         .iter()
         .enumerate()
         {
+            if panel.is_search() && matches!(event, Event::ToggleAutoHide) {
+                continue;
+            }
             let y = 164.0 + i as f32 * 76.0;
             s.cards.push(Rect::from_xywh(x, y, w, 64.0));
             s.text(Rect::from_xywh(x + 22.0, y + 16.0, 28.0, 32.0), *icon, 4);
@@ -237,6 +240,19 @@ pub(super) fn scene(
                 selected: *enabled,
                 toggle: true,
             });
+        }
+        if panel.is_search() {
+            s.cards.push(Rect::from_xywh(x, 240.0, w, 110.0));
+            s.text(
+                Rect::from_xywh(x + 18.0, 252.0, w - 36.0, 28.0),
+                "Everything 搜索面板",
+                1,
+            );
+            s.text(
+                Rect::from_xywh(x + 18.0, 286.0, w - 36.0, 52.0),
+                "连接本机 Everything 1.4+ · 每页 200 项\nCtrl+L 搜索，F5 刷新，Ctrl+Enter 打开位置",
+                0,
+            );
         }
         if let Some(path) = panel.folder() {
             s.button(
