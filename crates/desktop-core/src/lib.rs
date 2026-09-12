@@ -434,7 +434,7 @@ pub struct PaneOptions {
 impl PaneOptions {
     pub const MAX_CORNER_RADIUS: u8 = 24;
     pub const DEFAULT: Self = Self {
-        corner_radius: 7,
+        corner_radius: 6,
         border: true,
         snap: true,
     };

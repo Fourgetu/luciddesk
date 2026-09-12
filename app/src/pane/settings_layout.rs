@@ -1,10 +1,9 @@
 use super::*;
 
 // Page IDs stay stable; display order is independent of routing.
-const PAGES: [(usize, &str, &str); 7] = [
+const PAGES: [(usize, &str, &str); 6] = [
     (0, "主题与材质", "\u{e790}"),
     (1, "面板布局", "\u{f0e2}"),
-    (2, "分组设置", "\u{e8b7}"),
     (4, "Everything 搜索", "\u{e721}"),
     (3, "Peek 预览", "\u{e890}"),
     (6, "备份与恢复", "\u{e81c}"),
@@ -15,8 +14,6 @@ pub(super) fn scene(
     width: f32,
     _height: f32,
     page: usize,
-    panel: Option<&Panel>,
-    count: usize,
     search_enabled: bool,
     appearance: (PanelTheme, Backdrop),
     options: desktop_core::PaneOptions,
@@ -24,14 +21,15 @@ pub(super) fn scene(
     let mut s = Scene {
         text: vec![],
         cards: vec![],
+        separators: vec![],
         controls: vec![],
         previews: vec![],
     };
     s.text(Rect::from_xywh(28.0, 26.0, 172.0, 32.0), "LucidPane", 2);
     for (position, &(id, name, icon)) in PAGES.iter().enumerate() {
-        let gap = if position >= 5 {
+        let gap = if position >= 4 {
             20.0
-        } else if position >= 3 {
+        } else if position >= 2 {
             10.0
         } else {
             0.0
@@ -77,6 +75,7 @@ pub(super) fn scene(
             format!("面板预览 · {}%", (opacity * 100.0).round() as u8),
             0,
         );
+        s.separators.push(Rect::from_xywh(x, 244.0, w, 1.0));
         let px = x + pw + 20.0;
         let palette_width = w - pw - 20.0;
         s.text(
@@ -103,7 +102,6 @@ pub(super) fn scene(
                 color == value,
             );
         }
-        s.cards.push(Rect::from_xywh(x, 248.0, w, 132.0));
         for (channel, name) in ["红 R", "绿 G", "蓝 B"].into_iter().enumerate() {
             let value = ((color >> ((2 - channel) * 8)) & 255) as u8;
             let y = 258.0 + channel as f32 * 40.0;
@@ -142,10 +140,8 @@ pub(super) fn scene(
         return s;
     }
     if page == 0 {
-        s.text(Rect::from_xywh(x, 76.0, w, 24.0), "所有面板", 0);
         let stacked = w < 470.0;
         let extra = if stacked { 44.0 } else { 0.0 };
-        s.cards.push(Rect::from_xywh(x, 108.0, w, 64.0 + extra));
         s.text(Rect::from_xywh(x + 16.0, 124.0, 28.0, 32.0), "\u{e793}", 4);
         s.text(Rect::from_xywh(x + 54.0, 124.0, 120.0, 32.0), "应用主题", 1);
         let bw = 86.0;
@@ -201,7 +197,6 @@ pub(super) fn scene(
         }
         if let Backdrop::Solid { color, opacity } = appearance.1 {
             let y = 364.0 + extra;
-            s.cards.push(Rect::from_xywh(x, y - 12.0, w, 96.0));
             s.previews
                 .push((Rect::from_xywh(x + 14.0, y, 30.0, 30.0), color, opacity));
             s.button(
@@ -244,7 +239,6 @@ pub(super) fn scene(
         }
         if let Some(value) = appearance.1.strength() {
             let y = 364.0 + extra;
-            s.cards.push(Rect::from_xywh(x, y - 12.0, w, 96.0));
             s.text(Rect::from_xywh(x + 14.0, y, 100.0, 30.0), "效果强度", 0);
             s.controls.push(Control {
                 bounds: Rect::from_xywh(x + 124.0, y, w - 224.0, 30.0),
@@ -275,8 +269,12 @@ pub(super) fn scene(
             );
         }
     } else if page == 1 {
-        s.text(Rect::from_xywh(x, 76.0, w, 24.0), "所有面板", 0);
-        s.cards.push(Rect::from_xywh(x, 108.0, w, 64.0));
+        s.button(
+            Rect::from_xywh(x + w - 110.0, 34.0, 110.0, 32.0),
+            "恢复默认",
+            Action::Change(Event::ResetPaneOptions),
+            false,
+        );
         s.text(
             Rect::from_xywh(x + 18.0, 116.0, w - 258.0, 24.0),
             "圆角大小",
@@ -308,7 +306,8 @@ pub(super) fn scene(
         .enumerate()
         {
             let y = 184.0 + i as f32 * 76.0;
-            s.cards.push(Rect::from_xywh(x, y, w, 64.0));
+            s.separators
+                .push(Rect::from_xywh(x + 18.0, y - 6.0, w - 36.0, 1.0));
             s.text(
                 Rect::from_xywh(x + 18.0, y + 16.0, w - 100.0, 32.0),
                 *title,
@@ -322,133 +321,11 @@ pub(super) fn scene(
                 toggle: true,
             });
         }
-    } else if page == 2 {
-        let Some(panel) = panel else {
-            s.cards.push(Rect::from_xywh(x, 88.0, w, 116.0));
-            s.text(
-                Rect::from_xywh(x + 24.0, 100.0, w - 48.0, 32.0),
-                "还没有分组",
-                2,
-            );
-            s.button(
-                Rect::from_xywh(x + 24.0, 150.0, 132.0, 36.0),
-                "新建分组",
-                Action::Change(Event::New),
-                true,
-            );
-            return s;
-        };
-        s.cards.push(Rect::from_xywh(x, 88.0, w, 64.0));
-        s.text(
-            Rect::from_xywh(x + 24.0, 94.0, w - 150.0, 22.0),
-            "当前分组",
-            0,
-        );
-        s.text(
-            Rect::from_xywh(x + 24.0, 116.0, w - 150.0, 28.0),
-            panel.title(),
-            1,
-        );
-        if count > 1 {
-            s.button(
-                Rect::from_xywh(x + w - 100.0, 103.0, 34.0, 34.0),
-                "‹",
-                Action::Previous,
-                false,
-            );
-            s.button(
-                Rect::from_xywh(x + w - 54.0, 103.0, 34.0, 34.0),
-                "›",
-                Action::Next,
-                false,
-            );
-        }
-        for (i, (title, description, icon, enabled, event)) in [
-            (
-                "始终置顶",
-                "",
-                "\u{e718}",
-                panel.always_on_top(),
-                Event::ToggleTopmost,
-            ),
-            (
-                "自动收起",
-                "悬停展开，离开收起",
-                "\u{e8a7}",
-                panel.auto_hide(),
-                Event::ToggleAutoHide,
-            ),
-        ]
-        .iter()
-        .enumerate()
-        {
-            if panel.is_search() && matches!(event, Event::ToggleAutoHide) {
-                continue;
-            }
-            let y = 164.0 + i as f32 * 76.0;
-            s.cards.push(Rect::from_xywh(x, y, w, 64.0));
-            s.text(Rect::from_xywh(x + 22.0, y + 16.0, 28.0, 32.0), *icon, 4);
-            s.text(
-                Rect::from_xywh(
-                    x + 66.0,
-                    y + if description.is_empty() { 20.0 } else { 8.0 },
-                    w - 180.0,
-                    24.0,
-                ),
-                *title,
-                1,
-            );
-            s.text(
-                Rect::from_xywh(x + 66.0, y + 32.0, w - 180.0, 22.0),
-                *description,
-                0,
-            );
-            s.controls.push(Control {
-                bounds: Rect::from_xywh(x + w - 70.0, y + 20.0, 46.0, 24.0),
-                label: String::new(),
-                action: Action::Change(event.clone()),
-                selected: *enabled,
-                toggle: true,
-            });
-        }
-        if let Some(path) = panel.folder() {
-            s.button(
-                Rect::from_xywh(x + w - 128.0, 324.0, 110.0, 26.0),
-                if panel.folder_list() {
-                    "切换图标视图"
-                } else {
-                    "切换列表视图"
-                },
-                Action::Change(Event::ToggleFolderView),
-                false,
-            );
-            s.cards.push(Rect::from_xywh(x, 316.0, w, 108.0));
-            s.text(
-                Rect::from_xywh(x + 18.0, 324.0, w - 156.0, 26.0),
-                "源文件夹",
-                1,
-            );
-            s.text(
-                Rect::from_xywh(x + 18.0, 354.0, w - 36.0, 26.0),
-                path.to_string_lossy(),
-                0,
-            );
-            s.button(
-                Rect::from_xywh(x + 18.0, 386.0, 120.0, 30.0),
-                "打开文件夹",
-                Action::Change(Event::OpenFolder),
-                false,
-            );
-            s.button(
-                Rect::from_xywh(x + 150.0, 386.0, 120.0, 30.0),
-                "更换文件夹…",
-                Action::Change(Event::ChangeFolder),
-                false,
-            );
-        }
     } else if page == 3 {
+        for y in [158.0, 308.0] {
+            s.separators.push(Rect::from_xywh(x + 18.0, y, w - 36.0, 1.0));
+        }
         let value = peek::settings();
-        s.cards.push(Rect::from_xywh(x, 88.0, w, 64.0));
         s.text(
             Rect::from_xywh(x + 18.0, 104.0, w - 110.0, 32.0),
             "启用 Peek 预览",
@@ -461,7 +338,6 @@ pub(super) fn scene(
             selected: value.enabled,
             toggle: true,
         });
-        s.cards.push(Rect::from_xywh(x, 164.0, w, 138.0));
         s.text(
             Rect::from_xywh(x + 18.0, 174.0, w - 36.0, 26.0),
             if value.path.is_empty() {
@@ -487,7 +363,6 @@ pub(super) fn scene(
             Action::PeekDetect,
             false,
         );
-        s.cards.push(Rect::from_xywh(x, 314.0, w, 96.0));
         s.text(Rect::from_xywh(x + 18.0, 322.0, 90.0, 26.0), "快捷键", 1);
         s.button(
             Rect::from_xywh(x + 114.0, 324.0, w - 250.0, 34.0),
@@ -507,8 +382,11 @@ pub(super) fn scene(
             0,
         );
     } else if page == 4 {
+        for y in [248.0, 324.0] {
+            s.separators
+                .push(Rect::from_xywh(x + 18.0, y, w - 36.0, 1.0));
+        }
         let value = everything_settings::settings();
-        s.cards.push(Rect::from_xywh(x, 88.0, w, 64.0));
         s.text(
             Rect::from_xywh(x + 18.0, 104.0, w - 110.0, 32.0),
             "启用搜索面板",
@@ -521,7 +399,6 @@ pub(super) fn scene(
             selected: search_enabled,
             toggle: true,
         });
-        s.cards.push(Rect::from_xywh(x, 164.0, w, 78.0));
         s.text(
             Rect::from_xywh(x + 18.0, 174.0, 90.0, 30.0),
             "全局快捷键",
@@ -544,7 +421,6 @@ pub(super) fn scene(
             search_hotkey::status(),
             0,
         );
-        s.cards.push(Rect::from_xywh(x, 254.0, w, 64.0));
         s.text(
             Rect::from_xywh(x + 18.0, 270.0, w - 110.0, 32.0),
             "按需启动 Everything",
@@ -557,7 +433,6 @@ pub(super) fn scene(
             selected: value.auto_start,
             toggle: true,
         });
-        s.cards.push(Rect::from_xywh(x, 330.0, w, 112.0));
         s.text(
             Rect::from_xywh(x + 18.0, 340.0, w - 36.0, 26.0),
             if value.path.is_empty() {
@@ -616,7 +491,6 @@ pub(super) fn scene(
             0,
         );
     } else {
-        s.cards.push(Rect::from_xywh(x, 88.0, w, 144.0));
         s.text(
             Rect::from_xywh(x + 28.0, 98.0, w - 56.0, 36.0),
             "LucidPane",

@@ -338,7 +338,10 @@ pub(super) fn handle(
     }
     if matches!(
         event,
-        Event::SetCornerRadius(_) | Event::ToggleBorder | Event::ToggleSnap
+        Event::SetCornerRadius(_)
+            | Event::ToggleBorder
+            | Event::ToggleSnap
+            | Event::ResetPaneOptions
     ) {
         let mut s = state.borrow_mut();
         let old = s.workspace.pane_options();
@@ -349,6 +352,7 @@ pub(super) fn handle(
             }
             Event::ToggleBorder => options.border = !options.border,
             Event::ToggleSnap => options.snap = !options.snap,
+            Event::ResetPaneOptions => options = desktop_core::PaneOptions::default(),
             _ => unreachable!(),
         }
         s.workspace.set_pane_options(options);
@@ -689,7 +693,8 @@ pub(super) fn handle(
         | Event::Material(_)
         | Event::SetCornerRadius(_)
         | Event::ToggleBorder
-        | Event::ToggleSnap => {
+        | Event::ToggleSnap
+        | Event::ResetPaneOptions => {
             unreachable!("Handled before borrowing PaneApp")
         }
         Event::ToggleLocked => {

@@ -44,8 +44,6 @@ enum Action {
     ProjectHome,
     Window(u32),
     Page(usize),
-    Previous,
-    Next,
     Change(Event),
     Radius(u8),
     Opacity(u8),
@@ -78,6 +76,7 @@ struct Control {
 struct Scene {
     text: Vec<(Rect, String, usize)>,
     cards: Vec<Rect>,
+    separators: Vec<Rect>,
     controls: Vec<Control>,
     previews: Vec<(Rect, u32, f32)>,
 }
@@ -239,7 +238,7 @@ fn with_titlebar(mut scene: Scene, width: f32, maximized: bool) -> Scene {
         r.top += TITLE_HEIGHT;
         r.bottom += TITLE_HEIGHT;
     }
-    for r in &mut scene.cards {
+    for r in scene.cards.iter_mut().chain(&mut scene.separators) {
         r.top += TITLE_HEIGHT;
         r.bottom += TITLE_HEIGHT;
     }
@@ -467,6 +466,9 @@ impl Painter {
                     },
                     &page_background,
                 );
+                for r in &s.separators {
+                    t.fill_rect(r, &border);
+                }
                 for r in &s.cards {
                     let rr = RoundedRect {
                         rect: *r,
@@ -1245,8 +1247,6 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         w,
                         h - TITLE_HEIGHT,
                         page,
-                        panel,
-                        panels.len(),
                         search_visible,
                         appearance,
                         options,
@@ -1657,12 +1657,6 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         toggle_motion.clear();
                         focus = None;
                     }
-                    Action::Previous => {
-                        selected = panels[(at + panels.len() - 1) % panels.len()].id();
-                    }
-                    Action::Next => {
-                        selected = panels[(at + 1) % panels.len()].id();
-                    }
                     Action::Radius(_) | Action::Opacity(_) | Action::Strength(_) | Action::Channel(_, _) => {}
                     Action::Change(Event::Material(value)) if value.strength().is_some() => {
                         let backdrop = material_style(&state.borrow().store, *value);
@@ -1775,8 +1769,6 @@ mod tests {
                 800.0,
                 480.0 - TITLE_HEIGHT,
                 7,
-                None,
-                0,
                 false,
                 (
                     PanelTheme::Dark,
@@ -1813,8 +1805,6 @@ mod tests {
             scene(
                 800.0,
                 480.0 - TITLE_HEIGHT,
-                0,
-                None,
                 0,
                 false,
                 (
@@ -1919,8 +1909,6 @@ mod tests {
                 1040.0,
                 728.0,
                 0,
-                None,
-                0,
                 false,
                 (PanelTheme::Dark, Backdrop::Mica),
                 desktop_core::PaneOptions::default(),
@@ -1939,20 +1927,17 @@ mod tests {
     #[test]
     fn settings_layout_and_rendering_at_multiple_scales() {
         let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
-        let panel = Panel::new(PanelId::new(1), "工作与灵感", RectDip::default());
         let painter = Painter::new().unwrap();
         {
             let device = windows_canvas::GpuDevice::new_warp().unwrap();
             for scale in [1.0, 1.5, 2.0] {
-                for page in 0..8 {
+                for page in [0, 1, 3, 4, 5, 6, 7] {
                     for dark in [false, true] {
                         let s = with_titlebar(
                             scene(
                                 940.0,
                                 620.0 - TITLE_HEIGHT,
                                 page,
-                                Some(&panel),
-                                2,
                                 true,
                                 (
                                     PanelTheme::System,
@@ -2066,28 +2051,12 @@ mod tests {
                                 * 4) as usize;
                             assert!(
                                 overlay[card_at + 3] > 0 && overlay[card_at + 3] < 255,
-                                "settings cards must retain material transparency"
+                                "settings content must retain material transparency"
                             );
                         }
                     }
                 }
             }
-            let empty = scene(
-                960.0,
-                650.0,
-                2,
-                None,
-                0,
-                false,
-                (PanelTheme::System, Backdrop::Mica),
-                desktop_core::PaneOptions::default(),
-            );
-            assert!(
-                empty
-                    .controls
-                    .iter()
-                    .any(|c| matches!(c.action, Action::Change(Event::New)))
-            );
         }
     }
 }

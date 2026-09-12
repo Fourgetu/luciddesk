@@ -134,6 +134,7 @@ enum Event {
     SetCornerRadius(u8),
     ToggleBorder,
     ToggleSnap,
+    ResetPaneOptions,
     Theme(desktop_core::PanelTheme),
     SetCollapsed(bool),
     Moving(*mut RECT),

@@ -1133,6 +1133,20 @@ fn pane_options_apply_globally_and_can_disable_snapping() {
             .corner_radius,
         11
     );
+    handle(&state, id, Event::ResetPaneOptions).unwrap();
+    assert_eq!(
+        state.borrow().workspace.pane_options(),
+        desktop_core::PaneOptions::default()
+    );
+    assert_eq!(
+        state
+            .borrow()
+            .store
+            .load_workspace()
+            .unwrap()
+            .pane_options(),
+        desktop_core::PaneOptions::default()
+    );
 }
 
 #[test]

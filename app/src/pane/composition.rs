@@ -155,7 +155,7 @@ impl Surface {
                 hwnd,
                 present: native_swap,
                 rounded_backdrop: None,
-                pane_corner_radius: 7,
+                pane_corner_radius: desktop_core::PaneOptions::DEFAULT.corner_radius,
                 dark: true,
                 opacity: std::cell::Cell::new(initial_opacity),
                 acrylic,
