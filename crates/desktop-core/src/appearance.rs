@@ -51,7 +51,7 @@ pub struct PaneOptions {
 }
 
 impl PaneOptions {
-    pub const GRID_SCALE_RANGE: (f32, f32) = (90.0, 200.0);
+    pub const GRID_SCALE_RANGE: (f32, f32) = (50.0, 200.0);
     pub const MAX_CORNER_RADIUS: f32 = 24.0;
     pub const DEFAULT: Self = Self {
         corner_radius: 6.0,

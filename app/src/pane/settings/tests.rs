@@ -44,7 +44,7 @@ fn grid_slider_centers_default_and_scales_in_both_directions() {
     assert_eq!(grid_slider_value(0.5), 100.0);
     assert_eq!(grid_slider_value(0.0), grid_range().0);
     assert_eq!(grid_slider_value(1.0), grid_range().1);
-    for value in 90..=200 {
+    for value in 50..=200 {
         assert_eq!(grid_slider_value(grid_slider_position(value as f32)), value as f32);
     }
     assert!(grid_slider_value(0.25) < 100.0);

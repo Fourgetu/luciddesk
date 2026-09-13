@@ -142,39 +142,41 @@ impl GroupModel {
             .collect();
     }
 
-    fn icon_grid_spacing(&self) -> (f32, f32) {
-        let scale = (self.options.grid_scale / 100.0)
-            .max((self.icon_size + 16.0) / 88.0)
-            .max((self.icon_size + 34.0) / 96.0);
-        (88.0 * scale, 96.0 * scale)
+    fn icon_grid(&self, width: f32, height: f32) -> layout::Grid {
+        let factor = self.options.grid_scale / 100.0;
+        let mut grid = layout::Grid::system(width, height, self.icon_size, (88.0, 96.0));
+        grid.cell_width *= factor;
+        grid.cell_height *= factor;
+        grid.icon_size *= factor;
+        grid.text_scale = factor;
+        grid.columns = ((width - layout::PADDING * 2.0) / grid.cell_width).floor().max(1.0) as usize;
+        grid.visible_rows = ((height - grid.content_top - layout::PADDING) / grid.cell_height).floor().max(1.0) as usize;
+        grid
     }
     pub(super) fn resize_cell(&self) -> (f32, f32) {
         if self.is_list() {
             return (396.0, layout::LIST_ROW);
         }
-        let grid = layout::Grid::system(0.0, 0.0, self.icon_size, self.icon_grid_spacing());
+        let grid = self.icon_grid(0.0, 0.0);
         (grid.cell_width, grid.cell_height)
+    }
+
+    fn row_content(&self, grid: layout::Grid, row: usize) -> f32 {
+        let start = row * grid.columns;
+        self.items[start..(start + grid.columns).min(self.items.len())].iter()
+            .map(|item| theme::selection_height(
+                grid.icon_size,
+                label::scaled_content_height(&item.label, grid.cell_width.round() as u32, 96, grid.text_scale),
+                grid.cell_height,
+            ))
+            .fold(grid.icon_size + layout::LABEL_OFFSET + 1.0, f32::max)
     }
 
     pub(super) fn row_contents(&self, grid: layout::Grid) -> Vec<f32> {
         if self.is_list() {
             return vec![layout::LIST_ROW; self.items.len()];
         }
-        self.items
-            .chunks(grid.columns)
-            .map(|items| {
-                items
-                    .iter()
-                    .map(|item| {
-                        theme::selection_height(
-                            self.icon_size,
-                            label::content_height(&item.label, grid.cell_width.round() as u32),
-                            grid.cell_height,
-                        )
-                    })
-                    .fold(self.icon_size + layout::LABEL_OFFSET + 1.0, f32::max)
-            })
-            .collect()
+        (0..self.items.len().div_ceil(grid.columns)).map(|row| self.row_content(grid, row)).collect()
     }
 
     pub(super) fn grid(&self, width: f32, height: f32) -> layout::Grid {
@@ -187,20 +189,22 @@ impl GroupModel {
             }
             return grid;
         }
-        let mut grid = layout::Grid::system(width, height, self.icon_size, self.icon_grid_spacing());
+        let mut grid = self.icon_grid(width, height);
         if !self.items.is_empty() {
-            let rows = self.row_contents(grid);
+            let count = self.items.len().div_ceil(grid.columns);
             let available = height - layout::HEADER - layout::PADDING;
-            let start = self.scroll.min(rows.len() - 1);
-            grid.visible_rows = layout::fitting_rows(&rows[start..], grid.cell_height, available);
-            grid.scroll_limit = Some(
-                (0..rows.len())
-                    .find(|start| {
-                        layout::fitting_rows(&rows[*start..], grid.cell_height, available)
-                            >= rows.len() - start
-                    })
-                    .unwrap_or(rows.len() - 1),
-            );
+            // Positive row heights mean only a viewport-sized suffix can fit at
+            // the end; measuring earlier labels cannot affect the scroll limit.
+            let candidates = (available.max(0.0) / grid.cell_height).ceil() as usize + 2;
+            let start = self.scroll.min(count - 1);
+            let visible: Vec<_> = (start..(start + candidates).min(count))
+                .map(|row| self.row_content(grid, row)).collect();
+            grid.visible_rows = layout::fitting_rows(&visible, grid.cell_height, available);
+            let tail_start = count.saturating_sub(candidates);
+            let tail: Vec<_> = (tail_start..count).map(|row| self.row_content(grid, row)).collect();
+            grid.scroll_limit = Some(tail_start + (0..tail.len())
+                .find(|start| layout::fitting_rows(&tail[*start..], grid.cell_height, available) >= tail.len() - start)
+                .unwrap_or(tail.len() - 1));
         }
         grid
     }
@@ -219,10 +223,11 @@ impl GroupModel {
         }
         let height = theme::selection_height(
             grid.icon_size,
-            label::content_height_at_dpi(
+            label::scaled_content_height(
                 &self.items[index].label,
                 (grid.cell_width * scale).round() as u32,
                 (96.0 * scale).round() as u32,
+                grid.text_scale,
             ) / scale,
             grid.cell_height,
         );

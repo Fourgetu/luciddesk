@@ -431,10 +431,10 @@ pub(super) fn icon_pixels(
 }
 
 /// Resample once in premultiplied BGRA; cache the resulting physical-pixel bitmap.
-pub fn resample(source: &Pixels, width: u32, height: u32) -> windows::core::Result<Pixels> {
+pub fn resample(source: &Pixels, width: u32, height: u32) -> windows::core::Result<std::borrow::Cow<'_, Pixels>> {
     use windows::Win32::Graphics::Imaging::*;
     if (source.width, source.height) == (width, height) {
-        return Ok(source.clone());
+        return Ok(std::borrow::Cow::Borrowed(source));
     }
     unsafe {
         let factory: IWICImagingFactory =
@@ -465,10 +465,10 @@ pub fn resample(source: &Pixels, width: u32, height: u32) -> windows::core::Resu
                 p[c] = p[c].min(p[3]);
             }
         }
-        Ok(Pixels {
+        Ok(std::borrow::Cow::Owned(Pixels {
             width,
             height,
             data,
-        })
+        }))
     }
 }

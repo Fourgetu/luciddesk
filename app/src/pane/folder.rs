@@ -149,8 +149,8 @@ impl Source {
     fn start_with(path: PathBuf, wake: wake::Wake, cache: images::SharedCache, sort: (u8, bool)) -> Result<Self, String> {
         let request = Arc::new(Commands::new()?);
         let commands = Arc::clone(&request);
-        let (sender, updates) = mpsc::channel();
-        let (image_sender, image_updates) = mpsc::channel();
+        let (sender, updates) = mpsc::sync_channel(1);
+        let (image_sender, image_updates) = mpsc::sync_channel(2);
         let worker_cache = Arc::clone(&cache);
         let root = path.clone();
         std::thread::Builder::new()
@@ -803,6 +803,10 @@ mod tests {
             }
         }
         eprintln!("first {} real images: {:?}", loaded.len(), started.elapsed());
+        let logical_bytes: usize = loaded.values().map(|image| image.data.len()).sum();
+        let unique: HashMap<_, _> = loaded.values().map(|image| (Arc::as_ptr(image), image.data.len())).collect();
+        eprintln!("real image pixel storage: {logical_bytes} unshared bytes -> {} shared bytes ({} unique images)",
+            unique.values().sum::<usize>(), unique.len());
         let child = first.iter().find(|item| item.details.folder).and_then(|item| item.identity.file_system_path()).map(Path::to_path_buf);
         drop(source);
         if let Some(child) = child {

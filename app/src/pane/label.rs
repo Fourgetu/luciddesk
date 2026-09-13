@@ -48,13 +48,14 @@ pub struct Label {
     pub padding: u32,
 }
 
-pub fn layout(text: &str, width: u32, dpi: u32, lines: u32) -> Result<(TextLayout, f32)> {
+pub fn layout_scaled(text: &str, width: u32, dpi: u32, lines: u32, font_scale: f32) -> Result<(TextLayout, f32)> {
     use std::cell::RefCell;
     thread_local! {
         static CACHE: RefCell<LayoutCache<(String, u32, u32, u32, u32), (TextLayout, f32)>> = RefCell::new(LayoutCache::new());
         static FORMAT: RefCell<Option<(u32, TextFormat, f32)>> = const { RefCell::new(None) };
     }
     let (_, size) = super::assets::font();
+    let size = size * font_scale;
     let key = (text.to_owned(), width, dpi, lines, size.to_bits());
     CACHE.with(|cache| {
         if let Some(value) = cache.borrow_mut().get(&key) {
@@ -93,11 +94,16 @@ pub fn layout(text: &str, width: u32, dpi: u32, lines: u32) -> Result<(TextLayou
 
 // Drag images still need pixels, but their glyphs use the same DirectWrite
 // layout as live panes. Transparent drag bitmaps always use grayscale.
+#[cfg(test)]
 pub fn raster(text: &str, width: u32, dpi: u32, max_lines: u32) -> Option<Label> {
+    raster_scaled(text, width, dpi, max_lines, 1.0)
+}
+
+pub fn raster_scaled(text: &str, width: u32, dpi: u32, max_lines: u32, font_scale: f32) -> Option<Label> {
     if !(8..=4096).contains(&width) || !(48..=768).contains(&dpi) || !(1..=8).contains(&max_lines) {
         return None;
     }
-    let (layout, height) = layout(text, width, dpi, max_lines).ok()?;
+    let (layout, height) = layout_scaled(text, width, dpi, max_lines, font_scale).ok()?;
     let scale = dpi as f32 / 96.0;
     let padding = (2.0 * scale).ceil() as u32;
     let text_height = height as u32;
@@ -237,26 +243,9 @@ mod tests {
 
 // Measurement is cached separately from GPU uploads; resizing/hit testing never
 // repeatedly rasterizes labels. The same wrapping routine supplies paint metrics.
-pub fn content_height(text: &str, width: u32) -> f32 {
-    content_height_at_dpi(text, width, 96)
-}
-
-pub fn content_height_at_dpi(text: &str, width: u32, dpi: u32) -> f32 {
-    use std::cell::RefCell;
-    thread_local! {
-        static HEIGHTS: RefCell<LayoutCache<(String, u32, u32), f32>> = RefCell::new(LayoutCache::new());
-    }
-    HEIGHTS.with(|cache| {
-        let key = (text.to_owned(), width, dpi);
-        if let Some(height) = cache.borrow_mut().get(&key) {
-            return height;
-        }
-        let height =
-            layout(text, width, dpi, 2).map_or(16.0 * dpi as f32 / 96.0, |(_, height)| height);
-        let mut cache = cache.borrow_mut();
-        cache.insert(key, height);
-        height
-    })
+pub fn scaled_content_height(text: &str, width: u32, dpi: u32, font_scale: f32) -> f32 {
+    layout_scaled(text, width, dpi, 2, font_scale)
+        .map_or(16.0 * font_scale * dpi as f32 / 96.0, |(_, height)| height)
 }
 
 #[cfg(test)]

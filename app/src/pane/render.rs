@@ -8,7 +8,7 @@ use windows_canvas::{ColorF, Ellipse, Rect, RoundedRect, Vector2};
 
 use super::native_graphics::canvas_result;
 use super::{GroupModel, assets, canvas, layout::HEADER};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use windows_canvas::ID2D1DeviceContext;
@@ -37,7 +37,7 @@ pub struct Renderer {
     icons: windows_canvas::TextFormat,
     navigation_icons: windows_canvas::TextFormat,
     target: Option<(u32, u32, Option<canvas::Offscreen>, ID2D1DeviceContext)>,
-    images: HashMap<String, ImageBitmap>,
+    images: HashMap<usize, ImageBitmap>,
     states: HashMap<(u32, u32, u32, i32), windows_canvas::Bitmap>,
 }
 
@@ -277,10 +277,13 @@ impl Renderer {
         // Keep the viewport plus one row for smooth scrolling, not every icon
         // ever visited in a large mapped folder. Source identity still detects
         // replaced icons without re-uploading unchanged visible textures.
-        let live: HashMap<_, _> = model
+        let candidates = grid.visible_indices(model.scroll, HEADER - grid.cell_height, height_dip + grid.cell_height, model.items.len());
+        let live: HashSet<_> = model
             .items
             .iter()
             .enumerate()
+            .skip(candidates.start)
+            .take(candidates.len())
             .filter(|(index, _)| {
                 let (_, y) = model.cell(grid, *index);
                 height_dip > HEADER + 1.0
@@ -290,11 +293,11 @@ impl Renderer {
             .filter_map(|(_, item)| {
                 item.image
                     .as_ref()
-                    .map(|image| (item.identity.persistent_key(), Arc::as_ptr(image)))
+                    .map(|image| Arc::as_ptr(image) as usize)
             })
             .collect();
         self.images
-            .retain(|key, (source, _, _)| live.get(key) == Some(&Arc::as_ptr(source)));
+            .retain(|key, _| live.contains(key));
         self.draw(width, height, scale, model)
     }
 
@@ -347,6 +350,7 @@ impl Renderer {
 
     #[allow(clippy::too_many_lines)]
     fn draw(&mut self, width: u32, height: u32, scale: f32, model: &GroupModel) -> Result<()> {
+        let mut live_states = HashSet::new();
         let w = width as f32 / scale;
         let (mut title_left, mut title_space) = super::layout::title_area(w);
         if model.folder.is_some() {
@@ -547,7 +551,8 @@ impl Renderer {
                             &hover,
                         );
                     }
-                    for (index, item) in model.items.iter().enumerate() {
+                    for index in grid.visible_indices(model.scroll, HEADER, h, model.items.len()) {
+                        let item = &model.items[index];
                         let (x, y) = model.cell(grid, index);
                         if list && y < grid.content_top {
                             continue;
@@ -577,6 +582,7 @@ impl Renderer {
                                 (96.0 * scale).round() as u32,
                                 state,
                             );
+                            live_states.insert(key);
                             if !self.states.contains_key(&key)
                                 && let Some(pixels) =
                                     super::theme::selection(key.0, key.1, key.2, key.3)
@@ -625,7 +631,7 @@ impl Renderer {
                             }
                         }
                         if let Some(image) = &item.image {
-                            let key = item.identity.persistent_key();
+                            let key = Arc::as_ptr(image) as usize;
                             let ratio =
                                 grid.icon_size * scale / image.width.max(image.height) as f32;
                             let size = (
@@ -642,9 +648,9 @@ impl Renderer {
                                     pixels.height,
                                 ))?;
                                 self.images
-                                    .insert(key.clone(), (Arc::clone(image), bitmap, size));
+                                    .insert(key, (Arc::clone(image), bitmap, size));
                                 if std::env::var_os("LUCIDPANE_ICON_TRACE").is_some()
-                                    && key
+                                    && item.identity.persistent_key()
                                         .to_ascii_lowercase()
                                         .contains("645ff040-5081-101b-9f08-00aa002f954e")
                                 {
@@ -724,11 +730,12 @@ impl Renderer {
                         if model.renaming.as_ref() == Some(&item.identity) {
                             continue;
                         }
-                        let (layout, _) = super::label::layout(
+                        let (layout, _) = super::label::layout_scaled(
                             &item.label,
                             (grid.cell_width * scale).round() as u32,
                             (96.0 * scale).round() as u32,
                             2,
+                            grid.text_scale,
                         )?;
                         target.clipped_layout(
                             &layout,
@@ -790,7 +797,11 @@ impl Renderer {
                         );
                     }
                 }
-                target.finish()
+                let result = target.finish();
+                // Retain only backgrounds used by this frame, including after resize,
+                // DPI changes, deselection, or collapsing the content.
+                self.states.retain(|key, _| live_states.contains(key));
+                result
             })
         }
     }
@@ -986,6 +997,31 @@ mod tests {
             let preview = super::super::drag_drop::image::list_item_pixels(&icon, &model.items[0].label, grid, scale).unwrap();
             assert_eq!(preview.height, (grid.cell_height * scale).round() as u32);
             assert!(preview.data.chunks_exact(4).any(|p| p[3] > 0));
+        }
+    }
+
+    #[test]
+    fn grid_scale_changes_icon_and_text_size_together() {
+        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let mut model = sample_model();
+        let mut renderer = Renderer::new().unwrap();
+        for dpi_scale in [1.0, 1.25, 1.5, 2.0] {
+            let mut previous_text_height = 0.0;
+            for percent in [50.0, 100.0, 150.0, 200.0] {
+                model.options.grid_scale = percent;
+                let grid = model.grid(600.0, 500.0);
+                assert_eq!(grid.icon_size, model.icon_size * percent / 100.0);
+                let (_, text_height) = super::super::label::layout_scaled(
+                    "Desktop", (grid.cell_width * dpi_scale).round() as u32,
+                    (96.0 * dpi_scale).round() as u32, 2, grid.text_scale,
+                ).unwrap();
+                assert!(text_height > previous_text_height, "glyph height must scale at {percent}%");
+                previous_text_height = text_height;
+                renderer.pixels((600.0 * dpi_scale) as u32, (500.0 * dpi_scale) as u32, dpi_scale, &model).unwrap();
+                let icon = assets::Pixels { width: 1, height: 1, data: vec![255; 4] };
+                let preview = super::super::drag_drop::image::item_pixels(&icon, "Desktop", grid, dpi_scale).unwrap();
+                assert!(preview.height as f32 > grid.icon_size * dpi_scale);
+            }
         }
     }
     use super::*;
@@ -1276,6 +1312,114 @@ mod tests {
     }
 
     #[test]
+    fn viewport_layout_matches_full_measurement_across_sizes_and_scroll_positions() {
+        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let mut model = sample_model();
+        let template = model.items[0].clone();
+        for count in [1, 37, 257] {
+            model.items = (0..count).map(|index| Item {
+                label: ["short", "long filename with wrapping content", "项目文件名称与测试资料"][index % 3].into(),
+                ..template.clone()
+            }).collect();
+            for percent in [50.0, 100.0, 200.0] {
+                model.options.grid_scale = percent;
+                for width in [180.0, 420.0] {
+                    for height in [44.0, 80.0, 240.0, 600.0] {
+                        for scroll in [0, 2, count - 1] {
+                            model.scroll = scroll;
+                            let grid = model.grid(width, height);
+                            let rows = model.row_contents(grid);
+                            let available = height - super::super::layout::HEADER - super::super::layout::PADDING;
+                            let old_visible = super::super::layout::fitting_rows(&rows[scroll.min(rows.len()-1)..], grid.cell_height, available);
+                            let old_limit = (0..rows.len()).find(|start| super::super::layout::fitting_rows(&rows[*start..], grid.cell_height, available) >= rows.len()-start).unwrap_or(rows.len()-1);
+                            assert_eq!(grid.visible_rows, old_visible);
+                            assert_eq!(grid.scroll_limit, Some(old_limit));
+                            let expected: Vec<_> = (0..count).filter(|index| {
+                                let (_, y) = model.cell(grid, *index);
+                                y + grid.cell_height > HEADER && y < height
+                            }).collect();
+                            let actual: Vec<_> = grid.visible_indices(scroll, HEADER, height, count).filter(|index| {
+                                let (_, y) = model.cell(grid, *index);
+                                y + grid.cell_height > HEADER && y < height
+                            }).collect();
+                            assert_eq!(actual, expected);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn large_directory_layout_timing() {
+        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let mut model = sample_model();
+        let template = model.items[0].clone();
+        model.items = (0..10000).map(|index| Item {
+            label: format!("Document {index} with a longer file name.txt"), ..template.clone()
+        }).collect();
+        let grid = model.grid(600.0, 400.0);
+        let start = std::time::Instant::now();
+        let rows = model.row_contents(grid);
+        let old = start.elapsed();
+        let start = std::time::Instant::now();
+        for _ in 0..100 { std::hint::black_box(model.grid(600.0, 400.0)); }
+        eprintln!("10,000-file layout: full row measurement {:?}; viewport layout average {:?}", old, start.elapsed()/100);
+        assert_eq!(rows.len(), model.items.len().div_ceil(grid.columns));
+    }
+
+    #[test]
+    fn selection_backgrounds_release_old_sizes_and_deselected_textures() {
+        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let mut model = sample_model();
+        model.list_view = true;
+        model.selection.insert(0);
+        let device = windows_canvas::GpuDevice::new_warp().unwrap();
+        let mut renderer = Renderer::new().unwrap();
+        let bitmap = canvas::Offscreen::new(&device, 640, 240).unwrap();
+        for width in [320, 480, 640, 400] {
+            renderer.paint(&bitmap.target, width, 240, 1.0, &model).unwrap();
+            assert_eq!(renderer.states.len(), 1);
+        }
+        model.selection.clear();
+        model.hovered_item = None;
+        renderer.paint(&bitmap.target, 400, 240, 1.0, &model).unwrap();
+        assert!(renderer.states.is_empty());
+    }
+
+    #[test]
+    fn same_size_upload_borrows_original_pixel_buffer() {
+        let source = assets::Pixels { width: 32, height: 32, data: vec![255; 32 * 32 * 4] };
+        let pixels = assets::resample(&source, 32, 32).unwrap();
+        assert!(std::ptr::eq(pixels.data.as_ptr(), source.data.as_ptr()));
+    }
+
+    #[test]
+    fn identical_visible_icons_share_one_gpu_upload_and_changed_pixels_replace_it() {
+        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let mut model = sample_model();
+        let template = model.items[0].clone();
+        model.items = (0..8).map(|index| Item {
+            identity: ShellIdentity::Namespace { parsing_name: format!("shared:{index}") },
+            ..template.clone()
+        }).collect();
+        let device = windows_canvas::GpuDevice::new_warp().unwrap();
+        let mut renderer = Renderer::new().unwrap();
+        for scale in [1.0, 1.5, 2.0] {
+            let bitmap = canvas::Offscreen::new(&device, (600.0 * scale) as u32, (400.0 * scale) as u32).unwrap();
+            renderer.paint(&bitmap.target, (600.0 * scale) as u32, (400.0 * scale) as u32, scale, &model).unwrap();
+            assert_eq!(renderer.images.len(), 1, "shared pixels should upload only once");
+        }
+        let bitmap = canvas::Offscreen::new(&device, 600, 400).unwrap();
+        Arc::make_mut(model.items[0].image.as_mut().unwrap()).data[0] ^= 1;
+        renderer.paint(&bitmap.target, 600, 400, 1.0, &model).unwrap();
+        assert_eq!(renderer.images.len(), 2);
+        model.items.remove(0);
+        renderer.paint(&bitmap.target, 600, 400, 1.0, &model).unwrap();
+        assert_eq!(renderer.images.len(), 1);
+    }
+
+    #[test]
     fn scrolling_releases_offscreen_icon_textures() {
         let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
         let mut model = sample_model();
@@ -1286,7 +1430,7 @@ mod tests {
                     parsing_name: format!("test:icon-{index}"),
                 },
                 label: format!("Icon {index}"),
-                image: image.clone(),
+                image: image.as_ref().map(|image| Arc::new((**image).clone())),
                 details: Default::default(),
             })
             .collect();
@@ -1312,7 +1456,7 @@ mod tests {
         assert!(
             renderer
                 .images
-                .contains_key(&model.items[0].identity.persistent_key())
+                .contains_key(&(Arc::as_ptr(model.items[0].image.as_ref().unwrap()) as usize))
         );
     }
 

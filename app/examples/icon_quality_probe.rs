@@ -19,7 +19,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let source = assets::load(&identity, 128)?;
     let pixels = assets::resample(&source, 72, 72)?;
     println!("source={}x{}, preview=72x72", source.width, source.height);
-    let mut data = pixels.data;
+    let mut data = pixels.into_owned().data;
     for pixel in data.chunks_exact_mut(4) {
         let alpha = u16::from(pixel[3]);
         for channel in &mut pixel[..3] {

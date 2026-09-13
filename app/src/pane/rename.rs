@@ -126,6 +126,9 @@ fn show_editor(
         let title = title_commit.is_some();
         if title {
             logical_font.lfHeight -= (dpi as f32 / 96.0).round() as i32;
+        } else if !model.borrow().is_list() {
+            logical_font.lfHeight = (logical_font.lfHeight as f32
+                * model.borrow().options.grid_scale / 100.0).round() as i32;
         }
         let font = CreateFontIndirectW(&raw const logical_font);
         if font.is_null() {

@@ -6,6 +6,7 @@ pub struct Grid {
     pub cell_width: f32,
     pub cell_height: f32,
     pub icon_size: f32,
+    pub text_scale: f32,
     pub visible_rows: usize,
     pub scroll_limit: Option<usize>,
 }
@@ -67,6 +68,7 @@ impl Grid {
             cell_width: (width - PADDING * 2.0).max(1.0),
             cell_height: LIST_ROW,
             icon_size: 20.0,
+            text_scale: 1.0,
             visible_rows: ((height - top - PADDING) / LIST_ROW).floor().max(1.0) as usize,
             scroll_limit: None,
         }
@@ -81,6 +83,7 @@ impl Grid {
             cell_width,
             cell_height,
             icon_size,
+            text_scale: 1.0,
             visible_rows: ((height - HEADER - PADDING * 2.0) / cell_height)
                 .floor()
                 .max(1.0) as usize,
@@ -106,6 +109,14 @@ impl Grid {
         let row = ((y - self.content_top) / self.cell_height).floor() as usize + scroll;
         let index = row * self.columns + column;
         (index < count).then_some(index)
+    }
+
+    /// Candidate cells intersecting a vertical viewport; callers retain exact clipping.
+    pub fn visible_indices(self, scroll: usize, top: f32, bottom: f32, count: usize) -> std::ops::Range<usize> {
+        let first = ((top - self.content_top) / self.cell_height + scroll as f32).floor().max(0.0) as usize;
+        let end = ((bottom - self.content_top) / self.cell_height + scroll as f32).ceil().max(0.0) as usize;
+        let start = first.saturating_mul(self.columns).min(count);
+        start..end.saturating_mul(self.columns).min(count).max(start)
     }
 
     pub fn max_scroll(self, count: usize) -> usize {

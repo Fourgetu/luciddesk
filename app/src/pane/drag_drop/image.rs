@@ -62,7 +62,7 @@ pub fn item_pixels(
         return None;
     }
     let width = (grid.cell_width * scale).round().max(1.0) as u32;
-    let label = crate::pane::label::raster(name, width, (96.0 * scale).round() as u32, 2)?;
+    let label = crate::pane::label::raster_scaled(name, width, (96.0 * scale).round() as u32, 2, grid.text_scale)?;
     let label_y = ((grid.icon_size + crate::pane::layout::LABEL_OFFSET) * scale).round() as u32
         - label.padding;
     let height = label_y + label.pixels.height;
