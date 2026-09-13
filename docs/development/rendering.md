@@ -88,5 +88,5 @@ content sharing the tree stays visible.
 backdrop or wallpaper brush for this material. Existing content visuals and
 corner clips are reused; content opacity stays independent. Slider gestures
 update visuals in memory and commit the workspace once on release. The storage
-schema v11 adds a nullable color column, preserving existing v8-v10 material
-values on migration and retaining the last solid style in metadata.
+The workspace database stores per-panel color overrides in `panels`, and global solid
+style defaults in `config.toml`. Development builds do not migrate older databases.

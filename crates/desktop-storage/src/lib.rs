@@ -7,8 +7,11 @@ use std::error::Error;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-const SCHEMA_VERSION: i64 = 11;
+mod config;
+#[cfg(test)]
+mod config_tests;
 mod recovery;
+mod schema;
 
 fn encode_panel_text(text: desktop_core::PanelText) -> &'static str {
     match text {
@@ -20,6 +23,7 @@ fn encode_panel_text(text: desktop_core::PanelText) -> &'static str {
 
 pub struct WorkspaceStore {
     connection: Connection,
+    config: Option<std::cell::RefCell<config::ConfigFile>>,
 }
 
 impl WorkspaceStore {
@@ -27,6 +31,14 @@ impl WorkspaceStore {
     /// # Errors
     /// Returns an error if the database query fails.
     pub fn preference(&self, key: &str) -> Result<Option<String>, StoreError> {
+        if config::KEYS.contains(&key)
+            && let Some(config) = &self.config
+        {
+            return Ok(config.borrow().values.get(key).cloned());
+        }
+        if let Some(id) = key.strip_prefix("panel_folder_sort:") {
+            return Ok(self.connection.query_row("SELECT sort_column||':'||sort_direction FROM panel_folder_settings WHERE panel_id=?1",[id],|r|r.get(0)).optional()?);
+        }
         Ok(self
             .connection
             .query_row("SELECT value FROM metadata WHERE key=?1", [key], |row| {
@@ -39,6 +51,16 @@ impl WorkspaceStore {
     /// # Errors
     /// Returns an error if the database update fails.
     pub fn save_preference(&self, key: &str, value: &str) -> Result<(), StoreError> {
+        if config::KEYS.contains(&key)
+            && let Some(config) = &self.config
+        {
+            return config.borrow_mut().save(&[(key, value.to_owned())]);
+        }
+        if let Some(id) = key.strip_prefix("panel_folder_sort:") {
+            let (column, direction) = schema::parse_sort(value)?;
+            self.connection.execute("UPDATE panel_folder_settings SET sort_column=?2,sort_direction=?3 WHERE panel_id=?1 AND (sort_column IS NOT ?2 OR sort_direction IS NOT ?3)",params![id,column,direction])?;
+            return Ok(());
+        }
         self.connection.execute(
             "INSERT INTO metadata(key,value) VALUES (?1,?2)
              ON CONFLICT(key) DO UPDATE SET value=excluded.value
@@ -55,19 +77,14 @@ impl WorkspaceStore {
     /// Returns an error when the database cannot be opened or initialized.
     pub fn open(path: &Path) -> Result<Self, StoreError> {
         let connection = Connection::open(path)?;
-        let version: Option<String> = connection
-            .query_row(
-                "SELECT value FROM metadata WHERE key='schema_version'",
-                [],
-                |row| row.get(0),
-            )
-            .optional()
-            .unwrap_or(None);
-        if matches!(version.as_deref(), Some("8" | "9" | "10")) {
-            let backup = recovery::unique_backup_path(path, "before-v11");
-            connection.backup(rusqlite::MAIN_DB, backup, None)?;
-        }
-        Self::from_connection(connection)
+        let mut store = Self::from_connection(connection)?;
+        store.attach_config(&path.with_file_name("config.toml"))?;
+        Ok(store)
+    }
+
+    #[cfg(test)]
+    fn open_database(path: &Path) -> Result<Self, StoreError> {
+        Self::from_connection(Connection::open(path)?)
     }
 
     /// Creates an in-memory workspace database for tests and temporary sessions.
@@ -83,7 +100,10 @@ impl WorkspaceStore {
     fn from_connection(connection: Connection) -> Result<Self, StoreError> {
         connection.execute_batch("PRAGMA foreign_keys = ON;")?;
         initialize_schema(&connection)?;
-        Ok(Self { connection })
+        Ok(Self {
+            connection,
+            config: None,
+        })
     }
 
     /// Loads the complete workspace.
@@ -118,67 +138,35 @@ impl WorkspaceStore {
         }
         drop(statement);
         for panel in &mut panels {
-            panel.set_folder_list(
-                self.preference(&format!("panel_folder_view:{}", panel.id().get()))?
-                    .as_deref()
-                    != Some("icons"),
-            );
-            panel.set_folder(
-                self.preference(&format!("panel_folder:{}", panel.id().get()))?
-                    .map(PathBuf::from),
-            );
-            panel.set_search(
-                self.preference(&format!("panel_search:{}", panel.id().get()))?
-                    .as_deref()
-                    == Some("true"),
-            );
-            let panel_id = i64::try_from(panel.id().get())
-                .map_err(|_| StoreError::InvalidData("panel id exceeds SQLite range".into()))?;
-            let auto_hide = self
-                .connection
-                .query_row(
-                    "SELECT auto_hide FROM panel_behavior WHERE panel_id = ?1",
-                    [panel_id],
-                    |row| row.get::<_, bool>(0),
-                )
-                .optional()?
-                .unwrap_or(false);
-            panel.set_auto_hide(auto_hide);
-            let theme = self
-                .connection
-                .query_row(
-                    "SELECT theme FROM panel_theme WHERE panel_id = ?1",
-                    [panel_id],
-                    |row| row.get::<_, String>(0),
-                )
-                .optional()?;
-            panel.set_theme(match theme.as_deref() {
-                Some("light") => desktop_core::PanelTheme::Light,
-                Some("dark") => desktop_core::PanelTheme::Dark,
-                _ => desktop_core::PanelTheme::System,
+            let (theme, top, hide, kind): (String, bool, bool, String) =
+                self.connection.query_row(
+                    "SELECT theme,always_on_top,auto_hide,kind FROM panels WHERE id=?1",
+                    [panel.id().get()],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                )?;
+            panel.set_theme(match theme.as_str() {
+                "light" => desktop_core::PanelTheme::Light,
+                "dark" => desktop_core::PanelTheme::Dark,
+                "system" => desktop_core::PanelTheme::System,
+                _ => return Err(StoreError::InvalidData("invalid panel theme".into())),
             });
-            panel.set_always_on_top(
-                self.connection
-                    .query_row(
-                        "SELECT always_on_top FROM panel_layer WHERE panel_id = ?1",
-                        [panel_id],
-                        |row| row.get::<_, bool>(0),
-                    )
-                    .optional()?
-                    .unwrap_or(false),
-            );
+            panel.set_always_on_top(top);
+            panel.set_auto_hide(hide);
+            panel.set_search(kind == "search");
+            if kind == "folder" {
+                let (path, view): (String, String) = self.connection.query_row(
+                    "SELECT path,view FROM panel_folder_settings WHERE panel_id=?1",
+                    [panel.id().get()],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )?;
+                panel.set_folder(Some(PathBuf::from(path)));
+                panel.set_folder_list(view == "list");
+            }
         }
         let mut workspace = Workspace::from_panels(panels)
             .map_err(|error| StoreError::InvalidData(error.to_string()))?;
         workspace.reconcile_desktop_items(load_desktop_items(&self.connection)?);
-        let appearance = self
-            .connection
-            .query_row(
-                "SELECT value FROM metadata WHERE key = 'appearance'",
-                [],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()?;
+        let appearance = self.preference("appearance")?;
         if let Some(value) = appearance {
             let parts: Vec<_> = value.split('|').collect();
             if parts.len() != 3 && parts.len() != 4 {
@@ -200,15 +188,23 @@ impl WorkspaceStore {
                 .map_err(|_| StoreError::InvalidData("invalid color".into()))?;
             let backdrop = decode_backdrop(parts[1], Some(opacity), color)?;
             workspace.set_appearance_defaults(theme, backdrop);
+            let inherited: Vec<(u64, bool, bool)> = self
+                .connection
+                .prepare("SELECT id,inherit_theme,inherit_backdrop FROM panels")?
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+                .collect::<Result<_, _>>()?;
+            for (id, inherit_theme, inherit_backdrop) in inherited {
+                if let Some(panel) = workspace.panel_mut(PanelId::new(id)) {
+                    if inherit_theme {
+                        panel.set_theme(theme);
+                    }
+                    if inherit_backdrop {
+                        panel.set_backdrop(backdrop);
+                    }
+                }
+            }
         }
-        let options = self
-            .connection
-            .query_row(
-                "SELECT value FROM metadata WHERE key = 'pane_options'",
-                [],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()?;
+        let options = self.preference("pane_options")?;
         if let Some(value) = options {
             let parts = value.split('|').collect::<Vec<_>>();
             let [radius, border, snap, text @ ..] = parts.as_slice() else {
@@ -269,91 +265,63 @@ impl WorkspaceStore {
     /// Returns an error when serialization or commit fails.
     pub fn save_workspace(&mut self, workspace: &Workspace) -> Result<(), StoreError> {
         let transaction = self.connection.transaction()?;
-        transaction.execute("DELETE FROM metadata WHERE key GLOB 'panel_folder:*'", [])?;
-        transaction.execute("DELETE FROM metadata WHERE key GLOB 'panel_search:*'", [])?;
-        transaction.execute(
-            "DELETE FROM metadata WHERE key GLOB 'panel_folder_view:*'",
-            [],
-        )?;
-        for panel in workspace.panels() {
-            if panel.is_search() {
-                transaction.execute(
-                    "INSERT INTO metadata(key,value) VALUES (?1,'true')",
-                    [format!("panel_search:{}", panel.id().get())],
-                )?;
-            }
-            if let Some(folder) = panel.folder() {
-                transaction.execute(
-                    "INSERT INTO metadata(key,value) VALUES (?1,?2)",
-                    params![
-                        format!("panel_folder_view:{}", panel.id().get()),
-                        if panel.folder_list() { "list" } else { "icons" }
-                    ],
-                )?;
-                transaction.execute(
-                    "INSERT INTO metadata(key,value) VALUES (?1,?2)",
-                    params![
-                        format!("panel_folder:{}", panel.id().get()),
-                        folder.to_string_lossy()
-                    ],
-                )?;
+        if self.config.is_none() {
+            transaction.execute("DELETE FROM metadata WHERE key = 'appearance'", [])?;
+            for (key, value) in workspace_preferences(workspace)? {
+                transaction.execute("INSERT INTO metadata(key,value) VALUES (?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE metadata.value IS NOT excluded.value",params![key,value])?;
             }
         }
-        let options = workspace.pane_options();
-        transaction.execute(
-            "INSERT OR REPLACE INTO metadata(key,value) VALUES ('pane_options',?1)",
-            [format!(
-                "{}|{}|{}|{}|{}",
-                options.corner_radius,
-                options.border,
-                options.snap,
-                encode_panel_text(options.text),
-                options.text_protection
-            )],
-        )?;
-        transaction.execute("DELETE FROM metadata WHERE key = 'appearance'", [])?;
-        if let Some((theme, backdrop)) = workspace.appearance() {
-            let theme = match theme {
-                desktop_core::PanelTheme::System => "system",
-                desktop_core::PanelTheme::Light => "light",
-                desktop_core::PanelTheme::Dark => "dark",
-            };
-            let (kind, opacity, color) = encode_backdrop(backdrop);
-            decode_backdrop(kind, opacity, color)?;
-            if let (Some(key), Some(strength)) = (backdrop.strength_key(), backdrop.strength()) {
-                transaction.execute(
-                    "INSERT OR REPLACE INTO metadata(key,value) VALUES (?1,?2)",
-                    [key, &strength.to_string()],
-                )?;
+        let live_items: std::collections::HashSet<_> = workspace
+            .desktop_items()
+            .iter()
+            .map(|i| i.identity().persistent_key())
+            .collect();
+        let old_items: Vec<String> = transaction
+            .prepare("SELECT identity_key FROM desktop_items")?
+            .query_map([], |r| r.get(0))?
+            .collect::<Result<_, _>>()?;
+        for key in old_items {
+            if !live_items.contains(&key) {
+                transaction.execute("DELETE FROM desktop_items WHERE identity_key=?1", [key])?;
             }
-            if let Backdrop::Solid { color, opacity } = backdrop {
-                transaction.execute(
-                    "INSERT OR REPLACE INTO metadata(key,value) VALUES ('solid_style',?1)",
-                    [format!("{color}|{opacity}")],
-                )?;
-            }
+        }
 
-            transaction.execute(
-                "INSERT INTO metadata(key,value) VALUES ('appearance',?1)",
-                [format!(
-                    "{theme}|{kind}|{}|{}",
-                    opacity.unwrap_or(1.0),
-                    color.map(|v| v.to_string()).unwrap_or_default()
-                )],
-            )?;
-        }
-        transaction.execute("DELETE FROM desktop_items", [])?;
-        transaction.execute("DELETE FROM panels", [])?;
         for panel in workspace.panels() {
-            insert_panel(&transaction, panel)?;
+            insert_panel(&transaction, panel, workspace.appearance())?;
         }
         transaction.execute(
             "DELETE FROM monitor_layouts WHERE panel_id NOT IN (SELECT id FROM panels)",
             [],
         )?;
         insert_desktop_items(&transaction, workspace.desktop_items())?;
-        transaction.execute("DELETE FROM metadata WHERE key GLOB 'panel_folder_sort:*' AND substr(key,19) NOT IN (SELECT CAST(id AS TEXT) FROM panels)", [])?;
-        transaction.commit()?;
+        let live_panels: std::collections::HashSet<_> =
+            workspace.panels().iter().map(|p| p.id().get()).collect();
+        let old_panels: Vec<u64> = transaction
+            .prepare("SELECT id FROM panels")?
+            .query_map([], |r| r.get(0))?
+            .collect::<Result<_, _>>()?;
+        for id in old_panels {
+            if !live_panels.contains(&id) {
+                transaction.execute("DELETE FROM monitor_layouts WHERE panel_id=?1", [id])?;
+                transaction.execute("DELETE FROM panels WHERE id=?1", [id])?;
+            }
+        }
+        let previous_config = self.config.as_ref().map(|c| c.borrow().source.clone());
+        if let Some(config) = &self.config {
+            config
+                .borrow_mut()
+                .save(&workspace_preferences(workspace)?)?;
+        }
+        if let Err(error) = transaction.commit() {
+            if let (Some(config), Some(source)) = (&self.config, previous_config) {
+                let mut config = config.borrow_mut();
+                if config.source != source {
+                    config::atomic_write(&config.path, &source)?;
+                    *config = config::ConfigFile::parse(config.path.clone(), source)?;
+                }
+            }
+            return Err(error.into());
+        }
         Ok(())
     }
 }
@@ -364,95 +332,19 @@ fn initialize_schema(connection: &Connection) -> Result<(), StoreError> {
         [], |row| row.get(0),
     )?;
     if has_tables {
-        let version: Option<String> = connection
-            .query_row(
-                "SELECT value FROM metadata WHERE key = 'schema_version'",
-                [],
-                |row| row.get(0),
-            )
-            .optional()?;
-        if matches!(version.as_deref(), Some("8" | "9" | "10")) {
-            let transaction = connection.unchecked_transaction()?;
-            if version.as_deref() == Some("8") {
-                recovery::migrate_v8(&transaction)?;
-            }
-            if version.as_deref() != Some("10") {
-                transaction.execute_batch(recovery::LAYOUT_SCHEMA)?;
-            }
-            transaction.execute_batch("ALTER TABLE panels ADD COLUMN color INTEGER;")?;
-            transaction.execute(
-                "UPDATE metadata SET value=?1 WHERE key='schema_version'",
-                [SCHEMA_VERSION.to_string()],
-            )?;
-            transaction.commit()?;
-            return Ok(());
-        }
-        if version.as_deref() != Some(SCHEMA_VERSION.to_string().as_str()) {
-            return Err(StoreError::InvalidData(format!(
-                "配置版本 {} 暂不支持；当前支持 v8、v9、v10 升级至 v{SCHEMA_VERSION}。原配置未修改，请保留数据库用于迁移",
-                version.as_deref().unwrap_or("missing"),
-            )));
-        }
-        return Ok(());
+        return schema::validate(connection);
     }
     let transaction = connection.unchecked_transaction()?;
-    transaction.execute_batch(
-        "CREATE TABLE IF NOT EXISTS metadata (
-             key TEXT PRIMARY KEY NOT NULL,
-             value TEXT NOT NULL
-         );
-         CREATE TABLE IF NOT EXISTS panels (
-             id INTEGER PRIMARY KEY NOT NULL,
-             title TEXT NOT NULL,
-             x REAL NOT NULL,
-             y REAL NOT NULL,
-             width REAL NOT NULL,
-             height REAL NOT NULL,
-             collapsed INTEGER NOT NULL,
-             locked INTEGER NOT NULL,
-             backdrop_kind TEXT NOT NULL,
-             opacity REAL,
-             color INTEGER
-         );
-         CREATE TABLE IF NOT EXISTS panel_theme (
-             panel_id INTEGER PRIMARY KEY REFERENCES panels(id) ON DELETE CASCADE,
-             theme TEXT NOT NULL DEFAULT 'system'
-         );
-         CREATE TABLE IF NOT EXISTS panel_layer (
-             panel_id INTEGER PRIMARY KEY REFERENCES panels(id) ON DELETE CASCADE,
-             always_on_top INTEGER NOT NULL DEFAULT 0
-         );
-         CREATE TABLE IF NOT EXISTS panel_behavior (
-             panel_id INTEGER PRIMARY KEY REFERENCES panels(id) ON DELETE CASCADE,
-             auto_hide INTEGER NOT NULL DEFAULT 0
-         );
-         CREATE TABLE IF NOT EXISTS desktop_items (
-             identity_key TEXT PRIMARY KEY NOT NULL,
-             identity_kind TEXT NOT NULL,
-             identity_value TEXT NOT NULL,
-             volume_id TEXT,
-             file_id TEXT,
-             display_name TEXT NOT NULL,
-             placement_kind TEXT NOT NULL,
-             monitor_id TEXT,
-             x REAL,
-             y REAL,
-             pane_id INTEGER,
-             grid_column INTEGER,
-             grid_row INTEGER
-         );",
-    )?;
-
-    transaction.execute_batch(recovery::LAYOUT_SCHEMA)?;
-    transaction.execute(
-        "INSERT INTO metadata(key, value) VALUES ('schema_version', ?1)",
-        [SCHEMA_VERSION.to_string()],
-    )?;
+    transaction.execute_batch(schema::SCHEMA)?;
     transaction.commit()?;
     Ok(())
 }
 
-fn insert_panel(transaction: &Transaction<'_>, panel: &Panel) -> Result<(), StoreError> {
+fn insert_panel(
+    transaction: &Transaction<'_>,
+    panel: &Panel,
+    defaults: Option<(desktop_core::PanelTheme, Backdrop)>,
+) -> Result<(), StoreError> {
     let id = i64::try_from(panel.id().get())
         .map_err(|_| StoreError::InvalidData("panel id exceeds SQLite range".into()))?;
     let (backdrop_kind, opacity, color) = encode_backdrop(panel.backdrop());
@@ -461,8 +353,8 @@ fn insert_panel(transaction: &Transaction<'_>, panel: &Panel) -> Result<(), Stor
     transaction.execute(
         "INSERT INTO panels(
              id, title, x, y, width, height,
-             collapsed, locked, backdrop_kind, opacity, color
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+             collapsed, locked, backdrop_kind, opacity, color, theme, always_on_top, auto_hide, kind, inherit_theme, inherit_backdrop
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17) ON CONFLICT(id) DO UPDATE SET title=excluded.title,x=excluded.x,y=excluded.y,width=excluded.width,height=excluded.height,collapsed=excluded.collapsed,locked=excluded.locked,backdrop_kind=excluded.backdrop_kind,opacity=excluded.opacity,color=excluded.color,theme=excluded.theme,always_on_top=excluded.always_on_top,auto_hide=excluded.auto_hide,kind=excluded.kind,inherit_theme=excluded.inherit_theme,inherit_backdrop=excluded.inherit_backdrop WHERE (title,x,y,width,height,collapsed,locked,backdrop_kind,opacity,color,theme,always_on_top,auto_hide,kind,inherit_theme,inherit_backdrop) IS NOT (excluded.title,excluded.x,excluded.y,excluded.width,excluded.height,excluded.collapsed,excluded.locked,excluded.backdrop_kind,excluded.opacity,excluded.color,excluded.theme,excluded.always_on_top,excluded.auto_hide,excluded.kind,excluded.inherit_theme,excluded.inherit_backdrop)",
         params![
             id,
             panel.title(),
@@ -475,28 +367,62 @@ fn insert_panel(transaction: &Transaction<'_>, panel: &Panel) -> Result<(), Stor
             backdrop_kind,
             opacity,
             color,
+            match panel.theme() { desktop_core::PanelTheme::System=>"system",desktop_core::PanelTheme::Light=>"light",desktop_core::PanelTheme::Dark=>"dark" },
+            panel.always_on_top(),panel.auto_hide(),if panel.is_search(){"search"}else if panel.folder().is_some(){"folder"}else{"desktop"},
+            defaults.is_some_and(|(theme,_)|panel.theme()==theme),
+            defaults.is_some_and(|(_,backdrop)| equivalent_backdrop(panel.backdrop(),backdrop)),
         ],
     )?;
-    transaction.execute(
-        "INSERT INTO panel_behavior(panel_id, auto_hide) VALUES (?1, ?2)",
-        params![id, panel.auto_hide()],
-    )?;
-    transaction.execute(
-        "INSERT INTO panel_layer(panel_id, always_on_top) VALUES (?1, ?2)",
-        params![id, panel.always_on_top()],
-    )?;
-    transaction.execute(
-        "INSERT INTO panel_theme(panel_id, theme) VALUES (?1, ?2)",
-        params![
-            id,
-            match panel.theme() {
-                desktop_core::PanelTheme::System => "system",
-                desktop_core::PanelTheme::Light => "light",
-                desktop_core::PanelTheme::Dark => "dark",
-            }
-        ],
-    )?;
+    if let Some(path) = panel.folder() {
+        transaction.execute("INSERT INTO panel_folder_settings(panel_id,path,view) VALUES (?1,?2,?3) ON CONFLICT(panel_id) DO UPDATE SET path=excluded.path,view=excluded.view WHERE path IS NOT excluded.path OR view IS NOT excluded.view",params![id,path.to_string_lossy(),if panel.folder_list(){"list"}else{"icons"}])?;
+    } else {
+        transaction.execute("DELETE FROM panel_folder_settings WHERE panel_id=?1", [id])?;
+    }
     Ok(())
+}
+
+fn workspace_preferences(workspace: &Workspace) -> Result<Vec<(&'static str, String)>, StoreError> {
+    let options = workspace.pane_options();
+    let mut values = vec![(
+        "pane_options",
+        format!(
+            "{}|{}|{}|{}|{}",
+            options.corner_radius,
+            options.border,
+            options.snap,
+            encode_panel_text(options.text),
+            options.text_protection
+        ),
+    )];
+    if let Some((theme, backdrop)) = workspace.appearance() {
+        let theme = match theme {
+            desktop_core::PanelTheme::System => "system",
+            desktop_core::PanelTheme::Light => "light",
+            desktop_core::PanelTheme::Dark => "dark",
+        };
+        let (kind, opacity, color) = encode_backdrop(backdrop);
+        decode_backdrop(kind, opacity, color)?;
+        if let (Some(key), Some(strength)) = (backdrop.strength_key(), backdrop.strength()) {
+            values.push((key, strength.to_string()));
+        }
+        if let Backdrop::Solid { color, opacity } = backdrop {
+            values.push(("solid_style", format!("{color}|{opacity}")));
+        }
+        values.push((
+            "appearance",
+            format!(
+                "{theme}|{kind}|{}|{}",
+                opacity.unwrap_or(1.0),
+                color.map(|v| v.to_string()).unwrap_or_default()
+            ),
+        ));
+    }
+    Ok(values)
+}
+
+fn equivalent_backdrop(a: Backdrop, b: Backdrop) -> bool {
+    let normalize = |v: Backdrop| v.strength().map_or(v, |strength| v.with_strength(strength));
+    normalize(a) == normalize(b)
 }
 
 fn load_desktop_items(connection: &Connection) -> Result<Vec<DesktopItem>, StoreError> {
@@ -575,7 +501,7 @@ fn insert_desktop_items(
             "INSERT INTO desktop_items(
                  identity_key, identity_kind, identity_value, volume_id, file_id, display_name,
                  placement_kind, monitor_id, x, y, pane_id, grid_column, grid_row
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) ON CONFLICT(identity_key) DO UPDATE SET identity_kind=excluded.identity_kind,identity_value=excluded.identity_value,volume_id=excluded.volume_id,file_id=excluded.file_id,display_name=excluded.display_name,placement_kind=excluded.placement_kind,monitor_id=excluded.monitor_id,x=excluded.x,y=excluded.y,pane_id=excluded.pane_id,grid_column=excluded.grid_column,grid_row=excluded.grid_row WHERE (identity_kind,identity_value,volume_id,file_id,display_name,placement_kind,monitor_id,x,y,pane_id,grid_column,grid_row) IS NOT (excluded.identity_kind,excluded.identity_value,excluded.volume_id,excluded.file_id,excluded.display_name,excluded.placement_kind,excluded.monitor_id,excluded.x,excluded.y,excluded.pane_id,excluded.grid_column,excluded.grid_row)",
             params![
                 item.identity().persistent_key(),
                 identity_kind,
@@ -737,6 +663,14 @@ struct PersistedPanel {
 
 impl PersistedPanel {
     fn into_panel(self) -> Result<Panel, StoreError> {
+        if ![self.rect.x, self.rect.y, self.rect.width, self.rect.height]
+            .into_iter()
+            .all(f32::is_finite)
+            || self.rect.width <= 0.0
+            || self.rect.height <= 0.0
+        {
+            return Err(StoreError::InvalidData("invalid panel geometry".into()));
+        }
         let id = u64::try_from(self.id)
             .map_err(|_| StoreError::InvalidData("panel id is negative".into()))?;
         let backdrop = decode_backdrop(&self.backdrop_kind, self.opacity, self.color)?;
@@ -896,30 +830,6 @@ mod tests {
     }
 
     #[test]
-    fn v10_color_migration_and_old_backup_preserve_layout() {
-        let mut store = WorkspaceStore::open_in_memory().unwrap();
-        let mut workspace = Workspace::new();
-        workspace
-            .add_panel(Panel::new(
-                PanelId::new(3),
-                "Before",
-                RectDip::new(12.0, 24.0, 360.0, 240.0),
-            ))
-            .unwrap();
-        store.save_workspace(&workspace).unwrap();
-        store.connection.execute_batch("ALTER TABLE panels DROP COLUMN color; UPDATE metadata SET value='10' WHERE key='schema_version';").unwrap();
-        let restored = WorkspaceStore::from_connection(store.connection).unwrap();
-        assert_eq!(
-            restored.load_workspace().unwrap().panels(),
-            workspace.panels()
-        );
-        assert_eq!(
-            restored.preference("schema_version").unwrap().as_deref(),
-            Some("11")
-        );
-    }
-
-    #[test]
     fn search_panes_round_trip_and_do_not_retain_folder_sources() {
         use desktop_core::{Panel, PanelId, RectDip, Workspace};
         let mut store = super::WorkspaceStore::open_in_memory().unwrap();
@@ -1014,7 +924,7 @@ mod tests {
         assert!(store.preference("panel_folder_view:2").unwrap().is_none());
         assert_eq!(store.preference("peek").unwrap().as_deref(), Some("keep"));
     }
-    use super::{SCHEMA_VERSION, WorkspaceStore};
+    use super::WorkspaceStore;
     use desktop_core::{
         Backdrop, DesktopItem, DesktopPlacement, GridPosition, Panel, PanelId, RectDip,
         ShellIdentity, Workspace,
@@ -1105,36 +1015,24 @@ mod tests {
     }
 
     #[test]
-    fn rejects_other_schema_versions_without_modifying_data() {
-        for version in ["1", "7", "12"] {
-            let connection = Connection::open_in_memory().unwrap();
-            connection
-                .execute_batch("CREATE TABLE metadata(key TEXT PRIMARY KEY, value TEXT NOT NULL);")
-                .unwrap();
-            connection
-                .execute(
-                    "INSERT INTO metadata VALUES ('schema_version', ?1)",
-                    [version],
-                )
-                .unwrap();
-            assert!(super::initialize_schema(&connection).is_err());
-            let actual: String = connection
-                .query_row(
-                    "SELECT value FROM metadata WHERE key = 'schema_version'",
-                    [],
-                    |r| r.get(0),
-                )
-                .unwrap();
-            assert_eq!(actual, version);
-            let count: i64 = connection
-                .query_row(
-                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table'",
-                    [],
-                    |r| r.get(0),
-                )
-                .unwrap();
-            assert_eq!(count, 1);
-        }
+    fn rejects_incompatible_structure_without_modifying_data() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch("CREATE TABLE metadata(key TEXT PRIMARY KEY, value TEXT NOT NULL); INSERT INTO metadata VALUES ('sentinel','keep');").unwrap();
+        assert!(super::initialize_schema(&connection).is_err());
+        let value: String = connection
+            .query_row("SELECT value FROM metadata WHERE key='sentinel'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(value, "keep");
+        let count: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM sqlite_schema WHERE type='table'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
     }
 
     #[test]
@@ -1253,15 +1151,6 @@ mod tests {
         )])
         .unwrap();
         store.save_workspace(&workspace).unwrap();
-        let version: String = store
-            .connection
-            .query_row(
-                "SELECT value FROM metadata WHERE key='schema_version'",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(version, SCHEMA_VERSION.to_string());
         let reopened = WorkspaceStore::from_connection(store.connection).unwrap();
         assert_eq!(reopened.load_workspace().unwrap(), workspace);
     }

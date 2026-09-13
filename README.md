@@ -40,7 +40,7 @@ $env:LUCIDPANE_DATA_DIR = Join-Path $PWD 'target\dev-data-v9'
 
 ## 开发状态
 
-桌面分组依赖经过校验的 Windows 系统组件版本；不兼容或 Explorer 暂不可用时，文件夹和搜索面板仍可运行，桌面分组保留配置并等待重连。当前数据库为 v11，已有 v8/v9/v10 数据库会在自动备份后升级；更早或更新的未知格式仍会拒绝读取。
+桌面分组依赖经过校验的 Windows 系统组件版本；不兼容或 Explorer 暂不可用时，文件夹和搜索面板仍可运行，桌面分组保留配置并等待重连。全局设置保存到可编辑的 `config.toml`，布局保存到 `workspace.db`。开发阶段不迁移旧数据库，也不再读取 `hook-desktop.db`。
 
 ## 文档
 

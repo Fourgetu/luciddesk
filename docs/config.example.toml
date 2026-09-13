@@ -1,0 +1,38 @@
+# LucidPane global settings. Reload from Settings after editing.
+config_version = 1
+
+[appearance]
+theme = "system"
+material = "mica"
+
+[appearance.acrylic]
+strength = 50
+
+[appearance.mica]
+strength = 50
+
+[appearance.translucent]
+opacity = 0.86
+
+[appearance.solid]
+color = "#24364B"
+opacity = 0.85
+
+[panel_defaults]
+corner_radius = 6.0
+border = true
+snap = true
+text = "auto"
+text_protection = false
+
+[search]
+enabled = true
+shortcut = "Ctrl+Shift+Space"
+everything_path = ""
+
+[preview]
+enabled = true
+provider = "peek"
+shortcut = "Space"
+peek_path = ""
+quicklook_path = ""

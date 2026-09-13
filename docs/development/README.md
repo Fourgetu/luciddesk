@@ -16,7 +16,7 @@
 | [架构说明](architecture.md) | 模块职责、启动流程、Hook 与兼容边界 |
 | [混合桌面与成员同步](hybrid-desktop.md) | 身份、收纳、排序、布局发布与恢复 |
 | [绘图与绑定](rendering.md) | Canvas、DComp、WinRT、动画与生成绑定 |
-| [存储与版本约定](storage.md) | v10 格式、事务和开发期版本策略 |
+| [存储与版本约定](storage.md) | TOML 配置、工作区数据库、备份和开发期版本策略 |
 | [图标菜单与重命名](pane-item-rename.md) | Shell 菜单、临时选择、原生编辑窗口 |
 | [选择与刷新时序](selection-latency.md) | 异步选择清理和后台清单读取 |
 | [运行时托盘](tray.md) | 托盘消息、资源释放和验证入口 |

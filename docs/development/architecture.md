@@ -43,7 +43,7 @@ DLL 运行副本解决已加载文件无法覆盖的问题。分离会撤销回�
 - Hook 仅提供几何后端，协议为 v2；连接成功的引擎必有几何会话。
 - 具体系统映像的哈希、大小和入口指令由 `geometry_profile.rs` 校验。它不是跨版本稳定 ABI，校验失败必须拒绝安装。
 - Hook 会话可在故障时缺失；文件夹与搜索 pane 独立运行，桌面分组保留归属并等待重连。
-- 数据库为 v10，支持 v8/v9 备份后升级。成员仅通过 Shell 身份与 `DesktopPlacement` 表示。
+- 全局偏好保存在 `config.toml`，工作区数据库为 `workspace.db`，开发阶段不迁移旧库。成员仅通过 Shell 身份与 `DesktopPlacement` 表示。
 - `native_graphics.rs` 集中转换两版绑定的 COM 引用与 HRESULT；普通绘图直接使用 Canvas 类型。
 - 窗口嵌套消息、绘制错误清理、Shell 通知解析和系统能力回退仍服务当前功能，不属于已删除的旧模式包装。
 

@@ -1298,7 +1298,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         appearance,
                         options,
                     );
-                if page == 6 { body.text(Rect::from_xywh(248.0, 408.0, w - 282.0, 48.0), &backup_status, 0); }
+                if page == 6 { body.text(Rect::from_xywh(248.0, 474.0, w - 282.0, 32.0), &backup_status, 0); }
                 if page == 5 {
                     layout::about_status(&mut body, w, &desktop_status, diagnostics_copied);
                 }
@@ -2056,6 +2056,18 @@ mod tests {
             assert!(bounds.left >= 0.0 && bounds.top >= 0.0
                 && bounds.right <= width && bounds.bottom <= height);
         }
+    }
+
+    #[test]
+    fn backup_config_controls_fit_minimum_window() {
+        let mut body=scene(800.0,MIN_HEIGHT-TITLE_HEIGHT,6,true,
+            (PanelTheme::System,Backdrop::Mica),desktop_core::PaneOptions::default());
+        body.text(Rect::from_xywh(248.0,474.0,518.0,32.0),"自动备份失败",0);
+        let s=with_titlebar(body,800.0,false);
+        for bounds in s.text.iter().map(|(r,_,_)|r).chain(s.controls.iter().map(|c|&c.bounds)) {
+            assert!(bounds.right<=800.0 && bounds.bottom<=MIN_HEIGHT);
+        }
+        assert!(s.controls.iter().any(|c|matches!(c.action,Action::Change(Event::ReloadConfig))));
     }
 
     #[test]

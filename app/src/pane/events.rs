@@ -119,7 +119,7 @@ pub(super) fn handle(
     }
     if matches!(
         event,
-        Event::ExportBackup | Event::RestoreBackup | Event::OpenBackups
+        Event::ExportBackup | Event::RestoreBackup | Event::OpenBackups | Event::OpenConfigDirectory | Event::ReloadConfig
     ) {
         recovery::request(state, &event);
         return Ok(false);
@@ -666,6 +666,8 @@ pub(super) fn handle(
         | Event::ExportBackup
         | Event::RestoreBackup
         | Event::OpenBackups
+        | Event::OpenConfigDirectory
+        | Event::ReloadConfig
         | Event::RetryDesktop
         | Event::ToggleFolderView
         | Event::ToggleSearch

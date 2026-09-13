@@ -124,6 +124,14 @@ pub(super) fn request(state: &Rc<RefCell<PaneApp>>, event: &Event) {
                 .settings
                 .as_ref()
                 .map_or(0, |w| w.hwnd() as isize);
+            if matches!(event,Event::ReloadConfig) {
+                state.borrow().store.reload_config().map_err(|e|e.to_string())?;
+                return runtime::reload(&state);
+            }
+            if matches!(event,Event::OpenConfigDirectory) {
+                let path=state.borrow().store.config_path().and_then(|p|p.parent().map(Path::to_path_buf)).ok_or("配置目录不可用")?;
+                return open_shell_identity(owner,&folder::identity(path)).map_err(|e|e.to_string());
+            }
             if matches!(event, Event::OpenBackups) {
                 let path = directory(&state.borrow())?;
                 std::fs::create_dir_all(&path).map_err(|e| e.to_string())?;

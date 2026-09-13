@@ -19,6 +19,6 @@
 
 Everything 和 PowerToys 不包含在本包中。Windows 10、ARM64 和远程桌面环境尚未经过完整验证。
 
-v8/v9 配置会先备份再升级到 v10。旧程序无法读取 v10，请保留升级前的 `.before-v10-*.db` 文件或设置中导出的备份。
+开发版使用 `config.toml` 和 `workspace.db`，不迁移旧库。旧版数据请使用独立目录保留；本版不会读取 `hook-desktop.db`。
 
 快捷键、文件夹映射等操作见 `usage.md`。`build.json` 记录版本、Git 修订和两个二进制文件的 SHA-256；ZIP 同目录的 `.sha256` 可核对下载完整性。

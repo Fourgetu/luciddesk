@@ -91,11 +91,11 @@ fn parse_options(arguments: impl IntoIterator<Item = OsString>) -> Result<Option
 
 fn database_path() -> Result<PathBuf, String> {
     if let Some(root) = std::env::var_os("LUCIDPANE_DATA_DIR") {
-        return Ok(PathBuf::from(root).join("hook-desktop.db"));
+        return Ok(PathBuf::from(root).join("workspace.db"));
     }
     let root = local_app_data_path()
         .map_err(|error| format!("failed to resolve LocalAppData: {error}"))?;
-    Ok(root.join("LucidPane").join("hook-desktop.db"))
+    Ok(root.join("LucidPane").join("workspace.db"))
 }
 
 #[cfg(test)]

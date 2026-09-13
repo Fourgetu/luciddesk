@@ -132,6 +132,8 @@ enum Event {
     ExportBackup,
     RestoreBackup,
     OpenBackups,
+    OpenConfigDirectory,
+    ReloadConfig,
     ToggleAutoHide,
     ToggleTopmost,
     ToggleLocked,

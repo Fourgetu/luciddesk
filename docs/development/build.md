@@ -18,7 +18,7 @@ $env:LUCIDPANE_DATA_DIR = Join-Path $PWD 'target\dev-data-v9'
 & .\target\debug\lucidpane.exe
 ```
 
-主程序与 Hook DLL 必须来自同次构建，位于同一目录。当前 IPC 协议为 v2，数据库为 v10。不使用旧运行模式参数；v8/v9 库会在备份后自动升级。
+主程序与 Hook DLL 必须来自同次构建，位于同一目录。当前 IPC 协议为 v2，数据库为 `workspace.db`，全局设置为 `config.toml`。不使用旧运行模式参数，也不提供旧数据库迁移。
 
 `LUCIDPANE_DATA_DIR` 仅影响该环境下启动的程序。无需自定义目录时，在启动前移除该环境变量，程序会使用 LocalAppData。
 

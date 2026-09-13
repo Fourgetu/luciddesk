@@ -535,10 +535,13 @@ pub(super) fn scene(
             );
         }
         s.text(
-            Rect::from_xywh(x, 334.0, w, 68.0),
-            "仅备份布局和设置，不包含文件。",
+            Rect::from_xywh(x, 322.0, w, 44.0),
+            "备份包含全局配置和布局，不包含桌面文件。",
             0,
         );
+        s.text(Rect::from_xywh(x,390.0,w,26.0),"config.toml · 外部修改后重新加载",0);
+        s.button(Rect::from_xywh(x,430.0,150.0,34.0),"打开配置目录",Action::Change(Event::OpenConfigDirectory),false);
+        s.button(Rect::from_xywh(x+162.0,430.0,150.0,34.0),"重新加载配置",Action::Change(Event::ReloadConfig),false);
     } else {
         s.app_icon = Some(Rect::from_xywh(x, 106.0, 64.0, 64.0));
         s.text(
