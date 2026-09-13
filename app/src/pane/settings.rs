@@ -18,6 +18,8 @@ use windows_sys::Win32::{
 const SELECT_PANEL: u32 = WM_APP + 95;
 const PREPARE_REVEAL: u32 = WM_APP + 96;
 const REVEAL_TIMER: usize = 0x4c5055;
+const DEFAULT_HEIGHT: i32 = 600;
+const MIN_HEIGHT: f32 = 560.0;
 
 struct PendingReveal {
     started: std::time::Instant,
@@ -1011,7 +1013,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
     let prepared = Rc::new(std::cell::Cell::new(false));
     let show_prepared = Rc::clone(&prepared);
     let window = windows_window::Window::new("LucidPane 设置")
-        .size(900, 520)
+        .size(900, DEFAULT_HEIGHT)
         .style(WS_OVERLAPPEDWINDOW)
         .ex_style(WS_EX_APPWINDOW | WS_EX_NOREDIRECTIONBITMAP)
         .on_message(move |raw, msg, wp, lp| {
@@ -1165,7 +1167,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 unsafe {
                     let info = &mut *(lp as *mut MINMAXINFO);
                     info.ptMinTrackSize.x = (800.0 * scale) as i32;
-                    info.ptMinTrackSize.y = (480.0 * scale) as i32;
+                    info.ptMinTrackSize.y = (MIN_HEIGHT * scale) as i32;
                     let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
                     let mut metrics = MONITORINFO {
                         cbSize: size_of::<MONITORINFO>() as u32,
@@ -1747,7 +1749,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
         {
             let work = monitor.rcWork;
             let width = ((900.0 * dpi).round() as i32).min(work.right - work.left);
-            let height = ((520.0 * dpi).round() as i32).min(work.bottom - work.top);
+            let height = ((DEFAULT_HEIGHT as f32 * dpi).round() as i32).min(work.bottom - work.top);
             SetWindowPos(
                 hwnd,
                 std::ptr::null_mut(),
@@ -1906,6 +1908,31 @@ mod tests {
                 .iter()
                 .any(|c| matches!(c.action, Action::Opacity(50)))
         );
+    }
+
+    #[test]
+    fn panel_options_text_fits_default_and_minimum_window() {
+        for (width, height) in [(800.0, MIN_HEIGHT), (900.0, DEFAULT_HEIGHT as f32)] {
+            let s = with_titlebar(
+                scene(
+                    width,
+                    height - TITLE_HEIGHT,
+                    1,
+                    false,
+                    (PanelTheme::Dark, Backdrop::Mica),
+                    Default::default(),
+                ),
+                width,
+                false,
+            );
+            for (bounds, text, _) in &s.text {
+                assert!(bounds.bottom <= height - 16.0, "Clipped text: {text}");
+                assert!(bounds.right <= width, "Clipped text: {text}");
+            }
+            for control in &s.controls {
+                assert!(control.bounds.bottom <= height - 16.0);
+            }
+        }
     }
 
     #[test]

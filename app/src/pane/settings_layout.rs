@@ -304,16 +304,16 @@ pub(super) fn scene(
         .iter()
         .enumerate()
         {
-            let y = 184.0 + i as f32 * 76.0;
+            let y = 164.0 + i as f32 * 56.0;
             s.separators
                 .push(Rect::from_xywh(x + 18.0, y - 6.0, w - 36.0, 1.0));
             s.text(
-                Rect::from_xywh(x + 18.0, y + 16.0, w - 100.0, 32.0),
+                Rect::from_xywh(x + 18.0, y + 8.0, w - 100.0, 32.0),
                 *title,
                 1,
             );
             s.controls.push(Control {
-                bounds: Rect::from_xywh(x + w - 70.0, y + 20.0, 46.0, 24.0),
+                bounds: Rect::from_xywh(x + w - 70.0, y + 12.0, 46.0, 24.0),
                 label: String::new(),
                 action: Action::Change(event.clone()),
                 selected: *enabled,
