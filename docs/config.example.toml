@@ -20,6 +20,8 @@ opacity = 0.85
 
 [panel_defaults]
 corner_radius = 6.0
+# Grid scale percentage; 100% = 88 x 96 DIP.
+grid_scale = 100.0
 border = true
 snap = true
 text = "auto"
