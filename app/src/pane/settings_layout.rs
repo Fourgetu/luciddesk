@@ -321,6 +321,52 @@ pub(super) fn scene(
                 toggle: true,
             });
         }
+        s.separators
+            .push(Rect::from_xywh(x + 18.0, 270.0, w - 36.0, 1.0));
+        s.text(
+            Rect::from_xywh(x + 18.0, 286.0, w - 36.0, 28.0),
+            "面板文字",
+            1,
+        );
+        let choice_width = (w - 52.0) / 3.0;
+        for (i, (label, value)) in [
+            ("自动", desktop_core::PanelText::Auto),
+            ("浅色文字", desktop_core::PanelText::Light),
+            ("深色文字", desktop_core::PanelText::Dark),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            s.button(
+                Rect::from_xywh(
+                    x + 18.0 + i as f32 * (choice_width + 8.0),
+                    322.0,
+                    choice_width,
+                    34.0,
+                ),
+                label,
+                Action::Change(Event::SetPanelText(value)),
+                options.text == value,
+            );
+        }
+        s.text(
+            Rect::from_xywh(x + 18.0, 372.0, w - 100.0, 28.0),
+            "明暗底色保护",
+            1,
+        );
+        s.controls.push(Control {
+            bounds: Rect::from_xywh(x + w - 70.0, 374.0, 46.0, 24.0),
+            label: String::new(),
+            action: Action::Change(Event::ToggleTextProtection),
+            selected: options.text_protection,
+            enabled: true,
+            toggle: true,
+        });
+        s.text(
+            Rect::from_xywh(x + 18.0, 410.0, w - 36.0, 26.0),
+            "关闭后保留原始通透效果，文字颜色仍按上方选择。",
+            0,
+        );
     } else if page == 3 {
         for y in [198.0, 348.0] {
             s.separators

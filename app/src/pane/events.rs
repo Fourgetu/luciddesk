@@ -340,6 +340,8 @@ pub(super) fn handle(
     if matches!(
         event,
         Event::SetCornerRadius(_)
+            | Event::SetPanelText(_)
+            | Event::ToggleTextProtection
             | Event::ToggleBorder
             | Event::ToggleSnap
             | Event::ResetPaneOptions
@@ -356,6 +358,8 @@ pub(super) fn handle(
                     radius.clamp(0.0, desktop_core::PaneOptions::MAX_CORNER_RADIUS)
             }
             Event::ToggleBorder => options.border = !options.border,
+            Event::SetPanelText(text) => options.text = text,
+            Event::ToggleTextProtection => options.text_protection = !options.text_protection,
             Event::ToggleSnap => options.snap = !options.snap,
             Event::ResetPaneOptions => options = desktop_core::PaneOptions::default(),
             _ => unreachable!(),
@@ -700,6 +704,8 @@ pub(super) fn handle(
         Event::Theme(_)
         | Event::Material(_)
         | Event::SetCornerRadius(_)
+        | Event::SetPanelText(_)
+        | Event::ToggleTextProtection
         | Event::ToggleBorder
         | Event::ToggleSnap
         | Event::ResetPaneOptions => {

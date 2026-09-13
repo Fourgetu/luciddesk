@@ -1096,6 +1096,8 @@ fn pane_options_apply_globally_and_can_disable_snapping() {
         corner_radius: 0.0,
         border: false,
         snap: false,
+        text: desktop_core::PanelText::Auto,
+        text_protection: false,
     };
     assert_eq!(state.borrow().workspace.pane_options(), options);
     assert_eq!(
@@ -1132,6 +1134,32 @@ fn pane_options_apply_globally_and_can_disable_snapping() {
             .pane_options()
             .corner_radius,
         11.0
+    );
+    handle(
+        &state,
+        id,
+        Event::SetPanelText(desktop_core::PanelText::Light),
+    )
+    .unwrap();
+    assert_eq!(
+        state
+            .borrow()
+            .store
+            .load_workspace()
+            .unwrap()
+            .pane_options()
+            .text,
+        desktop_core::PanelText::Light
+    );
+    handle(&state, id, Event::ToggleTextProtection).unwrap();
+    assert!(
+        state
+            .borrow()
+            .store
+            .load_workspace()
+            .unwrap()
+            .pane_options()
+            .text_protection
     );
     handle(&state, id, Event::ResetPaneOptions).unwrap();
     assert_eq!(

@@ -6,6 +6,119 @@
 )]
 use super::assets::Pixels;
 
+/// Content-only colors. Never changes the material's theme or samples the desktop.
+pub struct PanelContrast {
+    pub light_text: bool,
+    pub scrim: f32,
+}
+
+impl PanelContrast {
+    pub fn ink(&self) -> f32 {
+        if self.light_text { 1.0 } else { 0.0 }
+    }
+    pub fn base(&self) -> f32 {
+        if self.light_text { 0.0 } else { 1.0 }
+    }
+}
+
+fn luminance(rgb: [f32; 3]) -> f32 {
+    rgb.into_iter()
+        .zip([0.2126, 0.7152, 0.0722])
+        .map(|(c, weight)| {
+            weight
+                * if c <= 0.04045 {
+                    c / 12.92
+                } else {
+                    ((c + 0.055) / 1.055).powf(2.4)
+                }
+        })
+        .sum()
+}
+
+pub fn panel_contrast(
+    backdrop: desktop_core::Backdrop,
+    dark: bool,
+    mode: desktop_core::PanelText,
+    native: bool,
+) -> PanelContrast {
+    use desktop_core::{Backdrop, PanelText};
+    let forced = match mode {
+        PanelText::Auto => None,
+        PanelText::Light => Some(true),
+        PanelText::Dark => Some(false),
+    };
+    // Standard material recipes already provide a stable theme-colored base.
+    // Add protection for custom transparency/strength and manual overrides.
+    if !native
+        || (!matches!(
+            backdrop,
+            Backdrop::Solid { .. } | Backdrop::Translucent { .. }
+        ) && backdrop.strength().unwrap_or(50) >= 50
+            && forced.is_none_or(|light| light == dark))
+    {
+        return PanelContrast {
+            light_text: forced.unwrap_or(dark),
+            scrim: 0.0,
+        };
+    }
+    let (low, high, nominal) = if let Backdrop::Solid { color, opacity } = backdrop {
+        let rgb = [
+            (color >> 16 & 255) as f32 / 255.0,
+            (color >> 8 & 255) as f32 / 255.0,
+            (color & 255) as f32 / 255.0,
+        ];
+        let alpha = opacity.clamp(0.0, 1.0);
+        (
+            rgb.map(|c| c * alpha),
+            rgb.map(|c| c * alpha + 1.0 - alpha),
+            rgb,
+        )
+    } else {
+        // Estimate how far a weakened native recipe can depart from its theme
+        // base. This changes continuously with strength, rather than jumping
+        // from a full scrim to none at the default value. Solid colors above
+        // use exact compositing bounds; native effects remain an estimate.
+        let base = if dark { 32.0 / 255.0 } else { 243.0 / 255.0 };
+        let coverage = (f32::from(backdrop.strength().unwrap_or(0)) / 50.0).min(1.0);
+        (
+            [base * coverage; 3],
+            [base * coverage + 1.0 - coverage; 3],
+            [base; 3],
+        )
+    };
+    let light = forced.unwrap_or_else(|| luminance(nominal) < 0.179);
+    let worst = if light { high } else { low };
+    let contrast = |alpha: f32| {
+        let background =
+            luminance(worst.map(|c| c * (1.0 - alpha) + if light { 0.0 } else { alpha }));
+        if light {
+            1.05 / (background + 0.05)
+        } else {
+            (background + 0.05) / 0.05
+        }
+    };
+    // Leave contrast headroom for secondary text and selection fills, including
+    // black/white content behind a transparent solid material.
+    let mut lower = 0.0;
+    let mut upper = 1.0;
+    if contrast(0.0) >= 7.0 {
+        upper = 0.0;
+    } else {
+        for _ in 0..16 {
+            let mid = (lower + upper) * 0.5;
+            if contrast(mid) >= 7.0 {
+                upper = mid;
+            } else {
+                lower = mid;
+            }
+        }
+    }
+    PanelContrast {
+        light_text: light,
+        scrim: upper,
+    }
+}
+
 pub fn is_dark(theme: desktop_core::PanelTheme) -> bool {
     match theme {
         desktop_core::PanelTheme::Dark => true,
@@ -58,6 +171,78 @@ pub fn selection(width: u32, height: u32, dpi: u32, state: i32) -> Option<Pixels
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn solid_text_remains_readable_over_extreme_desktop_colors() {
+        use desktop_core::{Backdrop, PanelText};
+        for color in [0, 0xffffff, 0x808080, 0xff0000, 0x00ff00, 0x0000ff] {
+            for opacity in [0.0, 0.1, 0.5, 0.9, 1.0] {
+                for mode in [PanelText::Auto, PanelText::Light, PanelText::Dark] {
+                    let style =
+                        panel_contrast(Backdrop::Solid { color, opacity }, true, mode, true);
+                    for behind in [0.0, 1.0] {
+                        let rgb = [16, 8, 0].map(|shift| {
+                            let c = ((color >> shift) & 255) as f32 / 255.0;
+                            (c * opacity + behind * (1.0 - opacity)) * (1.0 - style.scrim)
+                                + style.base() * style.scrim
+                        });
+                        let l = luminance(rgb);
+                        let ratio = if style.light_text {
+                            1.05 / (l + 0.05)
+                        } else {
+                            (l + 0.05) / 0.05
+                        };
+                        assert!(ratio >= 4.499, "{color:x} {opacity} {mode:?}: {ratio}");
+                    }
+                }
+            }
+        }
+        for (color, light) in [(0xffffff, false), (0, true)] {
+            let style = panel_contrast(
+                Backdrop::Solid {
+                    color,
+                    opacity: 1.0,
+                },
+                !light,
+                PanelText::Auto,
+                true,
+            );
+            assert_eq!(style.light_text, light);
+            assert_eq!(
+                style.scrim, 0.0,
+                "Opaque readable colors need no protection"
+            );
+        }
+    }
+
+    #[test]
+    fn transparent_materials_and_manual_overrides_are_protected() {
+        use desktop_core::{Backdrop, PanelText};
+        for dark in [false, true] {
+            let standard = panel_contrast(Backdrop::Acrylic, dark, PanelText::Auto, true);
+            assert_eq!(standard.light_text, dark);
+            assert_eq!(standard.scrim, 0.0);
+            let clear = panel_contrast(
+                Backdrop::Acrylic.with_strength(0),
+                dark,
+                PanelText::Auto,
+                true,
+            );
+            assert!(clear.scrim > 0.0);
+            let forced = panel_contrast(
+                Backdrop::Mica,
+                dark,
+                if dark {
+                    PanelText::Dark
+                } else {
+                    PanelText::Light
+                },
+                true,
+            );
+            assert_eq!(forced.light_text, !dark);
+            assert!(forced.scrim > 0.0);
+        }
+    }
 
     #[test]
     fn desktop_selection_is_neutral_and_fits_text_instead_of_grid_spacing() {

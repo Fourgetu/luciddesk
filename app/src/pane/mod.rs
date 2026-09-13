@@ -134,6 +134,8 @@ enum Event {
     ToggleTopmost,
     ToggleLocked,
     SetCornerRadius(f32),
+    SetPanelText(desktop_core::PanelText),
+    ToggleTextProtection,
     ToggleBorder,
     ToggleSnap,
     ResetPaneOptions,

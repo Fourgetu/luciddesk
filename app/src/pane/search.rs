@@ -573,16 +573,28 @@ impl Drawing {
         let h = r.bottom as f32 / s;
         super::canvas::draw(&target, s, |target| {
             target.clear(ColorF::new(0.0, 0.0, 0.0, 0.0));
-            let ink = if model.dark { 1.0 } else { 0.1 };
-            let base = if model.dark { 0.085 } else { 0.96 };
+            let contrast = super::theme::panel_contrast(
+                model.backdrop,
+                model.dark,
+                model.options.text,
+                native,
+            );
+            let ink = contrast.ink();
+            let base = contrast.base();
             let background = canvas_result(target.create_solid_brush(ColorF::new(
                 base,
                 base,
                 base,
-                if native { 0.0 } else { 1.0 },
+                if !native {
+                    1.0
+                } else if model.options.text_protection {
+                    contrast.scrim
+                } else {
+                    0.0
+                },
             )))?;
-            let text = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.95)))?;
-            let dim = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.53)))?;
+            let text = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 1.0)))?;
+            let dim = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.85)))?;
             let line = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.16)))?;
             let selected =
                 canvas_result(target.create_solid_brush(ColorF::new(0.75, 0.8, 0.85, 0.17)))?;
@@ -789,7 +801,10 @@ pub(super) fn create(
     model: Rc<RefCell<GroupModel>>,
     event: impl FnMut(Event) -> bool + 'static,
 ) -> Result<windows_window::Window, String> {
-    let initial_dark = model.borrow().dark;
+    let initial_dark = {
+        let m = model.borrow();
+        super::theme::panel_contrast(m.backdrop, m.dark, m.options.text, true).light_text
+    };
     let event = Rc::new(RefCell::new(event));
     let callback = Rc::clone(&event);
     let editor: Rc<RefCell<Option<Editor>>> = Rc::new(RefCell::new(None));
@@ -935,7 +950,12 @@ pub(super) fn create(
                 }
                 WM_DPICHANGED => {
                     if let Some(input) = input.borrow_mut().as_mut() {
-                        input.appearance(hwnd, model.borrow().dark);
+                        let m = model.borrow();
+                        input.appearance(
+                            hwnd,
+                            super::theme::panel_contrast(m.backdrop, m.dark, m.options.text, true)
+                                .light_text,
+                        );
                     }
                     if lp != 0 {
                         let r = unsafe { &*(lp as *const RECT) };
@@ -973,7 +993,12 @@ pub(super) fn create(
                         resize(hwnd, &mut state);
                     }
                     if let Some(input) = input.borrow_mut().as_mut() {
-                        input.appearance(hwnd, model.borrow().dark);
+                        let m = model.borrow();
+                        input.appearance(
+                            hwnd,
+                            super::theme::panel_contrast(m.backdrop, m.dark, m.options.text, true)
+                                .light_text,
+                        );
                     }
                     return Some(0);
                 }

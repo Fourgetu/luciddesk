@@ -10,6 +10,14 @@ use std::path::{Path, PathBuf};
 const SCHEMA_VERSION: i64 = 11;
 mod recovery;
 
+fn encode_panel_text(text: desktop_core::PanelText) -> &'static str {
+    match text {
+        desktop_core::PanelText::Auto => "auto",
+        desktop_core::PanelText::Light => "light",
+        desktop_core::PanelText::Dark => "dark",
+    }
+}
+
 pub struct WorkspaceStore {
     connection: Connection,
 }
@@ -203,7 +211,7 @@ impl WorkspaceStore {
             .optional()?;
         if let Some(value) = options {
             let parts = value.split('|').collect::<Vec<_>>();
-            let [radius, border, snap] = parts.as_slice() else {
+            let [radius, border, snap, text @ ..] = parts.as_slice() else {
                 return Err(StoreError::InvalidData("invalid pane options".into()));
             };
             let invalid = || StoreError::InvalidData("invalid pane options".into());
@@ -221,6 +229,17 @@ impl WorkspaceStore {
                 corner_radius,
                 border: border.parse().map_err(|_| invalid())?,
                 snap: snap.parse().map_err(|_| invalid())?,
+                text: match text {
+                    [] | ["auto"] | ["auto", _] => desktop_core::PanelText::Auto,
+                    ["light"] | ["light", _] => desktop_core::PanelText::Light,
+                    ["dark"] | ["dark", _] => desktop_core::PanelText::Dark,
+                    _ => return Err(invalid()),
+                },
+                text_protection: match text {
+                    [] | [_] => false,
+                    [_, enabled] => enabled.parse().map_err(|_| invalid())?,
+                    _ => return Err(invalid()),
+                },
             });
         }
         Ok(workspace)
@@ -234,8 +253,12 @@ impl WorkspaceStore {
         self.save_preference(
             "pane_options",
             &format!(
-                "{}|{}|{}",
-                options.corner_radius, options.border, options.snap
+                "{}|{}|{}|{}|{}",
+                options.corner_radius,
+                options.border,
+                options.snap,
+                encode_panel_text(options.text),
+                options.text_protection
             ),
         )
     }
@@ -280,8 +303,12 @@ impl WorkspaceStore {
         transaction.execute(
             "INSERT OR REPLACE INTO metadata(key,value) VALUES ('pane_options',?1)",
             [format!(
-                "{}|{}|{}",
-                options.corner_radius, options.border, options.snap
+                "{}|{}|{}|{}|{}",
+                options.corner_radius,
+                options.border,
+                options.snap,
+                encode_panel_text(options.text),
+                options.text_protection
             )],
         )?;
         transaction.execute("DELETE FROM metadata WHERE key = 'appearance'", [])?;
@@ -1143,6 +1170,8 @@ mod tests {
                 corner_radius: if bits & 1 != 0 { 24.0 } else { 0.0 },
                 border: bits & 2 != 0,
                 snap: bits & 4 != 0,
+                text: desktop_core::PanelText::Auto,
+                text_protection: true,
             };
             let mut workspace = Workspace::new();
             workspace.set_pane_options(options);
@@ -1150,6 +1179,44 @@ mod tests {
             let reopened = WorkspaceStore::from_connection(store.connection).unwrap();
             assert_eq!(reopened.load_workspace().unwrap().pane_options(), options);
             store = reopened;
+        }
+    }
+
+    #[test]
+    fn panel_text_modes_round_trip_and_legacy_options_default_to_auto() {
+        use desktop_core::PanelText;
+        let mut store = WorkspaceStore::open_in_memory().unwrap();
+        store
+            .save_preference("pane_options", "6|true|false")
+            .unwrap();
+        assert_eq!(
+            store.load_workspace().unwrap().pane_options().text,
+            PanelText::Auto
+        );
+        for value in ["6|true|false", "6|true|false|dark"] {
+            store.save_preference("pane_options", value).unwrap();
+            assert!(
+                !store
+                    .load_workspace()
+                    .unwrap()
+                    .pane_options()
+                    .text_protection
+            );
+        }
+        for (text, text_protection) in [PanelText::Auto, PanelText::Light, PanelText::Dark]
+            .into_iter()
+            .flat_map(|text| [true, false].map(|enabled| (text, enabled)))
+        {
+            let options = desktop_core::PaneOptions {
+                text,
+                text_protection,
+                ..Default::default()
+            };
+            store.save_pane_options(options).unwrap();
+            let workspace = store.load_workspace().unwrap();
+            assert_eq!(workspace.pane_options(), options);
+            store.save_workspace(&workspace).unwrap();
+            assert_eq!(store.load_workspace().unwrap().pane_options(), options);
         }
     }
 

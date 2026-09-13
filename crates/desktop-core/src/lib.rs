@@ -424,11 +424,21 @@ impl Panel {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PanelText {
+    #[default]
+    Auto,
+    Light,
+    Dark,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PaneOptions {
     pub corner_radius: f32,
     pub border: bool,
     pub snap: bool,
+    pub text: PanelText,
+    pub text_protection: bool,
 }
 
 impl PaneOptions {
@@ -437,6 +447,8 @@ impl PaneOptions {
         corner_radius: 6.0,
         border: true,
         snap: true,
+        text: PanelText::Auto,
+        text_protection: false,
     };
 }
 

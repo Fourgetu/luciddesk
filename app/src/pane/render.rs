@@ -339,9 +339,23 @@ impl Renderer {
             let (_, _, _, target) = self.target.as_ref().unwrap();
             canvas::draw(target, scale, |target| {
                 let (w, h) = (width as f32 / scale, height as f32 / scale);
-                let opacity = if model.native_material { 0.0 } else { 1.0 };
-                let base = if model.dark { 0.085 } else { 0.96 };
-                let ink = if model.dark { 1.0 } else { 0.10 };
+                let contrast = super::theme::panel_contrast(
+                    model.backdrop,
+                    model.dark,
+                    model.options.text,
+                    model.native_material,
+                );
+                let opacity = if model.native_material {
+                    if model.options.text_protection {
+                        contrast.scrim
+                    } else {
+                        0.0
+                    }
+                } else {
+                    1.0
+                };
+                let base = contrast.base();
+                let ink = contrast.ink();
                 let background = canvas_result(
                     target.create_solid_brush(ColorF::new(base, base, base, opacity)),
                 )?;
@@ -350,7 +364,7 @@ impl Renderer {
                 let white =
                     canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 1.0)))?;
                 let dim =
-                    canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.58)))?;
+                    canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.85)))?;
                 let selection =
                     canvas_result(target.create_solid_brush(ColorF::new(0.55, 0.75, 1.0, 0.25)))?;
                 let hover =
@@ -384,7 +398,7 @@ impl Renderer {
                             ink,
                             ink,
                             ink,
-                            if hovered { 0.95 } else { 0.72 },
+                            if hovered { 1.0 } else { 0.85 },
                         )))?;
                         if hovered {
                             let fill = canvas_result(
@@ -1065,6 +1079,38 @@ mod tests {
                 })
             });
             assert!(ink_present, "Title must contrast with its background");
+        }
+    }
+
+    #[test]
+    fn transparent_panel_protection_preserves_icons_and_rounded_edges() {
+        let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let mut model = sample_model();
+        model.options.text_protection = true;
+        model.backdrop = desktop_core::Backdrop::Solid {
+            color: 0xffffff,
+            opacity: 0.0,
+        };
+        let mut renderer = Renderer::new().unwrap();
+        for mode in [
+            desktop_core::PanelText::Light,
+            desktop_core::PanelText::Dark,
+        ] {
+            model.options.text = mode;
+            let pixels = renderer.pixels(400, 240, 1.0, &model).unwrap();
+            let at = |x: usize, y: usize| &pixels[(y * 400 + x) * 4..][..4];
+            assert_eq!(at(59, 78), [80, 100, 200, 255]);
+            assert!(at(380, 200)[3] > 0 && at(380, 200)[3] < 255);
+            assert_eq!(at(0, 0)[3], 0);
+            assert_eq!(at(380, 200)[0] == 0, mode == desktop_core::PanelText::Light);
+            model.options.text_protection = false;
+            let unprotected = renderer.pixels(400, 240, 1.0, &model).unwrap();
+            assert_eq!(unprotected[(200 * 400 + 380) * 4 + 3], 0);
+            assert_eq!(
+                &unprotected[(78 * 400 + 59) * 4..][..4],
+                [80, 100, 200, 255]
+            );
+            model.options.text_protection = true;
         }
     }
 
