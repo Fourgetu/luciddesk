@@ -16,14 +16,36 @@ fn main() {
         ".github",
         "crates",
         "docs",
-        ".git/HEAD",
-        ".git/refs",
-        ".git/index",
     ] {
         println!("cargo:rerun-if-changed={}", root.join(path).display());
     }
+    println!("cargo:rerun-if-env-changed=GIT");
+    let git_executable = std::env::var_os("GIT")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            // Cargo can replace PATH on Windows; also check standard Git installs.
+            let path = std::env::var_os("PATH").unwrap_or_default();
+            let name = if cfg!(windows) { "git.exe" } else { "git" };
+            std::env::split_paths(&path)
+                .map(|dir| dir.join(name))
+                .chain(if cfg!(windows) {
+                    [
+                        ("ProgramFiles", "Git/cmd/git.exe"),
+                        ("LOCALAPPDATA", "Programs/Git/cmd/git.exe"),
+                    ]
+                    .into_iter()
+                    .filter_map(|(key, suffix)| {
+                        std::env::var_os(key).map(|dir| std::path::PathBuf::from(dir).join(suffix))
+                    })
+                    .collect::<Vec<_>>()
+                } else {
+                    Vec::new()
+                })
+                .find(|path| path.is_file())
+        })
+        .unwrap_or_else(|| "git".into());
     let git = |args: &[&str]| {
-        std::process::Command::new("git")
+        std::process::Command::new(&git_executable)
             .args(args)
             .current_dir(&root)
             .output()
@@ -31,12 +53,24 @@ fn main() {
             .filter(|output| output.status.success())
             .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
     };
+    // Resolve Git metadata through Git itself: a worktree's .git is a file.
+    for path in ["HEAD", "refs", "packed-refs", "index"] {
+        if let Some(path) = git(&["rev-parse", "--git-path", path]) {
+            println!("cargo:rerun-if-changed={}", root.join(path).display());
+        }
+    }
     println!("cargo:rerun-if-env-changed=LUCIDPANE_BUILD_REVISION");
-    let revision = git(&["rev-parse", "--short", "HEAD"]).unwrap_or_else(|| "unknown".into());
-    let dirty = git(&["status", "--porcelain", "--untracked-files=no"])
-        .is_some_and(|status| !status.is_empty());
     let revision = std::env::var("LUCIDPANE_BUILD_REVISION")
-        .unwrap_or_else(|_| format!("{revision}{}", if dirty { "-dirty" } else { "" }));
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty() && value != "unknown")
+        .or_else(|| {
+            let revision = git(&["rev-parse", "--short", "HEAD"])?;
+            let dirty = git(&["status", "--porcelain", "--untracked-files=no"])
+                .is_some_and(|status| !status.is_empty());
+            Some(format!("{revision}{}", if dirty { "-dirty" } else { "" }))
+        })
+        .unwrap_or_else(|| "unknown".into());
     println!("cargo:rustc-env=LUCIDPANE_BUILD_REVISION={revision}");
     embed_resource::compile("assets/app.rc", embed_resource::NONE)
         .manifest_required()
