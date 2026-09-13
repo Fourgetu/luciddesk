@@ -65,6 +65,7 @@ impl Cache {
         if item.details.modified_time.is_none()
             || item.details.modified_time != entry.item.details.modified_time
             || item.details.folder != entry.item.details.folder
+            || item.details.size != entry.item.details.size
             || item.identity != entry.item.identity
             || (entry.item.image.is_none() && entry.loaded.elapsed() >= Duration::from_secs(30))
         {

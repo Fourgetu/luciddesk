@@ -31,6 +31,8 @@ pub struct Renderer {
     title: windows_canvas::TextFormat,
     title_layout: Option<TitleLayout>,
     details: windows_canvas::TextFormat,
+    column_label_widths: [f32; 4],
+    sort_icons: windows_canvas::TextFormat,
     menu_shortcut: windows_canvas::TextFormat,
     icons: windows_canvas::TextFormat,
     navigation_icons: windows_canvas::TextFormat,
@@ -180,6 +182,12 @@ impl Renderer {
             .with_paragraph_alignment(ParagraphAlignment::Center)
             .with_word_wrapping(WordWrapping::NoWrap);
         canvas::ellipsis(&details)?;
+        let mut column_label_widths = [0.0; 4];
+        for (index, name) in ["文件名", "类型", "修改时间", "大小"].iter().enumerate() {
+            column_label_widths[index] = canvas_result(windows_canvas::TextLayout::new(
+                name, &details, 256.0, super::layout::LIST_HEADER,
+            ))?.metrics().width_including_trailing_whitespace;
+        }
         Ok(Self {
             #[cfg(test)]
             offscreen_device: None,
@@ -187,6 +195,11 @@ impl Renderer {
             title,
             title_layout: None,
             details,
+            column_label_widths,
+            sort_icons: canvas_result(TextFormat::new("Segoe Fluent Icons", 10.0))?
+                .with_alignment(TextAlignment::Center)
+                .with_paragraph_alignment(ParagraphAlignment::Center)
+                .with_word_wrapping(WordWrapping::NoWrap),
             menu_shortcut: canvas_result(TextFormat::new(&family, 12.0))?
                 .with_alignment(TextAlignment::Trailing)
                 .with_paragraph_alignment(ParagraphAlignment::Center)
@@ -479,31 +492,44 @@ impl Renderer {
                     let list = model.is_list();
                     let columns = model.list_columns(grid.cell_width);
                     if list && model.folder.is_some() {
-                        for (column, name) in ["文件名", "类型", "修改时间"].iter().enumerate()
-                        {
-                            target.clipped_text(
-                                &format!(
-                                    "{}{}",
-                                    name,
-                                    if model.folder_sort.0 as usize == column {
-                                        if model.folder_sort.1 {
-                                            " \u{2193}"
-                                        } else {
-                                            " \u{2191}"
-                                        }
-                                    } else {
-                                        ""
-                                    }
+                        for boundary in &columns[1..4] {
+                            target.fill_rect(
+                                &Rect::from_xywh(
+                                    super::layout::PADDING + boundary,
+                                    grid.content_top - super::layout::LIST_HEADER + 6.0,
+                                    1.0, super::layout::LIST_HEADER - 12.0,
                                 ),
+                                &hover,
+                            );
+                        }
+                        for (column, name) in ["文件名", "类型", "修改时间", "大小"].iter().enumerate()
+                        {
+                            let inset = if column == 0 { 0.0 } else { 8.0 };
+                            let left = super::layout::PADDING + columns[column] + inset;
+                            let top = grid.content_top - super::layout::LIST_HEADER;
+                            let available = (columns[column + 1] - columns[column] - inset - 8.0).max(1.0);
+                            let sorted = model.folder_sort.0 as usize == column && available >= 30.0;
+                            let text_width = if sorted { available - 18.0 } else { available };
+                            target.clipped_text(
+                                name,
                                 &self.details,
                                 &Rect::from_xywh(
-                                    super::layout::PADDING + columns[column],
-                                    grid.content_top - super::layout::LIST_HEADER,
-                                    (columns[column + 1] - columns[column] - 8.0).max(1.0),
+                                    left, top, text_width,
                                     super::layout::LIST_HEADER,
                                 ),
                                 &dim,
                             );
+                            if sorted {
+                                target.clipped_text(
+                                    if model.folder_sort.1 { "\u{e70d}" } else { "\u{e70e}" },
+                                    &self.sort_icons,
+                                    &Rect::from_xywh(
+                                        left + self.column_label_widths[column].min(text_width) + 4.0,
+                                        top, 14.0, super::layout::LIST_HEADER,
+                                    ),
+                                    &dim,
+                                );
+                            }
                         }
                         target.fill_rect(
                             &Rect::from_xywh(
@@ -648,8 +674,9 @@ impl Renderer {
                         }
 
                         if list {
+                            let size = super::folder::size_text(item.details.size, item.details.folder);
                             for (column, text) in
-                                [&item.label, &item.details.kind, &item.details.modified]
+                                [&item.label, &item.details.kind, &item.details.modified, &size]
                                     .iter()
                                     .enumerate()
                             {
@@ -659,13 +686,14 @@ impl Renderer {
                                 if column == 0 && model.renaming.as_ref() == Some(&item.identity) {
                                     continue;
                                 }
+                                let inset = if column == 0 { 0.0 } else { 8.0 };
                                 target.clipped_text(
                                     text,
-                                    &self.details,
+                                    if column == 3 { &self.menu_shortcut } else { &self.details },
                                     &Rect::from_xywh(
-                                        x + columns[column],
+                                        x + columns[column] + inset,
                                         y,
-                                        (columns[column + 1] - columns[column] - 8.0).max(1.0),
+                                        (columns[column + 1] - columns[column] - inset - 8.0).max(1.0),
                                         grid.cell_height,
                                     ),
                                     if column == 0 { &white } else { &dim },
@@ -850,6 +878,7 @@ mod tests {
         model.items[0].details = super::super::ItemDetails {
             kind: "文本文档".into(),
             modified: "2026/09/12 16:30".into(),
+            size: Some(1536),
             ..Default::default()
         };
         model.items = vec![model.items[0].clone(); 20];
@@ -879,7 +908,7 @@ mod tests {
             }
             let empty = renderer.pixels(width, height, scale, &blank).unwrap();
             let columns = super::super::layout::list_columns(grid.cell_width);
-            for column in 0..3 {
+            for column in 0..4 {
                 let changed = (((y + 2.0) * scale) as u32
                     ..((y + grid.cell_height - 2.0) * scale) as u32)
                     .any(|row| {
@@ -1008,6 +1037,7 @@ mod tests {
     fn sample_model() -> GroupModel {
         GroupModel {
             folder_sort: (0, false),
+            folder_columns: None,
         folder_navigation: [false; 2],
             list_view: false,
             folder: None,

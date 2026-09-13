@@ -472,6 +472,7 @@ fn activation_releases_state_and_model_before_shell_reentry() {
 fn snapped_content_bottom_and_scrollbar_use_the_same_row_metrics() {
     let mut model = GroupModel {
         folder_sort: (0, false),
+        folder_columns: None,
         folder_navigation: [false; 2],
         list_view: false,
         folder: None,
@@ -585,6 +586,7 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
     let model = Rc::new(RefCell::new(GroupModel {
         folder_sort: (0, false),
+        folder_columns: None,
         folder_navigation: [false; 2],
         list_view: false,
         folder: None,
@@ -640,6 +642,8 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
                     | Event::RenameItem(_)
                     | Event::Refresh
                     | Event::FileCommand(_)
+                    | Event::SetFolderColumns(_)
+                    | Event::SortFolder(_)
             ) {
                 observed_keyboard.borrow_mut().push(event.clone());
             }
@@ -900,6 +904,54 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
     }
     assert_eq!(model.borrow().hovered_button, None);
     assert_eq!(model.borrow().hovered_item, None);
+    // Exercise the real mouse-message path: resizing must not sort, must save
+    // once on release, and must restore the last saved widths on cancellation.
+    unsafe {
+        use windows_sys::Win32::UI::WindowsAndMessaging::*;
+        model.borrow_mut().folder = Some(std::path::PathBuf::from("C:\\"));
+        model.borrow_mut().list_view = true;
+        let dpi = windows_sys::Win32::UI::HiDpi::GetDpiForWindow(hwnd).max(96) as f32 / 96.0;
+        SetWindowPos(hwnd, std::ptr::null_mut(), 0, 0, (640.0 * dpi) as i32,
+            (300.0 * dpi) as i32, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+        let mut rect = RECT::default();
+        GetClientRect(hwnd, &raw mut rect);
+        let width = model.borrow().grid(rect.right as f32 / dpi, rect.bottom as f32 / dpi).cell_width;
+        let position = |x: f32| (((52.0 * dpi).round() as isize) << 16)
+            | (((x + layout::PADDING) * dpi).round() as isize);
+        keyboard_events.borrow_mut().clear();
+        let before = model.borrow().list_columns(width);
+        SendMessageW(hwnd, WM_LBUTTONDOWN, 0, position(before[1]));
+        SendMessageW(hwnd, WM_MOUSEMOVE, 1, position(before[1] + 30.0));
+        assert!(model.borrow().list_columns(width)[1] > before[1] + 28.0);
+        assert!(keyboard_events.borrow().is_empty());
+        SendMessageW(hwnd, WM_LBUTTONUP, 0, position(before[1] + 30.0));
+        assert!(matches!(keyboard_events.borrow().as_slice(), [Event::SetFolderColumns(_)]));
+        let saved = model.borrow().folder_columns;
+        let state = test_state();
+        folder::save_columns(&state, PanelId::new(1), saved.unwrap()).unwrap();
+        let restored = folder::saved_columns(&state.store, PanelId::new(1)).unwrap().unwrap();
+        assert!(restored.iter().zip(saved.unwrap()).all(|(a, b)| (a - b).abs() < 0.000001));
+        assert_eq!(folder::saved_columns(&state.store, PanelId::new(2)).unwrap(), None);
+        keyboard_events.borrow_mut().clear();
+        for (message, key) in [(WM_KEYDOWN, 0x1b), (WM_CAPTURECHANGED, 0)] {
+            let boundary = model.borrow().list_columns(width)[2];
+            SendMessageW(hwnd, WM_LBUTTONDOWN, 0, position(boundary));
+            SendMessageW(hwnd, WM_MOUSEMOVE, 1, position(boundary - 20.0));
+            assert_ne!(model.borrow().folder_columns, saved);
+            SendMessageW(hwnd, message, key, 0);
+            assert_eq!(model.borrow().folder_columns, saved);
+            SendMessageW(hwnd, WM_LBUTTONUP, 0, position(boundary - 20.0));
+        }
+        assert!(keyboard_events.borrow().is_empty());
+        let bounds = model.borrow().list_columns(width);
+        for column in 0..4 {
+            let point = position((bounds[column] + bounds[column + 1]) / 2.0);
+            SendMessageW(hwnd, WM_LBUTTONDOWN, 0, point);
+            SendMessageW(hwnd, WM_LBUTTONUP, 0, point);
+        }
+        assert!(matches!(keyboard_events.borrow().as_slice(),
+            [Event::SortFolder(0), Event::SortFolder(1), Event::SortFolder(2), Event::SortFolder(3)]));
+    }
     window::prepare_close(hwnd);
     drop(pane);
 }
@@ -910,6 +962,7 @@ fn pane_layer_switch_and_wallpaper_material_initialize() {
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
     let model = Rc::new(RefCell::new(GroupModel {
         folder_sort: (0, false),
+        folder_columns: None,
         folder_navigation: [false; 2],
         list_view: false,
         folder: None,
@@ -1752,6 +1805,7 @@ fn reconciliation_preserves_groups_and_appends_new_items_after_existing_order() 
 fn multiselection_preserves_anchor_toggle_and_file_identity_on_refresh() {
     let mut model = GroupModel {
         folder_sort: (0, false),
+        folder_columns: None,
         folder_navigation: [false; 2],
         list_view: false,
         folder: None,

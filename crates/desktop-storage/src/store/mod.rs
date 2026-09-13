@@ -356,7 +356,7 @@ fn initialize_schema(connection: &Connection) -> Result<(), StoreError> {
         [], |row| row.get(0),
     )?;
     if has_tables {
-        return schema::validate(connection);
+        return schema::validate_and_upgrade(connection);
     }
     let transaction = connection.unchecked_transaction()?;
     transaction.execute_batch(schema::SCHEMA)?;

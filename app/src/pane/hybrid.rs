@@ -1243,6 +1243,7 @@ mod tests {
                     display_name: name.into(),
                     attributes: desktop_shell::ShellAttributes::default(),
                     modified: None,
+                    size: None,
                 },
                 0,
                 0,

@@ -9,6 +9,7 @@ mod animation;
 mod assets;
 mod canvas;
 mod composition;
+mod columns;
 mod display_layout;
 mod drag_drop;
 mod events;
@@ -67,6 +68,7 @@ pub struct ItemDetails {
     pub modified: String,
     pub folder: bool,
     pub modified_time: Option<std::time::SystemTime>,
+    pub size: Option<u64>,
 }
 
 fn same_items(left: &[Item], right: &[Item]) -> bool {
@@ -153,6 +155,7 @@ enum Event {
     SetFolder(std::path::PathBuf),
     OpenFolder,
     SortFolder(u8),
+    SetFolderColumns([f32; 4]),
     NavigateFolder(std::path::PathBuf),
     FolderBack,
     FolderHome,
@@ -216,6 +219,7 @@ fn create_view(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> 
     };
     let model = Rc::new(RefCell::new(GroupModel {
         folder_sort: (0, false),
+        folder_columns: folder::saved_columns(&state.borrow().store, id)?,
         folder_navigation: [false; 2],
         list_view: panel.list_view(),
         folder: panel.folder().map(Path::to_path_buf),

@@ -334,6 +334,65 @@ fn rejects_incompatible_structure_without_modifying_data() {
 }
 
 #[test]
+fn size_sort_upgrades_existing_databases_and_survives_reopen() {
+    for legacy in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("workspace.db");
+        let connection = Connection::open(&path).unwrap();
+        let schema = if legacy {
+            super::schema::SCHEMA.replace("sort_column BETWEEN 0 AND 3", "sort_column BETWEEN 0 AND 2")
+        } else {
+            super::schema::SCHEMA.to_owned()
+        };
+        connection.execute_batch(&schema).unwrap();
+        // Seed through the old store directly so the upgrade is exercised with
+        // real mappings, view options, and pre-existing sort values.
+        let mut old = WorkspaceStore { connection, config: None };
+        let mut panel = Panel::new(PanelId::new(2), "Folder", RectDip::default());
+        panel.set_folder(Some(std::path::PathBuf::from(r"C:\Downloads")));
+        panel.set_list_view(false);
+        let workspace = Workspace::from_panels(vec![panel]).unwrap();
+        old.save_workspace(&workspace).unwrap();
+        old.save_preference("panel_folder_sort:2", "2:desc").unwrap();
+        old.save_preference("panel_folder_columns:2", "0.4,0.2,0.3,0.1").unwrap();
+        drop(old);
+        let mut store = WorkspaceStore::open_database(&path).unwrap();
+        assert_eq!(store.load_workspace().unwrap(), workspace);
+        assert_eq!(store.preference("panel_folder_sort:2").unwrap().as_deref(), Some("2:desc"));
+        for value in ["3:asc", "3:desc", "0:asc", "3:desc"] {
+            store.save_preference("panel_folder_sort:2", value).unwrap();
+            store.save_workspace(&workspace).unwrap();
+            drop(store);
+            store = WorkspaceStore::open_database(&path).unwrap();
+            assert_eq!(store.preference("panel_folder_sort:2").unwrap().as_deref(), Some(value));
+            assert_eq!(store.load_workspace().unwrap(), workspace);
+        }
+        for value in ["4:asc", "-1:asc", "3:invalid"] {
+            assert!(store.save_preference("panel_folder_sort:2", value).is_err());
+        }
+        assert_eq!(store.preference("panel_folder_sort:2").unwrap().as_deref(), Some("3:desc"));
+        assert_eq!(store.preference("panel_folder_columns:2").unwrap().as_deref(), Some("0.4,0.2,0.3,0.1"));
+        store.save_workspace(&Workspace::new()).unwrap();
+        assert_eq!(store.preference("panel_folder_sort:2").unwrap(), None);
+    }
+}
+
+#[test]
+fn folder_sort_upgrade_does_not_modify_an_incompatible_database() {
+    let connection = Connection::open_in_memory().unwrap();
+    connection.execute_batch(&super::schema::SCHEMA.replace(
+        "sort_column BETWEEN 0 AND 3", "sort_column BETWEEN 0 AND 2"
+    )).unwrap();
+    connection.execute_batch("ALTER TABLE monitor_layouts ADD COLUMN unexpected TEXT;").unwrap();
+    let snapshot = || connection.prepare("SELECT sql FROM sqlite_schema ORDER BY name").unwrap()
+        .query_map([], |row| row.get::<_, Option<String>>(0)).unwrap()
+        .collect::<Result<Vec<_>, _>>().unwrap();
+    let before = snapshot();
+    assert!(super::initialize_schema(&connection).is_err());
+    assert_eq!(snapshot(), before);
+}
+
+#[test]
 fn option_update_does_not_rewrite_workspace_rows() {
     let mut store = WorkspaceStore::open_in_memory().unwrap();
     let workspace = Workspace::from_panels(vec![Panel::new(

@@ -181,6 +181,7 @@ impl Source {
                                             modified: modified_text(entry.modified),
                                             folder: entry.attributes.folder,
                                             modified_time: entry.modified,
+                                            size: entry.size,
                                             ..Default::default()
                                         },
                                         identity: entry.identity,
@@ -342,6 +343,7 @@ pub(super) fn poll(state: &mut PaneApp) {
                     if item.identity == update.identity
                         && item.details.modified_time == update.details.modified_time
                         && item.details.folder == update.details.folder
+                        && item.details.size == update.details.size
                     {
                         item.image = update.image;
                         item.details.kind = update.details.kind;
@@ -375,6 +377,19 @@ pub(super) fn poll(state: &mut PaneApp) {
     }
 }
 
+pub(super) fn saved_columns(store: &WorkspaceStore, id: PanelId) -> Result<Option<[f32; 4]>, String> {
+    Ok(store.preference(&format!("panel_folder_columns:{}", id.get()))
+        .map_err(|error| error.to_string())?.and_then(|value| super::columns::decode(&value)))
+}
+
+pub(super) fn save_columns(state: &PaneApp, id: PanelId, widths: [f32; 4]) -> Result<(), String> {
+    if !super::columns::valid(widths) { return Ok(()); }
+    state.store.save_preference(
+        &format!("panel_folder_columns:{}", id.get()),
+        &widths.map(|value| format!("{value:.6}")).join(","),
+    ).map_err(|error| error.to_string())
+}
+
 fn sort_items(items: &mut Vec<Item>, sort: (u8, bool)) {
     let mut sorted: Vec<_> = std::mem::take(items)
         .into_iter()
@@ -383,38 +398,52 @@ fn sort_items(items: &mut Vec<Item>, sort: (u8, bool)) {
             // on the UI thread (especially for network folders).
             let folder = item.details.folder;
             let modified = item.details.modified_time;
-            let name = item.label.to_lowercase();
-            (folder, name, modified, item)
+            let name = item.label.encode_utf16().chain(Some(0)).collect::<Vec<_>>();
+            let kind = if sort.0 == 1 {
+                item.details.kind.encode_utf16().chain(Some(0)).collect::<Vec<_>>()
+            } else { Vec::new() };
+            (folder, name, kind, modified, item)
         })
         .collect();
-    sorted.sort_by(|(af, an, at, a), (bf, bn, bt, b)| {
-        // Time sorting is a single timeline for files and folders.
-        let grouping = if sort.0 == 2 {
-            std::cmp::Ordering::Equal
-        } else {
-            bf.cmp(af)
-        };
-        grouping.then_with(|| {
-            if sort.0 == 2 && (at.is_none() || bt.is_none()) {
-                return at.is_none().cmp(&bt.is_none()).then_with(|| an.cmp(bn));
+    let text_order = |a: &[u16], b: &[u16]| unsafe {
+        windows_sys::Win32::UI::Shell::StrCmpLogicalW(a.as_ptr(), b.as_ptr()).cmp(&0)
+    };
+    let direction = |order: std::cmp::Ordering| if sort.1 { order.reverse() } else { order };
+    sorted.sort_by(|(af, an, ak, at, a), (bf, bn, bk, bt, b)| {
+        let name = || text_order(an, bn);
+        match sort.0 {
+            // Explorer reverses the complete name order, including folder grouping.
+            0 => direction(bf.cmp(af).then_with(name)),
+            // Type keeps folders first and names ascending in either direction.
+            1 => bf.cmp(af).then_with(|| {
+                if *af { name() } else { direction(text_order(ak, bk)).then_with(name) }
+            }),
+            // Preserve the existing mixed timeline for modified-date sorting.
+            2 => {
+                if at.is_none() || bt.is_none() {
+                    at.is_none().cmp(&bt.is_none()).then_with(name)
+                } else {
+                    direction(at.cmp(bt).then_with(name))
+                }
             }
-            let order = match sort.0 {
-                1 => a.details.kind.cmp(&b.details.kind),
-                2 => at.cmp(bt),
-                _ => an.cmp(bn),
-            };
-            let order = order.then_with(|| an.cmp(bn));
-            if sort.1 { order.reverse() } else { order }
-        })
+            // Empty sizes precede files ascending and follow them descending;
+            // equal sizes (including folders) always use ascending names.
+            3 => direction(bf.cmp(af)).then_with(|| {
+                if *af { name() } else {
+                    direction(a.details.size.cmp(&b.details.size)).then_with(name)
+                }
+            }),
+            _ => name(),
+        }
     });
-    *items = sorted.into_iter().map(|(_, _, _, item)| item).collect();
+    *items = sorted.into_iter().map(|(_, _, _, _, item)| item).collect();
 }
 
 pub(super) fn sort(state: &mut PaneApp, id: PanelId, column: u8) -> Result<(), String> {
     let Some(source) = state.folders.get_mut(&id) else {
         return Ok(());
     };
-    let order = (column.min(2), source.sort.0 == column && !source.sort.1);
+    let order = (column.min(3), if source.sort.0 == column { !source.sort.1 } else { column == 3 });
     state
         .store
         .save_preference(
@@ -534,6 +563,20 @@ fn file_type(identity: &ShellIdentity) -> String {
     String::from_utf16_lossy(&name[..name.iter().position(|c| *c == 0).unwrap_or(name.len())])
 }
 
+pub(super) fn size_text(bytes: Option<u64>, folder: bool) -> String {
+    if folder { return String::new(); }
+    let Some(bytes) = bytes else { return "—".into(); };
+    if bytes < 1024 { return format!("{bytes} B"); }
+    let mut value = bytes as f64;
+    let mut unit = "B";
+    for next in ["KB", "MB", "GB", "TB", "PB", "EB"] {
+        value /= 1024.0;
+        unit = next;
+        if value < 1024.0 { break; }
+    }
+    format!("{value:.1} {unit}")
+}
+
 fn modified_text(value: Option<std::time::SystemTime>) -> String {
     use windows_sys::Win32::{
         Foundation::{FILETIME, SYSTEMTIME},
@@ -625,6 +668,56 @@ pub(super) fn request_picker(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sizes_format_and_sort_numerically_with_empty_values() {
+        assert_eq!(size_text(Some(0), false), "0 B");
+        assert_eq!(size_text(Some(1023), false), "1023 B");
+        assert_eq!(size_text(Some(1536), false), "1.5 KB");
+        assert_eq!(size_text(Some(1024 * 1024), false), "1.0 MB");
+        assert_eq!(size_text(None, false), "—");
+        assert_eq!(size_text(None, true), "");
+        let make = |name: &str, size, folder| Item {
+            identity: ShellIdentity::Namespace { parsing_name: name.into() },
+            label: name.into(), image: None,
+            details: ItemDetails { size, folder, ..Default::default() },
+        };
+        let mut items = vec![make("large", Some(1024 * 1024), false), make("unknown", None, false), make("small", Some(9), false), make("folder", None, true)];
+        sort_items(&mut items, (3, false));
+        assert_eq!(items.iter().map(|i| i.label.as_str()).collect::<Vec<_>>(), ["folder", "unknown", "small", "large"]);
+        sort_items(&mut items, (3, true));
+        assert_eq!(items.iter().map(|i| i.label.as_str()).collect::<Vec<_>>(), ["large", "small", "unknown", "folder"]);
+    }
+
+    #[test]
+    fn name_type_and_size_match_explorer_view_order() {
+        // Captured from IFolderView2 with folder_sort_probe on this Windows
+        // installation. In particular, descending type and size do not reverse ties.
+        let make = |name: &str, kind: &str, size| Item {
+            identity: ShellIdentity::Namespace { parsing_name: name.into() },
+            label: name.into(), image: None,
+            details: ItemDetails { kind: kind.into(), size, folder: size.is_none(), ..Default::default() },
+        };
+        let original = vec![
+            make("dir10", "文件夹", None), make("dir2", "文件夹", None),
+            make("file10.txt", "文本文档", Some(3)), make("file2.txt", "文本文档", Some(3)),
+            make("a.zip", "ZIP 压缩文件", Some(3)), make("b.txt", "文本文档", Some(3)),
+            make("c.txt", "文本文档", Some(3)), make("file1.bin", "BIN 文件", Some(3)),
+            make("large.txt", "文本文档", Some(1024)),
+        ];
+        for (sort, expected) in [
+            ((0, false), ["dir2", "dir10", "a.zip", "b.txt", "c.txt", "file1.bin", "file2.txt", "file10.txt", "large.txt"]),
+            ((0, true), ["large.txt", "file10.txt", "file2.txt", "file1.bin", "c.txt", "b.txt", "a.zip", "dir10", "dir2"]),
+            ((1, false), ["dir2", "dir10", "file1.bin", "a.zip", "b.txt", "c.txt", "file2.txt", "file10.txt", "large.txt"]),
+            ((1, true), ["dir2", "dir10", "b.txt", "c.txt", "file2.txt", "file10.txt", "large.txt", "a.zip", "file1.bin"]),
+            ((3, false), ["dir2", "dir10", "a.zip", "b.txt", "c.txt", "file1.bin", "file2.txt", "file10.txt", "large.txt"]),
+            ((3, true), ["large.txt", "a.zip", "b.txt", "c.txt", "file1.bin", "file2.txt", "file10.txt", "dir2", "dir10"]),
+        ] {
+            let mut items = original.clone();
+            sort_items(&mut items, sort);
+            assert_eq!(items.iter().map(|item| item.label.as_str()).collect::<Vec<_>>(), expected, "sort={sort:?}");
+        }
+    }
 
     #[test]
     #[ignore = "Read-only thumbnail diagnostic; set LUCIDPANE_TEST_FOLDER"]
@@ -742,6 +835,7 @@ mod tests {
             started.elapsed()
         );
         assert_eq!(items.len(), 257);
+        assert!(items.iter().all(|item| item.details.size == if item.details.folder { None } else { Some(0) }));
         assert!(
             items
                 .iter()
@@ -845,7 +939,7 @@ mod tests {
         ));
         std::fs::create_dir_all(root.join("child")).unwrap();
         std::fs::write(root.join("z.txt"), b"z").unwrap();
-        std::fs::write(root.join("a.txt"), b"a").unwrap();
+        std::fs::write(root.join("a.txt"), b"aaa").unwrap();
         let mut state = super::super::tests::test_state();
         let id = PanelId::new(2);
         state
@@ -875,7 +969,7 @@ mod tests {
                     .to_string_lossy()
                     .into_owned())
                 .collect::<Vec<_>>(),
-            ["child", "z.txt", "a.txt"]
+            ["z.txt", "a.txt", "child"]
         );
         sort(&mut state, id, 0).unwrap();
         assert_eq!(
@@ -893,6 +987,10 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["child", "a.txt", "z.txt"]
         );
+        for expected in [["a.txt", "z.txt", "child"], ["child", "z.txt", "a.txt"]] {
+            sort(&mut state, id, 3).unwrap();
+            assert_eq!(state.folders[&id].items.iter().map(|item| item.label.as_str()).collect::<Vec<_>>(), expected);
+        }
         navigate(&mut state, id, Some(root.join("child"))).unwrap();
         ensure(&mut state, id).unwrap();
         assert_eq!(state.folders[&id].path, root.join("child"));
@@ -918,7 +1016,7 @@ mod tests {
         assert_eq!(state.folders[&id].path, root);
         state.folders.remove(&id);
         ensure(&mut state, id).unwrap();
-        assert_eq!(state.folders[&id].sort, (0, false));
+        assert_eq!(state.folders[&id].sort, (3, false));
         state.folders.clear();
         std::fs::remove_file(root.join("a.txt")).unwrap();
         std::fs::remove_file(root.join("z.txt")).unwrap();

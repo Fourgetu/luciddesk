@@ -96,6 +96,10 @@ pub(super) fn handle(
         folder::sort(&mut state.borrow_mut(), id, column)?;
         return Ok(false);
     }
+    if let Event::SetFolderColumns(widths) = event {
+        folder::save_columns(&state.borrow(), id, widths)?;
+        return Ok(false);
+    }
     if let Event::NavigateFolder(path) = &event {
         folder::navigate(&mut state.borrow_mut(), id, Some(path.clone()))?;
         return Ok(false);
@@ -679,6 +683,7 @@ pub(super) fn handle(
     let mut s = state.borrow_mut();
     match event {
         Event::SortFolder(_)
+        | Event::SetFolderColumns(_)
         | Event::NavigateFolder(_)
         | Event::FolderBack
         | Event::FolderHome

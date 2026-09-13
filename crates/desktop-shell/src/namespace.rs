@@ -48,6 +48,8 @@ pub struct DesktopShellItem {
     pub display_name: String,
     pub attributes: ShellAttributes,
     pub modified: Option<SystemTime>,
+    /// File length from the directory snapshot; no recursive folder sizing.
+    pub size: Option<u64>,
 }
 
 /// Resolves LocalAppData without assuming its physical location.
@@ -125,6 +127,7 @@ pub fn enumerate_folder(path: &Path) -> Result<Vec<DesktopShellItem>, ShellError
                     can_rename: true,
                     can_delete: true,
                 },
+                size: metadata.as_ref().filter(|value| value.is_file()).map(fs::Metadata::len),
                 modified: metadata.and_then(|value| value.modified().ok()),
                 identity: ShellIdentity::FileSystem {
                     path,
@@ -234,12 +237,14 @@ pub(crate) fn desktop_shell_item(item: &IShellItem) -> Result<DesktopShellItem, 
         can_rename: raw_attributes & SFGAO_CANRENAME.0 != 0,
         can_delete: raw_attributes & SFGAO_CANDELETE.0 != 0,
     };
+    let size = metadata.as_ref().filter(|value| value.is_file()).map(fs::Metadata::len);
     let modified = metadata.and_then(|metadata| metadata.modified().ok());
     Ok(DesktopShellItem {
         identity,
         display_name,
         attributes,
         modified,
+        size,
     })
 }
 

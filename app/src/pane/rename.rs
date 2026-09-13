@@ -630,6 +630,7 @@ mod tests {
         let identity = identity("网易云音乐.lnk");
         let model = Rc::new(RefCell::new(GroupModel {
             folder_sort: (0, false),
+            folder_columns: None,
         folder_navigation: [false; 2],
             list_view: false,
             folder: None,

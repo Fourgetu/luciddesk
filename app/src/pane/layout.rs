@@ -14,14 +14,18 @@ pub const HEADER: f32 = 38.0;
 pub const LIST_HEADER: f32 = 28.0;
 pub const LIST_ROW: f32 = 32.0;
 
-/// Relative column boundaries: icon/name, type, modified date, right edge.
-pub fn list_columns(width: f32) -> [f32; 4] {
-    let modified = (width * 0.35).clamp(100.0, 150.0);
-    let kind = (width * 0.22).clamp(60.0, 120.0);
+/// Relative boundaries for name, type, modified date, size, and the right edge.
+pub fn list_columns(width: f32) -> [f32; 5] {
+    let icon = 30.0_f32.min(width * 0.2);
+    let content = (width - icon).max(0.0);
+    let modified = (content * 0.33).clamp(90.0, 150.0).min(content * 0.34);
+    let kind = (content * 0.20).clamp(60.0, 120.0).min(content * 0.22);
+    let size = (content * 0.18).clamp(56.0, 80.0).min(content * 0.22);
     [
-        30.0_f32.min(width * 0.2),
-        (width - modified - kind).max(60.0).min(width * 0.55),
-        (width - modified).max(90.0).min(width * 0.8),
+        icon,
+        width - modified - kind - size,
+        width - modified - size,
+        width - size,
         width,
     ]
 }

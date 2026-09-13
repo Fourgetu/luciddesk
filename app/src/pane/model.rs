@@ -6,6 +6,7 @@ use super::*;
 pub struct GroupModel {
     pub list_view: bool,
     pub folder_sort: (u8, bool),
+    pub folder_columns: Option<[f32; 4]>,
     pub folder_navigation: [bool; 2],
     pub folder: Option<std::path::PathBuf>,
     pub folder_status: Option<String>,
@@ -56,11 +57,11 @@ impl GroupModel {
     pub(super) fn is_list(&self) -> bool {
         self.list_view
     }
-    pub(super) fn list_columns(&self, width: f32) -> [f32; 4] {
+    pub(super) fn list_columns(&self, width: f32) -> [f32; 5] {
         if self.folder.is_some() {
-            layout::list_columns(width)
+            super::columns::bounds(width, self.folder_columns)
         } else {
-            [32.0, width, width, width]
+            [32.0, width, width, width, width]
         }
     }
     pub(super) fn clear_selection(&mut self) {

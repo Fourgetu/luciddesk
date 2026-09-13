@@ -1,7 +1,8 @@
 use super::StoreError;
 use rusqlite::{Connection, OptionalExtension};
 
-pub(super) fn validate(connection: &Connection) -> Result<(), StoreError> {
+pub(super) fn validate_and_upgrade(connection: &Connection) -> Result<(), StoreError> {
+    let transaction = connection.unchecked_transaction()?;
     let reference = Connection::open_in_memory()?;
     reference.execute_batch(SCHEMA)?;
     let definitions: Vec<(String, String)> = reference
@@ -13,6 +14,7 @@ pub(super) fn validate(connection: &Connection) -> Result<(), StoreError> {
             .collect::<String>()
             .to_ascii_lowercase()
     };
+    let mut folder_upgrade = None;
     for (name, expected) in definitions {
         let actual: Option<String> = connection
             .query_row(
@@ -21,7 +23,17 @@ pub(super) fn validate(connection: &Connection) -> Result<(), StoreError> {
                 |r| r.get(0),
             )
             .optional()?;
-        if actual
+        if name == "panel_folder_settings"
+            && actual.as_deref().is_some_and(|sql| {
+                normalize(sql)
+                    == normalize(
+                        &expected
+                            .replace("sort_column BETWEEN 0 AND 3", "sort_column BETWEEN 0 AND 2"),
+                    )
+            })
+        {
+            folder_upgrade = Some(expected);
+        } else if actual
             .as_deref()
             .is_none_or(|sql| normalize(sql) != normalize(&expected))
         {
@@ -30,10 +42,25 @@ pub(super) fn validate(connection: &Connection) -> Result<(), StoreError> {
             )));
         }
     }
+    // Upgrade only the known three-column constraint, after validating every
+    // table. Keep existing mappings and sort settings in the same transaction.
+    if let Some(create) = folder_upgrade {
+        transaction.execute_batch(
+            "ALTER TABLE panel_folder_settings RENAME TO panel_folder_settings_before_size;",
+        )?;
+        transaction.execute_batch(&create)?;
+        transaction.execute_batch(
+            "INSERT INTO panel_folder_settings (panel_id,path,view,sort_column,sort_direction)
+             SELECT panel_id,path,view,sort_column,sort_direction FROM panel_folder_settings_before_size;
+             DROP TABLE panel_folder_settings_before_size;"
+        )?;
+    }
+    transaction.commit()?;
     Ok(())
 }
 
-// Development schema: create new databases; deliberately do not migrate older versions.
+// Development schema: unrelated older structures remain unsupported. The known
+// folder size-sort constraint is upgraded above without resetting user data.
 pub(super) const SCHEMA: &str = "
 CREATE TABLE metadata (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL);
 CREATE TABLE panels (
@@ -53,7 +80,7 @@ CREATE TABLE panel_folder_settings (
     panel_id INTEGER PRIMARY KEY REFERENCES panels(id) ON DELETE CASCADE,
     path TEXT NOT NULL,
     view TEXT NOT NULL DEFAULT 'list' CHECK(view IN ('list','icons')),
-    sort_column INTEGER NOT NULL DEFAULT 0 CHECK(sort_column BETWEEN 0 AND 2),
+    sort_column INTEGER NOT NULL DEFAULT 0 CHECK(sort_column BETWEEN 0 AND 3),
     sort_direction TEXT NOT NULL DEFAULT 'asc' CHECK(sort_direction IN ('asc','desc'))
 );
 CREATE TABLE desktop_items (
@@ -82,7 +109,7 @@ pub(super) fn parse_sort(raw: &str) -> Result<(i64, &str), StoreError> {
     let column = column
         .parse::<i64>()
         .ok()
-        .filter(|c| (0..=2).contains(c))
+        .filter(|c| (0..=3).contains(c))
         .ok_or_else(|| StoreError::InvalidData("invalid folder sort column".into()))?;
     if !["asc", "desc"].contains(&direction) {
         return Err(StoreError::InvalidData(

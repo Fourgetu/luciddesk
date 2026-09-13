@@ -348,6 +348,24 @@ fn grid(hwnd: HWND, model: &GroupModel) -> Grid {
     let s = scale(hwnd);
     model.grid(r.right as f32 / s, r.bottom as f32 / s)
 }
+
+struct ColumnDrag {
+    divider: usize,
+    bounds: [f32; 5],
+    original: Option<[f32; 4]>,
+}
+
+fn column_divider(hwnd: HWND, model: &GroupModel, point: POINT) -> Option<usize> {
+    if !model.is_list() || model.folder.is_none() || model.collapsed { return None; }
+    let scale = scale(hwnd);
+    let grid = grid(hwnd, model);
+    let top = grid.content_top - super::layout::LIST_HEADER;
+    let y = point.y as f32 / scale;
+    if !(top..grid.content_top).contains(&y) { return None; }
+    let x = point.x as f32 / scale - super::layout::PADDING;
+    let columns = model.list_columns(grid.cell_width);
+    (1..4).find(|&divider| (x - columns[divider]).abs() <= 4.0)
+}
 fn invalidate(hwnd: HWND) {
     unsafe {
         InvalidateRect(hwnd, std::ptr::null(), 0);
@@ -421,6 +439,7 @@ where
     let mut renderer = Renderer::new().map_err(|e| e.to_string())?;
     let mut surface: Option<Surface> = None;
     let mut drag: Option<(usize, POINT, bool)> = None;
+    let mut column_drag: Option<ColumnDrag> = None;
     let mut drag_identity = None;
     let mut drag_image: Option<super::drag_drop::image::DragImage> = None;
     let mut fold: Option<super::animation::Fold> = None;
@@ -490,6 +509,23 @@ where
                     // Appearance changes invalidate rendering resources, not Shell image inventory.
                     invalidate(hwnd);
                     Some(0)
+                }
+                WM_KEYDOWN if wparam == 0x1b && column_drag.is_some() => {
+                    model.borrow_mut().folder_columns = column_drag.take().unwrap().original;
+                    unsafe { ReleaseCapture(); }
+                    invalidate(hwnd);
+                    Some(0)
+                }
+                WM_SETCURSOR if lparam as u16 == HTCLIENT as u16 => {
+                    let mut pointer = POINT::default();
+                    unsafe {
+                        GetCursorPos(&raw mut pointer);
+                        windows_sys::Win32::Graphics::Gdi::ScreenToClient(hwnd, &raw mut pointer);
+                    }
+                    if column_drag.is_some() || column_divider(hwnd, &model.borrow(), pointer).is_some() {
+                        unsafe { SetCursor(LoadCursorW(std::ptr::null_mut(), IDC_SIZEWE)); }
+                        Some(1)
+                    } else { None }
                 }
                 WM_KEYDOWN if wparam == 0x74 => {
                     event(Event::Refresh);
@@ -831,16 +867,27 @@ where
                     let p = point(lparam);
                     let s = scale(hwnd);
                     let r = client(hwnd);
+                    let divider = column_divider(hwnd, &model.borrow(), p);
+                    if let Some(divider) = divider {
+                        let m = model.borrow();
+                        column_drag = Some(ColumnDrag {
+                            divider,
+                            bounds: m.list_columns(grid(hwnd, &m).cell_width),
+                            original: m.folder_columns,
+                        });
+                        drop(m);
+                        unsafe { SetFocus(hwnd); SetCapture(hwnd); }
+                        return Some(0);
+                    }
                     if model.borrow().is_list()
                         && model.borrow().folder.is_some()
                         && p.y as f32 / s >= HEADER
                         && p.y as f32 / s < HEADER + super::layout::LIST_HEADER
                     {
-                        let columns =
-                            super::layout::list_columns(grid(hwnd, &model.borrow()).cell_width);
+                        let columns = model.borrow().list_columns(grid(hwnd, &model.borrow()).cell_width);
                         let x = p.x as f32 / s - super::layout::PADDING;
                         if let Some(column) =
-                            (0..3).find(|i| x >= columns[*i] && x < columns[*i + 1])
+                            (0..4).find(|i| x >= columns[*i] && x < columns[*i + 1])
                         {
                             event(Event::SortFolder(column as u8));
                         }
@@ -898,6 +945,13 @@ where
                     Some(0)
                 }
                 WM_MOUSEMOVE => {
+                    if let Some(drag) = &column_drag {
+                        let x = point(lparam).x as f32 / scale(hwnd) - super::layout::PADDING;
+                        model.borrow_mut().folder_columns = Some(super::columns::resize(drag.bounds, drag.divider, x));
+                        unsafe { SetCursor(LoadCursorW(std::ptr::null_mut(), IDC_SIZEWE)); }
+                        invalidate(hwnd);
+                        return Some(0);
+                    }
                     update_pointer(hwnd, &model, Some(point(lparam)));
                     track_client_leave(hwnd);
                     let s = scale(hwnd);
@@ -997,6 +1051,15 @@ where
                     Some(0)
                 }
                 WM_LBUTTONUP => {
+                    if let Some(drag) = column_drag.take() {
+                        let widths = model.borrow().folder_columns;
+                        unsafe { ReleaseCapture(); }
+                        invalidate(hwnd);
+                        if widths != drag.original {
+                            if let Some(widths) = widths { event(Event::SetFolderColumns(widths)); }
+                        }
+                        return Some(0);
+                    }
                     let pressed = model.borrow_mut().pressed_button.take();
                     if let Some(button) = pressed {
                         let p = point(lparam);
@@ -1064,6 +1127,7 @@ where
                     Some(0)
                 }
                 WM_CAPTURECHANGED | WM_CANCELMODE => {
+                    if let Some(drag) = column_drag.take() { model.borrow_mut().folder_columns = drag.original; }
                     model.borrow_mut().pressed_button = None;
                     if message == WM_CANCELMODE {
                         unsafe {
