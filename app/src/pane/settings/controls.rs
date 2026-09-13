@@ -1,0 +1,214 @@
+//! Shared settings controls. Appearance is independent of the action a page binds.
+use super::{Action, Rect, Scene};
+
+pub(super) struct Style;
+impl Style {
+    pub const ICON: f32 = 12.0;
+    pub const NAV_ICON: f32 = 18.0;
+    pub const ICON_SLOT: f32 = 16.0;
+    pub const ICON_GAP: f32 = 8.0;
+    pub const NAV_TEXT_INSET: f32 = 48.0;
+    pub const ROW_INSET: f32 = 10.0;
+    pub const ROW_HEIGHT: f32 = 38.0;
+    pub const COMBO_HEIGHT: f32 = 32.0;
+    pub const RADIUS: f32 = 5.0;
+    pub const COMBO_RADIUS: f32 = 4.0;
+    pub const SLIDER_INSET: f32 = 8.0;
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct Slider {
+    pub value: f32,
+    pub max: f32,
+    pub centered: bool,
+    pub channel: Option<u8>,
+}
+impl Slider {
+    pub fn linear(value: f32, max: f32) -> Self {
+        Self {
+            value,
+            max,
+            centered: false,
+            channel: None,
+        }
+    }
+    pub fn centered(value: f32, max: f32) -> Self {
+        Self {
+            centered: true,
+            ..Self::linear(value, max)
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum ControlKind {
+    Button,
+    BackButton,
+    Row,
+    BackRow,
+    ForwardRow,
+    Navigation,
+    Caption,
+    Toggle,
+    Slider(Slider),
+    Combo,
+}
+impl ControlKind {
+    pub fn is_row(self) -> bool {
+        matches!(self, Self::Row | Self::BackRow | Self::ForwardRow)
+    }
+    pub fn is_back(self) -> bool {
+        matches!(self, Self::BackButton | Self::BackRow)
+    }
+}
+
+pub(super) struct Control {
+    pub bounds: Rect,
+    pub label: String,
+    pub action: Action,
+    pub selected: bool,
+    pub kind: ControlKind,
+    pub enabled: bool,
+}
+impl Control {
+    pub fn is_toggle(&self) -> bool {
+        matches!(self.kind, ControlKind::Toggle)
+    }
+}
+
+impl Scene {
+    pub fn text(&mut self, r: Rect, text: impl Into<String>, size: usize) {
+        self.text.push((r, text.into(), size));
+    }
+    pub fn control(
+        &mut self,
+        kind: ControlKind,
+        bounds: Rect,
+        label: &str,
+        action: Action,
+        selected: bool,
+    ) {
+        self.controls.push(Control {
+            bounds,
+            label: label.into(),
+            action,
+            selected,
+            kind,
+            enabled: true,
+        });
+    }
+    pub fn button(&mut self, bounds: Rect, label: &str, action: Action, selected: bool) {
+        self.control(ControlKind::Button, bounds, label, action, selected);
+    }
+    pub fn toggle(&mut self, bounds: Rect, action: Action, selected: bool, enabled: bool) {
+        self.controls.push(Control {
+            bounds,
+            label: String::new(),
+            action,
+            selected,
+            enabled,
+            kind: ControlKind::Toggle,
+        });
+    }
+    pub fn slider(&mut self, bounds: Rect, value: Slider, action: Action) {
+        self.control(ControlKind::Slider(value), bounds, "", action, false);
+    }
+    pub fn row(&mut self, x: f32, y: f32, width: f32, label: &str, action: Action) {
+        self.control(
+            ControlKind::Row,
+            Rect::from_xywh(x, y, width, Style::ROW_HEIGHT),
+            label,
+            action,
+            false,
+        );
+    }
+    pub fn back_row(&mut self, x: f32, y: f32, width: f32, label: &str, action: Action) {
+        self.control(
+            ControlKind::BackRow,
+            Rect::from_xywh(x, y, width, Style::ROW_HEIGHT),
+            label,
+            action,
+            false,
+        );
+    }
+    pub fn forward_row(&mut self, x: f32, y: f32, width: f32, label: &str, action: Action) {
+        self.control(
+            ControlKind::ForwardRow,
+            Rect::from_xywh(x, y, width, Style::ROW_HEIGHT),
+            label,
+            action,
+            false,
+        );
+    }
+}
+
+pub(super) fn slider_fraction(bounds: Rect, x: f32) -> f32 {
+    ((x - bounds.left - Style::SLIDER_INSET)
+        / (bounds.right - bounds.left - 2.0 * Style::SLIDER_INSET).max(1.0))
+    .clamp(0.0, 1.0)
+}
+
+pub(super) fn centered_icon_left(bounds: Rect, label_width: f32) -> f32 {
+    let width = Style::ICON_SLOT + Style::ICON_GAP + label_width;
+    ((bounds.left + bounds.right - width) / 2.0).max(bounds.left + Style::ICON_GAP)
+}
+
+/// Uses the shared popup for all value selectors; dismissal never becomes a value.
+pub(super) fn choose(
+    hwnd: windows_sys::Win32::Foundation::HWND,
+    point: windows_sys::Win32::Foundation::POINT,
+    appearance: (desktop_core::PanelTheme, desktop_core::Backdrop),
+    options: &[(u64, &'static str)],
+    selected: u64,
+) -> Option<u64> {
+    let rows = options
+        .iter()
+        .enumerate()
+        .map(|(index, (value, label))| {
+            super::super::menu::entry(
+                index as i32 + 1,
+                label,
+                if *value == selected { "\u{e73e}" } else { "" },
+                "",
+            )
+        })
+        .collect();
+    let result =
+        super::super::menu::show_entries(hwnd, point, false, appearance.0, appearance.1, rows);
+    choice_value(options, result)
+}
+
+fn choice_value(options: &[(u64, &'static str)], command: i32) -> Option<u64> {
+    usize::try_from(command - 1)
+        .ok()
+        .and_then(|index| options.get(index))
+        .map(|(value, _)| *value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dropdown_dismissal_and_unknown_commands_do_not_select() {
+        let options = [(5, "five"), (15, "fifteen")];
+        assert_eq!(choice_value(&options, 0), None);
+        assert_eq!(choice_value(&options, -1), None);
+        assert_eq!(choice_value(&options, 3), None);
+        assert_eq!(choice_value(&options, 2), Some(15));
+    }
+
+    #[test]
+    fn icon_text_group_centers_different_label_widths_and_clamps_overflow() {
+        let bounds = Rect::from_xywh(10.0, 0.0, 180.0, 32.0);
+        for label_width in [28.0, 84.0, 112.0] {
+            let left = centered_icon_left(bounds, label_width);
+            let right = left + Style::ICON_SLOT + Style::ICON_GAP + label_width;
+            assert!(((left + right) / 2.0 - 100.0).abs() < 0.01);
+        }
+        assert_eq!(centered_icon_left(bounds, 400.0), 18.0);
+        assert_eq!(slider_fraction(bounds, -100.0), 0.0);
+        assert_eq!(slider_fraction(bounds, 100.0), 0.5);
+        assert_eq!(slider_fraction(bounds, 400.0), 1.0);
+    }
+}

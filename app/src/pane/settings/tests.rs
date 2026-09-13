@@ -5,9 +5,9 @@ fn backup_in_progress_preserves_policy_controls_and_prevents_duplicate_jobs() {
     for enabled in [false, true] {
         let mut body=scene(800.0,MIN_HEIGHT-TITLE_HEIGHT,6,true,
             (PanelTheme::System,Backdrop::Mica),desktop_core::PaneOptions::default());
-        body.controls.retain(|c|c.bounds.left<224.0);
+
         let view=recovery::View {busy:true,..Default::default()};
-        layout::backup_page(&mut body,800.0,&view,recovery::Policy {enabled,..Default::default()},0,false);
+        layout::backup_page(&mut body,800.0,&view,recovery::Policy {enabled,..Default::default()},false);
         let toggle=body.controls.iter().find(|c|matches!(c.action,Action::BackupPolicy(0))).unwrap();
         assert!(toggle.enabled);
         assert_eq!(toggle.selected,enabled);
@@ -317,10 +317,8 @@ fn about_page_fits_minimum_window() {
 fn backup_config_controls_fit_minimum_window() {
     let mut body=scene(800.0,MIN_HEIGHT-TITLE_HEIGHT,6,true,
         (PanelTheme::System,Backdrop::Mica),desktop_core::PaneOptions::default());
-    body.controls.retain(|c| c.bounds.left < 224.0);
-    body.text.retain(|(r,_,_)| r.left < 224.0 || r.top < 80.0);
-    body.separators.clear();
-    layout::backup_page(&mut body,800.0,&recovery::View::default(),recovery::Policy::default(),0,true);
+
+    layout::backup_page(&mut body,800.0,&recovery::View::default(),recovery::Policy::default(),true);
     let s=with_titlebar(body,800.0,false);
     for bounds in s.text.iter().map(|(r,_,_)|r).chain(s.controls.iter().map(|c|&c.bounds)) {
         assert!(bounds.right<=800.0 && bounds.bottom<=MIN_HEIGHT);
@@ -359,13 +357,11 @@ fn settings_layout_and_rendering_at_multiple_scales() {
                             desktop_core::PaneOptions::default(),
                         );
                     if matches!(page,6|9|10) {
-                        body.controls.retain(|c|c.bounds.left<224.0);
-                        body.text.retain(|(r,_,_)|r.left<224.0||r.top<80.0);
-                        body.separators.clear();
+
                         let view=recovery::View {status:"手动备份成功 · 上次备份：今天 14:32".into(),records:(0..5).map(|i|recovery::Record {
                             path:std::path::PathBuf::from(format!("backup-{i}.db")),date:"2026/09/14 14:32".into(),kind:if i==0{"手动"}else{"自动"},bytes:131072,
                         }).collect(),..Default::default()};
-                        if page==9 {layout::backup_history(&mut body,940.0,&view,0);}else{layout::backup_page(&mut body,940.0,&view,recovery::Policy::default(),0,page==10);}
+                        if page==9 {layout::backup_history(&mut body,940.0,&view,0);}else{layout::backup_page(&mut body,940.0,&view,recovery::Policy::default(),page==10);}
                     }
                     if page == 8 { layout::folder_defaults(&mut body, 940.0, folder::Defaults::default()); }
                     if page == 5 {

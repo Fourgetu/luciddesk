@@ -90,20 +90,8 @@ enum Action {
     EverythingDetect,
     EverythingLaunch,
 }
-fn backup_row_action(action: &Action) -> bool {
-    matches!(action, Action::BackupPolicy(_) | Action::BackupRecord(_) | Action::BackupPage(_)
-        | Action::BackupAdvanced | Action::BackupStatus | Action::Page(6|9|10)
-        | Action::Change(Event::CreateBackup | Event::RestoreBackup | Event::RestoreBackupPath(_)
-            | Event::OpenBackups | Event::OpenConfigDirectory | Event::ReloadConfig | Event::ExportBackup))
-}
-struct Control {
-    bounds: Rect,
-    label: String,
-    action: Action,
-    selected: bool,
-    toggle: bool,
-    enabled: bool,
-}
+mod controls;
+use controls::{Control, ControlKind, Slider, Style};
 struct Scene {
     text: Vec<(Rect, String, usize)>,
     cards: Vec<Rect>,
@@ -138,8 +126,7 @@ fn grid_slider_value(position: f32) -> f32 {
 }
 
 fn radius_from_pointer(bounds: Rect, x: f32) -> f32 {
-    let progress =
-        ((x - bounds.left - 8.0) / (bounds.right - bounds.left - 16.0).max(1.0)).clamp(0.0, 1.0);
+    let progress = controls::slider_fraction(bounds, x);
     progress * desktop_core::PaneOptions::MAX_CORNER_RADIUS
 }
 
@@ -210,21 +197,6 @@ fn color_channel(color: u32, channel: u8, value: u8) -> u32 {
 
 fn contains(r: &Rect, x: f32, y: f32) -> bool {
     x >= r.left && x < r.right && y >= r.top && y < r.bottom
-}
-impl Scene {
-    fn text(&mut self, r: Rect, text: impl Into<String>, size: usize) {
-        self.text.push((r, text.into(), size));
-    }
-    fn button(&mut self, r: Rect, text: &str, action: Action, selected: bool) {
-        self.controls.push(Control {
-            bounds: r,
-            label: text.into(),
-            action,
-            selected,
-            enabled: true,
-            toggle: false,
-        });
-    }
 }
 mod layout;
 use layout::scene;
@@ -305,7 +277,8 @@ fn with_titlebar(mut scene: Scene, width: f32, maximized: bool) -> Scene {
     .iter()
     .enumerate()
     {
-        scene.button(
+        scene.control(
+            ControlKind::Caption,
             Rect::from_xywh(width - 138.0 + i as f32 * 46.0, 0.0, 46.0, TITLE_HEIGHT),
             glyph,
             Action::Window(*command),
@@ -345,638 +318,8 @@ unsafe extern "system" fn frame_proc(
     unsafe { DefSubclassProc(hwnd, msg, wp, lp) }
 }
 
-const SETTINGS_ICON_SIZE: f32 = 12.0;
-const SETTINGS_NAV_ICON_SIZE: f32 = 18.0;
-
-struct Painter {
-    app_icon: super::assets::Pixels,
-    formats: Vec<windows_canvas::TextFormat>,
-    button_format: windows_canvas::TextFormat,
-}
-impl Painter {
-    fn new() -> windows::core::Result<Self> {
-        use windows_canvas::{FontWeight, ParagraphAlignment, TextFormat, WordWrapping};
-        let mut formats = vec![];
-        for (i, size) in [12.0, 14.0, 20.0, 28.0, SETTINGS_ICON_SIZE, SETTINGS_NAV_ICON_SIZE].iter().enumerate() {
-            let format = canvas_result(TextFormat::with_weight(
-                if i >= 4 {
-                    "Segoe Fluent Icons"
-                } else {
-                    super::assets::UI_FONT
-                },
-                *size,
-                FontWeight(if i == 2 || i == 3 { 600 } else { 400 }),
-            ))?
-            .with_paragraph_alignment(ParagraphAlignment::Center)
-            .with_word_wrapping(WordWrapping::NoWrap);
-            let format = if i >= 4 {format.with_alignment(windows_canvas::TextAlignment::Center)} else {format};
-            super::canvas::ellipsis(&format)?;
-            formats.push(format);
-        }
-        let button_format = canvas_result(TextFormat::new(super::assets::UI_FONT, 14.0))?
-            .with_paragraph_alignment(ParagraphAlignment::Center)
-            .with_word_wrapping(WordWrapping::NoWrap)
-            .with_alignment(windows_canvas::TextAlignment::Center);
-        super::canvas::ellipsis(&button_format)?;
-        Ok(Self {
-            app_icon: {
-                let icon = crate::app_icon::load(128, 128)
-                    .map_err(|message| windows::core::Error::new(windows::Win32::Foundation::E_FAIL, message))?;
-                super::assets::icon_pixels(windows::Win32::UI::WindowsAndMessaging::HICON(icon.0))?
-            },
-            formats,
-            button_format,
-
-        })
-    }
-    fn paint(
-        &self,
-        t: &ID2D1DeviceContext,
-        s: &Scene,
-        width: f32,
-        height: f32,
-        scale: f32,
-        dark: bool,
-        native: bool,
-        hover: Option<usize>,
-        focus: Option<usize>,
-        toggles: &std::collections::HashMap<usize, f32>,
-    ) -> windows::core::Result<()> {
-        {
-            super::canvas::draw(t, scale, |t| {
-                let color = |v: u32| ColorF {
-                    r: ((v >> 16) & 255) as f32 / 255.0,
-                    g: ((v >> 8) & 255) as f32 / 255.0,
-                    b: (v & 255) as f32 / 255.0,
-                    a: 1.0,
-                };
-                let bg = color(if dark { 0x202020 } else { 0xf3f3f3 });
-                let card = canvas_result(t.create_solid_brush(ColorF {
-                    a: if native {
-                        if dark { 0.65 } else { 0.72 }
-                    } else {
-                        1.0
-                    },
-                    ..color(if dark { 0x2b2b2b } else { 0xffffff })
-                }))?;
-
-                let ink = canvas_result(t.create_solid_brush(color(if dark {
-                    0xf5f5f5
-                } else {
-                    0x202020
-                })))?;
-                let muted = canvas_result(t.create_solid_brush(color(if dark {
-                    0xadadad
-                } else {
-                    0x666666
-                })))?;
-                let border = canvas_result(t.create_solid_brush(ColorF {
-                    a: if native { 0.45 } else { 1.0 },
-                    ..color(if dark { 0x424242 } else { 0xdfdfdf })
-                }))?;
-                let accent = canvas_result(t.create_solid_brush(color(if dark {
-                    0x76b9ed
-                } else {
-                    0x0067c0
-                })))?;
-                let selected = canvas_result(t.create_solid_brush(color(if dark {
-                    0x344656
-                } else {
-                    0xe2eff9
-                })))?;
-                let hovered = canvas_result(t.create_solid_brush(color(if dark {
-                    0x383838
-                } else {
-                    0xeeeeee
-                })))?;
-                let page_background = canvas_result(t.create_solid_brush(ColorF {
-                    a: if native {
-                        if dark { 0.12 } else { 0.22 }
-                    } else {
-                        1.0
-                    },
-                    ..color(if dark { 0x242424 } else { 0xf9f9f9 })
-                }))?;
-
-                t.clear(if native {
-                    ColorF {
-                        r: 0.0,
-                        g: 0.0,
-                        b: 0.0,
-                        a: 0.0,
-                    }
-                } else {
-                    bg
-                });
-                t.fill_rounded_rect(
-                    &RoundedRect {
-                        rect: Rect::from_xywh(224.0, 0.0, width - 224.0, height),
-                        radius_x: 8.0,
-                        radius_y: 8.0,
-                    },
-                    &page_background,
-                );
-                if let Some(bounds) = &s.app_icon {
-                    let pixels = &self.app_icon;
-                    let bitmap = canvas_result(t.create_bitmap(&pixels.data, pixels.width, pixels.height))?;
-                    t.draw_bitmap(&bitmap, bounds, 1.0);
-                }
-                for r in &s.separators {
-                    t.fill_rect(r, &border);
-                }
-                for r in &s.cards {
-                    let rr = RoundedRect {
-                        rect: *r,
-                        radius_x: 7.0,
-                        radius_y: 7.0,
-                    };
-                    t.fill_rounded_rect(&rr, &card);
-                    t.draw_rounded_rect(&rr, &border, 1.0);
-                }
-                for (r, rgb, opacity) in &s.previews {
-                    let light = canvas_result(t.create_solid_brush(color(if dark {
-                        0x41454b
-                    } else {
-                        0xffffff
-                    })))?;
-                    let shade = canvas_result(t.create_solid_brush(color(if dark {
-                        0x30343a
-                    } else {
-                        0xdfe3e8
-                    })))?;
-                    let tint = canvas_result(t.create_solid_brush(ColorF {
-                        a: *opacity,
-                        ..color(*rgb)
-                    }))?;
-                    let cols = ((r.right - r.left) / 12.0).ceil() as usize;
-                    let rows = ((r.bottom - r.top) / 12.0).ceil() as usize;
-                    for row in 0..rows {
-                        for col in 0..cols {
-                            let x = r.left + col as f32 * 12.0;
-                            let y = r.top + row as f32 * 12.0;
-                            t.fill_rect(
-                                &Rect::from_xywh(
-                                    x,
-                                    y,
-                                    12.0f32.min(r.right - x),
-                                    12.0f32.min(r.bottom - y),
-                                ),
-                                if (row + col) % 2 == 0 { &light } else { &shade },
-                            );
-                        }
-                    }
-                    t.fill_rect(r, &tint);
-                    t.draw_rounded_rect(
-                        &RoundedRect {
-                            rect: *r,
-                            radius_x: 0.0,
-                            radius_y: 0.0,
-                        },
-                        &border,
-                        1.0,
-                    );
-                    for i in 0..if r.bottom - r.top >= 64.0 { 3 } else { 0 } {
-                        t.fill_rounded_rect(
-                            &RoundedRect {
-                                rect: Rect::from_xywh(
-                                    r.left + 16.0 + i as f32 * 42.0,
-                                    r.top + 18.0,
-                                    26.0,
-                                    26.0,
-                                ),
-                                radius_x: 5.0,
-                                radius_y: 5.0,
-                            },
-                            &accent,
-                        );
-                        t.fill_rect(
-                            &Rect::from_xywh(
-                                r.left + 18.0 + i as f32 * 42.0,
-                                r.top + 51.0,
-                                22.0,
-                                2.0,
-                            ),
-                            &ink,
-                        );
-                    }
-                }
-                for (i, c) in s.controls.iter().enumerate() {
-                    if !c.enabled && c.toggle {
-                        let r = c.bounds;
-                        t.draw_rounded_rect(
-                            &RoundedRect {
-                                rect: r,
-                                radius_x: 12.0,
-                                radius_y: 12.0,
-                            },
-                            &border,
-                            1.0,
-                        );
-                        t.fill_ellipse(
-                            &toggle_thumb(r, if c.selected { 1.0 } else { 0.0 }),
-                            &muted,
-                        );
-                        continue;
-                    }
-                    if let Some(value) = match c.action {
-                        Action::Radius(value) => Some(value),
-                        Action::GridSize(value) => Some(grid_slider_position(value)),
-                        Action::Opacity(value)
-                        | Action::Strength(value)
-                        | Action::Channel(_, value) => Some(f32::from(value)),
-                        _ => None,
-                    } {
-                        let r = c.bounds;
-                        let cy = (r.top + r.bottom) / 2.0;
-                        let left = r.left + 8.0;
-                        let right = r.right - 8.0;
-                        let max = match c.action {
-                            Action::Opacity(_) | Action::Strength(_) => 100.0,
-                            Action::Channel(_, _) => 255.0,
-                            Action::GridSize(_) => 1.0,
-                            _ => 24.0,
-                        };
-                        let cx = left + (right - left) * value / max;
-                        let rail = RoundedRect {
-                            rect: Rect::from_xywh(left, cy - 2.0, right - left, 4.0),
-                            radius_x: 2.0,
-                            radius_y: 2.0,
-                        };
-                        t.fill_rounded_rect(&rail, &border);
-                        let (fill_start, fill_width) = if matches!(c.action, Action::Strength(_) | Action::GridSize(_)) {
-                            let middle = (left + right) * 0.5;
-                            t.fill_rect(
-                                &Rect::from_xywh(middle - 0.5, cy - 5.0, 1.0, 10.0),
-                                &muted,
-                            );
-                            (cx.min(middle), (cx - middle).abs())
-                        } else {
-                            (left, (cx - left).max(0.0))
-                        };
-                        let filled = RoundedRect {
-                            rect: Rect::from_xywh(fill_start, cy - 2.0, fill_width, 4.0),
-                            radius_x: 2.0,
-                            radius_y: 2.0,
-                        };
-                        let channel_brush = if let Action::Channel(channel, _) = c.action {
-                            Some(canvas_result(t.create_solid_brush(color(match channel {
-                                0 => {
-                                    if dark {
-                                        0xef8d8d
-                                    } else {
-                                        0xb83d42
-                                    }
-                                }
-                                1 => {
-                                    if dark {
-                                        0x8dccaa
-                                    } else {
-                                        0x287b50
-                                    }
-                                }
-                                _ => {
-                                    if dark {
-                                        0x88baf0
-                                    } else {
-                                        0x266eae
-                                    }
-                                }
-                            })))?)
-                        } else {
-                            None
-                        };
-                        let slider_ink = channel_brush.as_ref().unwrap_or(&accent);
-                        t.fill_rounded_rect(&filled, slider_ink);
-                        t.fill_ellipse(
-                            &Ellipse {
-                                center: Vector2 { x: cx, y: cy },
-                                radius_x: 8.0,
-                                radius_y: 8.0,
-                            },
-                            &card,
-                        );
-                        t.draw_ellipse(
-                            &Ellipse {
-                                center: Vector2 { x: cx, y: cy },
-                                radius_x: 8.0,
-                                radius_y: 8.0,
-                            },
-                            &border,
-                            1.0,
-                        );
-                        t.fill_ellipse(
-                            &Ellipse {
-                                center: Vector2 { x: cx, y: cy },
-                                radius_x: 5.0,
-                                radius_y: 5.0,
-                            },
-                            slider_ink,
-                        );
-                        if focus == Some(i) {
-                            t.draw_rounded_rect(
-                                &RoundedRect {
-                                    rect: r,
-                                    radius_x: 5.0,
-                                    radius_y: 5.0,
-                                },
-                                &accent,
-                                2.0,
-                            );
-                        }
-                        continue;
-                    }
-                    if matches!(c.action, Action::BackupPolicy(1 | 2)) {
-                        let rounded=RoundedRect {rect:c.bounds,radius_x:4.0,radius_y:4.0};
-                        t.fill_rounded_rect(&rounded,if c.enabled && hover==Some(i){&hovered}else{&card});
-                        t.draw_rounded_rect(&rounded,&border,1.0);
-                        if c.enabled {
-                            t.draw_line(Vector2 {x:c.bounds.left+4.0,y:c.bounds.bottom-1.0},
-                                Vector2 {x:c.bounds.right-4.0,y:c.bounds.bottom-1.0},
-                                if focus==Some(i){&accent}else{&muted},if focus==Some(i){2.0}else{1.0});
-                        }
-                        let text=if c.enabled{&ink}else{&muted};
-                        t.clipped_text(&c.label,&self.formats[1],
-                            &Rect::from_xywh(c.bounds.left+12.0,c.bounds.top,c.bounds.right-c.bounds.left-44.0,32.0),text);
-                        t.clipped_text("\u{e70d}",&self.formats[4],
-                            &Rect::from_xywh(c.bounds.right-28.0,c.bounds.top,16.0,32.0),text);
-                        continue;
-                    }
-                    let navigation = matches!(c.action, Action::Page(_)) && c.bounds.left < 224.0;
-                    let caption = matches!(c.action, Action::Window(_));
-                    let plain = backup_row_action(&c.action);
-
-                    let material = matches!(c.action, Action::Change(Event::Material(_)));
-                    let rr = RoundedRect {
-                        rect: c.bounds,
-                        radius_x: if c.toggle {
-                            (c.bounds.bottom - c.bounds.top) / 2.0
-                        } else if caption {
-                            0.0
-                        } else {
-                            5.0
-                        },
-                        radius_y: if c.toggle {
-                            (c.bounds.bottom - c.bounds.top) / 2.0
-                        } else if caption {
-                            0.0
-                        } else {
-                            5.0
-                        },
-                    };
-                    let progress =
-                        toggles
-                            .get(&i)
-                            .copied()
-                            .unwrap_or(if c.selected { 1.0 } else { 0.0 });
-                    if c.toggle {
-                        let off = color(if dark { 0x383838 } else { 0xffffff });
-                        let on = color(if dark { 0x76b9ed } else { 0x0067c0 });
-                        let brush = canvas_result(t.create_solid_brush(ColorF {
-                            r: off.r + (on.r - off.r) * progress,
-                            g: off.g + (on.g - off.g) * progress,
-                            b: off.b + (on.b - off.b) * progress,
-                            a: 1.0,
-                        }))?;
-                        t.fill_rounded_rect(&rr, &brush);
-                    } else if (!navigation && !caption && !plain) || c.selected || hover == Some(i) {
-                        t.fill_rounded_rect(
-                            &rr,
-                            if c.toggle && c.selected {
-                                &accent
-                            } else if c.selected {
-                                &selected
-                            } else if hover == Some(i) {
-                                &hovered
-                            } else {
-                                &card
-                            },
-                        );
-                    }
-                    if (!navigation && !caption && !plain) || focus == Some(i) {
-                        t.draw_rounded_rect(
-                            &rr,
-                            if focus == Some(i) || c.selected {
-                                &accent
-                            } else {
-                                &border
-                            },
-                            if focus == Some(i) { 2.0 } else { 1.0 },
-                        );
-                    }
-                    if navigation && c.selected {
-                        t.fill_rounded_rect(
-                            &RoundedRect {
-                                rect: Rect::from_xywh(
-                                    c.bounds.left + 3.0,
-                                    c.bounds.top + 11.0,
-                                    3.0,
-                                    18.0,
-                                ),
-                                radius_x: 1.5,
-                                radius_y: 1.5,
-                            },
-                            &accent,
-                        );
-                    }
-                    if let Action::ColorPreset(value) = c.action {
-                        if c.selected {
-                            t.draw_rounded_rect(&rr, &accent, 2.0);
-                        }
-                        let chip = canvas_result(t.create_solid_brush(color(value)))?;
-                        t.fill_rounded_rect(
-                            &RoundedRect {
-                                rect: Rect::from_xywh(
-                                    c.bounds.left + 5.0,
-                                    c.bounds.top + 5.0,
-                                    c.bounds.right - c.bounds.left - 10.0,
-                                    c.bounds.bottom - c.bounds.top - 10.0,
-                                ),
-                                radius_x: 3.0,
-                                radius_y: 3.0,
-                            },
-                            &chip,
-                        );
-                    }
-                    if material {
-                        let r = c.bounds;
-                        let inner = Rect::from_xywh(
-                            r.left + 14.0,
-                            r.top + 12.0,
-                            r.right - r.left - 28.0,
-                            56.0,
-                        );
-                        let tint = match c.action {
-                            Action::Change(Event::Material(Backdrop::Acrylic)) => 0x5e819d,
-                            Action::Change(Event::Material(Backdrop::Mica)) => 0x646b85,
-                            Action::Change(Event::Material(Backdrop::Solid { color, .. })) => color,
-                            _ => 0x7e718d,
-                        };
-                        let swatch = canvas_result(t.create_solid_brush(color(tint)))?;
-                        t.fill_rounded_rect(
-                            &RoundedRect {
-                                rect: inner,
-                                radius_x: 5.0,
-                                radius_y: 5.0,
-                            },
-                            &swatch,
-                        );
-                        let glass = canvas_result(t.create_solid_brush(ColorF {
-                            a: if matches!(
-                                c.action,
-                                Action::Change(Event::Material(Backdrop::Acrylic))
-                            ) {
-                                0.55
-                            } else {
-                                0.88
-                            },
-                            ..color(if dark { 0x242832 } else { 0xf1f5fb })
-                        }))?;
-                        let preview = Rect::from_xywh(
-                            inner.left + 8.0,
-                            inner.top + 8.0,
-                            inner.right - inner.left - 16.0,
-                            40.0,
-                        );
-                        t.fill_rounded_rect(
-                            &RoundedRect {
-                                rect: preview,
-                                radius_x: 5.0,
-                                radius_y: 5.0,
-                            },
-                            &glass,
-                        );
-                        let center_x = (preview.left + preview.right) * 0.5;
-                        t.fill_rounded_rect(
-                            &RoundedRect {
-                                rect: Rect::from_xywh(
-                                    center_x - 14.0,
-                                    preview.top + 8.0,
-                                    28.0,
-                                    2.0,
-                                ),
-                                radius_x: 1.0,
-                                radius_y: 1.0,
-                            },
-                            &muted,
-                        );
-                        for j in 0..3 {
-                            t.fill_rounded_rect(
-                                &RoundedRect {
-                                    rect: Rect::from_xywh(
-                                        preview.left + 8.0 + j as f32 * 18.0,
-                                        preview.top + 20.0,
-                                        12.0,
-                                        12.0,
-                                    ),
-                                    radius_x: 3.0,
-                                    radius_y: 3.0,
-                                },
-                                &accent,
-                            );
-                        }
-                        let center = Vector2 {
-                            x: r.left + 23.0,
-                            y: r.bottom - 18.0,
-                        };
-                        t.draw_ellipse(
-                            &Ellipse {
-                                center,
-                                radius_x: 8.0,
-                                radius_y: 8.0,
-                            },
-                            if c.selected { &accent } else { &muted },
-                            1.5,
-                        );
-                        if c.selected {
-                            t.fill_ellipse(
-                                &Ellipse {
-                                    center,
-                                    radius_x: 4.0,
-                                    radius_y: 4.0,
-                                },
-                                &accent,
-                            );
-                        }
-                        t.clipped_text(
-                            &c.label,
-                            &self.formats[1],
-                            &Rect::from_xywh(
-                                r.left + 42.0,
-                                r.bottom - 35.0,
-                                r.right - r.left - 50.0,
-                                30.0,
-                            ),
-                            &ink,
-                        );
-                    } else if c.toggle {
-                        let off = color(if dark { 0xf5f5f5 } else { 0x666666 });
-                        let on = color(if dark { 0x202020 } else { 0xffffff });
-                        let brush = canvas_result(t.create_solid_brush(ColorF {
-                            r: off.r + (on.r - off.r) * progress,
-                            g: off.g + (on.g - off.g) * progress,
-                            b: off.b + (on.b - off.b) * progress,
-                            a: 1.0,
-                        }))?;
-                        t.fill_ellipse(&toggle_thumb(c.bounds, progress), &brush);
-                    } else if caption {
-                        if hover == Some(i) && matches!(c.action, Action::Window(SC_CLOSE)) {
-                            let red = canvas_result(t.create_solid_brush(color(0xc42b1c)))?;
-                            t.fill_rect(&c.bounds, &red);
-                        }
-                        let white = canvas_result(t.create_solid_brush(color(0xffffff)))?;
-                        let brush =
-                            if hover == Some(i) && matches!(c.action, Action::Window(SC_CLOSE)) {
-                                &white
-                            } else {
-                                &ink
-                            };
-                        if let Action::Window(command) = c.action {
-                            let glyph=match command {
-                                SC_MINIMIZE=>"\u{e921}",SC_MAXIMIZE=>"\u{e922}",SC_RESTORE=>"\u{e923}",SC_CLOSE=>"\u{e8bb}",_=>"",
-                            };
-                            t.clipped_text(glyph,&self.formats[4],&c.bounds,brush);
-                        }
-                    } else {
-                        let mut bounds = c.bounds;
-                        if navigation {bounds.left += 48.0;} else if plain {bounds.left += 10.0;}
-                        if !navigation {
-                            let back=matches!(c.action,Action::Page(0|6));
-                            let forward=matches!(c.action,Action::Page(9)|Action::BackupAdvanced);
-                            if back || forward {
-                                // Center the compact back button's icon and label as one group.
-                                let left=if back && !plain {
-                                    (c.bounds.left+c.bounds.right-52.0)/2.0
-                                }else if back {bounds.left}else{c.bounds.right-28.0};
-                                t.clipped_text(if back {"\u{e72b}"}else{"\u{e76c}"},&self.formats[4],
-                                    &Rect::from_xywh(left,c.bounds.top,16.0,c.bounds.bottom-c.bounds.top),&ink);
-                                if back {bounds.left=left+24.0;}else{bounds.right-=40.0;}
-                            }
-                        }
-                        t.clipped_text(
-                            &c.label,
-                            if navigation || plain || matches!(c.action,Action::Page(0|6)) {
-                                &self.formats[1]
-                            } else {
-                                &self.button_format
-                            },
-                            &bounds,
-                            &ink,
-                        );
-                    }
-                }
-                for (r, text, size) in &s.text {
-                    t.clipped_text(
-                        text,
-                        &self.formats[*size],
-                        r,
-                        if *size == 0 { &muted } else { &ink },
-                    );
-                }
-                t.finish()
-            })
-        }
-    }
-}
+mod painter;
+use painter::Painter;
 
 pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> {
     // Native activation synchronously dispatches messages to other panes. Do not
@@ -1039,7 +382,6 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
     let mut scene_key = None;
     let mut desktop_status = String::new();
     let mut diagnostics_copied = false;
-    let mut backup_status = String::new();
     let mut backup_view = recovery::View::default();
     let mut backup_policy = recovery::Policy::default();
     let mut backup_offset = 0usize;
@@ -1274,7 +616,6 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 }
                 search_visible = state.views.iter().any(|v| state.workspace.panel(v.id).is_some_and(Panel::is_search));
                 desktop_status = runtime::status(&state);
-                backup_status = runtime::backup_status(&state);
                 let fresh = recovery::view(&state);
                 let policy = recovery::Policy::load(&state.store);
                 snapshot_changed |= fresh != backup_view || policy != backup_policy;
@@ -1316,7 +657,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 (recording_peek, recording_search, search_hotkey::settings(), search_hotkey::status()),
                 unsafe { IsZoomed(hwnd) } != 0,
                 search_visible,
-                (desktop_status.clone(), backup_status.clone()),
+                desktop_status.clone(),
             );
             let scene_changed = snapshot_changed || scene_key.as_ref() != Some(&key);
             if scene_changed {
@@ -1330,10 +671,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     );
                 if page == 8 { layout::folder_defaults(&mut body, w, folder_defaults); }
                 if matches!(page,6|9|10) {
-                    body.controls.retain(|c| c.bounds.left < 224.0);
-                    body.text.retain(|(r,_,_)| r.left < 224.0 || r.top < 80.0);
-                    body.separators.clear();
-                    if page==9 {layout::backup_history(&mut body,w,&backup_view,backup_offset);} else {layout::backup_page(&mut body,w,&backup_view,backup_policy,0,page==10);}
+                    if page==9 {layout::backup_history(&mut body,w,&backup_view,backup_offset);} else {layout::backup_page(&mut body,w,&backup_view,backup_policy,page==10);}
                 }
                 if page == 5 {
                     layout::about_status(&mut body, w, &desktop_status, diagnostics_copied);
@@ -1373,7 +711,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     }
                     let mut positions = std::collections::HashMap::new();
                     let mut animating = false;
-                    for (i, control) in scene.controls.iter().enumerate().filter(|(_, c)| c.toggle)
+                    for (i, control) in scene.controls.iter().enumerate().filter(|(_, c)| c.is_toggle())
                     {
                         let to = if control.selected { 1.0 } else { 0.0 };
                         let motion = toggle_motion.entry(i).or_insert_with(|| ToggleMotion::settled(to, now));
@@ -1474,17 +812,17 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     }
                     if let Some(control) = pressed.and_then(|i| scene.controls.get(i)) {
                         if let Action::Channel(channel, _) = control.action {
-                            let fraction = ((x - control.bounds.left - 8.0) / (control.bounds.right - control.bounds.left - 16.0).max(1.0)).clamp(0.0, 1.0);
+                            let fraction = controls::slider_fraction(control.bounds, x);
                             channel_change = Some((channel, (fraction * 255.0).round() as u8));
                         }
                         if matches!(control.action, Action::Strength(_)) {
-                            strength_change = Some((((x - control.bounds.left - 8.0) / (control.bounds.right - control.bounds.left - 16.0).max(1.0)).clamp(0.0, 1.0) * 100.0).round() as u8);
+                            strength_change = Some((controls::slider_fraction(control.bounds, x) * 100.0).round() as u8);
                         }
                         if matches!(control.action, Action::Opacity(_)) {
-                            opacity_change = Some((((x - control.bounds.left - 8.0) / (control.bounds.right - control.bounds.left - 16.0).max(1.0)).clamp(0.0, 1.0) * 100.0).round() as u8);
+                            opacity_change = Some((controls::slider_fraction(control.bounds, x) * 100.0).round() as u8);
                         }
                         if let Action::GridSize(_) = control.action {
-                            let fraction = ((x - control.bounds.left - 8.0) / (control.bounds.right - control.bounds.left - 16.0).max(1.0)).clamp(0.0, 1.0);
+                            let fraction = controls::slider_fraction(control.bounds, x);
                             grid_change = Some(grid_slider_value(fraction));
                         }
                         if matches!(control.action, Action::Radius(_)) {
@@ -1704,11 +1042,15 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         window::defer_action(move || {
                             let mut policy=recovery::Policy::load(&state.borrow().store);
                             if kind==0 {policy.enabled=!policy.enabled;} else {
-                                let options:Vec<u64>=if kind==1{vec![5,15,30,60]}else{vec![10,20,50]};
-                                let labels=if kind==1{vec!["5 分钟","15 分钟","30 分钟","60 分钟"]}else{vec!["最近 10 份","最近 20 份","最近 50 份"]};
-                                let rows=options.iter().zip(labels).enumerate().map(|(i,(v,label))|super::menu::entry(i as i32+1,label,if *v==if kind==1{policy.minutes}else{policy.keep as u64}{"\u{e73e}"}else{""},"")).collect();
-                                let result=super::menu::show_entries(hwnd,point,false,appearance.0,appearance.1,rows);
-                                if let Some(value)=usize::try_from(result-1).ok().and_then(|i|options.get(i)) {if kind==1{policy.minutes=*value;}else{policy.keep=*value as usize;}}
+                                let options: &[(u64, &'static str)] = if kind == 1 {
+                                    &[(5, "5 分钟"), (15, "15 分钟"), (30, "30 分钟"), (60, "60 分钟")]
+                                } else {
+                                    &[(10, "最近 10 份"), (20, "最近 20 份"), (50, "最近 50 份")]
+                                };
+                                let selected = if kind == 1 { policy.minutes } else { policy.keep as u64 };
+                                if let Some(value) = controls::choose(hwnd, point, appearance, options, selected) {
+                                    if kind == 1 { policy.minutes = value; } else { policy.keep = value as usize; }
+                                }
                             }
                             if let Err(e)=policy.save(&state.borrow().store){window::error(&e);}
                             unsafe{InvalidateRect(hwnd,std::ptr::null(),0);}
