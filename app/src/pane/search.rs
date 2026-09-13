@@ -596,6 +596,8 @@ impl Drawing {
             let text = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 1.0)))?;
             let dim = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.85)))?;
             let line = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.16)))?;
+            let outline =
+                canvas_result(target.create_solid_brush(super::theme::panel_border(model.dark)))?;
             let selected =
                 canvas_result(target.create_solid_brush(ColorF::new(0.75, 0.8, 0.85, 0.17)))?;
             let shape = RoundedRect {
@@ -605,7 +607,7 @@ impl Drawing {
             };
             target.fill_rounded_rect(&shape, &background);
             if model.options.border {
-                target.draw_rounded_rect(&shape, &line, 1.0);
+                target.draw_rounded_rect(&shape, &outline, 1.0);
             }
             target.clipped_text(
                 "\u{e721}",

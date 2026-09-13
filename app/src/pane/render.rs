@@ -359,8 +359,9 @@ impl Renderer {
                 let background = canvas_result(
                     target.create_solid_brush(ColorF::new(base, base, base, opacity)),
                 )?;
-                let outline =
-                    canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.16)))?;
+                let outline = canvas_result(
+                    target.create_solid_brush(super::theme::panel_border(model.dark)),
+                )?;
                 let white =
                     canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 1.0)))?;
                 let dim =

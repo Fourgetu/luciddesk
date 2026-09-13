@@ -6,6 +6,15 @@
 )]
 use super::assets::Pixels;
 
+/// A quiet neutral edge, independent of the user's text color override.
+pub fn panel_border(dark: bool) -> windows_canvas::ColorF {
+    if dark {
+        windows_canvas::ColorF::new(0.6, 0.6, 0.6, 0.14)
+    } else {
+        windows_canvas::ColorF::new(0.0, 0.0, 0.0, 0.16)
+    }
+}
+
 /// Content-only colors. Never changes the material's theme or samples the desktop.
 pub struct PanelContrast {
     pub light_text: bool,
