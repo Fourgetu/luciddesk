@@ -30,7 +30,7 @@ pub fn row_top(rows: &[Entry], index: usize) -> f32 {
         .map(|row| if row.id == 0 { 7.0 } else { ROW_HEIGHT })
         .sum::<f32>()
 }
-pub(super) fn entry(
+pub(crate) fn entry(
     id: i32,
     label: &'static str,
     icon: &'static str,
@@ -120,7 +120,7 @@ pub fn show(
     show_entries(owner, anchor, anchored, theme, backdrop, rows)
 }
 
-pub(super) fn show_entries(
+pub(crate) fn show_entries(
     owner: HWND,
     anchor: POINT,
     anchored: bool,

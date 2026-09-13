@@ -112,10 +112,10 @@ impl Renderer {
                 let progress = highlights.get(index).copied().unwrap_or(0.0);
                 if progress > 0.0 {
                     let hover = canvas_result(target.create_solid_brush(ColorF::new(
-                        0.8,
-                        0.88,
-                        1.0,
-                        0.14 * progress,
+                        ink,
+                        ink,
+                        ink,
+                        (if dark { 0.09 } else { 0.05 }) * progress,
                     )))?;
                     target.fill_rounded_rect(
                         &RoundedRect {
@@ -138,7 +138,15 @@ impl Renderer {
                 ] {
                     target.clipped_text(
                         label,
-                        &self.title,
+                        if label
+                            .chars()
+                            .next()
+                            .is_some_and(|ch| ('\u{e000}'..='\u{f8ff}').contains(&ch))
+                        {
+                            &self.icons
+                        } else {
+                            &self.title
+                        },
                         &Rect::from_xywh(left, top, available, super::menu::ROW_HEIGHT),
                         &text,
                     );

@@ -186,47 +186,67 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
         }
     }
     let tray_state = Rc::downgrade(&state);
-    let tray = crate::tray::Tray::new(move |action| {
-        let Some(state) = tray_state.upgrade() else {
-            return;
-        };
-        match action {
-            crate::tray::Action::NewFolder => {
-                if let Err(error) = handle(&state, PanelId::new(0), Event::NewFolder) {
-                    window::error(&error);
-                }
-            }
-            crate::tray::Action::Settings => {
-                if let Err(error) = handle(&state, PanelId::new(0), Event::Settings) {
-                    window::error(&error);
-                }
-            }
-            crate::tray::Action::Exit => windows_window::quit(),
-            crate::tray::Action::Show => {
-                let windows: Vec<_> = state
-                    .borrow()
-                    .views
-                    .iter()
-                    .map(|v| v.window.hwnd())
-                    .collect();
-                for &hwnd in &windows {
-                    unsafe {
-                        ShowWindow(hwnd.cast(), SW_SHOWNOACTIVATE);
+    let appearance_state = Rc::downgrade(&state);
+    let tray = crate::tray::Tray::new(
+        move || {
+            appearance_state
+                .upgrade()
+                .and_then(|state| {
+                    let s = state.borrow();
+                    s.workspace.appearance().or_else(|| {
+                        s.workspace
+                            .panels()
+                            .first()
+                            .map(|p| (p.theme(), p.backdrop()))
+                    })
+                })
+                .unwrap_or((
+                    desktop_core::PanelTheme::System,
+                    desktop_core::Backdrop::Mica,
+                ))
+        },
+        move |action| {
+            let Some(state) = tray_state.upgrade() else {
+                return;
+            };
+            match action {
+                crate::tray::Action::NewFolder => {
+                    if let Err(error) = handle(&state, PanelId::new(0), Event::NewFolder) {
+                        window::error(&error);
                     }
                 }
-                if let Some(&hwnd) = windows.first() {
-                    unsafe {
-                        SetForegroundWindow(hwnd.cast());
+                crate::tray::Action::Settings => {
+                    if let Err(error) = handle(&state, PanelId::new(0), Event::Settings) {
+                        window::error(&error);
+                    }
+                }
+                crate::tray::Action::Exit => windows_window::quit(),
+                crate::tray::Action::Show => {
+                    let windows: Vec<_> = state
+                        .borrow()
+                        .views
+                        .iter()
+                        .map(|v| v.window.hwnd())
+                        .collect();
+                    for &hwnd in &windows {
+                        unsafe {
+                            ShowWindow(hwnd.cast(), SW_SHOWNOACTIVATE);
+                        }
+                    }
+                    if let Some(&hwnd) = windows.first() {
+                        unsafe {
+                            SetForegroundWindow(hwnd.cast());
+                        }
+                    }
+                }
+                crate::tray::Action::New => {
+                    if let Err(error) = handle(&state, PanelId::new(0), Event::New) {
+                        window::error(&error);
                     }
                 }
             }
-            crate::tray::Action::New => {
-                if let Err(error) = handle(&state, PanelId::new(0), Event::New) {
-                    window::error(&error);
-                }
-            }
-        }
-    })?;
+        },
+    )?;
     display_layout::record(&mut state.borrow_mut())?;
     let supervisor = runtime::supervisor(&state)?;
     if state.borrow().session.is_none() {

@@ -1,5 +1,6 @@
 #![windows_subsystem = "windows"]
 
+mod app_icon;
 mod diagnostics;
 mod hook_runtime;
 mod pane;

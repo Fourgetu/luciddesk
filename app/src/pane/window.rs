@@ -751,6 +751,7 @@ where
                     Some(0)
                 }
                 WM_DPICHANGED => {
+                    let _ = crate::app_icon::apply(hwnd);
                     let r = unsafe { &*(lparam as *const RECT) };
                     unsafe {
                         SetWindowPos(
@@ -1388,6 +1389,7 @@ where
         .create()
         .map_err(|e| e.to_string())?;
     let hwnd = window.hwnd().cast();
+    crate::app_icon::apply(hwnd)?;
     let s = scale(hwnd);
     unsafe {
         if !inspect {

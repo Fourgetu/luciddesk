@@ -1187,6 +1187,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 return Some(0);
             }
             if msg == WM_DPICHANGED {
+                let _ = crate::app_icon::apply(hwnd);
                 unsafe {
                     let r = &*(lp as *const RECT);
                     SetWindowPos(
@@ -1720,6 +1721,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
         })
         .create()
         .map_err(|e| e.to_string())?;
+    crate::app_icon::apply(window.hwnd().cast())?;
     unsafe {
         if windows_sys::Win32::UI::Shell::SetWindowSubclass(
             window.hwnd().cast(),
