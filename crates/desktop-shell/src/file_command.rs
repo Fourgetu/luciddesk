@@ -59,6 +59,13 @@ pub fn paste_into_folder(owner: HWND, destination: &std::path::Path) -> Result<b
     unsafe {
         let item: IShellItem =
             SHCreateItemFromParsingName(&HSTRING::from(destination.as_os_str()), None)?;
+        paste_into_item(owner, &item)
+    }
+}
+
+// Background menus can omit Paste from GetCommandString; invoke its canonical verb.
+fn paste_into_item(owner: HWND, item: &IShellItem) -> Result<bool> {
+    unsafe {
         let folder: IShellFolder = item.BindToHandler(None, &BHID_SFObject)?;
         let context: IContextMenu = folder.CreateViewObject(owner)?;
         let menu = Menu(CreatePopupMenu()?);
@@ -349,26 +356,10 @@ fn invoke_batch(owner: HWND, selected: &[ShellIdentity], command: FileCommand) -
     }
 }
 
-/// Executes one selected item's verb. Paste targets a selected filesystem
-/// directory, otherwise the user's Desktop. Unsupported/disabled verbs are no-ops.
-/// Call on the OLE STA without app/model borrows; Shell can pump window messages.
-/// # Errors
-/// Returns Shell errors while resolving the target or executing its command.
-pub fn invoke_file_command(
-    owner: HWND,
-    selected: Option<&ShellIdentity>,
-    command: FileCommand,
-) -> Result<bool> {
-    invoke_file_commands(
-        owner,
-        selected.map(std::slice::from_ref).unwrap_or_default(),
-        command,
-    )
-}
-
 /// Executes one Shell command for the entire selection, preserving a single
 /// clipboard data object and the Shell's batch confirmation/conflict handling.
-/// Paste uses a directory only when exactly one directory is selected.
+/// Paste uses a directory only when exactly one directory is selected, otherwise Desktop.
+/// Call on the OLE STA without app/model borrows; Shell can pump window messages.
 /// # Errors
 /// Returns errors from Shell target resolution or command execution.
 pub fn invoke_file_commands(
@@ -376,11 +367,8 @@ pub fn invoke_file_commands(
     selected: &[ShellIdentity],
     command: FileCommand,
 ) -> Result<bool> {
-    if selected.len() > 1 && command != FileCommand::Paste {
-        return invoke_batch(owner, selected, command);
-    }
     unsafe {
-        let context: IContextMenu = if command == FileCommand::Paste {
+        if command == FileCommand::Paste {
             let directory = selected.first().filter(|identity| {
                 selected.len() == 1
                     && matches!(identity, ShellIdentity::FileSystem { path, .. } if path.is_dir())
@@ -390,31 +378,18 @@ pub fn invoke_file_commands(
             } else {
                 SHGetKnownFolderItem::<IShellItem>(&FOLDERID_Desktop, KF_FLAG_DEFAULT, None)?
             };
-            let folder: IShellFolder = item.BindToHandler(None, &BHID_SFObject)?;
-            folder.CreateViewObject(owner)?
-        } else {
-            let Some(identity) = selected.first() else {
-                return Ok(false);
-            };
-            shell_item(identity)?.BindToHandler(None, &BHID_SFUIObject)?
+            return paste_into_item(owner, &item);
+        }
+        if selected.len() > 1 {
+            return invoke_batch(owner, selected, command);
+        }
+        let Some(identity) = selected.first() else {
+            return Ok(false);
         };
+        let context: IContextMenu = shell_item(identity)?.BindToHandler(None, &BHID_SFUIObject)?;
         let menu = Menu(CreatePopupMenu()?);
         let result = context.QueryContextMenu(menu.0, 0, 1, 0x7fff, CMF_NORMAL);
         result.ok()?;
-        if command == FileCommand::Paste {
-            // Folder background menus may omit Paste from GetCommandString;
-            // the canonical verb still handles the OLE clipboard natively.
-            let info = CMINVOKECOMMANDINFO {
-                cbSize: size_of::<CMINVOKECOMMANDINFO>() as u32,
-                hwnd: owner,
-                lpVerb: PCSTR(b"paste\0".as_ptr()),
-                nShow: SW_SHOWNORMAL.0,
-                ..Default::default()
-            };
-            context.InvokeCommand(&info)?;
-            return Ok(true);
-        }
-
         for offset in 0..(result.0 as u32 & 0xffff) {
             let mut verb = [0u8; 256];
             if context
@@ -567,13 +542,13 @@ mod tests {
             (FileCommand::Cut, copied.join("fixture.txt"), moved.clone()),
         ] {
             assert!(
-                invoke_file_command(HWND::default(), Some(&identity(from.clone())), command)
+                invoke_file_commands(HWND::default(), &[identity(from.clone())], command)
                     .unwrap()
             );
             assert!(
-                invoke_file_command(
+                invoke_file_commands(
                     HWND::default(),
-                    Some(&identity(to.clone())),
+                    &[identity(to.clone())],
                     FileCommand::Paste
                 )
                 .unwrap()
@@ -609,9 +584,9 @@ mod tests {
             let selected: Vec<_> = paths.iter().cloned().map(&identity).collect();
             assert!(invoke_file_commands(HWND::default(), &selected, command).unwrap());
             assert!(
-                invoke_file_command(
+                invoke_file_commands(
                     HWND::default(),
-                    Some(&identity(target.clone())),
+                    &[identity(target.clone())],
                     FileCommand::Paste
                 )
                 .unwrap()

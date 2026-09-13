@@ -18,7 +18,7 @@ pub use desktop::desktop_icons_hidden;
 pub use desktop_core::ShellIdentity;
 pub use error::ShellError;
 pub use file_command::{
-    FileCommand, copy_to_folder, drag_file_items, invoke_file_command, invoke_file_commands,
+    FileCommand, copy_to_folder, drag_file_items, invoke_file_commands,
     paste_into_folder, show_file_items_menu,
 };
 pub use namespace::{

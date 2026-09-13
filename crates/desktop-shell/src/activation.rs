@@ -60,16 +60,11 @@ pub fn drag_shell_identities(
 ///
 /// Returns an error when `ShellExecuteW` rejects the operation.
 pub fn open_shell_identity(owner: isize, identity: &ShellIdentity) -> Result<(), ShellError> {
-    open_shell_name(owner, identity.activation_name())
-}
-
-fn open_shell_name(owner: isize, target: &OsStr) -> Result<(), ShellError> {
-    let operation = wide_null(OsStr::new("open"));
-    let target = wide_null(target);
+    let target = wide_null(identity.activation_name());
     let result = unsafe {
         ShellExecuteW(
             owner as HWND,
-            operation.as_ptr(),
+            windows_sys::w!("open"),
             target.as_ptr(),
             ptr::null(),
             ptr::null(),
