@@ -49,7 +49,7 @@ mod tests {
         let before = root.join("旧名字.txt");
         let after = root.join("新名字.txt");
         std::fs::write(&before, b"rename fixture").unwrap();
-        let file_id = crate::stable_file_identity(&before).unwrap();
+        let file_id = crate::namespace::stable_file_identity(&before).unwrap();
         let identity = ShellIdentity::FileSystem {
             path: before.clone(),
             volume_id: Some(file_id.0),
@@ -97,7 +97,7 @@ mod tests {
         assert!(rename_shell_identity(HWND::default(), &identity, "新名字.txt").unwrap());
         assert!(!before.exists());
         assert_eq!(std::fs::read(&after).unwrap(), b"rename fixture");
-        assert_eq!(crate::stable_file_identity(&after).unwrap(), file_id);
+        assert_eq!(crate::namespace::stable_file_identity(&after).unwrap(), file_id);
         std::fs::remove_file(after).unwrap();
         std::fs::remove_dir(root).unwrap();
     }

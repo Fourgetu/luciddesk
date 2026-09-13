@@ -78,7 +78,7 @@ pub fn peek_desktop_item(owner: HWND, identity: &ShellIdentity) -> Result<()> {
         let folder: IFolderView2 = view.cast()?;
         let index = selection::resolve(&folder, &identity.activation_name().to_string_lossy())?;
         let item = selection::item_at(&folder, index)?;
-        let name = crate::shell_item_name(&item, SIGDN_NORMALDISPLAY)
+        let name = crate::namespace::shell_item_name(&item, SIGDN_NORMALDISPLAY)
             .map_err(|e| Error::new(E_FAIL, e.to_string()))?;
         let hwnd = view.GetWindow()?.0;
         let restore = selection::RestoreSelection::deselect_on_close(&folder);

@@ -1,0 +1,273 @@
+//! Shell namespace enumeration, display names, and stable file identity.
+use crate::{ShellError, ShellIdentity};
+use std::os::windows::{ffi::OsStringExt, fs::OpenOptionsExt, io::AsRawHandle};
+use std::{
+    ffi::c_void,
+    fs::{self, OpenOptions},
+    path::{Path, PathBuf},
+    ptr,
+    time::SystemTime,
+};
+use windows::{
+    Win32::{
+        Foundation::HWND as WindowsHwnd,
+        System::{
+            Com::CoTaskMemFree as CoTaskMemFreeCom,
+            SystemServices::{
+                SFGAO_CANDELETE, SFGAO_CANRENAME, SFGAO_FILESYSTEM, SFGAO_FOLDER, SFGAO_HIDDEN,
+                SFGAO_LINK,
+            },
+        },
+        UI::Shell::{
+            BHID_SFObject, IShellFolder, IShellItem, SHCONTF_FOLDERS, SHCONTF_NONFOLDERS,
+            SHCreateItemFromParsingName, SHCreateItemWithParent, SHGetDesktopFolder,
+            SIGDN_DESKTOPABSOLUTEPARSING, SIGDN_FILESYSPATH, SIGDN_NORMALDISPLAY,
+        },
+    },
+    core::HSTRING,
+};
+use windows_sys::Win32::{
+    Storage::FileSystem::{
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_ID_INFO, FILE_SHARE_DELETE, FILE_SHARE_READ,
+        FILE_SHARE_WRITE, FileIdInfo, GetFileInformationByHandleEx,
+    },
+    System::Com::CoTaskMemFree,
+    UI::Shell::{FOLDERID_LocalAppData, SHGetKnownFolderPath},
+};
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[allow(clippy::struct_excessive_bools)]
+pub struct ShellAttributes {
+    pub folder: bool,
+    pub file_system: bool,
+    pub link: bool,
+    pub hidden: bool,
+    pub can_rename: bool,
+    pub can_delete: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DesktopShellItem {
+    pub identity: ShellIdentity,
+    pub display_name: String,
+    pub attributes: ShellAttributes,
+    pub modified: Option<SystemTime>,
+}
+
+/// Resolves LocalAppData without assuming its physical location.
+///
+/// # Errors
+///
+/// Returns an error when Windows cannot resolve the requested folder.
+pub fn local_app_data_path() -> Result<PathBuf, ShellError> {
+    let mut raw_path = ptr::null_mut();
+    let result = unsafe {
+        SHGetKnownFolderPath(
+            &FOLDERID_LocalAppData,
+            0,
+            ptr::null_mut(),
+            &raw mut raw_path,
+        )
+    };
+    if result < 0 {
+        return Err(ShellError::Windows(result));
+    }
+
+    let path = unsafe {
+        let mut length = 0;
+        while *raw_path.add(length) != 0 {
+            length += 1;
+        }
+        let value = std::ffi::OsString::from_wide(std::slice::from_raw_parts(raw_path, length));
+        CoTaskMemFree(raw_path.cast::<c_void>());
+        PathBuf::from(value)
+    };
+    Ok(path)
+}
+
+/// Enumerates the Windows Desktop Shell Namespace, including virtual Shell items.
+///
+/// Unlike reading the user and public desktop directories separately, this follows the
+/// Shell's unified Desktop Folder and can return items such as Recycle Bin or This PC.
+/// The calling thread must own a [`crate::ShellApartment`].
+///
+/// # Errors
+///
+/// Returns a COM or Shell error when the Desktop Folder cannot be enumerated.
+pub fn enumerate_desktop_namespace(owner: isize) -> Result<Vec<DesktopShellItem>, ShellError> {
+    let desktop = unsafe { SHGetDesktopFolder() }?;
+    enumerate_shell_folder(&desktop, owner)
+}
+
+/// Enumerates a filesystem folder using Shell display names and attributes.
+/// # Errors
+/// Returns a Shell error if the folder cannot be opened or enumerated.
+pub fn enumerate_folder(path: &Path) -> Result<Vec<DesktopShellItem>, ShellError> {
+    let item: IShellItem =
+        unsafe { SHCreateItemFromParsingName(&HSTRING::from(path.as_os_str()), None) }?;
+    let folder: IShellFolder = unsafe { item.BindToHandler(None, &BHID_SFObject) }?;
+    enumerate_shell_folder(&folder, 0)
+}
+
+fn enumerate_shell_folder(
+    desktop: &IShellFolder,
+    owner: isize,
+) -> Result<Vec<DesktopShellItem>, ShellError> {
+    let mut enumerator = None;
+    let flags = u32::try_from(SHCONTF_FOLDERS.0 | SHCONTF_NONFOLDERS.0).unwrap_or_default();
+    let result = unsafe {
+        desktop.EnumObjects(
+            WindowsHwnd(owner as *mut c_void),
+            flags,
+            &raw mut enumerator,
+        )
+    };
+    result.ok()?;
+    let Some(enumerator) = enumerator else {
+        return Ok(Vec::new());
+    };
+
+    let mut items = Vec::new();
+    loop {
+        let mut child = [ptr::null_mut()];
+        let mut fetched = 0_u32;
+        let result = unsafe { enumerator.Next(&mut child, Some(&raw mut fetched)) };
+        if fetched == 0 {
+            if result.is_err() {
+                return Err(windows::core::Error::from(result).into());
+            }
+            break;
+        }
+        let child = Pidl::new(child[0]);
+        let Ok(shell_item): Result<IShellItem, _> =
+            (unsafe { SHCreateItemWithParent(None, desktop, child.as_ptr()) })
+        else {
+            continue;
+        };
+        if let Ok(item) = desktop_shell_item(&shell_item) {
+            items.push(item);
+        }
+    }
+
+    items.sort_by_cached_key(|item| {
+        (
+            !item.attributes.folder,
+            item.display_name.to_lowercase(),
+            item.display_name.clone(),
+        )
+    });
+    Ok(items)
+}
+
+pub(crate) fn desktop_shell_item(item: &IShellItem) -> Result<DesktopShellItem, ShellError> {
+    let display_name = shell_item_name(item, SIGDN_NORMALDISPLAY)?;
+    let identity = shell_item_name(item, SIGDN_FILESYSPATH)
+        .ok()
+        .filter(|value| !value.is_empty())
+        .map_or_else(
+            || {
+                shell_item_name(item, SIGDN_DESKTOPABSOLUTEPARSING)
+                    .map(|parsing_name| ShellIdentity::Namespace { parsing_name })
+            },
+            |path| {
+                let path = PathBuf::from(path);
+                let (volume_id, file_id) = stable_file_identity(&path)
+                    .map_or((None, None), |(volume_id, file_id)| {
+                        (Some(volume_id), Some(file_id))
+                    });
+                Ok(ShellIdentity::FileSystem {
+                    path,
+                    volume_id,
+                    file_id,
+                })
+            },
+        )?;
+    let attribute_mask = SFGAO_FOLDER
+        | SFGAO_FILESYSTEM
+        | SFGAO_LINK
+        | SFGAO_HIDDEN
+        | SFGAO_CANRENAME
+        | SFGAO_CANDELETE;
+    let raw_attributes =
+        unsafe { item.GetAttributes(attribute_mask) }.map_or(0, |attributes| attributes.0);
+    let metadata = identity
+        .file_system_path()
+        .and_then(|path| fs::metadata(path).ok());
+    let path_is_link = identity.file_system_path().is_some_and(|path| {
+        path.extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("lnk"))
+    });
+    let attributes = ShellAttributes {
+        folder: raw_attributes & SFGAO_FOLDER.0 != 0
+            || metadata.as_ref().is_some_and(fs::Metadata::is_dir),
+        file_system: raw_attributes & SFGAO_FILESYSTEM.0 != 0
+            || identity.file_system_path().is_some(),
+        link: raw_attributes & SFGAO_LINK.0 != 0 || path_is_link,
+        hidden: raw_attributes & SFGAO_HIDDEN.0 != 0,
+        can_rename: raw_attributes & SFGAO_CANRENAME.0 != 0,
+        can_delete: raw_attributes & SFGAO_CANDELETE.0 != 0,
+    };
+    let modified = metadata.and_then(|metadata| metadata.modified().ok());
+    Ok(DesktopShellItem {
+        identity,
+        display_name,
+        attributes,
+        modified,
+    })
+}
+
+pub(crate) fn stable_file_identity(path: &Path) -> Option<(u64, u128)> {
+    let file = OpenOptions::new()
+        .access_mode(0)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)
+        .ok()?;
+    let mut info = FILE_ID_INFO::default();
+    let succeeded = unsafe {
+        GetFileInformationByHandleEx(
+            file.as_raw_handle(),
+            FileIdInfo,
+            (&raw mut info).cast(),
+            u32::try_from(size_of::<FILE_ID_INFO>()).ok()?,
+        )
+    };
+    (succeeded != 0).then(|| {
+        (
+            info.VolumeSerialNumber,
+            u128::from_le_bytes(info.FileId.Identifier),
+        )
+    })
+}
+
+pub(crate) fn shell_item_name(
+    item: &IShellItem,
+    kind: windows::Win32::UI::Shell::SIGDN,
+) -> Result<String, ShellError> {
+    let raw = unsafe { item.GetDisplayName(kind) }?;
+    let value = unsafe { raw.to_string() };
+    unsafe {
+        CoTaskMemFreeCom(Some(raw.0.cast()));
+    }
+    value.map_err(Into::into)
+}
+
+pub(crate) struct Pidl(*mut windows::Win32::UI::Shell::Common::ITEMIDLIST);
+
+impl Pidl {
+    pub(crate) fn new(value: *mut windows::Win32::UI::Shell::Common::ITEMIDLIST) -> Self {
+        Self(value)
+    }
+
+    pub(crate) const fn as_ptr(&self) -> *const windows::Win32::UI::Shell::Common::ITEMIDLIST {
+        self.0
+    }
+}
+
+impl Drop for Pidl {
+    fn drop(&mut self) {
+        unsafe {
+            CoTaskMemFreeCom(Some(self.0.cast()));
+        }
+    }
+}

@@ -8,7 +8,7 @@ use windows::Win32::UI::Shell::{
 };
 use windows::core::Interface;
 
-use super::Pidl;
+use crate::namespace::Pidl;
 
 /// Explorer-owned item IDs and view metrics, without opening desktop files.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -75,7 +75,7 @@ fn capture_revision(shell: &IShellWindows) -> windows::core::Result<NativeDeskto
             if index > 0 && index % 8 == 0 {
                 std::thread::sleep(std::time::Duration::from_millis(1));
             }
-            let pidl = Pidl(unsafe { folder.Item(index)? });
+            let pidl = Pidl::new(unsafe { folder.Item(index)? });
             revision.item_ids.push(item_id(&pidl));
         }
         Ok(revision)
@@ -103,12 +103,12 @@ fn revision_header(
 }
 
 fn item_id(pidl: &Pidl) -> Vec<u8> {
-    if pidl.0.is_null() {
+    if pidl.as_ptr().is_null() {
         return Vec::new();
     }
     unsafe {
-        let size = windows::Win32::UI::Shell::ILGetSize(Some(pidl.0)) as usize;
-        std::slice::from_raw_parts(pidl.0.cast::<u8>(), size).to_vec()
+        let size = windows::Win32::UI::Shell::ILGetSize(Some(pidl.as_ptr())) as usize;
+        std::slice::from_raw_parts(pidl.as_ptr().cast::<u8>(), size).to_vec()
     }
 }
 
@@ -145,15 +145,15 @@ fn capture_desktop_snapshot() -> Result<NativeDesktopSnapshot, String> {
             let mut items = Vec::new();
             let mut view_indices = Vec::new();
             for index in 0..folder.ItemCount(SVGIO_ALLVIEW)? {
-                let pidl = Pidl(folder.Item(index)?);
+                let pidl = Pidl::new(folder.Item(index)?);
                 revision.item_ids.push(item_id(&pidl));
-                let position = folder.GetItemPosition(pidl.0)?;
+                let position = folder.GetItemPosition(pidl.as_ptr())?;
                 let item: windows::Win32::UI::Shell::IShellItem =
-                    windows::Win32::UI::Shell::SHCreateItemWithParent(None, &parent, pidl.0)?;
-                if let Ok(mut entry) = super::desktop_shell_item(&item) {
+                    windows::Win32::UI::Shell::SHCreateItemWithParent(None, &parent, pidl.as_ptr())?;
+                if let Ok(mut entry) = crate::namespace::desktop_shell_item(&item) {
                     // Known-folder desktop objects can expose a filesystem path but have a
                     // different icon and verbs from the underlying directory (e.g. User Files).
-                    if let Ok(parsing_name) = super::shell_item_name(
+                    if let Ok(parsing_name) = crate::namespace::shell_item_name(
                         &item,
                         windows::Win32::UI::Shell::SIGDN_DESKTOPABSOLUTEPARSING,
                     ) && parsing_name.starts_with("::{")
