@@ -269,7 +269,6 @@ pub(super) fn refresh_identities(view: HWND) {
     // Clean up only after releasing STATE: querying native state re-enters us.
     clear_selection(view);
 }
-#[path = "native_identity.rs"]
 mod native_identity;
 const IDENTITY_INIT: u32 = WM_APP + 0x351;
 

@@ -33,7 +33,6 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetWindowThreadProcessId, SendMessageW,
 };
 
-#[path = "geometry_profile.rs"]
 mod profile;
 mod hidden;
 mod drop_target;
