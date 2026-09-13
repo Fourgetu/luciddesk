@@ -941,9 +941,6 @@ fn tick_once(s: &mut PaneApp) -> Result<(), String> {
     }
     if changed {
         urgent = true;
-        for v in &s.views {
-            v.model.borrow_mut().loading = false;
-        }
         refresh_views(s);
     }
     urgent |= refresh_changed_icons(s);

@@ -119,6 +119,19 @@ fn mapped_folder_never_takes_desktop_membership() {
 }
 
 #[test]
+fn empty_first_desktop_pane_is_ready_without_icon_results() {
+    let _apartment = ShellApartment::initialize_sta().unwrap();
+    let mut app = test_state();
+    app.workspace.reconcile_desktop_items([]);
+    let state = Rc::new(RefCell::new(app));
+    create_view(&state, PanelId::new(1)).unwrap();
+    let app = state.borrow();
+    let model = app.views[0].model.borrow();
+    assert!(model.items.is_empty());
+    assert!(!model.loading, "an empty pane has no icon work to wait for");
+}
+
+#[test]
 fn search_pane_creation_and_close_preserve_desktop_membership() {
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
     let state = Rc::new(RefCell::new(test_state()));

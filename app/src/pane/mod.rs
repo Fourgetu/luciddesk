@@ -240,7 +240,9 @@ fn create_view(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> 
         renaming: None,
         scroll: 0,
         collapsed: panel.collapsed(),
-        loading: panel.folder().is_some() || id == PanelId::new(1),
+        // Desktop membership is available before creating the view. Only folder
+        // sources have an asynchronous inventory to wait for; icons load separately.
+        loading: panel.folder().is_some(),
     }));
     let weak = Rc::downgrade(state);
     let callback = move |event| {
