@@ -132,7 +132,7 @@ impl Search {
         self.wake.notify();
         self.generation += 1;
         self.query = value.trim().into();
-        self.entries.clear();
+        self.entries = Vec::new();
         self.selection.clear();
         self.focused = None;
         self.anchor = None;

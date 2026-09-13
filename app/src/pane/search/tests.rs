@@ -353,3 +353,18 @@ fn results_expand_to_eight_rows_and_selection_scrolls() {
     assert_eq!(state.selection.len(), 11);
     assert_eq!(state.scroll, 3);
 }
+
+#[test]
+fn clearing_search_releases_large_result_buffer_and_rejects_stale_pages() {
+    let mut state = populated_search();
+    state.entries.reserve(100_000);
+    let previous = state.generation;
+    assert!(state.entries.capacity() >= 100_000);
+    state.change(String::new());
+    assert_eq!(state.entries.capacity(), 0);
+    assert!(!state.accept(previous, Ok(Page {
+        total: 1, offset: 0,
+        entries: vec![Entry { path: r"C:\stale".into(), folder: false }],
+    })));
+    assert!(state.entries.is_empty());
+}
