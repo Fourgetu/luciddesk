@@ -349,7 +349,11 @@ pub(super) fn handle(
         let mut options = old;
         match event {
             Event::SetCornerRadius(radius) => {
-                options.corner_radius = radius.min(desktop_core::PaneOptions::MAX_CORNER_RADIUS)
+                if !radius.is_finite() {
+                    return Ok(false);
+                }
+                options.corner_radius =
+                    radius.clamp(0.0, desktop_core::PaneOptions::MAX_CORNER_RADIUS)
             }
             Event::ToggleBorder => options.border = !options.border,
             Event::ToggleSnap => options.snap = !options.snap,
@@ -996,7 +1000,11 @@ pub(super) fn handle(
 }
 
 /// Preview only; the settings gesture commits its final value separately.
-pub(super) fn preview_radius(state: &mut PaneApp, radius: u8) {
+pub(super) fn preview_radius(state: &mut PaneApp, radius: f32) {
+    if !radius.is_finite() {
+        return;
+    }
+    let radius = radius.clamp(0.0, desktop_core::PaneOptions::MAX_CORNER_RADIUS);
     let mut options = state.workspace.pane_options();
     if options.corner_radius == radius {
         return;
@@ -1011,7 +1019,7 @@ pub(super) fn preview_radius(state: &mut PaneApp, radius: u8) {
     }
 }
 
-pub(super) fn commit_radius(state: &mut PaneApp, original: u8) -> Result<(), String> {
+pub(super) fn commit_radius(state: &mut PaneApp, original: f32) -> Result<(), String> {
     let options = state.workspace.pane_options();
     if options.corner_radius == original {
         return Ok(());

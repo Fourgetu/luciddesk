@@ -133,7 +133,7 @@ enum Event {
     ToggleAutoHide,
     ToggleTopmost,
     ToggleLocked,
-    SetCornerRadius(u8),
+    SetCornerRadius(f32),
     ToggleBorder,
     ToggleSnap,
     ResetPaneOptions,

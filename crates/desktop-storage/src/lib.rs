@@ -208,11 +208,13 @@ impl WorkspaceStore {
             };
             let invalid = || StoreError::InvalidData("invalid pane options".into());
             let corner_radius = match *radius {
-                "true" => 7,
-                "false" => 0,
-                value => value.parse::<u8>().map_err(|_| invalid())?,
+                "true" => 7.0,
+                "false" => 0.0,
+                value => value.parse::<f32>().map_err(|_| invalid())?,
             };
-            if corner_radius > desktop_core::PaneOptions::MAX_CORNER_RADIUS {
+            if !corner_radius.is_finite()
+                || !(0.0..=desktop_core::PaneOptions::MAX_CORNER_RADIUS).contains(&corner_radius)
+            {
                 return Err(invalid());
             }
             workspace.set_pane_options(desktop_core::PaneOptions {
@@ -1120,7 +1122,7 @@ mod tests {
         store.save_workspace(&workspace).unwrap();
         store.connection.execute_batch("CREATE TRIGGER forbid_panel_delete BEFORE DELETE ON panels BEGIN SELECT RAISE(ABORT, 'unexpected workspace rewrite'); END;").unwrap();
         let options = desktop_core::PaneOptions {
-            corner_radius: 24,
+            corner_radius: 24.0,
             ..desktop_core::PaneOptions::DEFAULT
         };
         store.save_pane_options(options).unwrap();
@@ -1138,7 +1140,7 @@ mod tests {
         );
         for bits in 0..8 {
             let options = desktop_core::PaneOptions {
-                corner_radius: if bits & 1 != 0 { 24 } else { 0 },
+                corner_radius: if bits & 1 != 0 { 24.0 } else { 0.0 },
                 border: bits & 2 != 0,
                 snap: bits & 4 != 0,
             };
@@ -1148,6 +1150,29 @@ mod tests {
             let reopened = WorkspaceStore::from_connection(store.connection).unwrap();
             assert_eq!(reopened.load_workspace().unwrap().pane_options(), options);
             store = reopened;
+        }
+    }
+
+    #[test]
+    fn fractional_corner_radius_round_trips_and_rejects_non_finite_values() {
+        let mut store = WorkspaceStore::open_in_memory().unwrap();
+        let options = desktop_core::PaneOptions {
+            corner_radius: 6.375,
+            ..Default::default()
+        };
+        store.save_pane_options(options).unwrap();
+        let workspace = store.load_workspace().unwrap();
+        assert_eq!(workspace.pane_options().corner_radius, 6.375);
+        store.save_workspace(&workspace).unwrap();
+        assert_eq!(
+            store.load_workspace().unwrap().pane_options().corner_radius,
+            6.375
+        );
+        for radius in ["NaN", "inf", "-0.5", "24.1"] {
+            store
+                .save_preference("pane_options", &format!("{radius}|true|true"))
+                .unwrap();
+            assert!(store.load_workspace().is_err());
         }
     }
 

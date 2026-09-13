@@ -14,7 +14,7 @@ pub struct Surface {
     hwnd: HWND,
     present: IDXGISwapChain1,
     rounded_backdrop: Option<HWND>,
-    pub pane_corner_radius: u8,
+    pub pane_corner_radius: f32,
     dark: bool,
     opacity: std::cell::Cell<f32>,
     acrylic: Option<super::acrylic::Acrylic>,
@@ -228,10 +228,10 @@ impl Surface {
             acrylic.round_corners(
                 width,
                 height,
-                if self.pane_corner_radius == 0 {
+                if self.pane_corner_radius == 0.0 {
                     0.0
                 } else {
-                    (f32::from(self.pane_corner_radius) + 0.5) * scale
+                    (self.pane_corner_radius + 0.5) * scale
                 },
             )?;
         }

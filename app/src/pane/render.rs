@@ -360,8 +360,8 @@ impl Renderer {
                 target.clear(ColorF::new(0.0, 0.0, 0.0, 0.0));
                 let rounded = RoundedRect {
                     rect: Rect::from_xywh(0.5, 0.5, w - 1.0, h - 1.0),
-                    radius_x: f32::from(model.options.corner_radius),
-                    radius_y: f32::from(model.options.corner_radius),
+                    radius_x: model.options.corner_radius,
+                    radius_y: model.options.corner_radius,
                 };
                 {
                     target.fill_rounded_rect(&rounded, &background);
@@ -997,7 +997,7 @@ mod tests {
         assert!(bordered[160 * 4 + 3] > borderless[160 * 4 + 3]);
         model.native_material = false;
         let rounded = renderer.pixels(320, 200, 1.0, &model).unwrap();
-        model.options.corner_radius = 0;
+        model.options.corner_radius = 0.0;
         let square = renderer.pixels(320, 200, 1.0, &model).unwrap();
         let corner = (320 + 1) * 4 + 3;
         assert!(square[corner] > rounded[corner]);

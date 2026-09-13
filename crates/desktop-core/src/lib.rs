@@ -424,17 +424,17 @@ impl Panel {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PaneOptions {
-    pub corner_radius: u8,
+    pub corner_radius: f32,
     pub border: bool,
     pub snap: bool,
 }
 
 impl PaneOptions {
-    pub const MAX_CORNER_RADIUS: u8 = 24;
+    pub const MAX_CORNER_RADIUS: f32 = 24.0;
     pub const DEFAULT: Self = Self {
-        corner_radius: 6,
+        corner_radius: 6.0,
         border: true,
         snap: true,
     };

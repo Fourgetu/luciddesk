@@ -279,18 +279,13 @@ pub(super) fn scene(
             false,
         );
         s.text(
-            Rect::from_xywh(x + 18.0, 116.0, w - 258.0, 24.0),
+            Rect::from_xywh(x + 18.0, 104.0, w - 258.0, 34.0),
             "圆角大小",
             1,
         );
-        s.text(
-            Rect::from_xywh(x + 18.0, 140.0, w - 258.0, 24.0),
-            "0–24，0 为直角",
-            0,
-        );
         let radius = options.corner_radius;
         s.controls.push(Control {
-            bounds: Rect::from_xywh(x + w - 238.0, 123.0, 180.0, 34.0),
+            bounds: Rect::from_xywh(x + w - 248.0, 104.0, 180.0, 34.0),
             label: String::new(),
             action: Action::Radius(radius),
             selected: false,
@@ -298,8 +293,8 @@ pub(super) fn scene(
             toggle: false,
         });
         s.text(
-            Rect::from_xywh(x + w - 42.0, 123.0, 30.0, 34.0),
-            radius.to_string(),
+            Rect::from_xywh(x + w - 58.0, 104.0, 46.0, 34.0),
+            format!("{radius:.1}"),
             1,
         );
         for (i, (title, enabled, event)) in [

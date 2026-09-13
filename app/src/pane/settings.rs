@@ -59,7 +59,7 @@ enum Action {
     Window(u32),
     Page(usize),
     Change(Event),
-    Radius(u8),
+    Radius(f32),
     Opacity(u8),
     Strength(u8),
     StrengthReset,
@@ -96,10 +96,10 @@ struct Scene {
     previews: Vec<(Rect, u32, f32)>,
 }
 
-fn radius_from_pointer(bounds: Rect, x: f32) -> u8 {
+fn radius_from_pointer(bounds: Rect, x: f32) -> f32 {
     let progress =
         ((x - bounds.left - 8.0) / (bounds.right - bounds.left - 16.0).max(1.0)).clamp(0.0, 1.0);
-    (progress * f32::from(desktop_core::PaneOptions::MAX_CORNER_RADIUS)).round() as u8
+    progress * desktop_core::PaneOptions::MAX_CORNER_RADIUS
 }
 
 fn solid_style(store: &desktop_storage::WorkspaceStore, dark: bool) -> Backdrop {
@@ -565,11 +565,13 @@ impl Painter {
                         );
                         continue;
                     }
-                    if let Action::Radius(value)
-                    | Action::Opacity(value)
-                    | Action::Strength(value)
-                    | Action::Channel(_, value) = c.action
-                    {
+                    if let Some(value) = match c.action {
+                        Action::Radius(value) => Some(value),
+                        Action::Opacity(value)
+                        | Action::Strength(value)
+                        | Action::Channel(_, value) => Some(f32::from(value)),
+                        _ => None,
+                    } {
                         let r = c.bounds;
                         let cy = (r.top + r.bottom) / 2.0;
                         let left = r.left + 8.0;
@@ -579,7 +581,7 @@ impl Painter {
                             Action::Channel(_, _) => 255.0,
                             _ => 24.0,
                         };
-                        let cx = left + (right - left) * f32::from(value) / max;
+                        let cx = left + (right - left) * value / max;
                         let rail = RoundedRect {
                             rect: Rect::from_xywh(left, cy - 2.0, right - left, 4.0),
                             radius_x: 2.0,
@@ -1507,10 +1509,10 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         }
                         if let Action::Radius(value) = control.action {
                             radius_change = match wp as u16 {
-                                VK_LEFT => Some(value.saturating_sub(1)),
-                                VK_RIGHT => Some((value + 1).min(24)),
-                                VK_HOME => Some(0),
-                                VK_END => Some(24),
+                                VK_LEFT => Some((value - 0.1).max(0.0)),
+                                VK_RIGHT => Some((value + 0.1).min(24.0)),
+                                VK_HOME => Some(0.0),
+                                VK_END => Some(24.0),
                                 _ => None,
                             };
                         }
@@ -1777,6 +1779,17 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn radius_drag_preserves_fractional_values() {
+        let bounds = Rect::from_xywh(0.0, 0.0, 180.0, 34.0);
+        let first = radius_from_pointer(bounds, 80.0);
+        let next = radius_from_pointer(bounds, 81.0);
+        assert!(first.fract() != 0.0);
+        assert!(next > first && next - first < 1.0);
+        assert_eq!(radius_from_pointer(bounds, -10.0), 0.0);
+        assert_eq!(radius_from_pointer(bounds, 190.0), 24.0);
+    }
 
     #[test]
     fn initial_library_show_remains_hidden_until_prepared() {

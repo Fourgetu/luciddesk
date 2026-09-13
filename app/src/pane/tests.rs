@@ -1086,14 +1086,14 @@ fn pane_options_apply_globally_and_can_disable_snapping() {
     let state = Rc::new(RefCell::new(test_state()));
     let id = PanelId::new(1);
     for event in [
-        Event::SetCornerRadius(0),
+        Event::SetCornerRadius(0.0),
         Event::ToggleBorder,
         Event::ToggleSnap,
     ] {
         handle(&state, id, event).unwrap();
     }
     let options = desktop_core::PaneOptions {
-        corner_radius: 0,
+        corner_radius: 0.0,
         border: false,
         snap: false,
     };
@@ -1120,9 +1120,9 @@ fn pane_options_apply_globally_and_can_disable_snapping() {
     );
     handle(&state, PanelId::new(2), Event::ToggleSnap).unwrap();
     assert!(state.borrow().workspace.pane_options().snap);
-    handle(&state, id, Event::SetCornerRadius(255)).unwrap();
-    assert_eq!(state.borrow().workspace.pane_options().corner_radius, 24);
-    handle(&state, id, Event::SetCornerRadius(11)).unwrap();
+    handle(&state, id, Event::SetCornerRadius(255.0)).unwrap();
+    assert_eq!(state.borrow().workspace.pane_options().corner_radius, 24.0);
+    handle(&state, id, Event::SetCornerRadius(11.0)).unwrap();
     assert_eq!(
         state
             .borrow()
@@ -1131,7 +1131,7 @@ fn pane_options_apply_globally_and_can_disable_snapping() {
             .unwrap()
             .pane_options()
             .corner_radius,
-        11
+        11.0
     );
     handle(&state, id, Event::ResetPaneOptions).unwrap();
     assert_eq!(
@@ -1257,10 +1257,10 @@ fn corner_slider_drags_to_both_limits_and_saves() {
         let mut bounds = RECT::default();
         GetClientRect(hwnd, &raw mut bounds);
         let width = bounds.right as f32 / scale;
-        SendMessageW(hwnd, WM_LBUTTONDOWN, 0, point(width - 172.0, 172.0));
-        assert_eq!(state.borrow().workspace.pane_options().corner_radius, 12);
-        SendMessageW(hwnd, WM_MOUSEMOVE, 1, point(width - 300.0, 172.0));
-        assert_eq!(state.borrow().workspace.pane_options().corner_radius, 0);
+        SendMessageW(hwnd, WM_LBUTTONDOWN, 0, point(width - 182.0, 153.0));
+        assert_eq!(state.borrow().workspace.pane_options().corner_radius, 12.0);
+        SendMessageW(hwnd, WM_MOUSEMOVE, 1, point(width - 300.0, 153.0));
+        assert_eq!(state.borrow().workspace.pane_options().corner_radius, 0.0);
         assert_eq!(
             state
                 .borrow()
@@ -1272,8 +1272,8 @@ fn corner_slider_drags_to_both_limits_and_saves() {
             desktop_core::PaneOptions::DEFAULT.corner_radius,
             "drag preview must not write storage"
         );
-        SendMessageW(hwnd, WM_MOUSEMOVE, 1, point(width - 10.0, 172.0));
-        SendMessageW(hwnd, WM_LBUTTONUP, 0, point(width - 10.0, 172.0));
+        SendMessageW(hwnd, WM_MOUSEMOVE, 1, point(width - 10.0, 153.0));
+        SendMessageW(hwnd, WM_LBUTTONUP, 0, point(width - 10.0, 153.0));
         assert_eq!(
             state
                 .borrow()
@@ -1282,9 +1282,9 @@ fn corner_slider_drags_to_both_limits_and_saves() {
                 .unwrap()
                 .pane_options()
                 .corner_radius,
-            24
+            24.0
         );
-        SendMessageW(hwnd, WM_LBUTTONDOWN, 0, point(width - 172.0, 172.0));
+        SendMessageW(hwnd, WM_LBUTTONDOWN, 0, point(width - 182.0, 153.0));
         SendMessageW(hwnd, WM_CAPTURECHANGED, 0, 0);
         assert_eq!(
             state
@@ -1294,7 +1294,7 @@ fn corner_slider_drags_to_both_limits_and_saves() {
                 .unwrap()
                 .pane_options()
                 .corner_radius,
-            12,
+            12.0,
             "losing capture must finish the preview"
         );
         SendMessageW(hwnd, WM_CLOSE, 0, 0);

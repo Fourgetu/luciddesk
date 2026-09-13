@@ -588,8 +588,8 @@ impl Drawing {
                 canvas_result(target.create_solid_brush(ColorF::new(0.75, 0.8, 0.85, 0.17)))?;
             let shape = RoundedRect {
                 rect: Rect::from_xywh(0.5, 0.5, w - 1.0, h - 1.0),
-                radius_x: f32::from(model.options.corner_radius),
-                radius_y: f32::from(model.options.corner_radius),
+                radius_x: model.options.corner_radius,
+                radius_y: model.options.corner_radius,
             };
             target.fill_rounded_rect(&shape, &background);
             if model.options.border {
