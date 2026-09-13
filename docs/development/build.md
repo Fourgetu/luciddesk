@@ -13,8 +13,8 @@
 ## 构建与启动
 
 ```powershell
-cargo build -p lucidpane -p desktop-hook --offline
-$env:LUCIDPANE_DATA_DIR = Join-Path $PWD 'target\dev-data-v9'
+cargo build -p lucidpane -p desktop-hook --locked --offline
+$env:LUCIDPANE_DATA_DIR = Join-Path $PWD 'target\dev-data'
 & .\target\debug\lucidpane.exe
 ```
 
@@ -22,7 +22,7 @@ $env:LUCIDPANE_DATA_DIR = Join-Path $PWD 'target\dev-data-v9'
 
 `LUCIDPANE_DATA_DIR` 仅影响该环境下启动的程序。无需自定义目录时，在启动前移除该环境变量，程序会使用 LocalAppData。
 
-可选标题参数示例：
+可选标题参数示例（会设置首个面板的标题，包括已有工作区中的首个面板）：
 
 ```powershell
 & .\target\debug\lucidpane.exe --title '工作'
@@ -31,7 +31,7 @@ $env:LUCIDPANE_DATA_DIR = Join-Path $PWD 'target\dev-data-v9'
 如果正在运行的程序占用了原构建产物，可以先编译到独立目录：
 
 ```powershell
-cargo build -p lucidpane -p desktop-hook --offline --target-dir target\convergence-check
+cargo build -p lucidpane -p desktop-hook --locked --offline --target-dir target\convergence-check
 ```
 
 退出旧实例后，再从 `target\convergence-check\debug` 启动新程序。不要同时运行新旧实例以测试桌面 Hook。

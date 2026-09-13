@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1200" height="680" viewBox="0 0 1200 680" role="img" aria-labelledby="title desc">
+  <title id="title">LucidPane：把桌面整理成工作区</title>
+  <desc id="desc">左侧桌面文件拖入中间的工作分组，右侧文件夹面板显示目录内容，下方 Everything 搜索框查找文件。桌面分组只保存引用，文件留在原处。这是功能示意，非实际界面截图。</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#101c30"/><stop offset="1" stop-color="#153b4b"/></linearGradient>
+    <linearGradient id="pane" x2="0" y2="1"><stop stop-color="#294354"/><stop offset="1" stop-color="#1d3043"/></linearGradient>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M1 1 8 5 1 9" fill="none" stroke="#6de4eb" stroke-width="1.8"/></marker>
+    <g id="file"><path d="M0 0h22l10 10v32H0z" fill="#b6e9fc"/><path d="M22 0v10h10" fill="#72bedf"/><path d="M7 22h18M7 29h14" stroke="#36758b" stroke-width="2.5"/></g>
+    <g id="folder"><path d="M0 8V1h18l7 7h21v31H0z" fill="#d9a955"/><path d="M0 13h46l-4 26H0z" fill="#f4cf82"/></g>
+    <g id="app"><rect width="40" height="40" rx="10" fill="#7cd9dc"/><path d="M10 10h20v20H10zM10 20h20M20 10v20" fill="none" stroke="#1c6575" stroke-width="2"/></g>
+  </defs>
+  <style>
+    text { font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif; fill: #edf5fc; }
+    .muted { fill: #a8bfce; font-size: 17px; }
+    .label { font-size: 17px; text-anchor: middle; }
+    .heading { font-size: 23px; font-weight: 600; }
+    .accent { fill: #7ee8ea; }
+  </style>
+  <rect width="1200" height="680" rx="24" fill="url(#bg)"/>
+  <circle cx="1010" cy="80" r="230" fill="#29606a" opacity=".17"/>
+  <text x="54" y="61" font-size="18" letter-spacing="3" class="accent">LUCIDPANE</text>
+  <text x="54" y="114" font-size="38" font-weight="600">桌面有分组，工作有条理。</text>
+  <text x="54" y="151" class="muted">收纳桌面图标 · 浏览常用目录 · 随时搜索文件</text>
+  <rect x="44" y="191" width="1112" height="383" rx="20" fill="#0e192a" fill-opacity=".55" stroke="#426171"/>
+  <text x="72" y="232" class="muted">桌面 · 收纳前</text>
+  <use xlink:href="#file" x="87" y="268"/><text x="103" y="337" class="label">方案</text>
+  <use xlink:href="#folder" x="190" y="270"/><text x="213" y="337" class="label">项目</text>
+  <use xlink:href="#app" x="83" y="385"/><text x="103" y="453" class="label">工具</text>
+  <use xlink:href="#file" x="197" y="385"/><text x="213" y="453" class="label">笔记</text>
+  <path d="M255 360 C292 360 293 303 333 303" fill="none" stroke="#6de4eb" stroke-width="3" stroke-dasharray="6 6" marker-end="url(#arrow)"/>
+  <text x="273" y="398" font-size="16" class="accent">拖入</text>
+  <rect x="351" y="223" width="358" height="251" rx="16" fill="url(#pane)" stroke="#6a9ba8"/>
+  <text x="376" y="262" class="heading">工作</text><text x="664" y="260" font-size="24">···</text>
+  <path d="M371 281h318" stroke="#476575"/>
+  <use xlink:href="#file" x="392" y="310"/><text x="408" y="378" class="label">方案</text>
+  <use xlink:href="#folder" x="492" y="310"/><text x="515" y="378" class="label">项目</text>
+  <use xlink:href="#file" x="604" y="310"/><text x="620" y="378" class="label">笔记</text>
+  <text x="376" y="436" class="muted">移动 · 缩放 · 折叠 · 调整外观</text>
+  <rect x="739" y="223" width="383" height="251" rx="16" fill="url(#pane)" stroke="#527b8d"/>
+  <text x="764" y="262" class="heading">项目文件夹</text>
+  <text x="764" y="294" class="muted">映射目录，随文件变化刷新</text>
+  <path d="M760 309h341" stroke="#476575"/>
+  <use xlink:href="#folder" transform="translate(764 326) scale(.55)"/><text x="805" y="345" font-size="18">设计素材</text>
+  <use xlink:href="#file" transform="translate(770 367) scale(.5)"/><text x="805" y="385" font-size="18">项目说明.md</text>
+  <use xlink:href="#file" transform="translate(770 408) scale(.5)"/><text x="805" y="426" font-size="18">进度清单.xlsx</text>
+  <rect x="351" y="493" width="771" height="57" rx="12" fill="#20394b" stroke="#527b8d"/>
+  <circle cx="380" cy="519" r="8" fill="none" stroke="#7ee8ea" stroke-width="2.5"/><path d="m386 525 7 7" stroke="#7ee8ea" stroke-width="2.5"/>
+  <text x="408" y="529" font-size="18">ext:pdf</text><text x="752" y="529" class="muted">Everything 搜索 · 快速找到文件</text>
+  <circle cx="67" cy="621" r="13" fill="#7ee8ea"/><path d="m61 621 4 4 8-8" fill="none" stroke="#183743" stroke-width="2.5"/>
+  <text x="94" y="628" font-size="21">桌面分组只保存引用，文件留在原处。</text>
+  <text x="870" y="628" class="muted">功能示意 / 非实际界面截图</text>
+</svg>

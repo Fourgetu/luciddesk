@@ -14,10 +14,10 @@
 | Hook DLL 缺失、系统组件不匹配或 Explorer 暂不可用 | 文件夹和搜索面板仍可使用；保留桌面分组配置并定期重连 |
 | Explorer 重启 | 检测连接失效，等待重连并重建面板；不同系统版本仍需实机验证 |
 | 显示器组合改变 | 等待变化稳定后恢复对应布局，将不可见面板移入可用屏幕；混合 DPI 和拔插仍需实机覆盖 |
-| Everything 未安装或未运行 | 搜索页显示状态；可在设置中检测路径、选择程序和开启自动启动 |
+| Everything 未安装或未运行 | 搜索页显示状态；先启动 Everything，再在设置中检测路径或选择程序并启用搜索面板 |
 | PowerToys Peek 不可用 | 不影响分组和文件操作，可在设置中关闭或指定路径 |
 
-Everything 和 PowerToys 不包含在本包中。Windows 10、ARM64 和远程桌面环境尚未经过完整验证。
+Everything、PowerToys 和 QuickLook 不包含在本包中。Windows 10、ARM64 和远程桌面环境尚未经过完整验证。
 
 开发版使用 `config.toml` 和 `workspace.db`，不迁移旧库。旧版数据请使用独立目录保留；本版不会读取 `hook-desktop.db`。
 
