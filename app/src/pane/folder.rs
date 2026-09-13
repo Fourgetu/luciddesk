@@ -1,9 +1,8 @@
 //! Live folder sources are separate from Explorer desktop membership.
 use super::*;
-use std::{
-    path::PathBuf,
-    time::{Duration, Instant},
-};
+use std::path::PathBuf;
+#[cfg(test)]
+use std::time::{Duration, Instant};
 use windows::Win32::{
     System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance},
     UI::Shell::*,
@@ -14,14 +13,94 @@ pub(super) struct Source {
     root: PathBuf,
     history: Vec<PathBuf>,
     pub sort: (u8, bool),
-    request: mpsc::SyncSender<()>,
+    request: Arc<Commands>,
     updates: mpsc::Receiver<Result<Vec<Item>, String>>,
     pub items: Vec<Item>,
     pub status: Option<String>,
     pub loading: bool,
 }
 
+struct Commands {
+    event: isize,
+    stop: std::sync::atomic::AtomicBool,
+}
+impl Commands {
+    fn new() -> Result<Self, String> {
+        let event = unsafe {
+            windows_sys::Win32::System::Threading::CreateEventW(
+                std::ptr::null(),
+                0,
+                0,
+                std::ptr::null(),
+            )
+        };
+        if event.is_null() {
+            return Err(std::io::Error::last_os_error().to_string());
+        }
+        Ok(Self {
+            event: event as isize,
+            stop: false.into(),
+        })
+    }
+    fn signal(&self) {
+        unsafe {
+            windows_sys::Win32::System::Threading::SetEvent(self.event as _);
+        }
+    }
+}
+impl Drop for Commands {
+    fn drop(&mut self) {
+        unsafe {
+            windows_sys::Win32::Foundation::CloseHandle(self.event as _);
+        }
+    }
+}
+impl Drop for Source {
+    fn drop(&mut self) {
+        self.request
+            .stop
+            .store(true, std::sync::atomic::Ordering::Release);
+        self.request.signal();
+    }
+}
+
 struct Watch(windows_sys::Win32::Foundation::HANDLE);
+
+fn wait_for_change(handles: &[windows_sys::Win32::Foundation::HANDLE], timeout: u32) -> u32 {
+    use windows_sys::Win32::UI::WindowsAndMessaging::*;
+    let started = std::time::Instant::now();
+    loop {
+        let remaining = if timeout == u32::MAX {
+            timeout
+        } else {
+            timeout.saturating_sub(started.elapsed().as_millis().min(u128::from(u32::MAX)) as u32)
+        };
+        let result = unsafe {
+            MsgWaitForMultipleObjectsEx(
+                handles.len() as u32,
+                handles.as_ptr(),
+                remaining,
+                QS_ALLINPUT,
+                MWMO_INPUTAVAILABLE,
+            )
+        };
+        if result != handles.len() as u32 {
+            return result;
+        }
+        // Shell can create hidden windows on this STA. Keep servicing their
+        // messages while waiting indefinitely for directory or shutdown events.
+        unsafe {
+            let mut msg = windows_sys::Win32::UI::WindowsAndMessaging::MSG::default();
+            for _ in 0..64 {
+                if PeekMessageW(&raw mut msg, std::ptr::null_mut(), 0, 0, PM_REMOVE) == 0 {
+                    break;
+                }
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+        }
+    }
+}
 impl Watch {
     fn new(path: &Path) -> Option<Self> {
         use std::os::windows::ffi::OsStrExt;
@@ -40,16 +119,6 @@ impl Watch {
         };
         (handle != windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE).then_some(Self(handle))
     }
-    fn changed(&self) -> bool {
-        unsafe {
-            if windows_sys::Win32::System::Threading::WaitForSingleObject(self.0, 0) == 0 {
-                windows_sys::Win32::Storage::FileSystem::FindNextChangeNotification(self.0);
-                true
-            } else {
-                false
-            }
-        }
-    }
 }
 impl Drop for Watch {
     fn drop(&mut self) {
@@ -60,8 +129,9 @@ impl Drop for Watch {
 }
 
 impl Source {
-    fn start(path: PathBuf) -> Result<Self, String> {
-        let (request, commands) = mpsc::sync_channel(1);
+    fn start(path: PathBuf, wake: wake::Wake) -> Result<Self, String> {
+        let request = Arc::new(Commands::new()?);
+        let commands = Arc::clone(&request);
         let (sender, updates) = mpsc::channel();
         let root = path.clone();
         std::thread::Builder::new()
@@ -71,16 +141,18 @@ impl Source {
                     Ok(value) => value,
                     Err(error) => {
                         let _ = sender.send(Err(error.to_string()));
+                        wake.notify();
                         return;
                     }
                 };
                 let mut watch = Watch::new(&root);
-                let mut refresh = true;
-                let mut last_scan = Instant::now();
                 let mut cache: HashMap<String, (Option<std::time::SystemTime>, Item)> =
                     HashMap::new();
                 loop {
-                    if refresh {
+                    if commands.stop.load(std::sync::atomic::Ordering::Acquire) {
+                        break;
+                    }
+                    {
                         let result = desktop_shell::enumerate_folder(&root)
                             .map(|entries| {
                                 let mut next = HashMap::new();
@@ -128,19 +200,40 @@ impl Source {
                         if sender.send(result).is_err() {
                             break;
                         }
-                        last_scan = Instant::now();
+                        wake.notify();
                     }
-                    refresh = match commands.recv_timeout(Duration::from_millis(200)) {
-                        Ok(()) => true,
-                        Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                        Err(mpsc::RecvTimeoutError::Timeout) => false,
-                    };
-                    if watch.as_ref().is_some_and(Watch::changed) {
-                        refresh = true;
+                    use windows_sys::Win32::System::Threading::*;
+                    let handles = [
+                        commands.event as _,
+                        watch.as_ref().map_or(std::ptr::null_mut(), |w| w.0),
+                    ];
+                    let result = wait_for_change(
+                        &handles[..if watch.is_some() { 2 } else { 1 }],
+                        if watch.is_some() { INFINITE } else { 2000 },
+                    );
+                    if commands.stop.load(std::sync::atomic::Ordering::Acquire) {
+                        break;
                     }
-                    if watch.is_none() && last_scan.elapsed() >= Duration::from_secs(2) {
+                    if result == 1 {
+                        if unsafe {
+                            windows_sys::Win32::Storage::FileSystem::FindNextChangeNotification(
+                                handles[1],
+                            )
+                        } == 0
+                        {
+                            watch = None;
+                        }
+                        // Merge a burst without indefinitely postponing a visible update.
+                        unsafe {
+                            WaitForSingleObject(commands.event as _, 100);
+                        }
+                    } else if result == u32::MAX {
+                        let _ = sender.send(Err(std::io::Error::last_os_error().to_string()));
+                        wake.notify();
+                        break;
+                    }
+                    if watch.is_none() {
                         watch = Watch::new(&root);
-                        refresh = true;
                     }
                 }
             })
@@ -158,7 +251,7 @@ impl Source {
         })
     }
     pub fn refresh(&self) {
-        let _ = self.request.try_send(());
+        self.request.signal();
     }
 }
 
@@ -174,7 +267,7 @@ pub(super) fn ensure(state: &mut PaneApp, id: PanelId) -> Result<(), String> {
             .get(&id)
             .is_none_or(|source| source.root != path)
         {
-            let mut source = Source::start(path)?;
+            let mut source = Source::start(path, state.wake.clone())?;
             source.sort = state
                 .store
                 .preference(&format!("panel_folder_sort:{}", id.get()))
@@ -287,7 +380,7 @@ pub(super) fn navigate(
         };
         path
     };
-    let mut source = Source::start(path.clone())?;
+    let mut source = Source::start(path.clone(), state.wake.clone())?;
     source.root = old.root.clone();
     source.history = history;
     source.sort = old.sort;
@@ -455,6 +548,39 @@ mod tests {
     use super::*;
 
     #[test]
+    fn dropping_an_idle_source_wakes_worker_and_releases_handles() {
+        let source = Source::start(
+            std::env::temp_dir().join(format!(
+                "lucidpane-missing-watch-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            )),
+            Default::default(),
+        )
+        .unwrap();
+        let request = Arc::downgrade(&source.request);
+        assert!(
+            source
+                .updates
+                .recv_timeout(Duration::from_secs(10))
+                .unwrap()
+                .is_err()
+        );
+        drop(source);
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while request.upgrade().is_some() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(
+            request.upgrade().is_none(),
+            "shutdown must interrupt the directory retry wait"
+        );
+    }
+
+    #[test]
     fn sorting_uses_snapshot_metadata_without_accessing_paths() {
         let make = |label: &str, folder, seconds: Option<u64>| Item {
             identity: ShellIdentity::Namespace {
@@ -586,7 +712,7 @@ mod tests {
                 .as_nanos()
         ));
         std::fs::create_dir(&root).unwrap();
-        let mut source = Source::start(root.clone()).unwrap();
+        let mut source = Source::start(root.clone(), Default::default()).unwrap();
         let wait = |source: &mut Source, predicate: &dyn Fn(&Result<Vec<Item>, String>) -> bool| {
             let deadline = Instant::now() + Duration::from_secs(10);
             loop {

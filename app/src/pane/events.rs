@@ -818,12 +818,7 @@ pub(super) fn handle(
             }
             if let Some(view) = s.views.iter().find(|view| view.id == id) {
                 view.model.borrow_mut().auto_hide = enabled;
-            }
-        }
-        Event::Tick => {
-            folder::poll(&mut s);
-            if s.session.is_some() {
-                hybrid::tick(&mut s)?;
+                window::update_auto_hide(view.window.hwnd().cast(), enabled);
             }
         }
         Event::Activate(_) | Event::ActivateSelection | Event::Peek | Event::FileCommand(_) => {

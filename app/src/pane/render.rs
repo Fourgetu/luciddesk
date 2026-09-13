@@ -360,7 +360,8 @@ impl Renderer {
                     target.create_solid_brush(ColorF::new(base, base, base, opacity)),
                 )?;
                 let outline = canvas_result(
-                    target.create_solid_brush(super::theme::panel_border(model.dark)),
+                    target
+                        .create_solid_brush(super::theme::panel_border(model.dark, model.backdrop)),
                 )?;
                 let white =
                     canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 1.0)))?;

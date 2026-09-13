@@ -49,6 +49,38 @@ pub const DESKTOP_INPUT_MESSAGE: u32 = 0x8000 + 0x4a1;
 pub const LAYOUT_MAGIC: usize = MAGIC + 2;
 pub const MAX_LAYOUT_ITEMS: usize = 512;
 pub const TEXTURE_MAGIC: usize = MAGIC + 3;
+pub const BASELINE_MAGIC: usize = MAGIC + 4;
+
+/// Compare all original coordinates in one read-only cross-process request.
+#[repr(C)]
+pub struct BaselineCheck {
+    pub version: u32,
+    pub generation: u32,
+    pub count: u32,
+    pub items: [ItemPosition; MAX_LAYOUT_ITEMS],
+}
+impl BaselineCheck {
+    #[must_use]
+    pub fn valid(&self) -> bool {
+        self.version == VERSION
+            && self.count as usize <= MAX_LAYOUT_ITEMS
+            && self.items[..self.count as usize]
+                .iter()
+                .all(|item| item.item >= 0)
+    }
+
+    pub fn matches(
+        &self,
+        generation: u32,
+        mut position: impl FnMut(i32) -> Option<(i32, i32)>,
+    ) -> bool {
+        self.valid()
+            && self.generation == generation
+            && self.items[..self.count as usize]
+                .iter()
+                .all(|item| position(item.item) == Some((item.x, item.y)))
+    }
+}
 pub const PANE_HEADER: i32 = 48;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -221,6 +253,47 @@ pub fn geometry_attach_message() -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn baseline_check_validates_bounds_generation_and_signed_coordinates() {
+        let mut check = BaselineCheck {
+            version: VERSION,
+            generation: 7,
+            count: 2,
+            items: [ItemPosition::default(); MAX_LAYOUT_ITEMS],
+        };
+        check.items[0] = ItemPosition {
+            item: 2,
+            x: -1,
+            y: -100,
+            ..Default::default()
+        };
+        check.items[1] = ItemPosition {
+            item: 5,
+            x: 200,
+            y: 300,
+            ..Default::default()
+        };
+        let read = |item| match item {
+            2 => Some((-1, -100)),
+            5 => Some((200, 300)),
+            _ => None,
+        };
+        assert!(check.matches(7, read));
+        assert!(!check.matches(8, |_| panic!("stale generations must not scan coordinates")));
+        assert!(!check.matches(7, |_| None));
+        check.items[1].y += 1;
+        assert!(!check.matches(7, read));
+        check.count = MAX_LAYOUT_ITEMS as u32 + 1;
+        assert!(!check.matches(7, |_| panic!("invalid counts must not index the buffer")));
+        check.count = 1;
+        check.items[0].item = -1;
+        assert!(!check.valid());
+        check.count = 0;
+        assert!(check.matches(7, |_| panic!("empty desktop needs no coordinate reads")));
+        check.version += 1;
+        assert!(!check.valid());
+    }
 
     #[test]
     fn rejects_unbounded_protocol_payloads() {

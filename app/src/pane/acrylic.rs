@@ -1,5 +1,6 @@
 //! Host backdrop composition has no window-activation policy. Windows still controls
 //! backdrop transparency through accessibility settings and power policy.
+#[path = "acrylic/effects.rs"]
 mod effects;
 
 use super::native_graphics::{DWMWA_USE_HOSTBACKDROPBRUSH, set_attribute};

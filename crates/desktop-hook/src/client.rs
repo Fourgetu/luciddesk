@@ -282,6 +282,49 @@ impl HookSession {
         }
     }
 
+    /// Compare original coordinates without one synchronous request per axis.
+    /// # Errors
+    /// Fails for an oversized batch, rejected payload or an unresponsive view.
+    pub fn baseline_matches(
+        &self,
+        generation: u32,
+        positions: &[(i32, i32, i32)],
+    ) -> Result<bool, String> {
+        use crate::protocol::{
+            BASELINE_MAGIC, BaselineCheck, ItemPosition, MAX_LAYOUT_ITEMS, VERSION,
+        };
+        if positions.len() > MAX_LAYOUT_ITEMS {
+            return Err("桌面坐标检查超过单次事务容量".into());
+        }
+        let mut check = BaselineCheck {
+            version: VERSION,
+            generation,
+            count: positions.len() as u32,
+            items: [ItemPosition::default(); MAX_LAYOUT_ITEMS],
+        };
+        for (item, &(index, x, y)) in check.items.iter_mut().zip(positions) {
+            *item = ItemPosition {
+                item: index,
+                x,
+                y,
+                ..Default::default()
+            };
+        }
+        if !check.valid() {
+            return Err("无效的桌面坐标检查".into());
+        }
+        let data = COPYDATASTRUCT {
+            dwData: BASELINE_MAGIC,
+            cbData: size_of::<BaselineCheck>() as u32,
+            lpData: std::ptr::from_ref(&check).cast_mut().cast(),
+        };
+        match self.send(WM_COPYDATA, self.owner as usize, (&raw const data) as isize)? {
+            OK => Ok(true),
+            0 => Ok(false),
+            _ => Err("原生视图拒绝坐标检查".into()),
+        }
+    }
+
     /// Queue selection cleanup without blocking pane input or painting.
     /// # Errors
     /// Returns an error if the notification could not be registered or queued.

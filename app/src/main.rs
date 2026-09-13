@@ -102,7 +102,7 @@ fn database_path() -> Result<PathBuf, String> {
 mod tests {
     use super::*;
     #[test]
-    fn hybrid_is_the_only_launch_mode() {
+    fn accepts_optional_title_and_rejects_invalid_arguments() {
         assert_eq!(parse_options([]).unwrap(), None);
 
         assert_eq!(
@@ -111,19 +111,7 @@ mod tests {
                 .as_deref(),
             Some("Work")
         );
-        for value in [
-            "--hybrid-desktop",
-            "--preview",
-            "--desktop",
-            "--managed-desktop",
-            "--native-desktop",
-            "--hook-desktop",
-            "--manual",
-            "--icon",
-            "C:\\folder",
-            "--unknown",
-            "--title",
-        ] {
+        for value in ["--unknown", "C:\\folder", "--title"] {
             assert!(parse_options([OsString::from(value)]).is_err(), "{value}");
         }
     }

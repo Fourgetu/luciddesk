@@ -83,6 +83,7 @@ pub(super) fn test_state() -> PaneApp {
     reconcile(&mut workspace, inventory);
     let (_, receiver) = mpsc::channel();
     PaneApp {
+        wake: Default::default(),
         folders: HashMap::new(),
         settings: None,
         session: None,
@@ -1573,7 +1574,8 @@ fn settings_window_applies_clicks_and_closes_without_exiting() {
         );
         assert_eq!(
             client.bottom,
-            ((520.0 * dpi).round() as i32).min(monitor.rcWork.bottom - monitor.rcWork.top),
+            ((settings::DEFAULT_HEIGHT as f32 * dpi).round() as i32)
+                .min(monitor.rcWork.bottom - monitor.rcWork.top),
             "initial height must fit the monitor"
         );
         assert_eq!(

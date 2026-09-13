@@ -37,6 +37,7 @@ use events::handle;
 mod shell_menu;
 mod snap;
 mod theme;
+mod wake;
 mod window;
 pub use hybrid::run;
 
@@ -97,6 +98,7 @@ struct View {
 }
 
 struct PaneApp {
+    wake: wake::Wake,
     folders: HashMap<PanelId, folder::Source>,
     settings: Option<windows_window::Window>,
     // Desktop membership is suspended while Explorer/its compatible Hook is unavailable.
@@ -144,7 +146,6 @@ enum Event {
     Moving(*mut RECT),
     Sizing(*mut RECT, RECT, u32),
     Material(desktop_core::Backdrop),
-    Tick,
     New,
     EnableSearch,
     ToggleSearch,
@@ -249,7 +250,12 @@ fn create_view(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> 
         let Some(state) = weak.upgrade() else {
             return false;
         };
-        match handle(&state, id, event) {
+        let wake_needed = !matches!(&event, Event::Moving(_) | Event::Sizing(..));
+        let result = handle(&state, id, event);
+        if wake_needed {
+            state.borrow().wake.notify();
+        }
+        match result {
             Ok(done) => done,
             Err(error) => {
                 eprintln!("{error}");

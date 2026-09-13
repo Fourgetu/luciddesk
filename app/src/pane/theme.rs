@@ -7,11 +7,18 @@
 use super::assets::Pixels;
 
 /// A quiet neutral edge, independent of the user's text color override.
-pub fn panel_border(dark: bool) -> windows_canvas::ColorF {
+pub fn panel_border(dark: bool, backdrop: desktop_core::Backdrop) -> windows_canvas::ColorF {
+    let opacity = match backdrop {
+        desktop_core::Backdrop::Solid { opacity, .. }
+        | desktop_core::Backdrop::Translucent { opacity } => opacity.clamp(0.0, 1.0),
+        // Keep the existing border at the default strength (50), fading to
+        // zero with the material and strengthening it toward the opaque end.
+        other => f32::from(other.strength().unwrap_or(50)) / 50.0,
+    };
     if dark {
-        windows_canvas::ColorF::new(0.6, 0.6, 0.6, 0.14)
+        windows_canvas::ColorF::new(0.6, 0.6, 0.6, 0.14 * opacity)
     } else {
-        windows_canvas::ColorF::new(0.0, 0.0, 0.0, 0.16)
+        windows_canvas::ColorF::new(0.0, 0.0, 0.0, 0.16 * opacity)
     }
 }
 
@@ -180,6 +187,40 @@ pub fn selection(width: u32, height: u32, dpi: u32, state: i32) -> Option<Pixels
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn border_follows_background_opacity_and_material_strength() {
+        use desktop_core::Backdrop;
+        for dark in [false, true] {
+            let full = panel_border(
+                dark,
+                Backdrop::Solid {
+                    color: 0x123456,
+                    opacity: 1.0,
+                },
+            );
+            for opacity in [0.0, 0.25, 0.5, 1.0] {
+                let border = panel_border(
+                    dark,
+                    Backdrop::Solid {
+                        color: 0xabcdef,
+                        opacity,
+                    },
+                );
+                assert!((border.a - full.a * opacity).abs() < 0.00001);
+                assert_eq!((border.r, border.g, border.b), (full.r, full.g, full.b));
+            }
+            for material in [Backdrop::Acrylic, Backdrop::Mica] {
+                let alphas: Vec<_> = [0, 25, 50, 75, 100]
+                    .into_iter()
+                    .map(|strength| panel_border(dark, material.with_strength(strength)).a)
+                    .collect();
+                assert_eq!(alphas[0], 0.0);
+                assert!(alphas.windows(2).all(|pair| pair[0] < pair[1]));
+                assert_eq!(alphas[2], full.a);
+            }
+        }
+    }
 
     #[test]
     fn solid_text_remains_readable_over_extreme_desktop_colors() {

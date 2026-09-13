@@ -12,6 +12,7 @@ use std::{
 use windows_sys::Win32::{Graphics::Gdi::ClientToScreen, UI::WindowsAndMessaging::*};
 
 pub(super) struct Session {
+    wake: wake::Wake,
     // Drop the Hook before its owner HWND and before the pane windows.
     hook: HookSession,
     _icon_subscription: desktop_shell::DesktopChangeSubscription,
@@ -26,8 +27,10 @@ pub(super) struct Session {
     generation: isize,
     last_scan: Instant,
     last_reconcile: Instant,
+    audit_interval: Duration,
     audit: DesktopAudit,
     last_tick: Instant,
+    tick_deferred: bool,
     last_sync: Instant,
     last_icon_scan: Instant,
     layout_checked: Cell<Instant>,
@@ -56,7 +59,7 @@ struct DesktopAudit {
 }
 
 impl DesktopAudit {
-    fn start() -> Result<Self, String> {
+    fn start(wake: wake::Wake) -> Result<Self, String> {
         let (requests, receiver) = mpsc::channel();
         let (sender, results) = mpsc::channel();
         std::thread::Builder::new()
@@ -74,6 +77,7 @@ impl DesktopAudit {
                     if sender.send(result).is_err() {
                         break;
                     }
+                    wake.notify();
                 }
             })
             .map_err(|error| format!("无法启动桌面检查：{error}"))?;
@@ -142,6 +146,7 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
     }
     let (_, receiver) = mpsc::channel();
     let state = Rc::new(RefCell::new(PaneApp {
+        wake: Default::default(),
         folders: HashMap::new(),
         settings: None,
         session: None,
@@ -179,11 +184,6 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
         .collect();
     for id in ids {
         create_view(&state, id)?;
-        let s = state.borrow();
-        let v = s.views.last().unwrap();
-        unsafe {
-            SetTimer(v.window.hwnd().cast(), 1, 25, None);
-        }
     }
     let tray_state = Rc::downgrade(&state);
     let appearance_state = Rc::downgrade(&state);
@@ -275,6 +275,7 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), S
     let input_receiver = Rc::clone(&input_state);
     let pending_desktop_input = Rc::new(Cell::new(None));
     let pending_input = Rc::clone(&pending_desktop_input);
+    let work_ready = state.borrow().wake.clone();
     let controller = windows_window::Window::new("LucidPane Hybrid Controller")
         .size(1, 1)
         .style(WS_POPUP)
@@ -284,6 +285,7 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), S
                 // Releasing a failed/stale connection must not quit independent panes.
                 Some(0)
             } else if message == ICON_CHANGE_MESSAGE {
+                work_ready.notify();
                 if std::env::var_os("LUCIDPANE_ICON_TRACE").is_some() {
                     eprintln!("icon-notify event={:x}", lparam);
                 }
@@ -292,6 +294,7 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), S
                     .add(unsafe { icon_changes::capture(wparam, lparam as u32) });
                 Some(0)
             } else if message == RECYCLE_CHANGE_MESSAGE {
+                work_ready.notify();
                 if std::env::var_os("LUCIDPANE_ICON_TRACE").is_some() {
                     eprintln!("recycle-notify event={:x}", lparam);
                 }
@@ -301,8 +304,10 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), S
                 Some(0)
             } else if message == SCENE_DIRTY_MESSAGE {
                 notify.set(true);
+                work_ready.notify();
                 Some(0)
             } else if message == DESKTOP_INPUT_MESSAGE {
+                work_ready.notify();
                 if wparam as isize == view {
                     pending_input.set(Some(lparam as u32));
                     if let Some(state) = input_receiver.borrow().upgrade() {
@@ -339,6 +344,7 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), S
     let snapshot = native_desktop_snapshot()?;
     let (sender, receiver) = mpsc::channel();
     let session = Session {
+        wake: state.borrow().wake.clone(),
         hook,
         _icon_subscription: icon_subscription,
         _recycle_subscription: recycle_subscription,
@@ -352,8 +358,10 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), S
         generation: -1,
         last_scan: Instant::now(),
         last_reconcile: Instant::now(),
-        audit: DesktopAudit::start()?,
-        last_tick: Instant::now(),
+        audit_interval: Duration::from_secs(1),
+        audit: DesktopAudit::start(state.borrow().wake.clone())?,
+        last_tick: Instant::now() - Duration::from_millis(20),
+        tick_deferred: false,
         last_sync: Instant::now(),
         last_icon_scan: Instant::now() - Duration::from_secs(1),
         layout_checked: Cell::new(Instant::now()),
@@ -501,6 +509,7 @@ pub(super) fn unregister_drop(state: &mut PaneApp, hwnd: windows_sys::Win32::Fou
 }
 
 fn refresh(s: &mut PaneApp) -> Result<(), String> {
+    s.session.as_mut().unwrap().audit_interval = Duration::from_secs(1);
     normalize_pane_orders(s);
     let h = s.session.as_mut().unwrap();
     let mut accepted = None;
@@ -622,6 +631,9 @@ pub(super) fn sync(s: &mut PaneApp) -> Result<(), String> {
         match publish(s) {
             Ok(()) => {
                 s.session.as_mut().unwrap().last_sync = Instant::now();
+                // Membership changes should request their icons immediately,
+                // even if a previous idle scan ran within the throttle window.
+                queue_pane_icons(s, true);
                 return Ok(());
             }
             Err(error) => {
@@ -870,9 +882,14 @@ pub(super) fn tick(s: &mut PaneApp) -> Result<(), String> {
 
 fn tick_once(s: &mut PaneApp) -> Result<(), String> {
     let h = s.session.as_mut().unwrap();
-    if h.last_tick.elapsed() < Duration::from_millis(20) || h.menu_active.get() {
+    if h.menu_active.get() {
         return Ok(());
     }
+    if h.last_tick.elapsed() < Duration::from_millis(20) {
+        h.tick_deferred = true;
+        return Ok(());
+    }
+    h.tick_deferred = false;
     h.last_tick = Instant::now();
     let mut urgent = h.dirty.replace(false);
     if urgent {
@@ -929,22 +946,20 @@ fn tick_once(s: &mut PaneApp) -> Result<(), String> {
         }
         refresh_views(s);
     }
-    refresh_changed_icons(s);
+    urgent |= refresh_changed_icons(s);
     let was_down = s.session.as_ref().unwrap().mouse_down;
     poll_drag(s)?;
     let h = s.session.as_mut().unwrap();
     urgent |= was_down && !h.mouse_down;
     if h.last_scan.elapsed() > Duration::from_millis(500) && !h.mouse_down {
         h.last_scan = Instant::now();
-        if h.hook.request(&Request::new(QUERY))? != OK {
-            return Err("桌面 Hook 已退出".into());
-        }
+        // The runtime supervisor owns the liveness check.
         // Explorer can reorder its owner-data model without changing item count or
         // sending the public sort messages. Reconcile identities even in that case.
         if h.hook.request(&Request::new(QUERY_SHELL_GENERATION))? != h.generation {
             refresh(s)?;
             urgent = true;
-        } else if h.last_reconcile.elapsed() > Duration::from_secs(1) && !h.audit.pending {
+        } else if h.last_reconcile.elapsed() >= h.audit_interval && !h.audit.pending {
             h.audit
                 .requests
                 .send(())
@@ -967,10 +982,7 @@ fn tick_once(s: &mut PaneApp) -> Result<(), String> {
                     refresh(s)?;
                     urgent = true;
                 } else {
-                    // Preserve the periodic re-publish that repairs internal
-                    // Explorer presentation resets, without re-reading metadata.
-                    h.published.borrow_mut().clear();
-                    urgent = true;
+                    h.audit_interval = (h.audit_interval * 2).min(Duration::from_secs(15));
                 }
             }
             Some(Err(mpsc::TryRecvError::Disconnected)) => {
@@ -980,8 +992,11 @@ fn tick_once(s: &mut PaneApp) -> Result<(), String> {
             None | Some(Err(mpsc::TryRecvError::Empty)) => {}
         }
     }
-    // Explicit user operations still call sync immediately. Only repeated timer
-    // checks are coalesced; dirty scenes and release updates are never delayed.
+    // Keep a slow repair for unobservable Explorer presentation resets. Normal
+    // updates are driven by input, Shell notifications and worker completions.
+    if s.session.as_ref().unwrap().last_sync.elapsed() >= Duration::from_secs(30) {
+        s.session.as_ref().unwrap().published.borrow_mut().clear();
+    }
     if sync_due(urgent, s.session.as_ref().unwrap().last_sync.elapsed()) {
         sync(s)
     } else {
@@ -990,25 +1005,59 @@ fn tick_once(s: &mut PaneApp) -> Result<(), String> {
 }
 
 fn sync_due(urgent: bool, elapsed: Duration) -> bool {
-    urgent || elapsed >= Duration::from_millis(100)
+    urgent || elapsed >= Duration::from_secs(30)
+}
+
+// A one-shot timer exists only for active input, debounce or retry deadlines.
+// The supervisor's slow heartbeat handles audits and missed notifications.
+pub(super) fn next_work(s: &PaneApp) -> Option<u32> {
+    let h = s.session.as_ref()?;
+    let now = Instant::now();
+    if let Some(retry) = h.retry_after {
+        return Some(
+            retry
+                .saturating_duration_since(now)
+                .as_millis()
+                .clamp(25, 1000) as u32,
+        );
+    }
+    if h.menu_active.get() {
+        return None;
+    }
+    if h.tick_deferred || h.mouse_down || h.dirty.get() || h.pending_desktop_input.get().is_some() {
+        return Some(25);
+    }
+    let icon_due = h
+        .icon_due
+        .filter(|_| h.initial_batches == 0 && h.icon_reload.is_none());
+    icon_due
+        .into_iter()
+        .chain(
+            h.icon_failures
+                .iter()
+                .filter(|(key, (attempts, _))| *attempts < 5 && !h.requested.contains(*key))
+                .map(|(_, (_, due))| *due),
+        )
+        .min()
+        .map(|due| {
+            due.saturating_duration_since(now)
+                .as_millis()
+                .clamp(25, 1000) as u32
+        })
 }
 
 fn baseline_matches(h: &Session) -> Result<bool, String> {
     if h.baseline.len() != h.snapshot.view_indices.len() {
         return Ok(false);
     }
-    for (&index, point) in h.snapshot.view_indices.iter().zip(&h.baseline) {
-        let mut query = Request::new(QUERY_ORIGINAL_POSITION);
-        query.item = index;
-        if h.hook.request(&query)? != point.x as isize {
-            return Ok(false);
-        }
-        query.x = 1;
-        if h.hook.request(&query)? != point.y as isize {
-            return Ok(false);
-        }
-    }
-    Ok(true)
+    let positions: Vec<_> = h
+        .snapshot
+        .view_indices
+        .iter()
+        .zip(&h.baseline)
+        .map(|(&index, point)| (index, point.x, point.y))
+        .collect();
+    h.hook.baseline_matches(h.generation as u32, &positions)
 }
 
 fn valid_inventory(snapshot: &NativeDesktopSnapshot) -> bool {
@@ -1179,12 +1228,12 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_ticks_coalesce_but_dirty_and_release_updates_are_immediate() {
-        for elapsed in [0, 20, 40, 60, 80] {
+    fn idle_ticks_do_not_publish_but_dirty_and_release_updates_are_immediate() {
+        for elapsed in [0, 10, 100, 1000, 5000, 29_999] {
             assert!(!sync_due(false, Duration::from_millis(elapsed)));
             assert!(sync_due(true, Duration::from_millis(elapsed)));
         }
-        assert!(sync_due(false, Duration::from_millis(100)));
+        assert!(sync_due(false, Duration::from_secs(30)));
     }
     #[test]
     fn same_count_reorder_is_detected_and_membership_follows_identity() {
@@ -1297,7 +1346,7 @@ const ICON_CHANGE_MESSAGE: u32 = WM_APP + 0x352;
 
 // Shell notifications are separate from layout revisions: Recycle Bin can change
 // artwork without changing its identity, label, position or item count.
-fn refresh_changed_icons(s: &mut PaneApp) {
+fn refresh_changed_icons(s: &mut PaneApp) -> bool {
     let h = s.session.as_mut().unwrap();
     if !h.icons_dirty.borrow().is_empty() && h.icon_due.is_none() {
         h.icon_due = Some(Instant::now() + Duration::from_millis(200));
@@ -1356,6 +1405,7 @@ fn refresh_changed_icons(s: &mut PaneApp) {
         if !identities.is_empty() {
             let size = h.snapshot.icon_size.max(128);
             let (sender, receiver) = mpsc::channel();
+            let wake = h.wake.clone();
             match std::thread::Builder::new()
                 .name("pane-icon-refresh".into())
                 .spawn(move || {
@@ -1381,6 +1431,7 @@ fn refresh_changed_icons(s: &mut PaneApp) {
                         })
                         .collect();
                     let _ = sender.send(images);
+                    wake.notify();
                 }) {
                 Ok(_) => {
                     h.icon_reload = Some(receiver);
@@ -1392,6 +1443,7 @@ fn refresh_changed_icons(s: &mut PaneApp) {
     if changed {
         refresh_views(s);
     }
+    changed
 }
 
 const RECYCLE_CHANGE_MESSAGE: u32 = WM_APP + 0x353;
@@ -1433,6 +1485,7 @@ fn queue_pane_icons(s: &mut PaneApp, force: bool) {
         return;
     }
     let sender = h.sender.clone();
+    let wake = h.wake.clone();
     let size = h.snapshot.icon_size.max(128);
     h.initial_batches += 1;
     std::thread::spawn(move || {
@@ -1448,6 +1501,7 @@ fn queue_pane_icons(s: &mut PaneApp, force: bool) {
             );
         }
         let _ = sender.send(Loaded { requested, images });
+        wake.notify();
     });
 }
 

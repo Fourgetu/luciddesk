@@ -24,6 +24,15 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 use windows_window::Window;
 pub const ANIMATE_FOLD: u32 = WM_APP + 10;
+pub(super) fn update_auto_hide(hwnd: HWND, enabled: bool) {
+    unsafe {
+        if enabled {
+            SetTimer(hwnd, 3, 60, None);
+        } else {
+            KillTimer(hwnd, 3);
+        }
+    }
+}
 const SYNC_POINTER: u32 = WM_APP + 11;
 pub(super) const RUN_POSTED_ACTION: u32 = WM_APP + 12;
 const DESKTOP_LAYER: windows_sys::core::PCWSTR = windows_sys::w!("LucidPane.DesktopLayer");
@@ -810,14 +819,6 @@ where
                     }
                     Some(0)
                 }
-                WM_TIMER => {
-                    if event(Event::Tick) {
-                        unsafe {
-                            KillTimer(hwnd, 1);
-                        }
-                    }
-                    Some(0)
-                }
                 WM_LBUTTONDOWN => {
                     let p = point(lparam);
                     let s = scale(hwnd);
@@ -1427,8 +1428,9 @@ where
             }) * s) as i32,
             SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
         );
-        SetTimer(hwnd, 1, 100, None);
-        SetTimer(hwnd, 3, 60, None);
+        if model_init.borrow().auto_hide {
+            SetTimer(hwnd, 3, 60, None);
+        }
     }
     invalidate(hwnd);
     // Bootstrap the transparent composition content before the first visible frame.

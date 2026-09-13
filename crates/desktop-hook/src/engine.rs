@@ -271,6 +271,20 @@ unsafe extern "system" fn subclass(
                     };
                     return Some(apply_layout(state, &batch));
                 }
+                if data.dwData == crate::protocol::BASELINE_MAGIC {
+                    if data.cbData as usize != size_of::<crate::protocol::BaselineCheck>() || data.lpData.is_null() {
+                        return Some(REJECTED);
+                    }
+                    let check = unsafe {
+                        std::ptr::read_unaligned(data.lpData.cast::<crate::protocol::BaselineCheck>())
+                    };
+                    if !check.valid() {
+                        return Some(REJECTED);
+                    }
+                    return Some(if check.matches(state.shell_changes, |item| {
+                        state.geometry.original_position(item).ok().map(|p| (p.x, p.y))
+                    }) { OK } else { 0 });
+                }
                 if data.dwData != MAGIC {
                     return None;
                 }

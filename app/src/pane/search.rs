@@ -74,6 +74,7 @@ struct Request {
     offset: u32,
 }
 struct Search {
+    wake: super::wake::Wake,
     sender: mpsc::Sender<Request>,
     receiver: mpsc::Receiver<(u64, Result<Page, String>)>,
     generation: u64,
@@ -91,6 +92,8 @@ struct Search {
 }
 impl Search {
     fn new() -> Self {
+        let wake = super::wake::Wake::default();
+        let ready = wake.clone();
         let (sender, requests) = mpsc::channel::<Request>();
         let (responses, receiver) = mpsc::channel();
         std::thread::spawn(move || {
@@ -102,9 +105,11 @@ impl Search {
                 if responses.send((request.generation, result)).is_err() {
                     break;
                 }
+                ready.notify();
             }
         });
         Self {
+            wake,
             sender,
             receiver,
             generation: 0,
@@ -122,6 +127,7 @@ impl Search {
         }
     }
     fn change(&mut self, value: String) {
+        self.wake.notify();
         self.generation += 1;
         self.query = value.trim().into();
         self.entries.clear();
@@ -596,8 +602,9 @@ impl Drawing {
             let text = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 1.0)))?;
             let dim = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.85)))?;
             let line = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.16)))?;
-            let outline =
-                canvas_result(target.create_solid_brush(super::theme::panel_border(model.dark)))?;
+            let outline = canvas_result(
+                target.create_solid_brush(super::theme::panel_border(model.dark, model.backdrop)),
+            )?;
             let selected =
                 canvas_result(target.create_solid_brush(ColorF::new(0.75, 0.8, 0.85, 0.17)))?;
             let shape = RoundedRect {
@@ -813,6 +820,7 @@ pub(super) fn create(
     let input = Rc::clone(&editor);
     let mut drawing: Option<Drawing> = None;
     let mut state = Search::new();
+    let wake = state.wake.clone();
     let mut last_click: Option<(usize, Instant)> = None;
     let mut move_origin: Option<super::snap::DragOrigin> = None;
     let window = windows_window::Window::new("Everything 搜索")
@@ -824,6 +832,7 @@ pub(super) fn create(
             match msg {
                 WM_NCCALCSIZE | WM_ERASEBKGND => return Some(0),
                 WM_DESTROY => {
+                    state.wake.unbind();
                     unsafe {
                         KillTimer(hwnd, POLL);
                     }
@@ -990,9 +999,22 @@ pub(super) fn create(
                     }
                     return Some(0);
                 }
-                WM_TIMER if wp == POLL => {
+                message if message == super::wake::READY || (message == WM_TIMER && wp == POLL) => {
+                    state.wake.received();
+                    unsafe {
+                        KillTimer(hwnd, POLL);
+                    }
                     if state.tick() {
                         resize(hwnd, &mut state);
+                    }
+                    if let Some(due) = state.due {
+                        let delay = due
+                            .saturating_duration_since(Instant::now())
+                            .as_millis()
+                            .clamp(1, 1000) as u32;
+                        unsafe {
+                            SetTimer(hwnd, POLL, delay, None);
+                        }
                     }
                     if let Some(input) = input.borrow_mut().as_mut() {
                         let m = model.borrow();
@@ -1002,10 +1024,6 @@ pub(super) fn create(
                                 .light_text,
                         );
                     }
-                    return Some(0);
-                }
-                WM_TIMER => {
-                    (callback.borrow_mut())(Event::Tick);
                     return Some(0);
                 }
                 CLEAR_SELECTION => {
@@ -1216,6 +1234,14 @@ pub(super) fn create(
                     return Some(0);
                 }
                 WM_PAINT => {
+                    if let Some(input) = input.borrow_mut().as_mut() {
+                        let m = model.borrow();
+                        input.appearance(
+                            hwnd,
+                            super::theme::panel_contrast(m.backdrop, m.dark, m.options.text, true)
+                                .light_text,
+                        );
+                    }
                     let mut ps = PAINTSTRUCT::default();
                     unsafe {
                         BeginPaint(hwnd, &raw mut ps);
@@ -1265,12 +1291,12 @@ pub(super) fn create(
             SWP_NOZORDER | SWP_NOACTIVATE,
         );
         ShowWindow(edit(hwnd), SW_SHOWNOACTIVATE);
-        SetTimer(hwnd, POLL, 50, None);
     }
     if let Some(input) = editor.borrow().as_ref() {
         input.position(hwnd);
     }
     invalidate(hwnd);
+    wake.bind(hwnd as isize);
     Ok(window)
 }
 

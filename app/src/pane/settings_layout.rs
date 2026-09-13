@@ -539,46 +539,77 @@ pub(super) fn scene(
             0,
         );
     } else {
+        s.cards.push(Rect::from_xywh(x, 96.0, w, 130.0));
         s.text(
-            Rect::from_xywh(x + 28.0, 98.0, w - 56.0, 36.0),
+            Rect::from_xywh(x + 20.0, 110.0, w - 190.0, 42.0),
             "LucidPane",
             3,
         );
         s.text(
-            Rect::from_xywh(x + 28.0, 140.0, w - 56.0, 26.0),
-            concat!("版本 ", env!("CARGO_PKG_VERSION")),
+            Rect::from_xywh(x + w - 152.0, 118.0, 132.0, 26.0),
+            concat!("v", env!("CARGO_PKG_VERSION"), " · 预览版"),
             0,
         );
         s.text(
-            Rect::from_xywh(x + 28.0, 170.0, w - 56.0, 28.0),
+            Rect::from_xywh(x + 20.0, 158.0, w - 40.0, 28.0),
             "让桌面井然有序，让文件触手可及。",
             1,
         );
         s.text(
-            Rect::from_xywh(x + 28.0, 202.0, w - 56.0, 24.0),
-            format!(
-                "预览版 · {} · 构建 {}",
-                std::env::consts::ARCH,
-                env!("LUCIDPANE_BUILD_REVISION")
-            ),
-            0,
-        );
-        s.text(
-            Rect::from_xywh(x + 28.0, 232.0, w - 56.0, 24.0),
-            crate::diagnostics::system().summary(),
+            Rect::from_xywh(x + 20.0, 192.0, w - 190.0, 22.0),
+            "MIT / Apache-2.0",
             0,
         );
         s.button(
-            Rect::from_xywh(x + 16.0, 270.0, 132.0, 34.0),
+            Rect::from_xywh(x + w - 136.0, 180.0, 116.0, 34.0),
             "项目主页",
             Action::ProjectHome,
             false,
         );
+
+        s.cards.push(Rect::from_xywh(x, 242.0, w, 98.0));
+        let revision = env!("LUCIDPANE_BUILD_REVISION");
+        let build = if revision == "unknown" {
+            "本地构建".to_owned()
+        } else {
+            format!("构建 {revision}")
+        };
+        s.text(Rect::from_xywh(x + 20.0, 254.0, 76.0, 28.0), "版本信息", 0);
         s.text(
-            Rect::from_xywh(x + 160.0, 270.0, (w - 176.0).max(1.0), 34.0),
-            "MIT / Apache-2.0",
-            0,
+            Rect::from_xywh(x + 112.0, 254.0, w - 132.0, 28.0),
+            format!("{} · {build}", std::env::consts::ARCH),
+            1,
         );
+        s.separators
+            .push(Rect::from_xywh(x + 20.0, 290.0, w - 40.0, 1.0));
+        s.text(Rect::from_xywh(x + 20.0, 300.0, 76.0, 28.0), "操作系统", 0);
+        s.text(
+            Rect::from_xywh(x + 112.0, 300.0, w - 132.0, 28.0),
+            crate::diagnostics::system().summary(),
+            1,
+        );
+
+        s.cards.push(Rect::from_xywh(x, 356.0, w, 136.0));
+        s.text(Rect::from_xywh(x + 20.0, 368.0, w - 40.0, 26.0), "桌面连接", 1);
     }
     s
+}
+
+// Shared by the live page and raster tests so status and actions use the same layout.
+pub(super) fn about_status(s: &mut Scene, width: f32, status: &str, copied: bool) {
+    let x = 268.0;
+    let w = width - x - 44.0;
+    s.text(Rect::from_xywh(x, 398.0, w, 32.0), status, 0);
+    s.button(
+        Rect::from_xywh(x, 442.0, 144.0, 34.0),
+        "重新连接桌面",
+        Action::Change(Event::RetryDesktop),
+        false,
+    );
+    s.button(
+        Rect::from_xywh(x + 156.0, 442.0, 116.0, 34.0),
+        if copied { "已复制" } else { "复制诊断" },
+        Action::CopyDiagnostics,
+        false,
+    );
 }

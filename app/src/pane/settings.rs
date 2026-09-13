@@ -18,7 +18,7 @@ use windows_sys::Win32::{
 const SELECT_PANEL: u32 = WM_APP + 95;
 const PREPARE_REVEAL: u32 = WM_APP + 96;
 const REVEAL_TIMER: usize = 0x4c5055;
-const DEFAULT_HEIGHT: i32 = 600;
+pub(super) const DEFAULT_HEIGHT: i32 = 600;
 const MIN_HEIGHT: f32 = 560.0;
 
 struct PendingReveal {
@@ -1284,9 +1284,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     );
                 if page == 6 { body.text(Rect::from_xywh(248.0, 408.0, w - 282.0, 48.0), &backup_status, 0); }
                 if page == 5 {
-                    body.button(Rect::from_xywh(426.0, 374.0, 132.0, 34.0), if diagnostics_copied { "已复制" } else { "复制诊断" }, Action::CopyDiagnostics, false);
-                    body.text(Rect::from_xywh(264.0, 320.0, w - 304.0, 40.0), &desktop_status, 0);
-                    body.button(Rect::from_xywh(264.0, 374.0, 150.0, 34.0), "重新连接桌面", Action::Change(Event::RetryDesktop), false);
+                    layout::about_status(&mut body, w, &desktop_status, diagnostics_copied);
                 }
                 cached_scene = Some(with_titlebar(body, w, key.9));
                 scene_key = Some(key);
@@ -2030,16 +2028,31 @@ mod tests {
         );
     }
     #[test]
+    fn about_page_fits_minimum_window() {
+        let width = 800.0;
+        let height = MIN_HEIGHT;
+        let mut body = scene(width, height - TITLE_HEIGHT, 5, true,
+            (PanelTheme::Dark, Backdrop::Mica), desktop_core::PaneOptions::default());
+        layout::about_status(&mut body, width, "桌面分组已连接", true);
+        let s = with_titlebar(body, width, false);
+        for bounds in s.text.iter().map(|(bounds, _, _)| bounds)
+            .chain(s.cards.iter()).chain(s.controls.iter().map(|c| &c.bounds)) {
+            assert!(bounds.left >= 0.0 && bounds.top >= 0.0
+                && bounds.right <= width && bounds.bottom <= height);
+        }
+    }
+
+    #[test]
     fn settings_layout_and_rendering_at_multiple_scales() {
         let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
         let painter = Painter::new().unwrap();
+        let export_snapshots = std::env::var_os("LUCIDPANE_TEST_EXPORT_SNAPSHOTS").is_some();
         {
             let device = windows_canvas::GpuDevice::new_warp().unwrap();
             for scale in [1.0, 1.5, 2.0] {
                 for page in [0, 1, 3, 4, 5, 6, 7] {
                     for dark in [false, true] {
-                        let s = with_titlebar(
-                            scene(
+                        let mut body = scene(
                                 940.0,
                                 620.0 - TITLE_HEIGHT,
                                 page,
@@ -2058,10 +2071,11 @@ mod tests {
                                     },
                                 ),
                                 desktop_core::PaneOptions::default(),
-                            ),
-                            940.0,
-                            false,
-                        );
+                            );
+                        if page == 5 {
+                            layout::about_status(&mut body, 940.0, "桌面分组已连接", false);
+                        }
+                        let s = with_titlebar(body, 940.0, false);
                         for c in &s.controls {
                             assert!(
                                 c.bounds.left >= 0.0
@@ -2097,7 +2111,7 @@ mod tests {
                         let pixels = bitmap.pixels().unwrap();
                         assert!(pixels.chunks_exact(4).all(|p| p[3] == 255));
                         assert_eq!(pixels[0] < 128, dark);
-                        if scale == 1.0 {
+                        if export_snapshots && scale == 1.0 {
                             // Standalone raster for visual review, independent of the live desktop.
                             let mut bmp = vec![0u8; 54];
                             bmp[0..2].copy_from_slice(b"BM");
@@ -2112,8 +2126,6 @@ mod tests {
                             let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                                 .join("../target")
                                 .join(match (page, dark) {
-                                    (2, true) => "settings-group-dark.bmp",
-                                    (2, false) => "settings-group-light.bmp",
                                     (3, true) => "settings-peek-dark.bmp",
                                     (3, false) => "settings-peek-light.bmp",
                                     (4, true) => "settings-search-dark.bmp",

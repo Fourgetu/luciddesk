@@ -220,8 +220,16 @@ pub(super) fn brush(
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn material_palettes_and_blend_contract() {
+        // windows-rs caches agile WinRT factories for the process lifetime.
+        // libtest tears down a fresh STA after each test; keep COM alive while
+        // those caches remain reachable, just as the real app's UI loop does.
+        static COM_RUNTIME: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+        COM_RUNTIME.get_or_init(|| unsafe {
+            windows::Win32::System::Com::CoIncrementMTAUsage().unwrap().0 as usize
+        });
         let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
         for dark in [false, true] {
             let (base, tint) = mica_palette(dark, false);

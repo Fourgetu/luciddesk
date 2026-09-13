@@ -12,6 +12,9 @@ use windows_sys::Win32::{
 };
 #[path = "../src/pane/acrylic.rs"]
 mod acrylic;
+#[allow(dead_code)]
+#[path = "../src/pane/animation.rs"]
+mod animation;
 #[allow(dead_code, unused_imports)]
 #[path = "../src/pane/native_graphics.rs"]
 mod native_graphics;

@@ -153,7 +153,12 @@ pub(super) fn maintain(state: &Rc<RefCell<PaneApp>>, force: bool) -> Result<(), 
         drop(removed);
         let ids: Vec<_> = {
             let s = state.borrow();
-            let search_enabled = everything_settings::enabled(&s.store)?;
+            let search_enabled = s
+                .workspace
+                .panels()
+                .iter()
+                .any(|p| p.is_search() && !s.views.iter().any(|v| v.id == p.id()))
+                && everything_settings::enabled(&s.store)?;
             s.workspace
                 .panels()
                 .iter()
@@ -231,6 +236,8 @@ pub(super) fn reload(state: &Rc<RefCell<PaneApp>>) -> Result<(), String> {
 
 pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window::Window, String> {
     let weak = Rc::downgrade(state);
+    let wake = state.borrow().wake.clone();
+    let received = wake.clone();
     let mut hotkey = search_hotkey::Registration::default();
     let show_message = unsafe { RegisterWindowMessageW(windows_sys::w!("LucidPane.ShowExisting")) };
     let window = windows_window::Window::new("LucidPane Runtime")
@@ -239,6 +246,7 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
         .ex_style(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)
         .on_message(move |raw, msg, wp, _| {
             if msg == WM_DESTROY {
+                received.unbind();
                 hotkey.update(raw as isize, None);
                 return Some(0);
             }
@@ -269,11 +277,32 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
                 }
                 return Some(0);
             }
-            if msg != WM_TIMER {
+            if msg != WM_TIMER && msg != super::wake::READY {
                 return None;
+            }
+            if msg == super::wake::READY {
+                received.received();
             }
             if let Some(state) = weak.upgrade() {
                 if state.try_borrow_mut().is_ok() {
+                    {
+                        let mut s = state.borrow_mut();
+                        folder::poll(&mut s);
+                        if s.session.is_some() {
+                            if let Err(error) = hybrid::tick(&mut s) {
+                                eprintln!("Desktop synchronization: {error}");
+                            }
+                        }
+                        unsafe {
+                            KillTimer(raw.cast(), 2);
+                            if let Some(delay) = hybrid::next_work(&s) {
+                                SetTimer(raw.cast(), 2, delay, None);
+                            }
+                        }
+                    }
+                    if msg != WM_TIMER || wp != 1 {
+                        return Some(0);
+                    }
                     let previous = {
                         let s = state.borrow();
                         (status(&s), backup_status(&s), search_hotkey::status())
@@ -282,10 +311,11 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
                         eprintln!("Runtime recovery: {error}");
                     }
                     let s = state.borrow();
-                    let enabled = everything_settings::enabled(&s.store).unwrap_or(false)
-                        && s.views
-                            .iter()
-                            .any(|v| s.workspace.panel(v.id).is_some_and(Panel::is_search));
+                    let enabled = s
+                        .views
+                        .iter()
+                        .any(|v| s.workspace.panel(v.id).is_some_and(Panel::is_search))
+                        && everything_settings::enabled(&s.store).unwrap_or(false);
                     hotkey.update(raw as isize, enabled.then(search_hotkey::settings));
                     if previous != (status(&s), backup_status(&s), search_hotkey::status())
                         && let Some(settings) = &s.settings
@@ -293,6 +323,12 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
                         unsafe {
                             InvalidateRect(settings.hwnd().cast(), std::ptr::null(), 0);
                         }
+                    }
+                } else {
+                    // Nested COM/menu callbacks can temporarily hold PaneApp.
+                    // Retry the coalesced notification instead of dropping it.
+                    unsafe {
+                        SetTimer(raw.cast(), 2, 25, None);
                     }
                 }
             }
@@ -304,6 +340,7 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
         ShowWindow(window.hwnd().cast(), SW_HIDE);
         SetTimer(window.hwnd().cast(), 1, 1000, None);
     }
+    wake.bind(window.hwnd() as isize);
     Ok(window)
 }
 
@@ -311,20 +348,55 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
 mod tests {
     use super::*;
     #[test]
-    fn suspended_desktop_preserves_membership_and_independent_panes() {
-        let _sta = ShellApartment::initialize_sta().unwrap();
-        unsafe {
-            windows::Win32::System::Ole::OleInitialize(None).unwrap();
-        }
-        struct Ole;
-        impl Drop for Ole {
-            fn drop(&mut self) {
-                unsafe {
-                    windows::Win32::System::Ole::OleUninitialize();
+    fn folder_completion_reaches_supervisor_without_timer_polling() {
+        let root = std::env::temp_dir().join(format!(
+            "lucidpane-wake-folder-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let state = Rc::new(RefCell::new(super::super::tests::test_state()));
+        let id = PanelId::new(2);
+        state
+            .borrow_mut()
+            .workspace
+            .panel_mut(id)
+            .unwrap()
+            .set_folder(Some(root.clone()));
+        folder::ensure(&mut state.borrow_mut(), id).unwrap();
+        let supervisor = supervisor(&state).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while state.borrow().folders[&id].loading && Instant::now() < deadline {
+            unsafe {
+                let mut msg = MSG::default();
+                // Deliberately do not dispatch WM_TIMER: the worker notification
+                // must deliver the initial snapshot even if it finished pre-bind.
+                while PeekMessageW(
+                    &raw mut msg,
+                    supervisor.hwnd().cast(),
+                    super::super::wake::READY,
+                    super::super::wake::READY,
+                    PM_REMOVE,
+                ) != 0
+                {
+                    DispatchMessageW(&msg);
                 }
             }
+            std::thread::sleep(Duration::from_millis(5));
         }
-        let _ole = Ole;
+        assert!(!state.borrow().folders[&id].loading);
+        assert!(state.borrow().folders[&id].status.is_none());
+        drop(supervisor);
+        state.borrow_mut().folders.clear();
+        std::fs::remove_dir(root).unwrap();
+    }
+
+    #[test]
+    fn suspended_desktop_preserves_membership_and_independent_panes() {
+        let _sta = ShellApartment::initialize_sta().unwrap();
         let state = Rc::new(RefCell::new(super::super::tests::test_state()));
         create_view(&state, PanelId::new(1)).unwrap();
         handle(
