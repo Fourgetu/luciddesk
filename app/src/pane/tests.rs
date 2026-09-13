@@ -318,6 +318,13 @@ fn folder_pane_creation_switch_and_close_preserve_real_files() {
     }
     assert_eq!(state.borrow().views[0].model.borrow().items.len(), 2);
     assert!(state.borrow().views[0].model.borrow().is_list());
+    for column in 1..=3 {
+        handle(&state, id, Event::ToggleFolderColumn(column)).unwrap();
+    }
+    handle(&state, id, Event::ToggleFolderColumn(0)).unwrap();
+    assert_eq!(state.borrow().views[0].model.borrow().folder_visible_columns, 1);
+    assert_eq!(folder::visible_columns(&state.borrow().store, id).unwrap(), 1);
+    assert_eq!(folder::visible_columns(&state.borrow().store, PanelId::new(1)).unwrap(), 15);
     state.borrow().views[0]
         .model
         .borrow_mut()
@@ -358,6 +365,7 @@ fn folder_pane_creation_switch_and_close_preserve_real_files() {
         Some(root.as_path())
     );
     handle(&state, id, Event::SetFolder(root.join("child"))).unwrap();
+    assert_eq!(state.borrow().views[0].model.borrow().folder_visible_columns, 1);
     assert_eq!(
         state.borrow().views[0].model.borrow().folder.as_deref(),
         Some(root.join("child").as_path())
@@ -473,6 +481,7 @@ fn snapped_content_bottom_and_scrollbar_use_the_same_row_metrics() {
     let mut model = GroupModel {
         folder_sort: (0, false),
         folder_columns: None,
+        folder_visible_columns: 15,
         folder_navigation: [false; 2],
         list_view: false,
         folder: None,
@@ -481,6 +490,7 @@ fn snapped_content_bottom_and_scrollbar_use_the_same_row_metrics() {
         theme: desktop_core::PanelTheme::Dark,
         dark: true,
         hovered_item: None,
+        scrollbar: Default::default(),
         hovered_button: None,
         pressed_button: None,
         focused: false,
@@ -587,6 +597,7 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
     let model = Rc::new(RefCell::new(GroupModel {
         folder_sort: (0, false),
         folder_columns: None,
+        folder_visible_columns: 15,
         folder_navigation: [false; 2],
         list_view: false,
         folder: None,
@@ -595,6 +606,7 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
         theme: desktop_core::PanelTheme::Dark,
         dark: true,
         hovered_item: None,
+        scrollbar: Default::default(),
         hovered_button: None,
         pressed_button: None,
         focused: false,
@@ -951,6 +963,91 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
         }
         assert!(matches!(keyboard_events.borrow().as_slice(),
             [Event::SortFolder(0), Event::SortFolder(1), Event::SortFolder(2), Event::SortFolder(3)]));
+        keyboard_events.borrow_mut().clear();
+        model.borrow_mut().folder_visible_columns = 9; // Name and size only.
+        let before = model.borrow().list_columns(width);
+        let weights = model.borrow().folder_columns.unwrap();
+        SendMessageW(hwnd, WM_LBUTTONDOWN, 0, position(before[3]));
+        SendMessageW(hwnd, WM_MOUSEMOVE, 1, position(before[3] + 15.0));
+        SendMessageW(hwnd, WM_LBUTTONUP, 0, position(before[3] + 15.0));
+        assert!((model.borrow().list_columns(width)[3] - before[3] - 15.0).abs() < 1.0);
+        let resized = model.borrow().folder_columns.unwrap();
+        assert!((resized[1] - weights[1]).abs() < 0.0001);
+        assert!((resized[2] - weights[2]).abs() < 0.0001);
+        let after = model.borrow().list_columns(width);
+        SendMessageW(hwnd, WM_LBUTTONDOWN, 0, position((after[3] + after[4]) / 2.0));
+        SendMessageW(hwnd, WM_LBUTTONUP, 0, position((after[3] + after[4]) / 2.0));
+        assert!(matches!(keyboard_events.borrow().as_slice(), [Event::SetFolderColumns(_), Event::SortFolder(3)]));
+    }
+    // Real messages exercise capture, paging, hover, and frame hit testing for
+    // mapped lists, desktop lists, and icon grids without sending global input.
+    unsafe {
+        use windows_sys::Win32::UI::WindowsAndMessaging::*;
+        let dpi = windows_sys::Win32::UI::HiDpi::GetDpiForWindow(hwnd).max(96) as f32 / 96.0;
+        let mut rect = RECT::default();
+        GetClientRect(hwnd, &raw mut rect);
+        let width = rect.right as f32 / dpi;
+        let height = rect.bottom as f32 / dpi;
+        let position = |x: f32, y: f32| (((y * dpi).round() as i32 as u16 as isize) << 16)
+            | ((x * dpi).round() as i32 as u16 as isize);
+        for (list, folder) in [(true, true), (true, false), (false, false)] {
+            {
+                let mut m = model.borrow_mut();
+                m.list_view = list;
+                m.folder = folder.then(|| std::path::PathBuf::from("C:\\"));
+                m.scroll = 0;
+                m.items = (0..100).map(|i| Item {
+                    identity: ShellIdentity::Namespace { parsing_name: format!("scroll:{i}") },
+                    label: format!("Item {i}"), image: None, details: Default::default(),
+                }).collect();
+                m.select_item(0, false, false);
+            }
+            keyboard_events.borrow_mut().clear();
+            let bar = super::scrollbar::Bar::for_model(&model.borrow(), width, height).unwrap();
+            let x = bar.left + super::scrollbar::Bar::WIDTH / 2.0;
+            let y = bar.thumb_top + 5.0;
+            let mut point = windows_sys::Win32::Foundation::POINT {
+                x: (x * dpi).round() as i32, y: (y * dpi).round() as i32,
+            };
+            windows_sys::Win32::Graphics::Gdi::ClientToScreen(hwnd, &raw mut point);
+            let screen = ((point.y as u16 as isize) << 16) | point.x as u16 as isize;
+            assert_eq!(SendMessageW(hwnd, WM_NCHITTEST, 0, screen), HTCLIENT as isize);
+            point.x += ((width - 1.0 - x) * dpi).round() as i32;
+            let screen = ((point.y as u16 as isize) << 16) | point.x as u16 as isize;
+            assert_eq!(SendMessageW(hwnd, WM_NCHITTEST, 0, screen), HTRIGHT as isize);
+            SendMessageW(hwnd, WM_MOUSEMOVE, 0, position(x, y));
+            assert!(model.borrow().scrollbar.hovered);
+            assert_eq!(model.borrow().hovered_item, None);
+            SendMessageW(hwnd, WM_LBUTTONDOWN, 0, position(x, y));
+            assert!(model.borrow().scrollbar.dragging);
+            SendMessageW(hwnd, WM_MOUSEMOVE, 1, position(x, bar.top + bar.height + 100.0));
+            assert_eq!(model.borrow().scroll, bar.max);
+            SendMessageW(hwnd, WM_MOUSEMOVE, 1, position(x, bar.top - 50.0));
+            assert_eq!(model.borrow().scroll, 0);
+            SendMessageW(hwnd, WM_LBUTTONUP, 0, position(x, y));
+            assert!(!model.borrow().scrollbar.dragging);
+            assert_ne!(windows_sys::Win32::UI::Input::KeyboardAndMouse::GetCapture(), hwnd);
+            SendMessageW(hwnd, WM_LBUTTONDOWN, 0, position(x, bar.top + bar.height - 1.0));
+            SendMessageW(hwnd, WM_LBUTTONUP, 0, position(x, bar.top + bar.height - 1.0));
+            assert_eq!(model.borrow().scroll, bar.page.min(bar.max));
+            assert_eq!(model.borrow().selected, Some(0));
+            assert!(keyboard_events.borrow().is_empty());
+            model.borrow_mut().scroll = 0;
+            for (message, key) in [(WM_KEYDOWN, 0x1b), (WM_CAPTURECHANGED, 0)] {
+                SendMessageW(hwnd, WM_LBUTTONDOWN, 0, position(x, y));
+                assert!(model.borrow().scrollbar.dragging);
+                SendMessageW(hwnd, message, key, 0);
+                assert!(!model.borrow().scrollbar.dragging);
+                SendMessageW(hwnd, WM_LBUTTONUP, 0, position(x, y));
+            }
+            SendMessageW(hwnd, windows_sys::Win32::UI::Controls::WM_MOUSELEAVE, 0, 0);
+            assert!(!model.borrow().scrollbar.hovered);
+            model.borrow_mut().collapsed = true;
+            assert!(super::scrollbar::Bar::for_model(&model.borrow(), width, height).is_none());
+            model.borrow_mut().collapsed = false;
+            model.borrow_mut().items.clear();
+            assert!(super::scrollbar::Bar::for_model(&model.borrow(), width, height).is_none());
+        }
     }
     window::prepare_close(hwnd);
     drop(pane);
@@ -963,6 +1060,7 @@ fn pane_layer_switch_and_wallpaper_material_initialize() {
     let model = Rc::new(RefCell::new(GroupModel {
         folder_sort: (0, false),
         folder_columns: None,
+        folder_visible_columns: 15,
         folder_navigation: [false; 2],
         list_view: false,
         folder: None,
@@ -971,6 +1069,7 @@ fn pane_layer_switch_and_wallpaper_material_initialize() {
         theme: desktop_core::PanelTheme::Dark,
         dark: true,
         hovered_item: None,
+        scrollbar: Default::default(),
         hovered_button: None,
         pressed_button: None,
         focused: false,
@@ -1806,6 +1905,7 @@ fn multiselection_preserves_anchor_toggle_and_file_identity_on_refresh() {
     let mut model = GroupModel {
         folder_sort: (0, false),
         folder_columns: None,
+        folder_visible_columns: 15,
         folder_navigation: [false; 2],
         list_view: false,
         folder: None,
@@ -1814,6 +1914,7 @@ fn multiselection_preserves_anchor_toggle_and_file_identity_on_refresh() {
         theme: desktop_core::PanelTheme::Dark,
         dark: true,
         hovered_item: None,
+        scrollbar: Default::default(),
         hovered_button: None,
         pressed_button: None,
         focused: false,

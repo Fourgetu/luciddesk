@@ -7,6 +7,7 @@ pub struct GroupModel {
     pub list_view: bool,
     pub folder_sort: (u8, bool),
     pub folder_columns: Option<[f32; 4]>,
+    pub folder_visible_columns: u8,
     pub folder_navigation: [bool; 2],
     pub folder: Option<std::path::PathBuf>,
     pub folder_status: Option<String>,
@@ -15,6 +16,7 @@ pub struct GroupModel {
     pub dark: bool,
 
     pub hovered_item: Option<usize>,
+    pub scrollbar: super::scrollbar::State,
     pub focused: bool,
     pub auto_hide: bool,
     pub locked: bool,
@@ -59,7 +61,7 @@ impl GroupModel {
     }
     pub(super) fn list_columns(&self, width: f32) -> [f32; 5] {
         if self.folder.is_some() {
-            super::columns::bounds(width, self.folder_columns)
+            super::columns::visible_bounds(width, self.folder_columns, self.folder_visible_columns)
         } else {
             [32.0, width, width, width, width]
         }

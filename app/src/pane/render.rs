@@ -134,7 +134,7 @@ impl Renderer {
                         &hover,
                     );
                 }
-                let trailing_width = if row.trailing.is_empty() { 0.0 } else { 72.0 };
+                let trailing_width = if !row.children.is_empty() { 24.0 } else if row.trailing.is_empty() { 0.0 } else { 72.0 };
                 for (label, left, available) in [
                     (row.icon, 12.0, 20.0),
                     (row.label, 38.0, width - 50.0 - trailing_width),
@@ -154,7 +154,10 @@ impl Renderer {
                         &text,
                     );
                 }
-                if trailing_width > 0.0 {
+                if !row.children.is_empty() {
+                    target.clipped_text("\u{e76c}", &self.icons,
+                        &Rect::from_xywh(width - 28.0, top, 16.0, super::menu::ROW_HEIGHT), &text);
+                } else if trailing_width > 0.0 {
                     target.clipped_text(
                         row.trailing,
                         &self.menu_shortcut,
@@ -492,7 +495,9 @@ impl Renderer {
                     let list = model.is_list();
                     let columns = model.list_columns(grid.cell_width);
                     if list && model.folder.is_some() {
-                        for boundary in &columns[1..4] {
+                        for column in 1..4 {
+                            if model.folder_visible_columns & (1 << column) == 0 { continue; }
+                            let boundary = columns[column];
                             target.fill_rect(
                                 &Rect::from_xywh(
                                     super::layout::PADDING + boundary,
@@ -504,6 +509,7 @@ impl Renderer {
                         }
                         for (column, name) in ["文件名", "类型", "修改时间", "大小"].iter().enumerate()
                         {
+                            if column > 0 && model.folder_visible_columns & (1 << column) == 0 { continue; }
                             let inset = if column == 0 { 0.0 } else { 8.0 };
                             let left = super::layout::PADDING + columns[column] + inset;
                             let top = grid.content_top - super::layout::LIST_HEADER;
@@ -671,6 +677,19 @@ impl Renderer {
                                 &Rect::from_xywh(left, top, iw, ih),
                                 1.0,
                             );
+                        } else {
+                            // Enumeration is published before Shell image extraction.
+                            // Keep a visible placeholder while loading or after a failure.
+                            target.clipped_text(
+                                if item.details.folder { "\u{e8b7}" } else { "\u{e8a5}" },
+                                &self.icons,
+                                &Rect::from_xywh(
+                                    if list { x + 4.0 } else { x + (grid.cell_width - grid.icon_size) / 2.0 },
+                                    y, grid.icon_size,
+                                    if list { grid.cell_height } else { grid.icon_size },
+                                ),
+                                &white,
+                            );
                         }
 
                         if list {
@@ -683,6 +702,7 @@ impl Renderer {
                                 if column > 0 && model.folder.is_none() {
                                     continue;
                                 }
+                                if column > 0 && model.folder_visible_columns & (1 << column) == 0 { continue; }
                                 if column == 0 && model.renaming.as_ref() == Some(&item.identity) {
                                     continue;
                                 }
@@ -742,25 +762,31 @@ impl Renderer {
                         );
                     }
                     target.pop_clip();
-                    let max = grid.max_scroll(model.items.len());
-                    // Intermediate fold heights can overflow even when the expanded pane fits.
-                    if max > 0 && !model.collapsed && model.reveal >= 1.0 {
-                        let track = (h - HEADER - 24.0).max(10.0);
-                        let thumb = (track / (max + 1) as f32).max(16.0).min(track);
+                    if let Some(bar) = super::scrollbar::Bar::for_model(model, w, h) {
+                        let expansion = model.scrollbar.expansion.clamp(0.0, 1.0);
+                        let center = bar.left + super::scrollbar::Bar::WIDTH / 2.0;
+                        if expansion > 0.0 {
+                            let track_width = 2.0 + 4.0 * expansion;
+                            let track = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.06 * expansion)))?;
+                            target.fill_rounded_rect(
+                                &RoundedRect {
+                                    rect: Rect::from_xywh(center - track_width / 2.0, bar.top, track_width, bar.height),
+                                    radius_x: track_width / 2.0, radius_y: track_width / 2.0,
+                                }, &track,
+                            );
+                        }
+                        let width = 2.0 + 2.0 * expansion;
+                        let thumb = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.85 + 0.15 * expansion)))?;
                         target.fill_rounded_rect(
                             &RoundedRect {
                                 rect: Rect::from_xywh(
-                                    w - 6.0,
-                                    HEADER
-                                        + 12.0
-                                        + (track - thumb) * model.scroll as f32 / max as f32,
-                                    2.0,
-                                    thumb,
+                                    center - width / 2.0,
+                                    bar.thumb_top, width, bar.thumb_height,
                                 ),
-                                radius_x: 1.0,
-                                radius_y: 1.0,
+                                radius_x: width / 2.0,
+                                radius_y: width / 2.0,
                             },
-                            &dim,
+                            &thumb,
                         );
                     }
                 }
@@ -902,6 +928,17 @@ mod tests {
             let height = (300.0 * scale) as u32;
             let pixels = renderer.pixels(width, height, scale, &model).unwrap();
             let mut blank = model.clone();
+            let bar = super::super::scrollbar::Bar::for_model(&model, 480.0, 300.0).unwrap();
+            let mut hovered = model.clone();
+            hovered.scrollbar.hovered = true;
+            hovered.scrollbar.expansion = 1.0;
+            let active = renderer.pixels(width, height, scale, &hovered).unwrap();
+            assert!(((bar.top * scale) as u32..((bar.top + bar.height) * scale) as u32).any(|row| {
+                ((bar.left * scale) as u32..((bar.left + super::super::scrollbar::Bar::WIDTH) * scale) as u32).any(|col| {
+                    let at = ((row * width + col) * 4) as usize;
+                    pixels[at..at + 4] != active[at..at + 4]
+                })
+            }), "scrollbar hover must be visible at scale {scale}");
             for item in &mut blank.items {
                 item.label.clear();
                 item.details = Default::default();
@@ -1005,9 +1042,10 @@ mod tests {
         let mut renderer = Renderer::new().unwrap();
         let entries = [super::super::menu::Entry {
             id: 1,
-            label: "设置",
+            label: "返回上个文件夹",
             icon: "",
-            trailing: "",
+            trailing: "Alt + ←",
+            children: Vec::new(),
         }];
         for (width, height, scale) in [
             (240, 48, 1.0),
@@ -1038,6 +1076,7 @@ mod tests {
         GroupModel {
             folder_sort: (0, false),
             folder_columns: None,
+            folder_visible_columns: 15,
         folder_navigation: [false; 2],
             list_view: false,
             folder: None,
@@ -1047,6 +1086,7 @@ mod tests {
             dark: true,
 
             hovered_item: None,
+            scrollbar: Default::default(),
             focused: true,
             auto_hide: false,
             locked: false,

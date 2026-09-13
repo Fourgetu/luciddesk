@@ -100,6 +100,10 @@ pub(super) fn handle(
         folder::save_columns(&state.borrow(), id, widths)?;
         return Ok(false);
     }
+    if let Event::ToggleFolderColumn(column) = event {
+        folder::toggle_column(&state.borrow(), id, column)?;
+        return Ok(false);
+    }
     if let Event::NavigateFolder(path) = &event {
         folder::navigate(&mut state.borrow_mut(), id, Some(path.clone()))?;
         return Ok(false);
@@ -128,7 +132,7 @@ pub(super) fn handle(
     }
     if matches!(
         event,
-        Event::ExportBackup | Event::RestoreBackup | Event::OpenBackups | Event::OpenConfigDirectory | Event::ReloadConfig
+        Event::ExportBackup | Event::CreateBackup | Event::RestoreBackupPath(_) | Event::ExportBackupPath(_) | Event::DeleteBackup(_) | Event::RestoreBackup | Event::OpenBackups | Event::OpenConfigDirectory | Event::ReloadConfig
     ) {
         recovery::request(state, &event);
         return Ok(false);
@@ -653,6 +657,9 @@ pub(super) fn handle(
                 RectDip::new(240.0, 240.0, 480.0, 360.0),
             );
             panel.set_folder(path.clone());
+            if path.is_some() {
+                folder::Defaults::load(&s.store)?.apply(&s.store, &mut panel)?;
+            }
             if search {
                 panel.set_search(true);
                 panel.set_title("Everything 搜索".to_string());
@@ -684,10 +691,15 @@ pub(super) fn handle(
     match event {
         Event::SortFolder(_)
         | Event::SetFolderColumns(_)
+        | Event::ToggleFolderColumn(_)
         | Event::NavigateFolder(_)
         | Event::FolderBack
         | Event::FolderHome
         | Event::ExportBackup
+        | Event::CreateBackup
+        | Event::RestoreBackupPath(_)
+        | Event::ExportBackupPath(_)
+        | Event::DeleteBackup(_)
         | Event::RestoreBackup
         | Event::OpenBackups
         | Event::OpenConfigDirectory
@@ -901,24 +913,6 @@ pub(super) fn handle(
                 }
             }
             save(&mut s)?;
-        }
-        Event::Sort => {
-            if s.folders.contains_key(&id) {
-                folder::sort(&mut s, id, 0)?;
-                return Ok(false);
-            }
-            if s.workspace.panel(id).is_none() {
-                return Ok(false);
-            }
-            let mut items = items_for(&s, id);
-            items.sort_by_key(|i| i.label.to_lowercase());
-            let old = s.workspace.clone();
-            set_order(&mut s.workspace, id, &items);
-            if let Err(error) = save(&mut s) {
-                s.workspace = old;
-                return Err(error);
-            }
-            refresh_views(&mut s);
         }
         Event::Drop { index, point } => {
             let source = items_for(&s, id);

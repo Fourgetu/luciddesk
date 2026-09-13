@@ -1,6 +1,44 @@
 use super::*;
 
 #[test]
+fn backup_in_progress_preserves_policy_controls_and_prevents_duplicate_jobs() {
+    for enabled in [false, true] {
+        let mut body=scene(800.0,MIN_HEIGHT-TITLE_HEIGHT,6,true,
+            (PanelTheme::System,Backdrop::Mica),desktop_core::PaneOptions::default());
+        body.controls.retain(|c|c.bounds.left<224.0);
+        let view=recovery::View {busy:true,..Default::default()};
+        layout::backup_page(&mut body,800.0,&view,recovery::Policy {enabled,..Default::default()},0,false);
+        let toggle=body.controls.iter().find(|c|matches!(c.action,Action::BackupPolicy(0))).unwrap();
+        assert!(toggle.enabled);
+        assert_eq!(toggle.selected,enabled);
+        assert!(body.controls.iter().filter(|c|matches!(c.action,Action::BackupPolicy(_))).all(|c|c.enabled));
+        assert!(!body.controls.iter().find(|c|matches!(c.action,Action::Change(Event::CreateBackup))).unwrap().enabled);
+    }
+}
+
+#[test]
+fn folder_defaults_are_saved_and_only_copied_into_new_panels() {
+    let store = WorkspaceStore::open_in_memory().unwrap();
+    assert_eq!(folder::Defaults::load(&store).unwrap(), folder::Defaults::default());
+    let mut first = Panel::new(PanelId::new(10), "first", desktop_core::RectDip::new(0.0, 0.0, 480.0, 360.0));
+    first.set_folder(Some(std::path::PathBuf::from(r"C:\first")));
+    folder::Defaults::load(&store).unwrap().apply(&store, &mut first).unwrap();
+    folder::Defaults { list: false, columns: 8 }.save(&store).unwrap();
+    let saved = folder::Defaults::load(&store).unwrap();
+    assert_eq!(saved.columns, 9);
+    let mut second = Panel::new(PanelId::new(11), "second", first.rect());
+    second.set_folder(Some(std::path::PathBuf::from(r"C:\second")));
+    saved.apply(&store, &mut second).unwrap();
+    assert!(!second.list_view());
+    assert_eq!(folder::visible_columns(&store, second.id()).unwrap(), 9);
+    folder::Defaults::default().save(&store).unwrap();
+    assert!(first.list_view());
+    assert_eq!(folder::visible_columns(&store, first.id()).unwrap(), 15);
+    assert!(!second.list_view());
+    assert_eq!(folder::visible_columns(&store, second.id()).unwrap(), 9);
+}
+
+#[test]
 fn grid_slider_centers_default_and_scales_in_both_directions() {
     assert_eq!(grid_slider_position(100.0), 0.5);
     assert_eq!(grid_slider_value(0.5), 100.0);
@@ -279,7 +317,10 @@ fn about_page_fits_minimum_window() {
 fn backup_config_controls_fit_minimum_window() {
     let mut body=scene(800.0,MIN_HEIGHT-TITLE_HEIGHT,6,true,
         (PanelTheme::System,Backdrop::Mica),desktop_core::PaneOptions::default());
-    body.text(Rect::from_xywh(248.0,474.0,518.0,32.0),"自动备份失败",0);
+    body.controls.retain(|c| c.bounds.left < 224.0);
+    body.text.retain(|(r,_,_)| r.left < 224.0 || r.top < 80.0);
+    body.separators.clear();
+    layout::backup_page(&mut body,800.0,&recovery::View::default(),recovery::Policy::default(),0,true);
     let s=with_titlebar(body,800.0,false);
     for bounds in s.text.iter().map(|(r,_,_)|r).chain(s.controls.iter().map(|c|&c.bounds)) {
         assert!(bounds.right<=800.0 && bounds.bottom<=MIN_HEIGHT);
@@ -295,7 +336,7 @@ fn settings_layout_and_rendering_at_multiple_scales() {
     {
         let device = windows_canvas::GpuDevice::new_warp().unwrap();
         for scale in [1.0, 1.5, 2.0] {
-            for page in [0, 1, 3, 4, 5, 6, 7] {
+            for page in [0, 1, 3, 4, 5, 6, 7, 8, 9, 10] {
                 for dark in [false, true] {
                     let mut body = scene(
                             940.0,
@@ -317,6 +358,16 @@ fn settings_layout_and_rendering_at_multiple_scales() {
                             ),
                             desktop_core::PaneOptions::default(),
                         );
+                    if matches!(page,6|9|10) {
+                        body.controls.retain(|c|c.bounds.left<224.0);
+                        body.text.retain(|(r,_,_)|r.left<224.0||r.top<80.0);
+                        body.separators.clear();
+                        let view=recovery::View {status:"手动备份成功 · 上次备份：今天 14:32".into(),records:(0..5).map(|i|recovery::Record {
+                            path:std::path::PathBuf::from(format!("backup-{i}.db")),date:"2026/09/14 14:32".into(),kind:if i==0{"手动"}else{"自动"},bytes:131072,
+                        }).collect(),..Default::default()};
+                        if page==9 {layout::backup_history(&mut body,940.0,&view,0);}else{layout::backup_page(&mut body,940.0,&view,recovery::Policy::default(),0,page==10);}
+                    }
+                    if page == 8 { layout::folder_defaults(&mut body, 940.0, folder::Defaults::default()); }
                     if page == 5 {
                         layout::about_status(&mut body, 940.0, "桌面分组已连接", false);
                     }
@@ -375,6 +426,10 @@ fn settings_layout_and_rendering_at_multiple_scales() {
                                 (3, false) => "settings-peek-light.bmp",
                                 (4, true) => "settings-search-dark.bmp",
                                 (4, false) => "settings-search-light.bmp",
+                                (9, true) => "settings-backup-history-dark.bmp",
+                                (9, false) => "settings-backup-history-light.bmp",
+                                (10, true) => "settings-backup-advanced-dark.bmp",
+                                (10, false) => "settings-backup-advanced-light.bmp",
                                 (6, true) => "settings-backup-dark.bmp",
                                 (6, false) => "settings-backup-light.bmp",
                                 (7, true) => "settings-colors-dark.bmp",

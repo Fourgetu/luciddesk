@@ -191,6 +191,7 @@ fn shell_icon(item: &IShellItem, size: i32) -> windows::core::Result<Pixels> {
             let pixels = icon_pixels(icon);
             let _ = DestroyIcon(icon);
             if let Ok(pixels) = pixels
+                && pixels.data.chunks_exact(4).any(|pixel| pixel[3] != 0)
                 && !is_padded_jumbo(&pixels)
             {
                 return Ok(pixels);
@@ -227,6 +228,19 @@ fn is_padded_jumbo(pixels: &Pixels) -> bool {
 #[cfg(test)]
 mod padding_tests {
     use super::*;
+
+    #[test]
+    #[ignore = "Read-only diagnostic for the reported Downloads executable"]
+    fn reported_executable_has_visible_icon() {
+        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let pixels = load(&ShellIdentity::FileSystem {
+            path: std::path::PathBuf::from(r"C:\Users\Yuchen\Downloads\Fences6_setup.exe"),
+            volume_id: None, file_id: None,
+        }, 128).unwrap();
+        let visible = pixels.data.chunks_exact(4).filter(|p| p[3] != 0).count();
+        eprintln!("Fences icon {}x{}, visible pixels {visible}", pixels.width, pixels.height);
+        assert!(visible > 0);
+    }
 
     #[test]
     #[ignore = "Read-only icon diagnostic; set LUCIDPANE_TEST_FOLDER and LUCIDPANE_ICON_OUTPUT"]

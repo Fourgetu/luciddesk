@@ -17,6 +17,7 @@ fn multi_window_render_latency() {
             label: "文件夹面板与菜单",
             icon: "",
             trailing: "Ctrl+L",
+            children: Vec::new(),
         })
         .collect();
     for i in 0..4 {

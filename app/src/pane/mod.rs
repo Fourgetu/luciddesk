@@ -10,6 +10,7 @@ mod assets;
 mod canvas;
 mod composition;
 mod columns;
+mod scrollbar;
 mod display_layout;
 mod drag_drop;
 mod events;
@@ -127,6 +128,10 @@ enum Event {
     Refresh,
     RetryDesktop,
     ExportBackup,
+    CreateBackup,
+    RestoreBackupPath(std::path::PathBuf),
+    ExportBackupPath(std::path::PathBuf),
+    DeleteBackup(std::path::PathBuf),
     RestoreBackup,
     OpenBackups,
     OpenConfigDirectory,
@@ -156,6 +161,7 @@ enum Event {
     OpenFolder,
     SortFolder(u8),
     SetFolderColumns([f32; 4]),
+    ToggleFolderColumn(u8),
     NavigateFolder(std::path::PathBuf),
     FolderBack,
     FolderHome,
@@ -168,7 +174,6 @@ enum Event {
     Drop { index: usize, point: POINT },
     Geometry(RectDip),
     Collapse,
-    Sort,
     Exit,
 }
 
@@ -220,6 +225,7 @@ fn create_view(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> 
     let model = Rc::new(RefCell::new(GroupModel {
         folder_sort: (0, false),
         folder_columns: folder::saved_columns(&state.borrow().store, id)?,
+        folder_visible_columns: folder::visible_columns(&state.borrow().store, id)?,
         folder_navigation: [false; 2],
         list_view: panel.list_view(),
         folder: panel.folder().map(Path::to_path_buf),
@@ -229,6 +235,7 @@ fn create_view(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> 
         dark: theme::is_dark(panel.theme()),
 
         hovered_item: None,
+        scrollbar: Default::default(),
         focused: false,
         auto_hide: panel.auto_hide(),
         locked: panel.locked(),

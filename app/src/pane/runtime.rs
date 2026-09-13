@@ -12,9 +12,7 @@ pub(super) struct State {
     pub desktop_error: Option<String>,
     last_attempt: Instant,
     pub layouts: display_layout::Layouts,
-    last_backup: Instant,
-    backup_changes: u64,
-    backup_error: Option<String>,
+    pub backup: recovery::Manager,
 }
 
 impl State {
@@ -24,9 +22,7 @@ impl State {
             desktop_error: None,
             last_attempt: Instant::now(),
             layouts: Default::default(),
-            last_backup: Instant::now() - Duration::from_secs(300),
-            backup_changes: 0,
-            backup_error: None,
+            backup: recovery::Manager::default(),
         }
     }
 }
@@ -100,25 +96,7 @@ fn suspend(state: &Rc<RefCell<PaneApp>>) {
 
 pub(super) fn maintain(state: &Rc<RefCell<PaneApp>>, force: bool) -> Result<(), String> {
     display_layout::tick(state)?;
-    {
-        let mut s = state.borrow_mut();
-        let changes = s.store.change_count();
-        let due = s.runtime.as_ref().is_some_and(|r| {
-            r.last_backup.elapsed() >= Duration::from_secs(300) && r.backup_changes != changes
-        });
-        if due {
-            let result = recovery::snapshot(&s, "auto");
-            let runtime = s.runtime.as_mut().unwrap();
-            runtime.last_backup = Instant::now();
-            runtime.backup_error = result.err();
-            if runtime.backup_error.is_none() {
-                runtime.backup_changes = changes;
-            }
-            if let Some(error) = &runtime.backup_error {
-                eprintln!("Configuration backup failed: {error}");
-            }
-        }
-    }
+    recovery::maintain(state);
     if state
         .borrow()
         .session
@@ -181,10 +159,7 @@ pub(super) fn maintain(state: &Rc<RefCell<PaneApp>>, force: bool) -> Result<(), 
 }
 
 pub(super) fn backup_status(s: &PaneApp) -> String {
-    s.runtime
-        .as_ref()
-        .and_then(|r| r.backup_error.as_ref())
-        .map_or_else(String::new, |error| format!("自动备份失败：{error}"))
+    recovery::view(s).status
 }
 
 pub(super) fn reload(state: &Rc<RefCell<PaneApp>>) -> Result<(), String> {

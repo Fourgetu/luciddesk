@@ -57,6 +57,12 @@ use windows_sys::Win32::UI::Controls::WM_MOUSELEAVE;
 
 #[derive(Clone)]
 enum Action {
+    FolderDefaults(folder::Defaults),
+    BackupPolicy(u8),
+    BackupRecord(std::path::PathBuf),
+    BackupPage(isize),
+    BackupAdvanced,
+    BackupStatus,
     ProjectHome,
     CopyDiagnostics,
     Window(u32),
@@ -83,6 +89,12 @@ enum Action {
     EverythingBrowse,
     EverythingDetect,
     EverythingLaunch,
+}
+fn backup_row_action(action: &Action) -> bool {
+    matches!(action, Action::BackupPolicy(_) | Action::BackupRecord(_) | Action::BackupPage(_)
+        | Action::BackupAdvanced | Action::BackupStatus | Action::Page(6|9|10)
+        | Action::Change(Event::CreateBackup | Event::RestoreBackup | Event::RestoreBackupPath(_)
+            | Event::OpenBackups | Event::OpenConfigDirectory | Event::ReloadConfig | Event::ExportBackup))
 }
 struct Control {
     bounds: Rect,
@@ -303,46 +315,6 @@ fn with_titlebar(mut scene: Scene, width: f32, maximized: bool) -> Scene {
     scene
 }
 
-fn caption_lines(bounds: Rect, command: u32) -> Vec<(Vector2, Vector2)> {
-    let x = (bounds.left + bounds.right) / 2.0 - 5.0;
-    let y = (bounds.top + bounds.bottom) / 2.0 - 5.0;
-    let segments: &[(f32, f32, f32, f32)] = match command {
-        SC_MINIMIZE => &[(0.0, 5.0, 10.0, 5.0)],
-        SC_CLOSE => &[(0.0, 0.0, 10.0, 10.0), (10.0, 0.0, 0.0, 10.0)],
-        SC_RESTORE => &[
-            (2.0, 0.0, 10.0, 0.0),
-            (10.0, 0.0, 10.0, 8.0),
-            (10.0, 8.0, 8.0, 8.0),
-            (2.0, 0.0, 2.0, 2.0),
-            (0.0, 2.0, 8.0, 2.0),
-            (8.0, 2.0, 8.0, 10.0),
-            (8.0, 10.0, 0.0, 10.0),
-            (0.0, 10.0, 0.0, 2.0),
-        ],
-        _ => &[
-            (0.0, 0.0, 10.0, 0.0),
-            (10.0, 0.0, 10.0, 10.0),
-            (10.0, 10.0, 0.0, 10.0),
-            (0.0, 10.0, 0.0, 0.0),
-        ],
-    };
-    segments
-        .iter()
-        .map(|&(x1, y1, x2, y2)| {
-            (
-                Vector2 {
-                    x: x + x1,
-                    y: y + y1,
-                },
-                Vector2 {
-                    x: x + x2,
-                    y: y + y2,
-                },
-            )
-        })
-        .collect()
-}
-
 // Windows may calculate the frame synchronously while the main handler is
 // detached. Keep the client-area decision independent of application state.
 unsafe extern "system" fn frame_proc(
@@ -373,6 +345,9 @@ unsafe extern "system" fn frame_proc(
     unsafe { DefSubclassProc(hwnd, msg, wp, lp) }
 }
 
+const SETTINGS_ICON_SIZE: f32 = 12.0;
+const SETTINGS_NAV_ICON_SIZE: f32 = 18.0;
+
 struct Painter {
     app_icon: super::assets::Pixels,
     formats: Vec<windows_canvas::TextFormat>,
@@ -382,9 +357,9 @@ impl Painter {
     fn new() -> windows::core::Result<Self> {
         use windows_canvas::{FontWeight, ParagraphAlignment, TextFormat, WordWrapping};
         let mut formats = vec![];
-        for (i, size) in [12.0, 14.0, 20.0, 28.0, 18.0].iter().enumerate() {
+        for (i, size) in [12.0, 14.0, 20.0, 28.0, SETTINGS_ICON_SIZE, SETTINGS_NAV_ICON_SIZE].iter().enumerate() {
             let format = canvas_result(TextFormat::with_weight(
-                if i == 4 {
+                if i >= 4 {
                     "Segoe Fluent Icons"
                 } else {
                     super::assets::UI_FONT
@@ -394,6 +369,7 @@ impl Painter {
             ))?
             .with_paragraph_alignment(ParagraphAlignment::Center)
             .with_word_wrapping(WordWrapping::NoWrap);
+            let format = if i >= 4 {format.with_alignment(windows_canvas::TextAlignment::Center)} else {format};
             super::canvas::ellipsis(&format)?;
             formats.push(format);
         }
@@ -410,6 +386,7 @@ impl Painter {
             },
             formats,
             button_format,
+
         })
     }
     fn paint(
@@ -596,14 +573,7 @@ impl Painter {
                             1.0,
                         );
                         t.fill_ellipse(
-                            &Ellipse {
-                                center: Vector2 {
-                                    x: r.left + 12.0,
-                                    y: (r.top + r.bottom) / 2.0,
-                                },
-                                radius_x: 7.0,
-                                radius_y: 7.0,
-                            },
+                            &toggle_thumb(r, if c.selected { 1.0 } else { 0.0 }),
                             &muted,
                         );
                         continue;
@@ -715,8 +685,26 @@ impl Painter {
                         }
                         continue;
                     }
+                    if matches!(c.action, Action::BackupPolicy(1 | 2)) {
+                        let rounded=RoundedRect {rect:c.bounds,radius_x:4.0,radius_y:4.0};
+                        t.fill_rounded_rect(&rounded,if c.enabled && hover==Some(i){&hovered}else{&card});
+                        t.draw_rounded_rect(&rounded,&border,1.0);
+                        if c.enabled {
+                            t.draw_line(Vector2 {x:c.bounds.left+4.0,y:c.bounds.bottom-1.0},
+                                Vector2 {x:c.bounds.right-4.0,y:c.bounds.bottom-1.0},
+                                if focus==Some(i){&accent}else{&muted},if focus==Some(i){2.0}else{1.0});
+                        }
+                        let text=if c.enabled{&ink}else{&muted};
+                        t.clipped_text(&c.label,&self.formats[1],
+                            &Rect::from_xywh(c.bounds.left+12.0,c.bounds.top,c.bounds.right-c.bounds.left-44.0,32.0),text);
+                        t.clipped_text("\u{e70d}",&self.formats[4],
+                            &Rect::from_xywh(c.bounds.right-28.0,c.bounds.top,16.0,32.0),text);
+                        continue;
+                    }
                     let navigation = matches!(c.action, Action::Page(_)) && c.bounds.left < 224.0;
                     let caption = matches!(c.action, Action::Window(_));
+                    let plain = backup_row_action(&c.action);
+
                     let material = matches!(c.action, Action::Change(Event::Material(_)));
                     let rr = RoundedRect {
                         rect: c.bounds,
@@ -750,7 +738,7 @@ impl Painter {
                             a: 1.0,
                         }))?;
                         t.fill_rounded_rect(&rr, &brush);
-                    } else if (!navigation && !caption) || c.selected || hover == Some(i) {
+                    } else if (!navigation && !caption && !plain) || c.selected || hover == Some(i) {
                         t.fill_rounded_rect(
                             &rr,
                             if c.toggle && c.selected {
@@ -764,7 +752,7 @@ impl Painter {
                             },
                         );
                     }
-                    if (!navigation && !caption) || focus == Some(i) {
+                    if (!navigation && !caption && !plain) || focus == Some(i) {
                         t.draw_rounded_rect(
                             &rr,
                             if focus == Some(i) || c.selected {
@@ -943,31 +931,30 @@ impl Painter {
                                 &ink
                             };
                         if let Action::Window(command) = c.action {
-                            let stroke = scale.round().max(1.0) / scale;
-                            let snap = |v: f32| (v * scale).floor() / scale + stroke / 2.0;
-                            for (a, b) in caption_lines(c.bounds, command) {
-                                t.draw_line(
-                                    Vector2 {
-                                        x: snap(a.x),
-                                        y: snap(a.y),
-                                    },
-                                    Vector2 {
-                                        x: snap(b.x),
-                                        y: snap(b.y),
-                                    },
-                                    brush,
-                                    stroke,
-                                );
-                            }
+                            let glyph=match command {
+                                SC_MINIMIZE=>"\u{e921}",SC_MAXIMIZE=>"\u{e922}",SC_RESTORE=>"\u{e923}",SC_CLOSE=>"\u{e8bb}",_=>"",
+                            };
+                            t.clipped_text(glyph,&self.formats[4],&c.bounds,brush);
                         }
                     } else {
                         let mut bounds = c.bounds;
-                        if navigation {
-                            bounds.left += 48.0;
+                        if navigation {bounds.left += 48.0;} else if plain {bounds.left += 10.0;}
+                        if !navigation {
+                            let back=matches!(c.action,Action::Page(0|6));
+                            let forward=matches!(c.action,Action::Page(9)|Action::BackupAdvanced);
+                            if back || forward {
+                                // Center the compact back button's icon and label as one group.
+                                let left=if back && !plain {
+                                    (c.bounds.left+c.bounds.right-52.0)/2.0
+                                }else if back {bounds.left}else{c.bounds.right-28.0};
+                                t.clipped_text(if back {"\u{e72b}"}else{"\u{e76c}"},&self.formats[4],
+                                    &Rect::from_xywh(left,c.bounds.top,16.0,c.bounds.bottom-c.bounds.top),&ink);
+                                if back {bounds.left=left+24.0;}else{bounds.right-=40.0;}
+                            }
                         }
                         t.clipped_text(
                             &c.label,
-                            if navigation {
+                            if navigation || plain || matches!(c.action,Action::Page(0|6)) {
                                 &self.formats[1]
                             } else {
                                 &self.button_format
@@ -1022,6 +1009,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
         )
     };
     let mut options = state.borrow().workspace.pane_options();
+    let mut folder_defaults = folder::Defaults::load(&state.borrow().store)?;
     let painter = Painter::new().map_err(|e| e.to_string())?;
     let mut surface: Option<composition::Surface> = None;
     let mut reveal: Option<PendingReveal> = None;
@@ -1052,6 +1040,9 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
     let mut desktop_status = String::new();
     let mut diagnostics_copied = false;
     let mut backup_status = String::new();
+    let mut backup_view = recovery::View::default();
+    let mut backup_policy = recovery::Policy::default();
+    let mut backup_offset = 0usize;
     let mut toggle_timer_running = false;
     let mut toggle_motion = std::collections::HashMap::<usize, ToggleMotion>::new();
     let prepared = Rc::new(std::cell::Cell::new(false));
@@ -1284,6 +1275,14 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 search_visible = state.views.iter().any(|v| state.workspace.panel(v.id).is_some_and(Panel::is_search));
                 desktop_status = runtime::status(&state);
                 backup_status = runtime::backup_status(&state);
+                let fresh = recovery::view(&state);
+                let policy = recovery::Policy::load(&state.store);
+                snapshot_changed |= fresh != backup_view || policy != backup_policy;
+                backup_view = fresh; backup_policy = policy;
+                if backup_offset >= backup_view.records.len() {backup_offset = 0;}
+                let defaults=folder::Defaults::load(&state.store).unwrap_or_default();
+                snapshot_changed |= defaults != folder_defaults;
+                folder_defaults=defaults;
                 options = state.workspace.pane_options();
                 appearance = state
                     .workspace
@@ -1329,7 +1328,13 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         appearance,
                         options,
                     );
-                if page == 6 { body.text(Rect::from_xywh(248.0, 474.0, w - 282.0, 32.0), &backup_status, 0); }
+                if page == 8 { layout::folder_defaults(&mut body, w, folder_defaults); }
+                if matches!(page,6|9|10) {
+                    body.controls.retain(|c| c.bounds.left < 224.0);
+                    body.text.retain(|(r,_,_)| r.left < 224.0 || r.top < 80.0);
+                    body.separators.clear();
+                    if page==9 {layout::backup_history(&mut body,w,&backup_view,backup_offset);} else {layout::backup_page(&mut body,w,&backup_view,backup_policy,0,page==10);}
+                }
                 if page == 5 {
                     layout::about_status(&mut body, w, &desktop_status, diagnostics_copied);
                 }
@@ -1680,6 +1685,51 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 .filter(|c| c.enabled)
             {
                 match &c.action {
+                    Action::BackupStatus => {
+                        let message=backup_view.status.clone();
+                        window::defer_action(move || {window::error(&message);});
+                    }
+                    Action::BackupAdvanced => {page=10;scene_key=None;focus=None;}
+                    Action::BackupPage(direction) => {
+                        let count=6;
+                        backup_offset=if *direction<0{backup_offset.saturating_sub(count)}else{backup_offset+count};scene_key=None;
+                    }
+                    Action::BackupPolicy(kind) => {
+                        let state=Rc::clone(&state);let kind=*kind;
+                        let mut point=windows_sys::Win32::Foundation::POINT {
+                            x:(c.bounds.left*scale).round() as i32,
+                            y:((c.bounds.bottom+4.0)*scale).round() as i32,
+                        };
+                        unsafe{ClientToScreen(hwnd,&raw mut point);}
+                        window::defer_action(move || {
+                            let mut policy=recovery::Policy::load(&state.borrow().store);
+                            if kind==0 {policy.enabled=!policy.enabled;} else {
+                                let options:Vec<u64>=if kind==1{vec![5,15,30,60]}else{vec![10,20,50]};
+                                let labels=if kind==1{vec!["5 分钟","15 分钟","30 分钟","60 分钟"]}else{vec!["最近 10 份","最近 20 份","最近 50 份"]};
+                                let rows=options.iter().zip(labels).enumerate().map(|(i,(v,label))|super::menu::entry(i as i32+1,label,if *v==if kind==1{policy.minutes}else{policy.keep as u64}{"\u{e73e}"}else{""},"")).collect();
+                                let result=super::menu::show_entries(hwnd,point,false,appearance.0,appearance.1,rows);
+                                if let Some(value)=usize::try_from(result-1).ok().and_then(|i|options.get(i)) {if kind==1{policy.minutes=*value;}else{policy.keep=*value as usize;}}
+                            }
+                            if let Err(e)=policy.save(&state.borrow().store){window::error(&e);}
+                            unsafe{InvalidateRect(hwnd,std::ptr::null(),0);}
+                        });
+                    }
+                    Action::BackupRecord(path) => {
+                        let state=Rc::clone(&state);let path=path.clone();
+                        let mut point=windows_sys::Win32::Foundation::POINT::default();unsafe{GetCursorPos(&raw mut point);}
+                        window::defer_action(move || {
+                            let rows=vec![super::menu::entry(1,"恢复…","",""),super::menu::entry(2,"导出…","",""),super::menu::entry(3,"删除…","","")];
+                            let result=super::menu::show_entries(hwnd,point,false,appearance.0,appearance.1,rows);
+                            let event=match result{1=>Some(Event::RestoreBackupPath(path)),2=>Some(Event::ExportBackupPath(path)),3=>Some(Event::DeleteBackup(path)),_=>None};
+                            if let Some(event)=event{recovery::request(&state,&event);}
+                        });
+                    }
+                    Action::FolderDefaults(value) => {
+                        match value.save(&state.borrow().store) {
+                            Ok(()) => { folder_defaults = *value; scene_key = None; }
+                            Err(error) => window::error(&error),
+                        }
+                    }
                     Action::StyleInput(percentage) => {
                         style_input = Some((*percentage, String::new()));
                         scene_key = None;

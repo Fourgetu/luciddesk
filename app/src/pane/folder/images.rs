@@ -13,7 +13,6 @@ const WORKERS: usize = 3;
 
 struct Entry {
     item: Item,
-    loaded: Instant,
     used: u64,
     bytes: usize,
 }
@@ -67,7 +66,7 @@ impl Cache {
             || item.details.folder != entry.item.details.folder
             || item.details.size != entry.item.details.size
             || item.identity != entry.item.identity
-            || (entry.item.image.is_none() && entry.loaded.elapsed() >= Duration::from_secs(30))
+            || entry.item.image.is_none()
         {
             self.remove(&key);
             return false;
@@ -101,7 +100,6 @@ impl Cache {
             key,
             Entry {
                 item,
-                loaded: Instant::now(),
                 used: self.clock,
                 bytes,
             },
@@ -393,10 +391,8 @@ mod tests {
         assert!(!cache.restore(&mut item("b")));
         assert!(cache.restore(&mut item("c")));
         let failed = item("failure");
-        let key = failed.identity.persistent_key();
         cache.insert(failed);
-        assert!(cache.restore(&mut item("failure")));
-        cache.entries.get_mut(&key).unwrap().loaded = Instant::now() - Duration::from_secs(31);
+        // A refresh must retry extraction immediately after a transient failure.
         assert!(!cache.restore(&mut item("failure")));
         cache.retain_folder(Path::new(r"C:\test"), &HashSet::new());
         assert_eq!(cache.bytes, 0);

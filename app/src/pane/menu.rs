@@ -17,11 +17,13 @@ use windows_sys::Win32::{
     UI::{HiDpi::GetDpiForWindow, Input::KeyboardAndMouse::*, WindowsAndMessaging::*},
 };
 
+#[derive(Clone)]
 pub struct Entry {
     pub id: i32,
     pub label: &'static str,
     pub icon: &'static str,
     pub trailing: &'static str,
+    pub children: Vec<Entry>,
 }
 pub const ROW_HEIGHT: f32 = 30.0;
 pub fn row_top(rows: &[Entry], index: usize) -> f32 {
@@ -41,6 +43,7 @@ pub(crate) fn entry(
         label,
         icon,
         trailing,
+        children: Vec::new(),
     }
 }
 
@@ -64,51 +67,55 @@ pub fn show(
     theme: desktop_core::PanelTheme,
     backdrop: Backdrop,
     folder: (bool, bool),
+    visible_columns: u8,
 ) -> i32 {
-    let mut rows = vec![
-        entry(1, "新建分组", "", ""),
-        entry(19, "新建文件夹面板…", "", ""),
-        entry(3, "按名称排序", "", ""),
-        entry(0, "", "", ""),
-        entry(
-            10,
-            if locked {
-                "解锁面板"
-            } else {
-                "锁定面板"
-            },
-            "",
-            "",
-        ),
-        entry(7, "自动收起", if auto_hide { "✓" } else { "" }, ""),
-        entry(
-            12,
-            "始终置顶",
-            if unsafe { GetWindowLongW(owner, GWL_EXSTYLE) } as u32 & WS_EX_TOPMOST != 0 {
-                "✓"
-            } else {
-                ""
-            },
-            "",
-        ),
-        entry(0, "", "", ""),
-        entry(11, "关闭分组", "", ""),
-        entry(18, "设置", "", ""),
-        entry(4, "退出 LucidPane", "", ""),
-    ];
-    rows.insert(2, entry(22, if folder.1 { "切换为图标视图" } else { "切换为列表视图" }, "", ""));
+    let topmost = unsafe { GetWindowLongW(owner, GWL_EXSTYLE) } as u32 & WS_EX_TOPMOST != 0;
+    show_entries(owner, anchor, anchored, theme, backdrop,
+        pane_entries(folder, visible_columns, auto_hide, locked, topmost))
+}
+
+fn pane_entries(folder: (bool, bool), visible_columns: u8,
+    auto_hide: bool, locked: bool, topmost: bool) -> Vec<Entry> {
+    let mut rows = Vec::new();
     if folder.0 {
-        rows.splice(
-            2..2,
-            [
-                entry(20, "在资源管理器中打开", "", ""),
-                entry(23, "返回上个文件夹", "", "Alt+←"),
-                entry(21, "更换文件夹…", "", ""),
-                entry(9, "刷新", "", "F5"),
-            ],
-        );
+        rows.extend([
+            entry(20, "在资源管理器中打开", "", ""),
+            entry(9, "刷新", "", "F5"),
+            entry(21, "更换映射文件夹…", "", ""),
+            entry(0, "", "", ""),
+        ]);
     }
-    show_entries(owner, anchor, anchored, theme, backdrop, rows)
+    let mut view = entry(22, "视图", "", "");
+    view.children = vec![
+        entry(25, "图标", if folder.1 { "" } else { "✓" }, ""),
+        entry(26, "列表", if folder.1 { "✓" } else { "" }, ""),
+    ];
+    rows.push(view);
+    if folder.0 && folder.1 {
+        let mut columns = entry(24, "显示列", "", "");
+        columns.children = column_entries(visible_columns);
+        rows.push(columns);
+    }
+    rows.extend([
+        entry(0, "", "", ""),
+        entry(10, "锁定面板", if locked { "✓" } else { "" }, ""),
+        entry(7, "自动收起", if auto_hide { "✓" } else { "" }, ""),
+        entry(12, "始终置顶", if topmost { "✓" } else { "" }, ""),
+        entry(0, "", "", ""),
+        entry(1, "新建普通面板", "", ""),
+        entry(19, "新建文件夹面板…", "", ""),
+        entry(0, "", "", ""),
+        entry(18, "设置…", "", ""),
+        entry(11, "关闭面板", "", ""),
+        entry(4, "退出 LucidPane", "", ""),
+    ]);
+    rows
+}
+
+pub(super) fn column_entries(visible: u8) -> Vec<Entry> {
+    [(1, "类型"), (2, "修改时间"), (3, "大小")].into_iter()
+        .map(|(column, label)| entry(30 + column, label, if visible & (1 << column) != 0 { "✓" } else { "" }, ""))
+        .collect()
 }
 
 pub(crate) fn show_entries(
@@ -118,6 +125,15 @@ pub(crate) fn show_entries(
     theme: desktop_core::PanelTheme,
     backdrop: Backdrop,
     rows: Vec<Entry>,
+) -> i32 {
+    show_level(owner, anchor, anchored, theme, backdrop, rows, None, Rc::new(Cell::new(false)))
+}
+
+fn show_level(
+    owner: HWND, anchor: POINT, anchored: bool,
+    theme: desktop_core::PanelTheme, backdrop: Backdrop, rows: Vec<Entry>,
+    parent_row: Option<RECT>,
+    resume_parent: Rc<Cell<bool>>,
 ) -> i32 {
     let dark = super::theme::is_dark(theme);
     let backdrop = default_material(backdrop, dark);
@@ -153,6 +169,12 @@ pub(crate) fn show_entries(
     let command = Rc::new(Cell::new(0));
     let done_handler = Rc::clone(&done);
     let command_handler = Rc::clone(&command);
+    let resume_handler = Rc::clone(&resume_parent);
+    let child_active = Rc::new(Cell::new(false));
+    let child_active_handler = Rc::clone(&child_active);
+    let pending = Rc::new(Cell::new(None));
+    let pending_handler = Rc::clone(&pending);
+    let child_rows = rows.clone();
     let Ok(renderer) = Renderer::new() else {
         return 0;
     };
@@ -181,7 +203,7 @@ pub(crate) fn show_entries(
                     return Some(0);
                 }
                 WM_ACTIVATE if wparam & 0xffff == WA_INACTIVE as usize => {
-                    done_handler.set(true);
+                    if !child_active_handler.get() { done_handler.set(true); }
                     return Some(0);
                 }
                 WM_PAINT => {
@@ -290,6 +312,10 @@ pub(crate) fn show_entries(
                     if selected != hit {
                         selected = hit;
                         unsafe {
+                            KillTimer(hwnd, 3);
+                            if hit.is_some_and(|i| !rows[i].children.is_empty()) {
+                                SetTimer(hwnd, 3, 200, None);
+                            }
                             InvalidateRect(hwnd, std::ptr::null(), 0);
                         }
                     }
@@ -302,9 +328,10 @@ pub(crate) fn show_entries(
                 }
                 WM_KEYDOWN => match wparam as u16 {
                     VK_ESCAPE | VK_LEFT => {
+                        resume_handler.set(parent_row.is_some());
                         done_handler.set(true);
                     }
-                    VK_RETURN | VK_SPACE => {
+                    VK_RETURN | VK_SPACE | VK_RIGHT => {
                         activate = selected;
                     }
                     VK_UP | VK_DOWN => {
@@ -332,6 +359,10 @@ pub(crate) fn show_entries(
                 WM_TIMER if wparam == 2 => unsafe {
                     InvalidateRect(hwnd, std::ptr::null(), 0);
                 },
+                WM_TIMER if wparam == 3 => {
+                    unsafe { KillTimer(hwnd, 3); }
+                    activate = selected;
+                }
                 WM_TIMER if wparam == 1 => {
                     if fade_finished {
                         unsafe {
@@ -364,8 +395,14 @@ pub(crate) fn show_entries(
                 _ => return None,
             }
             if let Some(index) = activate {
-                command_handler.set(rows[index].id);
-                done_handler.set(true);
+                if rows[index].children.is_empty() {
+                    if message != WM_KEYDOWN || wparam as u16 != VK_RIGHT {
+                        command_handler.set(rows[index].id);
+                        done_handler.set(true);
+                    }
+                } else if !child_active_handler.get() {
+                    pending_handler.set(Some(index));
+                }
             }
 
             Some(0)
@@ -399,6 +436,20 @@ pub(crate) fn show_entries(
                 }
                 break;
             }
+            if let Some(row) = parent_row {
+                if message.hwnd == owner && message.message == WM_MOUSEMOVE {
+                    let mut point = POINT {
+                        x: i32::from((message.lParam as u16).cast_signed()),
+                        y: i32::from(((message.lParam >> 16) as u16).cast_signed()),
+                    };
+                    ClientToScreen(owner, &raw mut point);
+                    if point.x < row.left || point.x >= row.right || point.y < row.top || point.y >= row.bottom {
+                        resume_parent.set(true);
+                        DispatchMessageW(&raw const message);
+                        break;
+                    }
+                }
+            }
             if anchored && message.hwnd == owner && message.message == WM_LBUTTONDOWN {
                 let mut bounds = RECT::default();
                 GetClientRect(owner, &raw mut bounds);
@@ -414,9 +465,29 @@ pub(crate) fn show_entries(
             }
             TranslateMessage(&raw const message);
             DispatchMessageW(&raw const message);
+            if let Some(index) = pending.take() {
+                child_active.set(true);
+                let row = RECT { left, right: left + width,
+                    top: top + (row_top(&child_rows, index) * scale).round() as i32,
+                    bottom: top + ((row_top(&child_rows, index) + ROW_HEIGHT) * scale).round() as i32 };
+                let child_width = (216.0 * scale).round() as i32;
+                let child_left = if row.right + child_width <= work.right { row.right } else { row.left - child_width };
+                let resume = Rc::new(Cell::new(false));
+                let result = show_level(hwnd, POINT { x: child_left, y: row.top - (4.0 * scale) as i32 }, false,
+                    theme, backdrop, child_rows[index].children.clone(), Some(row), Rc::clone(&resume));
+                child_active.set(false);
+                if result != 0 { command.set(result); done.set(true); }
+                else if resume.get() || GetForegroundWindow() == hwnd { SetFocus(hwnd); }
+                else { done.set(true); }
+            }
         }
         KillTimer(hwnd, 1);
         KillTimer(hwnd, 2);
+        KillTimer(hwnd, 3);
+        if parent_row.is_some() && (resume_parent.get() || GetForegroundWindow() == hwnd) {
+            SetForegroundWindow(owner);
+            SetFocus(owner);
+        }
     }
     drop(window);
     debug_assert_eq!(Rc::strong_count(&done), 1, "menu callback was not released");
@@ -427,6 +498,88 @@ pub(crate) fn show_entries(
 mod tests {
     use super::*;
     use windows_sys::Win32::System::{ProcessStatus::*, Threading::*};
+
+    #[test]
+    #[ignore = "Opens nested menus on the interactive desktop"]
+    fn columns_submenu_opens_on_hover_and_keyboard() {
+        unsafe fn owned_popup(owner: HWND) -> HWND {
+            unsafe extern "system" fn visit(hwnd: HWND, data: isize) -> i32 {
+                unsafe {
+                    let pair = &mut *(data as *mut (HWND, HWND));
+                    let mut title = [0u16; 64];
+                    let length = GetWindowTextW(hwnd, title.as_mut_ptr(), 64);
+                    if GetWindow(hwnd, GW_OWNER) == pair.0
+                        && String::from_utf16_lossy(&title[..length as usize]) == "分组菜单" {
+                        pair.1 = hwnd;
+                    }
+                }
+                1
+            }
+            let mut pair = (owner, std::ptr::null_mut());
+            unsafe { EnumThreadWindows(GetCurrentThreadId(), Some(visit), (&raw mut pair) as isize); }
+            pair.1
+        }
+        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        for keyboard in [false, true] {
+            let stage = Rc::new(Cell::new(0));
+            let observed = Rc::clone(&stage);
+            let root_window: Cell<HWND> = Cell::new(std::ptr::null_mut());
+            let mut ticks = 0;
+            let owner = windows_window::Window::new("Submenu fixture")
+                .style(WS_POPUP).size(100, 100)
+                .on_message(move |raw, msg, _, _| {
+                    if msg == WM_DESTROY { return Some(0); }
+                    if msg != WM_TIMER { return None; }
+                    unsafe {
+                        ticks += 1;
+                        if root_window.get().is_null() {
+                            root_window.set(owned_popup(raw.cast()));
+                        }
+                        let root = root_window.get();
+                        let child = owned_popup(root);
+                        let popup = if child.is_null() { root } else { child };
+                        let step = observed.get();
+                        if ticks > 20 {
+                            PostMessageW(popup, WM_CLOSE, 0, 0);
+                            PostMessageW(root, WM_CLOSE, 0, 0);
+                            return Some(0);
+                        }
+                        if step == 0 && root != raw.cast() {
+                            if keyboard {
+                                PostMessageW(root, WM_KEYDOWN, VK_DOWN as usize, 0);
+                                PostMessageW(root, WM_KEYDOWN, VK_RIGHT as usize, 0);
+                            } else {
+                                let scale = GetDpiForWindow(root).max(96) as f32 / 96.0;
+                                let p = (16.0 * scale) as isize;
+                                PostMessageW(root, WM_MOUSEMOVE, 0, (p << 16) | p);
+                            }
+                            observed.set(1);
+                        } else if step == 1 && popup != root {
+                            assert!(IsWindowVisible(root) != 0);
+                            PostMessageW(popup, WM_KEYDOWN, VK_LEFT as usize, 0);
+                            observed.set(2);
+                        } else if step == 2 && popup == root {
+                            PostMessageW(root, WM_KEYDOWN, VK_RIGHT as usize, 0);
+                            observed.set(3);
+                        } else if step == 3 && popup != root {
+                            PostMessageW(popup, WM_KEYDOWN, VK_DOWN as usize, 0);
+                            PostMessageW(popup, WM_KEYDOWN, VK_RETURN as usize, 0);
+                            observed.set(4);
+                        }
+                    }
+                    Some(0)
+                }).create().unwrap();
+            let hwnd = owner.hwnd().cast();
+            let mut parent = entry(24, "显示列", "", "");
+            parent.children = column_entries(15);
+            unsafe { SetTimer(hwnd, 99, 250, None); }
+            let result = show_entries(hwnd, POINT { x: 100, y: 100 }, false,
+                desktop_core::PanelTheme::Dark, Backdrop::Acrylic, vec![parent]);
+            unsafe { KillTimer(hwnd, 99); }
+            assert_eq!(stage.get(), 4);
+            assert_eq!(result, 31);
+        }
+    }
 
     #[test]
     #[ignore = "Opens a real menu; run in an interactive desktop session"]
@@ -499,7 +652,7 @@ mod tests {
                 false,
                 desktop_core::PanelTheme::Dark,
                 Backdrop::Acrylic,
-                (false, false)
+                (false, false), 15
             ),
             0
         );
@@ -557,7 +710,7 @@ mod tests {
                         false,
                         desktop_core::PanelTheme::Dark,
                         Backdrop::Mica,
-                        (false, false)
+                        (false, false), 15
                     ),
                     0
                 );

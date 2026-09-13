@@ -14,6 +14,7 @@ path = "src/main.rs"
 desktop-core.workspace = true
 desktop-shell.workspace = true
 desktop-storage.workspace = true
+tempfile = "3"
 desktop-window.workspace = true
 desktop-hook.workspace = true
 windows = { workspace = true, features = ["UI_ViewManagement", "Graphics_Effects", "Win32_System_WinRT_Graphics_Direct2D"] }

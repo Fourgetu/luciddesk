@@ -382,6 +382,52 @@ pub(super) fn saved_columns(store: &WorkspaceStore, id: PanelId) -> Result<Optio
         .map_err(|error| error.to_string())?.and_then(|value| super::columns::decode(&value)))
 }
 
+pub(super) fn visible_columns(store: &WorkspaceStore, id: PanelId) -> Result<u8, String> {
+    Ok(store.preference(&format!("panel_folder_visible_columns:{}", id.get()))
+        .map_err(|error| error.to_string())?.and_then(|value| value.parse::<u8>().ok())
+        .map_or(15, |value| (value & 15) | 1))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct Defaults {
+    pub list: bool,
+    pub columns: u8,
+}
+impl Default for Defaults {
+    fn default() -> Self { Self { list: true, columns: 15 } }
+}
+impl Defaults {
+    pub fn load(store: &WorkspaceStore) -> Result<Self, String> {
+        let saved = store.preference("folder_panel_defaults").map_err(|e| e.to_string())?;
+        Ok(saved.and_then(|value| {
+            let (view, columns) = value.split_once(',')?;
+            let list = match view { "list" => true, "icons" => false, _ => return None };
+            Some(Self { list, columns: (columns.parse::<u8>().ok()? & 15) | 1 })
+        }).unwrap_or_default())
+    }
+    pub fn save(self, store: &WorkspaceStore) -> Result<(), String> {
+        store.save_preference("folder_panel_defaults",
+            &format!("{},{}", if self.list { "list" } else { "icons" }, (self.columns & 15) | 1))
+            .map_err(|e| e.to_string())
+    }
+    pub fn apply(self, store: &WorkspaceStore, panel: &mut Panel) -> Result<(), String> {
+        panel.set_list_view(self.list);
+        store.save_preference(&format!("panel_folder_visible_columns:{}", panel.id().get()),
+            &((self.columns & 15) | 1).to_string()).map_err(|e| e.to_string())
+    }
+}
+
+pub(super) fn toggle_column(state: &PaneApp, id: PanelId, column: u8) -> Result<(), String> {
+    if !(1..=3).contains(&column) { return Ok(()); }
+    let Some(view) = state.views.iter().find(|view| view.id == id) else { return Ok(()); };
+    let visible = (view.model.borrow().folder_visible_columns ^ (1 << column)) | 1;
+    state.store.save_preference(&format!("panel_folder_visible_columns:{}", id.get()), &visible.to_string())
+        .map_err(|error| error.to_string())?;
+    view.model.borrow_mut().folder_visible_columns = visible;
+    unsafe { windows_sys::Win32::Graphics::Gdi::InvalidateRect(view.window.hwnd().cast(), std::ptr::null(), 0); }
+    Ok(())
+}
+
 pub(super) fn save_columns(state: &PaneApp, id: PanelId, widths: [f32; 4]) -> Result<(), String> {
     if !super::columns::valid(widths) { return Ok(()); }
     state.store.save_preference(
@@ -577,7 +623,7 @@ pub(super) fn size_text(bytes: Option<u64>, folder: bool) -> String {
     format!("{value:.1} {unit}")
 }
 
-fn modified_text(value: Option<std::time::SystemTime>) -> String {
+pub(super) fn modified_text(value: Option<std::time::SystemTime>) -> String {
     use windows_sys::Win32::{
         Foundation::{FILETIME, SYSTEMTIME},
         System::Time::{FileTimeToSystemTime, SystemTimeToTzSpecificLocalTimeEx},
@@ -668,6 +714,25 @@ pub(super) fn request_picker(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn refresh_event_reads_an_unchanged_folder_again() {
+        let root = std::env::temp_dir().join(format!("lucidpane-manual-refresh-{}-{}",
+            std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        std::fs::create_dir(&root).unwrap();
+        let state = Rc::new(RefCell::new(super::super::tests::test_state()));
+        let id = PanelId::new(1);
+        state.borrow_mut().folders.insert(id, Source::start(root.clone(), Default::default()).unwrap());
+        assert!(state.borrow().folders[&id].updates.recv_timeout(Duration::from_secs(5)).unwrap().unwrap().is_empty());
+        for _ in 0..2 {
+            // No file writes: only the explicit Refresh event can request a new snapshot.
+            assert!(matches!(state.borrow().folders[&id].updates.recv_timeout(Duration::from_millis(100)), Err(mpsc::RecvTimeoutError::Timeout)));
+            super::super::events::handle(&state, id, Event::Refresh).unwrap();
+            assert!(state.borrow().folders[&id].updates.recv_timeout(Duration::from_secs(5)).unwrap().unwrap().is_empty());
+        }
+        drop(state);
+        std::fs::remove_dir(root).unwrap();
+    }
 
     #[test]
     fn sizes_format_and_sort_numerically_with_empty_values() {

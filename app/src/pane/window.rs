@@ -132,6 +132,9 @@ fn track_client_leave(hwnd: HWND) {
 
 fn update_pointer(hwnd: HWND, model: &RefCell<GroupModel>, pointer: Option<POINT>) {
     let mut m = model.borrow_mut();
+    let hovered = pointer.is_some_and(|p| {
+        scrollbar(hwnd, &m).is_some_and(|bar| bar.contains(p.x as f32 / scale(hwnd), p.y as f32 / scale(hwnd)))
+    });
     let (button, item) = if let Some(p) = pointer {
         let s = scale(hwnd);
         let button = {
@@ -143,20 +146,25 @@ fn update_pointer(hwnd: HWND, model: &RefCell<GroupModel>, pointer: Option<POINT
         };
         (
             button,
-            m.hit(grid(hwnd, &m), p.x as f32 / s, p.y as f32 / s, s),
+            if hovered { None } else { m.hit(grid(hwnd, &m), p.x as f32 / s, p.y as f32 / s, s) },
         )
     } else {
         (None, None)
     };
-    if (m.hovered_button, m.hovered_item) != (button, item) {
+    if (m.hovered_button, m.hovered_item, m.scrollbar.hovered) != (button, item, hovered) {
         m.hovered_button = button;
         m.hovered_item = item;
+        m.scrollbar.hovered = hovered;
         drop(m);
         invalidate(hwnd);
     }
 }
 
 fn pane_hit(r: RECT, p: POINT, scale: f32, model: &GroupModel) -> u32 {
+    if super::scrollbar::Bar::for_model(model, r.right as f32 / scale, r.bottom as f32 / scale)
+        .is_some_and(|bar| bar.contains(p.x as f32 / scale, p.y as f32 / scale)) {
+        return HTCLIENT;
+    }
     if model.header_button(r.right as f32 / scale, p.x as f32 / scale, p.y as f32 / scale).is_some() {
         HTCLIENT
     } else {
@@ -353,6 +361,27 @@ struct ColumnDrag {
     divider: usize,
     bounds: [f32; 5],
     original: Option<[f32; 4]>,
+    proportions: [f32; 4],
+    visible: u8,
+}
+
+fn scrollbar(hwnd: HWND, model: &GroupModel) -> Option<super::scrollbar::Bar> {
+    let r = client(hwnd);
+    let s = scale(hwnd);
+    super::scrollbar::Bar::for_model(model, r.right as f32 / s, r.bottom as f32 / s)
+}
+
+fn update_scrollbar_animation(hwnd: HWND, model: &RefCell<GroupModel>, motion: &mut super::animation::Motion,
+    enabled: bool, timer_running: &mut bool) {
+    let mut m = model.borrow_mut();
+    let visible = scrollbar(hwnd, &m).is_some();
+    let animating = m.scrollbar.animate(motion, std::time::Instant::now(), enabled, visible);
+    if animating != *timer_running {
+        unsafe {
+            *timer_running = animating && SetTimer(hwnd, 4, USER_TIMER_MINIMUM, None) != 0;
+            if !*timer_running { KillTimer(hwnd, 4); }
+        }
+    }
 }
 
 fn column_divider(hwnd: HWND, model: &GroupModel, point: POINT) -> Option<usize> {
@@ -364,7 +393,7 @@ fn column_divider(hwnd: HWND, model: &GroupModel, point: POINT) -> Option<usize>
     if !(top..grid.content_top).contains(&y) { return None; }
     let x = point.x as f32 / scale - super::layout::PADDING;
     let columns = model.list_columns(grid.cell_width);
-    (1..4).find(|&divider| (x - columns[divider]).abs() <= 4.0)
+    (1..4).find(|&divider| model.folder_visible_columns & (1 << divider) != 0 && (x - columns[divider]).abs() <= 4.0)
 }
 fn invalidate(hwnd: HWND) {
     unsafe {
@@ -440,6 +469,10 @@ where
     let mut surface: Option<Surface> = None;
     let mut drag: Option<(usize, POINT, bool)> = None;
     let mut column_drag: Option<ColumnDrag> = None;
+    let mut scrollbar_drag: Option<f32> = None;
+    let mut scrollbar_motion = super::animation::Motion::settled(0.0, std::time::Instant::now());
+    let mut scrollbar_timer = false;
+    let mut scrollbar_animated = super::scrollbar::animations_enabled();
     let mut drag_identity = None;
     let mut drag_image: Option<super::drag_drop::image::DragImage> = None;
     let mut fold: Option<super::animation::Fold> = None;
@@ -499,6 +532,7 @@ where
                     None
                 }
                 WM_SETTINGCHANGE | WM_THEMECHANGED => {
+                    scrollbar_animated = super::scrollbar::animations_enabled();
                     {
                         let mut m = model.borrow_mut();
                         m.dark = super::theme::is_dark(m.theme);
@@ -507,6 +541,14 @@ where
                         renderer = new_renderer;
                     }
                     // Appearance changes invalidate rendering resources, not Shell image inventory.
+                    invalidate(hwnd);
+                    Some(0)
+                }
+                WM_KEYDOWN if wparam == 0x1b && scrollbar_drag.is_some() => {
+                    scrollbar_drag = None;
+                    model.borrow_mut().scrollbar.dragging = false;
+                    unsafe { ReleaseCapture(); }
+                    sync_pointer(hwnd, &model);
                     invalidate(hwnd);
                     Some(0)
                 }
@@ -522,7 +564,11 @@ where
                         GetCursorPos(&raw mut pointer);
                         windows_sys::Win32::Graphics::Gdi::ScreenToClient(hwnd, &raw mut pointer);
                     }
-                    if column_drag.is_some() || column_divider(hwnd, &model.borrow(), pointer).is_some() {
+                    if scrollbar_drag.is_some() || scrollbar(hwnd, &model.borrow()).is_some_and(|bar|
+                        bar.contains(pointer.x as f32 / scale(hwnd), pointer.y as f32 / scale(hwnd))) {
+                        unsafe { SetCursor(LoadCursorW(std::ptr::null_mut(), IDC_ARROW)); }
+                        Some(1)
+                    } else if column_drag.is_some() || column_divider(hwnd, &model.borrow(), pointer).is_some() {
                         unsafe { SetCursor(LoadCursorW(std::ptr::null_mut(), IDC_SIZEWE)); }
                         Some(1)
                     } else { None }
@@ -564,6 +610,11 @@ where
                     }
                     event(Event::Moving(lparam as *mut RECT));
                     Some(1)
+                }
+                WM_TIMER if wparam == 4 => {
+                    update_scrollbar_animation(hwnd, &model, &mut scrollbar_motion, scrollbar_animated, &mut scrollbar_timer);
+                    invalidate(hwnd);
+                    Some(0)
                 }
                 WM_TIMER if wparam == 3 => {
                     let (enabled, collapsed) = {
@@ -741,6 +792,7 @@ where
                     Some(1)
                 }
                 WM_PAINT => {
+                    update_scrollbar_animation(hwnd, &model, &mut scrollbar_motion, scrollbar_animated, &mut scrollbar_timer);
                     let mut ps = PAINTSTRUCT::default();
                     unsafe {
                         BeginPaint(hwnd, &raw mut ps);
@@ -867,13 +919,33 @@ where
                     let p = point(lparam);
                     let s = scale(hwnd);
                     let r = client(hwnd);
+                    let bar = scrollbar(hwnd, &model.borrow()).filter(|bar| bar.contains(p.x as f32 / s, p.y as f32 / s));
+                    if let Some(bar) = bar {
+                        let y = p.y as f32 / s;
+                        let dragging = bar.on_thumb(y);
+                        {
+                            let mut m = model.borrow_mut();
+                            m.hovered_item = None;
+                            m.scrollbar.hovered = true;
+                            m.scrollbar.dragging = dragging;
+                            if dragging { scrollbar_drag = Some(y - bar.thumb_top); }
+                            else { m.scroll = bar.page_to(m.scroll, y); }
+                        }
+                        unsafe { SetFocus(hwnd); if dragging { SetCapture(hwnd); } }
+                        track_client_leave(hwnd);
+                        invalidate(hwnd);
+                        return Some(0);
+                    }
                     let divider = column_divider(hwnd, &model.borrow(), p);
                     if let Some(divider) = divider {
                         let m = model.borrow();
+                        let full = super::columns::bounds(grid(hwnd, &m).cell_width, m.folder_columns);
                         column_drag = Some(ColumnDrag {
                             divider,
                             bounds: m.list_columns(grid(hwnd, &m).cell_width),
                             original: m.folder_columns,
+                            proportions: std::array::from_fn(|i| (full[i + 1] - full[i]) / (full[4] - full[0])),
+                            visible: m.folder_visible_columns,
                         });
                         drop(m);
                         unsafe { SetFocus(hwnd); SetCapture(hwnd); }
@@ -945,9 +1017,18 @@ where
                     Some(0)
                 }
                 WM_MOUSEMOVE => {
+                    if let Some(offset) = scrollbar_drag {
+                        let mut m = model.borrow_mut();
+                        if let Some(bar) = scrollbar(hwnd, &m) {
+                            m.scroll = bar.drag_to(point(lparam).y as f32 / scale(hwnd), offset);
+                        }
+                        drop(m);
+                        invalidate(hwnd);
+                        return Some(0);
+                    }
                     if let Some(drag) = &column_drag {
                         let x = point(lparam).x as f32 / scale(hwnd) - super::layout::PADDING;
-                        model.borrow_mut().folder_columns = Some(super::columns::resize(drag.bounds, drag.divider, x));
+                        model.borrow_mut().folder_columns = Some(super::columns::resize_visible(drag.bounds, drag.divider, x, drag.proportions, drag.visible));
                         unsafe { SetCursor(LoadCursorW(std::ptr::null_mut(), IDC_SIZEWE)); }
                         invalidate(hwnd);
                         return Some(0);
@@ -1051,6 +1132,13 @@ where
                     Some(0)
                 }
                 WM_LBUTTONUP => {
+                    if scrollbar_drag.take().is_some() {
+                        model.borrow_mut().scrollbar.dragging = false;
+                        unsafe { ReleaseCapture(); }
+                        update_pointer(hwnd, &model, Some(point(lparam)));
+                        invalidate(hwnd);
+                        return Some(0);
+                    }
                     if let Some(drag) = column_drag.take() {
                         let widths = model.borrow().folder_columns;
                         unsafe { ReleaseCapture(); }
@@ -1127,6 +1215,8 @@ where
                     Some(0)
                 }
                 WM_CAPTURECHANGED | WM_CANCELMODE => {
+                    scrollbar_drag = None;
+                    model.borrow_mut().scrollbar.dragging = false;
                     if let Some(drag) = column_drag.take() { model.borrow_mut().folder_columns = drag.original; }
                     model.borrow_mut().pressed_button = None;
                     if message == WM_CANCELMODE {
@@ -1142,6 +1232,9 @@ where
                 WM_LBUTTONDBLCLK => {
                     let p = point(lparam);
                     let s = scale(hwnd);
+                    if scrollbar(hwnd, &model.borrow()).is_some_and(|bar| bar.contains(p.x as f32 / s, p.y as f32 / s)) {
+                        return Some(0);
+                    }
                     let selected = {
                         let m = model.borrow();
                         m.hit(grid(hwnd, &m), p.x as f32 / s, p.y as f32 / s, s)
@@ -1320,6 +1413,22 @@ where
                         }
                         let event = |value| (events.borrow_mut())(value);
                         let mut anchor = point(lparam);
+                        if lparam != -1 {
+                            let mut p = anchor;
+                            unsafe { windows_sys::Win32::Graphics::Gdi::ScreenToClient(hwnd, &raw mut p); }
+                            let column_menu = {
+                                let m = model.borrow();
+                                (m.folder.is_some() && m.is_list() && !m.collapsed
+                                    && (HEADER..HEADER + super::layout::LIST_HEADER).contains(&(p.y as f32 / scale(hwnd))))
+                                    .then_some((m.theme, m.backdrop, m.folder_visible_columns))
+                            };
+                            if let Some((theme, backdrop, visible)) = column_menu {
+                                let command = super::menu::show_entries(hwnd, anchor, false, theme, backdrop,
+                                    super::menu::column_entries(visible));
+                                if (31..=33).contains(&command) { event(Event::ToggleFolderColumn((command - 30) as u8)); }
+                                return;
+                            }
+                        }
                         let index = if lparam == -1 {
                             if wparam != 0 {
                                 let m = model.borrow();
@@ -1402,19 +1511,20 @@ where
                             let model = model.borrow();
                             (model.folder.is_some(), model.is_list())
                         };
+                        let visible_columns = model.borrow().folder_visible_columns;
                         let command =
-                            menu(hwnd, lparam, auto_hide, locked, theme, backdrop, is_folder);
+                            menu(hwnd, lparam, auto_hide, locked, theme, backdrop, is_folder, visible_columns);
                         update_pointer(hwnd, &model, None);
                         invalidate(hwnd);
                         match command {
-                            23 => {
-                                event(Event::FolderBack);
-                            }
+                            31..=33 => { event(Event::ToggleFolderColumn((command - 30) as u8)); }
                             10 => {
                                 event(Event::ToggleLocked);
                             }
-                            22 => {
-                                event(Event::ToggleListView);
+                            25 | 26 => {
+                                if model.borrow().is_list() != (command == 26) {
+                                    event(Event::ToggleListView);
+                                }
                             }
                             19 => {
                                 event(Event::NewFolder);
@@ -1427,9 +1537,6 @@ where
                             }
                             1 => {
                                 event(Event::New);
-                            }
-                            3 => {
-                                event(Event::Sort);
                             }
                             4 => {
                                 event(Event::Exit);
@@ -1531,6 +1638,7 @@ fn menu(
     theme: desktop_core::PanelTheme,
     backdrop: desktop_core::Backdrop,
     folder: (bool, bool),
+    visible_columns: u8,
 ) -> i32 {
     let anchored = lparam == -1;
     let mut anchor = point(lparam);
@@ -1545,7 +1653,7 @@ fn menu(
         }
     }
     super::menu::show(
-        hwnd, anchor, anchored, auto_hide, locked, theme, backdrop, folder,
+        hwnd, anchor, anchored, auto_hide, locked, theme, backdrop, folder, visible_columns,
     )
 }
 pub fn error(message: &str) {

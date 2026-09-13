@@ -631,6 +631,7 @@ mod tests {
         let model = Rc::new(RefCell::new(GroupModel {
             folder_sort: (0, false),
             folder_columns: None,
+            folder_visible_columns: 15,
         folder_navigation: [false; 2],
             list_view: false,
             folder: None,
@@ -640,6 +641,7 @@ mod tests {
             dark: true,
 
             hovered_item: None,
+            scrollbar: Default::default(),
             focused: true,
             auto_hide: false,
             locked: false,

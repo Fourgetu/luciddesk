@@ -28,6 +28,36 @@ pub(super) fn bounds(width: f32, proportions: Option<[f32; 4]>) -> [f32; 5] {
     bounds
 }
 
+pub(super) fn visible_bounds(width: f32, proportions: Option<[f32; 4]>, visible: u8) -> [f32; 5] {
+    let original = bounds(width, proportions);
+    let visible = visible | 1;
+    let sum: f32 = (0..4).filter(|i| visible & (1 << i) != 0)
+        .map(|i| original[i + 1] - original[i]).sum();
+    let mut result = [original[0]; 5];
+    for i in 0..4 {
+        result[i + 1] = result[i] + if visible & (1 << i) != 0 {
+            (original[i + 1] - original[i]) / sum * (width - original[0])
+        } else { 0.0 };
+    }
+    let last = (0..4).rfind(|i| visible & (1 << i) != 0).unwrap();
+    result[last + 1..].fill(width);
+    result
+}
+
+pub(super) fn resize_visible(bounds: [f32; 5], divider: usize, x: f32,
+    mut proportions: [f32; 4], visible: u8) -> [f32; 4] {
+    let left = (0..divider).rfind(|i| (visible | 1) & (1 << i) != 0).unwrap();
+    let start = bounds[left];
+    let end = bounds[divider + 1];
+    let minimum = 48.0_f32.min((end - start) / 2.0);
+    let fraction = (x.clamp(start + minimum, end - minimum) - start) / (end - start);
+    let pair = proportions[left] + proportions[divider];
+    proportions[left] = pair * fraction;
+    proportions[divider] = pair * (1.0 - fraction);
+    proportions
+}
+
+#[cfg(test)]
 pub(super) fn resize(mut bounds: [f32; 5], divider: usize, x: f32) -> [f32; 4] {
     let left = bounds[divider - 1];
     let right = bounds[divider + 1];
@@ -40,6 +70,27 @@ pub(super) fn resize(mut bounds: [f32; 5], divider: usize, x: f32) -> [f32; 4] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn optional_columns_fill_the_pane_and_resize_across_hidden_neighbors() {
+        let proportions = [0.4, 0.2, 0.25, 0.15];
+        for visible in (1..=15).step_by(2) {
+            let bounds = visible_bounds(600.0, Some(proportions), visible);
+            assert_eq!(bounds[4], 600.0);
+            for column in 0..4 {
+                assert_eq!(bounds[column + 1] > bounds[column], visible & (1 << column) != 0);
+            }
+            for divider in (1..4).filter(|i| visible & (1 << i) != 0) {
+                let changed = resize_visible(bounds, divider, bounds[divider] + 10.0, proportions, visible);
+                assert!(valid(changed));
+                for hidden in (0..4).filter(|i| visible & (1 << i) == 0) {
+                    assert_eq!(changed[hidden], proportions[hidden]);
+                }
+                let resized = visible_bounds(600.0, Some(changed), visible);
+                assert!((resized[divider] - bounds[divider] - 10.0).abs() < 0.001);
+            }
+        }
+        assert_eq!(visible_bounds(600.0, Some(proportions), 0), [30.0, 600.0, 600.0, 600.0, 600.0]);
+    }
     #[test]
     fn resizing_changes_only_neighbors_and_survives_resizing_and_persistence() {
         let original = bounds(600.0, None);
