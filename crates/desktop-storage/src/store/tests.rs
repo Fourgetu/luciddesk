@@ -1,0 +1,439 @@
+#[test]
+fn unchanged_preferences_do_not_count_as_database_changes() {
+    let store = WorkspaceStore::open_in_memory().unwrap();
+    store.save_preference("test", "first").unwrap();
+    let changes = store.change_count();
+    store.save_preference("test", "first").unwrap();
+    assert_eq!(store.change_count(), changes);
+    store.save_preference("test", "second").unwrap();
+    assert_eq!(store.change_count(), changes + 1);
+    assert_eq!(store.preference("test").unwrap().as_deref(), Some("second"));
+    let options = Workspace::new().pane_options();
+    store.save_pane_options(options).unwrap();
+    let changes = store.change_count();
+    store.save_pane_options(options).unwrap();
+    assert_eq!(store.change_count(), changes);
+}
+
+#[test]
+fn material_strength_round_trips_and_remembers_each_material() {
+    let mut store = WorkspaceStore::open_in_memory().unwrap();
+    let mut workspace = Workspace::new();
+    workspace
+        .add_panel(Panel::new(
+            PanelId::new(1),
+            "Material",
+            RectDip::new(0.0, 0.0, 300.0, 200.0),
+        ))
+        .unwrap();
+    for base in [Backdrop::Acrylic, Backdrop::Mica] {
+        for strength in [0, 33, 50, 100] {
+            let value = base.with_strength(strength);
+            workspace.set_appearance(desktop_core::PanelTheme::Dark, value);
+            store.save_workspace(&workspace).unwrap();
+            let restored = store.load_workspace().unwrap();
+            assert_eq!(restored.appearance(), workspace.appearance());
+            assert_eq!(restored.panels()[0].backdrop(), value);
+        }
+    }
+    for base in [Backdrop::Acrylic, Backdrop::Mica] {
+        assert_eq!(
+            store
+                .preference(base.strength_key().unwrap())
+                .unwrap()
+                .as_deref(),
+            Some("100")
+        );
+    }
+    workspace.set_appearance(
+        desktop_core::PanelTheme::Dark,
+        Backdrop::Tuned {
+            material: desktop_core::MaterialKind::Mica,
+            strength: 200,
+        },
+    );
+    assert!(store.save_workspace(&workspace).is_err());
+    assert_eq!(
+        store.load_workspace().unwrap().appearance().unwrap().1,
+        Backdrop::Mica.with_strength(100)
+    );
+    for opacity in [0.0, 0.5, 1.0] {
+        assert_eq!(
+            super::decode_backdrop("mica_alt_tuned", Some(opacity), None).unwrap(),
+            Backdrop::MicaAlt
+        );
+    }
+    assert_eq!(Backdrop::MicaAlt.strength(), None);
+    assert_eq!(Backdrop::MicaAlt.strength_key(), None);
+    assert!(super::decode_backdrop("mica_tuned", Some(f32::NAN), None).is_err());
+}
+
+#[test]
+fn solid_style_round_trips_and_survives_switching_material() {
+    let mut store = WorkspaceStore::open_in_memory().unwrap();
+    let mut workspace = Workspace::new();
+    workspace
+        .add_panel(Panel::new(
+            PanelId::new(1),
+            "Solid",
+            RectDip::new(0.0, 0.0, 300.0, 200.0),
+        ))
+        .unwrap();
+    for opacity in [0.0, 0.5, 1.0] {
+        let solid = Backdrop::Solid {
+            color: 0x1234ab,
+            opacity,
+        };
+        workspace.set_appearance(desktop_core::PanelTheme::Dark, solid);
+        store.save_workspace(&workspace).unwrap();
+        let restored = store.load_workspace().unwrap();
+        assert_eq!(restored.appearance(), workspace.appearance());
+        assert_eq!(restored.panels()[0].backdrop(), solid);
+    }
+    workspace.set_appearance(desktop_core::PanelTheme::Dark, Backdrop::Mica);
+    store.save_workspace(&workspace).unwrap();
+    assert_eq!(
+        store.preference("solid_style").unwrap().as_deref(),
+        Some("1193131|1")
+    );
+    for opacity in [f32::NAN, -0.1, 1.1] {
+        workspace.set_appearance(
+            desktop_core::PanelTheme::Dark,
+            Backdrop::Solid {
+                color: 0x1234ab,
+                opacity,
+            },
+        );
+        assert!(store.save_workspace(&workspace).is_err());
+        assert_eq!(
+            store.load_workspace().unwrap().appearance().unwrap().1,
+            Backdrop::Mica
+        );
+    }
+}
+
+#[test]
+fn search_panes_round_trip_and_do_not_retain_folder_sources() {
+    use desktop_core::{Panel, PanelId, RectDip, Workspace};
+    let mut store = super::WorkspaceStore::open_in_memory().unwrap();
+    let mut panel = Panel::new(
+        PanelId::new(7),
+        "Everything",
+        RectDip::new(120.0, 140.0, 860.0, 520.0),
+    );
+    panel.set_folder(Some(std::path::PathBuf::from(r"C:\folder")));
+    panel.set_search(true);
+    assert!(panel.folder().is_none());
+    let mut workspace = Workspace::from_panels(vec![panel]).unwrap();
+    store.save_workspace(&workspace).unwrap();
+    let loaded = store.load_workspace().unwrap();
+    assert_eq!(loaded.panels(), workspace.panels());
+    assert!(loaded.desktop_items().is_empty());
+    workspace
+        .panel_mut(PanelId::new(7))
+        .unwrap()
+        .set_folder(Some(std::path::PathBuf::from(r"C:\folder")));
+    assert!(!workspace.panel(PanelId::new(7)).unwrap().is_search());
+    store.save_workspace(&workspace).unwrap();
+    assert!(store.preference("panel_search:7").unwrap().is_none());
+    workspace
+        .panel_mut(PanelId::new(7))
+        .unwrap()
+        .set_search(true);
+    store.save_workspace(&workspace).unwrap();
+    workspace.remove_panel(PanelId::new(7));
+    store.save_workspace(&workspace).unwrap();
+    assert!(store.preference("panel_search:7").unwrap().is_none());
+}
+#[test]
+fn folder_sources_survive_reopen_and_are_removed_with_the_panel() {
+    let mut store = super::WorkspaceStore::open_in_memory().unwrap();
+    let mut folder = desktop_core::Panel::new(
+        desktop_core::PanelId::new(2),
+        "映射",
+        desktop_core::RectDip::default(),
+    );
+    let path = std::path::PathBuf::from(r"C:\资料\尚未挂载");
+    folder.set_folder(Some(path.clone()));
+    let mut workspace = desktop_core::Workspace::from_panels(vec![
+        desktop_core::Panel::new(
+            desktop_core::PanelId::new(1),
+            "桌面",
+            desktop_core::RectDip::default(),
+        ),
+        folder,
+    ])
+    .unwrap();
+    store.save_preference("peek", "keep").unwrap();
+    store.save_workspace(&workspace).unwrap();
+    let loaded = store.load_workspace().unwrap();
+    assert_eq!(
+        loaded
+            .panel(desktop_core::PanelId::new(2))
+            .unwrap()
+            .folder(),
+        Some(path.as_path())
+    );
+    assert!(
+        loaded
+            .panel(desktop_core::PanelId::new(1))
+            .unwrap()
+            .folder()
+            .is_none()
+    );
+    assert!(loaded.desktop_items().is_empty());
+    assert!(
+        loaded
+            .panel(desktop_core::PanelId::new(2))
+            .unwrap()
+            .folder_list()
+    );
+    workspace
+        .panel_mut(desktop_core::PanelId::new(2))
+        .unwrap()
+        .set_folder_list(false);
+    store.save_workspace(&workspace).unwrap();
+    assert!(
+        !store
+            .load_workspace()
+            .unwrap()
+            .panel(desktop_core::PanelId::new(2))
+            .unwrap()
+            .folder_list()
+    );
+    workspace.remove_panel(desktop_core::PanelId::new(2));
+    store.save_workspace(&workspace).unwrap();
+    assert!(store.preference("panel_folder:2").unwrap().is_none());
+    assert!(store.preference("panel_folder_view:2").unwrap().is_none());
+    assert_eq!(store.preference("peek").unwrap().as_deref(), Some("keep"));
+}
+use super::WorkspaceStore;
+use desktop_core::{
+    Backdrop, DesktopItem, DesktopPlacement, GridPosition, Panel, PanelId, RectDip, ShellIdentity,
+    Workspace,
+};
+use rusqlite::Connection;
+
+#[test]
+fn workspace_round_trips() {
+    let mut panel = Panel::new(
+        PanelId::new(42),
+        "Downloads",
+        RectDip::new(-300.0, 75.0, 540.0, 480.0),
+    );
+    panel.set_backdrop(Backdrop::Translucent { opacity: 0.72 });
+    panel.set_collapsed(true);
+    panel.set_auto_hide(true);
+    panel.set_always_on_top(true);
+    panel.set_theme(desktop_core::PanelTheme::Light);
+
+    let mut workspace = Workspace::from_panels(vec![panel]).unwrap();
+    let mut desktop_item = DesktopItem::new(
+        ShellIdentity::Namespace {
+            parsing_name: "::{645FF040-5081-101B-9F08-00AA002F954E}".into(),
+        },
+        "Recycle Bin",
+    );
+    desktop_item.set_placement(DesktopPlacement::Pane {
+        pane_id: PanelId::new(42),
+        position: GridPosition::new(1, 2),
+    });
+    workspace.reconcile_desktop_items([desktop_item]);
+    let mut store = WorkspaceStore::open_in_memory().unwrap();
+    store.save_workspace(&workspace).unwrap();
+    let loaded = store.load_workspace().unwrap();
+
+    assert_eq!(loaded, workspace);
+}
+
+#[test]
+fn theme_choices_round_trip() {
+    let mut store = WorkspaceStore::open_in_memory().unwrap();
+    let panel = Panel::new(PanelId::new(1), "Pane", RectDip::default());
+    let mut workspace = Workspace::from_panels(vec![panel]).unwrap();
+    for theme in [
+        desktop_core::PanelTheme::System,
+        desktop_core::PanelTheme::Light,
+        desktop_core::PanelTheme::Dark,
+    ] {
+        workspace
+            .panel_mut(PanelId::new(1))
+            .unwrap()
+            .set_theme(theme);
+        workspace
+            .panel_mut(PanelId::new(1))
+            .unwrap()
+            .set_backdrop(Backdrop::MicaAlt);
+        store.save_workspace(&workspace).unwrap();
+        assert_eq!(store.load_workspace().unwrap(), workspace);
+    }
+}
+
+#[test]
+fn global_appearance_survives_empty_workspace_and_new_panels() {
+    let mut store = WorkspaceStore::open_in_memory().unwrap();
+    let mut workspace = Workspace::new();
+    workspace.set_appearance(desktop_core::PanelTheme::Dark, Backdrop::MicaAlt);
+    store.save_workspace(&workspace).unwrap();
+    let mut restored = store.load_workspace().unwrap();
+    assert_eq!(restored.appearance(), workspace.appearance());
+    restored
+        .add_panel(Panel::new(PanelId::new(1), "New", RectDip::default()))
+        .unwrap();
+    assert_eq!(restored.panels()[0].theme(), desktop_core::PanelTheme::Dark);
+    assert_eq!(restored.panels()[0].backdrop(), Backdrop::MicaAlt);
+    store.save_workspace(&restored).unwrap();
+    assert_eq!(store.load_workspace().unwrap(), restored);
+}
+
+#[test]
+fn save_replaces_previous_snapshot() {
+    let mut store = WorkspaceStore::open_in_memory().unwrap();
+    let first =
+        Workspace::from_panels(vec![Panel::new(PanelId::new(1), "One", RectDip::default())])
+            .unwrap();
+    store.save_workspace(&first).unwrap();
+    store.save_workspace(&Workspace::new()).unwrap();
+    assert!(store.load_workspace().unwrap().panels().is_empty());
+}
+
+#[test]
+fn rejects_incompatible_structure_without_modifying_data() {
+    let connection = Connection::open_in_memory().unwrap();
+    connection.execute_batch("CREATE TABLE metadata(key TEXT PRIMARY KEY, value TEXT NOT NULL); INSERT INTO metadata VALUES ('sentinel','keep');").unwrap();
+    assert!(super::initialize_schema(&connection).is_err());
+    let value: String = connection
+        .query_row("SELECT value FROM metadata WHERE key='sentinel'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(value, "keep");
+    let count: i64 = connection
+        .query_row(
+            "SELECT count(*) FROM sqlite_schema WHERE type='table'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 1);
+}
+
+#[test]
+fn option_update_does_not_rewrite_workspace_rows() {
+    let mut store = WorkspaceStore::open_in_memory().unwrap();
+    let workspace = Workspace::from_panels(vec![Panel::new(
+        PanelId::new(1),
+        "Keep",
+        RectDip::default(),
+    )])
+    .unwrap();
+    store.save_workspace(&workspace).unwrap();
+    store.connection.execute_batch("CREATE TRIGGER forbid_panel_delete BEFORE DELETE ON panels BEGIN SELECT RAISE(ABORT, 'unexpected workspace rewrite'); END;").unwrap();
+    let options = desktop_core::PaneOptions {
+        corner_radius: 24.0,
+        ..desktop_core::PaneOptions::DEFAULT
+    };
+    store.save_pane_options(options).unwrap();
+    let restored = store.load_workspace().unwrap();
+    assert_eq!(restored.panels(), workspace.panels());
+    assert_eq!(restored.pane_options(), options);
+}
+
+#[test]
+fn pane_options_round_trip_without_panels() {
+    let mut store = WorkspaceStore::open_in_memory().unwrap();
+    assert_eq!(
+        store.load_workspace().unwrap().pane_options(),
+        desktop_core::PaneOptions::DEFAULT
+    );
+    for bits in 0..8 {
+        let options = desktop_core::PaneOptions {
+            corner_radius: if bits & 1 != 0 { 24.0 } else { 0.0 },
+            border: bits & 2 != 0,
+            snap: bits & 4 != 0,
+            text: desktop_core::PanelText::Auto,
+            text_protection: true,
+        };
+        let mut workspace = Workspace::new();
+        workspace.set_pane_options(options);
+        store.save_workspace(&workspace).unwrap();
+        let reopened = WorkspaceStore::from_connection(store.connection).unwrap();
+        assert_eq!(reopened.load_workspace().unwrap().pane_options(), options);
+        store = reopened;
+    }
+}
+
+#[test]
+fn panel_text_modes_round_trip_and_legacy_options_default_to_auto() {
+    use desktop_core::PanelText;
+    let mut store = WorkspaceStore::open_in_memory().unwrap();
+    store
+        .save_preference("pane_options", "6|true|false")
+        .unwrap();
+    assert_eq!(
+        store.load_workspace().unwrap().pane_options().text,
+        PanelText::Auto
+    );
+    for value in ["6|true|false", "6|true|false|dark"] {
+        store.save_preference("pane_options", value).unwrap();
+        assert!(
+            !store
+                .load_workspace()
+                .unwrap()
+                .pane_options()
+                .text_protection
+        );
+    }
+    for (text, text_protection) in [PanelText::Auto, PanelText::Light, PanelText::Dark]
+        .into_iter()
+        .flat_map(|text| [true, false].map(|enabled| (text, enabled)))
+    {
+        let options = desktop_core::PaneOptions {
+            text,
+            text_protection,
+            ..Default::default()
+        };
+        store.save_pane_options(options).unwrap();
+        let workspace = store.load_workspace().unwrap();
+        assert_eq!(workspace.pane_options(), options);
+        store.save_workspace(&workspace).unwrap();
+        assert_eq!(store.load_workspace().unwrap().pane_options(), options);
+    }
+}
+
+#[test]
+fn fractional_corner_radius_round_trips_and_rejects_non_finite_values() {
+    let mut store = WorkspaceStore::open_in_memory().unwrap();
+    let options = desktop_core::PaneOptions {
+        corner_radius: 6.375,
+        ..Default::default()
+    };
+    store.save_pane_options(options).unwrap();
+    let workspace = store.load_workspace().unwrap();
+    assert_eq!(workspace.pane_options().corner_radius, 6.375);
+    store.save_workspace(&workspace).unwrap();
+    assert_eq!(
+        store.load_workspace().unwrap().pane_options().corner_radius,
+        6.375
+    );
+    for radius in ["NaN", "inf", "-0.5", "24.1"] {
+        store
+            .save_preference("pane_options", &format!("{radius}|true|true"))
+            .unwrap();
+        assert!(store.load_workspace().is_err());
+    }
+}
+
+#[test]
+fn current_database_reopens_without_reinitializing_it() {
+    let mut store = WorkspaceStore::open_in_memory().unwrap();
+    let workspace = Workspace::from_panels(vec![Panel::new(
+        PanelId::new(1),
+        "Current",
+        RectDip::default(),
+    )])
+    .unwrap();
+    store.save_workspace(&workspace).unwrap();
+    let reopened = WorkspaceStore::from_connection(store.connection).unwrap();
+    assert_eq!(reopened.load_workspace().unwrap(), workspace);
+}

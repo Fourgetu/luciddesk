@@ -1,3 +1,4 @@
+use desktop_core::{DesktopItem, DesktopPlacement, GridPosition, ShellIdentity};
 use super::*;
 
 fn open() -> (tempfile::TempDir, WorkspaceStore) {
