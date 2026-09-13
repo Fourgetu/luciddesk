@@ -460,8 +460,8 @@ impl Renderer {
                     });
                     let grid = model.grid(w, h);
                     let list = model.is_list();
-                    let columns = super::layout::list_columns(grid.cell_width);
-                    if list {
+                    let columns = model.list_columns(grid.cell_width);
+                    if list && model.folder.is_some() {
                         for (column, name) in ["文件名", "类型", "修改时间"].iter().enumerate()
                         {
                             target.clipped_text(
@@ -636,6 +636,9 @@ impl Renderer {
                                     .iter()
                                     .enumerate()
                             {
+                                if column > 0 && model.folder.is_none() {
+                                    continue;
+                                }
                                 if column == 0 && model.renaming.as_ref() == Some(&item.identity) {
                                     continue;
                                 }
@@ -816,11 +819,11 @@ mod tests {
         }
     }
     #[test]
-    fn folder_list_columns_render_and_share_scrolled_hit_geometry() {
+    fn list_view_columns_render_and_share_scrolled_hit_geometry() {
         let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
         let mut model = sample_model();
         model.folder = Some(std::path::PathBuf::from(r"C:\Documents"));
-        model.folder_list = true;
+        model.list_view = true;
         model.items[0].label = "项目进度报告.txt".into();
         model.items[0].details = super::super::ItemDetails {
             kind: "文本文档".into(),
@@ -870,6 +873,31 @@ mod tests {
                     "column {column} must contain rendered text at scale {scale}"
                 );
             }
+        }
+    }
+    #[test]
+    fn desktop_list_renders_full_width_names_and_row_drag_preview() {
+        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let mut model = sample_model();
+        model.list_view = true;
+        model.items[0].label = "普通分组中较长的文件名称 — desktop document.txt".into();
+        model.items = vec![model.items[0].clone(); 20];
+        model.scroll = 3;
+        let mut renderer = Renderer::new().unwrap();
+        for scale in [1.0, 1.25, 1.5, 2.0] {
+            let grid = model.grid(480.0, 300.0);
+            let (x, y) = model.cell(grid, 3);
+            assert_eq!(model.hit(grid, x + grid.cell_width - 2.0, y + 10.0, scale), Some(3));
+            assert_eq!(model.hit(grid, x + 20.0, y - 2.0, scale), None);
+            let pixels = renderer.pixels((480.0 * scale) as u32, (300.0 * scale) as u32, scale, &model).unwrap();
+            let mut blank = model.clone();
+            for item in &mut blank.items { item.label.clear(); }
+            let empty = renderer.pixels((480.0 * scale) as u32, (300.0 * scale) as u32, scale, &blank).unwrap();
+            assert_ne!(pixels, empty);
+            let icon = assets::Pixels { width: 1, height: 1, data: vec![255; 4] };
+            let preview = super::super::drag_drop::image::list_item_pixels(&icon, &model.items[0].label, grid, scale).unwrap();
+            assert_eq!(preview.height, (grid.cell_height * scale).round() as u32);
+            assert!(preview.data.chunks_exact(4).any(|p| p[3] > 0));
         }
     }
     use super::*;
@@ -958,7 +986,7 @@ mod tests {
     fn sample_model() -> GroupModel {
         GroupModel {
             folder_sort: (0, false),
-            folder_list: false,
+            list_view: false,
             folder: None,
             folder_status: None,
             options: desktop_core::PaneOptions::default(),

@@ -15,7 +15,7 @@ enum PanelSource {
 #[allow(clippy::struct_excessive_bools)]
 pub struct Panel {
     source: PanelSource,
-    folder_list: bool,
+    list_view: bool,
     theme: PanelTheme,
     always_on_top: bool,
     auto_hide: bool,
@@ -34,7 +34,7 @@ impl Panel {
         Self {
             id,
             source: PanelSource::Desktop,
-            folder_list: true,
+            list_view: false,
             title: title.into(),
             rect: RectDip::new(rect.x, rect.y, rect.width, rect.height),
             collapsed: false,
@@ -64,7 +64,12 @@ impl Panel {
     /// Clearing a folder returns to desktop content; search content is unaffected.
     pub fn set_folder(&mut self, path: Option<PathBuf>) {
         match path {
-            Some(path) => self.source = PanelSource::Folder(path),
+            Some(path) => {
+                if self.folder().is_none() {
+                    self.list_view = true;
+                }
+                self.source = PanelSource::Folder(path);
+            },
             None if matches!(self.source, PanelSource::Folder(_)) => {
                 self.source = PanelSource::Desktop;
             }
@@ -77,11 +82,12 @@ impl Panel {
         matches!(self.source, PanelSource::Search)
     }
 
-    /// Enables search and clears the folder, collapsed state, and auto-hide flag.
+    /// Enables search and clears the folder, list view, collapsed state, and auto-hide flag.
     /// Disabling search returns to desktop content without changing a folder pane.
     pub fn set_search(&mut self, enabled: bool) {
         if enabled {
             self.source = PanelSource::Search;
+            self.list_view = false;
             self.collapsed = false;
             self.auto_hide = false;
         } else if self.is_search() {
@@ -89,12 +95,13 @@ impl Panel {
         }
     }
 
+    /// Whether desktop or folder items use rows instead of an icon grid.
     #[must_use]
-    pub const fn folder_list(&self) -> bool {
-        self.folder_list
+    pub const fn list_view(&self) -> bool {
+        self.list_view
     }
-    pub const fn set_folder_list(&mut self, enabled: bool) {
-        self.folder_list = enabled;
+    pub const fn set_list_view(&mut self, enabled: bool) {
+        self.list_view = enabled;
     }
 
     #[must_use]

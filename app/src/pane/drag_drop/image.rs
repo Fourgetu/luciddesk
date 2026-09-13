@@ -18,6 +18,39 @@ pub struct DragImage {
     hotspot: POINT,
 }
 
+/// A list drag preview keeps the icon and name aligned with the source row.
+pub fn list_item_pixels(
+    image: &Pixels,
+    name: &str,
+    grid: crate::pane::layout::Grid,
+    scale: f32,
+) -> Option<Pixels> {
+    use crate::pane::{canvas, native_graphics::{canvas_result, gpu_device}};
+    use windows_canvas::{ColorF, Rect, TextFormat, ParagraphAlignment, WordWrapping};
+    let width = (grid.cell_width * scale).round().max(1.0) as u32;
+    let height = (grid.cell_height * scale).round().max(1.0) as u32;
+    let device = gpu_device().ok()?;
+    let bitmap = canvas::Offscreen::new(&device, width, height).ok()?;
+    let format = TextFormat::new(crate::pane::assets::UI_FONT, 12.0).ok()?
+        .with_paragraph_alignment(ParagraphAlignment::Center)
+        .with_word_wrapping(WordWrapping::NoWrap);
+    canvas::ellipsis(&format).ok()?;
+    canvas::draw(&bitmap.target, scale, |frame| {
+        frame.clear(ColorF::new(0.0, 0.0, 0.0, 0.0));
+        if image.width > 0 && image.height > 0 {
+            let ratio = grid.icon_size / image.width.max(image.height) as f32;
+            let iw = image.width as f32 * ratio;
+            let ih = image.height as f32 * ratio;
+            let icon = canvas_result(frame.create_bitmap(&image.data, image.width, image.height))?;
+            frame.draw_bitmap(&icon, &Rect::from_xywh(4.0, (grid.cell_height - ih) / 2.0, iw, ih), 1.0);
+        }
+        let ink = canvas_result(frame.create_solid_brush(ColorF::WHITE))?;
+        frame.clipped_text(name, &format, &Rect::from_xywh(32.0, 0.0, (grid.cell_width - 40.0).max(1.0), grid.cell_height), &ink);
+        frame.finish()
+    }).ok()?;
+    Some(Pixels { width, height, data: bitmap.pixels().ok()? })
+}
+
 /// Keep the drag preview in cell coordinates so dragging by the label does not jump.
 pub fn item_pixels(
     image: &Pixels,

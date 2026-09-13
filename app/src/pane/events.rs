@@ -138,22 +138,22 @@ pub(super) fn handle(
     {
         return Err(runtime::status(&state.borrow()));
     }
-    if matches!(event, Event::ToggleFolderView) {
+    if matches!(event, Event::ToggleListView) {
         let mut s = state.borrow_mut();
         let old = s.workspace.clone();
         let panel = s.workspace.panel_mut(id).ok_or("面板已关闭")?;
-        if panel.folder().is_none() {
+        if panel.is_search() {
             return Ok(false);
         }
-        let enabled = !panel.folder_list();
-        panel.set_folder_list(enabled);
+        let enabled = !panel.list_view();
+        panel.set_list_view(enabled);
         if let Err(error) = save(&mut s) {
             s.workspace = old;
             return Err(error);
         }
         if let Some(view) = s.views.iter().find(|v| v.id == id) {
             let mut model = view.model.borrow_mut();
-            model.folder_list = enabled;
+            model.list_view = enabled;
             model.scroll = 0;
             model.hovered_item = None;
         }
@@ -670,7 +670,7 @@ pub(super) fn handle(
         | Event::OpenConfigDirectory
         | Event::ReloadConfig
         | Event::RetryDesktop
-        | Event::ToggleFolderView
+        | Event::ToggleListView
         | Event::ToggleSearch
         | Event::EnableSearch
         | Event::FileDrag

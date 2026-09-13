@@ -186,12 +186,12 @@ fn folder_sources_survive_reopen_and_are_removed_with_the_panel() {
         loaded
             .panel(desktop_core::PanelId::new(2))
             .unwrap()
-            .folder_list()
+            .list_view()
     );
     workspace
         .panel_mut(desktop_core::PanelId::new(2))
         .unwrap()
-        .set_folder_list(false);
+        .set_list_view(false);
     store.save_workspace(&workspace).unwrap();
     assert!(
         !store
@@ -199,7 +199,7 @@ fn folder_sources_survive_reopen_and_are_removed_with_the_panel() {
             .unwrap()
             .panel(desktop_core::PanelId::new(2))
             .unwrap()
-            .folder_list()
+            .list_view()
     );
     workspace.remove_panel(desktop_core::PanelId::new(2));
     store.save_workspace(&workspace).unwrap();
@@ -208,6 +208,21 @@ fn folder_sources_survive_reopen_and_are_removed_with_the_panel() {
     assert_eq!(store.preference("peek").unwrap().as_deref(), Some("keep"));
 }
 use super::WorkspaceStore;
+#[test]
+fn desktop_list_preference_is_per_panel_and_removed_with_panel() {
+    let mut store = WorkspaceStore::open_in_memory().unwrap();
+    let mut workspace = desktop_core::Workspace::default();
+    let id = desktop_core::PanelId::new(42);
+    let mut panel = desktop_core::Panel::new(id, "List", desktop_core::RectDip::new(0.0, 0.0, 400.0, 300.0));
+    assert!(!panel.list_view());
+    panel.set_list_view(true);
+    workspace.add_panel(panel).unwrap();
+    store.save_workspace(&workspace).unwrap();
+    assert!(store.load_workspace().unwrap().panel(id).unwrap().list_view());
+    workspace.remove_panel(id);
+    store.save_workspace(&workspace).unwrap();
+    assert!(store.preference("panel_desktop_list:42").unwrap().is_none());
+}
 use desktop_core::{
     Backdrop, DesktopItem, DesktopPlacement, GridPosition, Panel, PanelId, RectDip, ShellIdentity,
     Workspace,

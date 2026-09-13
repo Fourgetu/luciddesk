@@ -37,7 +37,7 @@ fn switching_content_sources_preserves_independent_preferences() {
     panel.set_folder(Some(path.clone()));
     panel.set_search(false);
     assert_eq!(panel.folder(), Some(path.as_path()));
-    panel.set_folder_list(false);
+    panel.set_list_view(false);
     panel.set_locked(true);
     panel.set_collapsed(true);
     panel.set_auto_hide(true);
@@ -47,7 +47,7 @@ fn switching_content_sources_preserves_independent_preferences() {
     assert!(!panel.collapsed());
     assert!(!panel.auto_hide());
     assert!(panel.locked());
-    assert!(!panel.folder_list());
+    assert!(!panel.list_view());
     panel.set_folder(None);
     assert!(panel.is_search());
     panel.set_search(false);

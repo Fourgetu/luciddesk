@@ -159,6 +159,9 @@ impl WorkspaceStore {
             panel.set_always_on_top(top);
             panel.set_auto_hide(hide);
             panel.set_search(kind == "search");
+            if kind == "desktop" {
+                panel.set_list_view(self.preference(&format!("panel_desktop_list:{}", panel.id().get()))?.as_deref() == Some("1"));
+            }
             if kind == "folder" {
                 let (path, view): (String, String) = self.connection.query_row(
                     "SELECT path,view FROM panel_folder_settings WHERE panel_id=?1",
@@ -166,7 +169,7 @@ impl WorkspaceStore {
                     |r| Ok((r.get(0)?, r.get(1)?)),
                 )?;
                 panel.set_folder(Some(PathBuf::from(path)));
-                panel.set_folder_list(view == "list");
+                panel.set_list_view(view == "list");
             }
         }
         let mut workspace = Workspace::from_panels(panels)
@@ -293,6 +296,12 @@ impl WorkspaceStore {
         }
 
         for panel in workspace.panels() {
+            let key = format!("panel_desktop_list:{}", panel.id().get());
+            if panel.folder().is_none() && !panel.is_search() && panel.list_view() {
+                transaction.execute("INSERT INTO metadata(key,value) VALUES (?1,'1') ON CONFLICT(key) DO UPDATE SET value='1' WHERE value != '1'", [&key])?;
+            } else {
+                transaction.execute("DELETE FROM metadata WHERE key=?1", [&key])?;
+            }
             insert_panel(&transaction, panel, workspace.appearance())?;
         }
         transaction.execute(
@@ -310,6 +319,7 @@ impl WorkspaceStore {
             if !live_panels.contains(&id) {
                 transaction.execute("DELETE FROM monitor_layouts WHERE panel_id=?1", [id])?;
                 transaction.execute("DELETE FROM panels WHERE id=?1", [id])?;
+                transaction.execute("DELETE FROM metadata WHERE key=?1", [format!("panel_desktop_list:{id}")])?;
             }
         }
         let previous_config = self.config.as_ref().map(|c| c.borrow().source.clone());
@@ -380,7 +390,7 @@ fn insert_panel(
         ],
     )?;
     if let Some(path) = panel.folder() {
-        transaction.execute("INSERT INTO panel_folder_settings(panel_id,path,view) VALUES (?1,?2,?3) ON CONFLICT(panel_id) DO UPDATE SET path=excluded.path,view=excluded.view WHERE path IS NOT excluded.path OR view IS NOT excluded.view",params![id,path.to_string_lossy(),if panel.folder_list(){"list"}else{"icons"}])?;
+        transaction.execute("INSERT INTO panel_folder_settings(panel_id,path,view) VALUES (?1,?2,?3) ON CONFLICT(panel_id) DO UPDATE SET path=excluded.path,view=excluded.view WHERE path IS NOT excluded.path OR view IS NOT excluded.view",params![id,path.to_string_lossy(),if panel.list_view(){"list"}else{"icons"}])?;
     } else {
         transaction.execute("DELETE FROM panel_folder_settings WHERE panel_id=?1", [id])?;
     }

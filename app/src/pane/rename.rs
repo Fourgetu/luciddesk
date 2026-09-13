@@ -298,7 +298,7 @@ unsafe fn resize(edit: HWND, pointer: *mut Editor) {
     let grid = model.grid(client.right as f32 / scale, client.bottom as f32 / scale);
     let (x, y) = model.cell(grid, index);
     let list = model.is_list();
-    let columns = super::layout::list_columns(grid.cell_width);
+    let columns = model.list_columns(grid.cell_width);
     let (left, available, top) = if list {
         (x + columns[0], columns[1] - columns[0] - 8.0, y + 2.0)
     } else {
@@ -630,7 +630,7 @@ mod tests {
         let identity = identity("网易云音乐.lnk");
         let model = Rc::new(RefCell::new(GroupModel {
             folder_sort: (0, false),
-            folder_list: false,
+            list_view: false,
             folder: None,
             folder_status: None,
             options: desktop_core::PaneOptions::default(),

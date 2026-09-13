@@ -63,7 +63,7 @@ pub fn show(
     locked: bool,
     theme: desktop_core::PanelTheme,
     backdrop: Backdrop,
-    folder: Option<bool>,
+    folder: (bool, bool),
 ) -> i32 {
     let mut rows = vec![
         entry(1, "新建分组", "", ""),
@@ -96,23 +96,14 @@ pub fn show(
         entry(18, "设置", "", ""),
         entry(4, "退出 LucidPane", "", ""),
     ];
-    if let Some(list) = folder {
+    rows.insert(2, entry(22, if folder.1 { "切换为图标视图" } else { "切换为列表视图" }, "", ""));
+    if folder.0 {
         rows.splice(
             2..2,
             [
                 entry(20, "在资源管理器中打开", "", ""),
                 entry(23, "返回上个文件夹", "", "Alt+←"),
                 entry(21, "更换文件夹…", "", ""),
-                entry(
-                    22,
-                    if list {
-                        "切换为图标视图"
-                    } else {
-                        "切换为列表视图"
-                    },
-                    "",
-                    "",
-                ),
                 entry(9, "刷新", "", "F5"),
             ],
         );
@@ -508,7 +499,7 @@ mod tests {
                 false,
                 desktop_core::PanelTheme::Dark,
                 Backdrop::Acrylic,
-                None
+                (false, false)
             ),
             0
         );
@@ -566,7 +557,7 @@ mod tests {
                         false,
                         desktop_core::PanelTheme::Dark,
                         Backdrop::Mica,
-                        None
+                        (false, false)
                     ),
                     0
                 );

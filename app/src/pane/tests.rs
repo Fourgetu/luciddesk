@@ -132,6 +132,30 @@ fn empty_first_desktop_pane_is_ready_without_icon_results() {
 }
 
 #[test]
+fn desktop_list_toggle_preserves_membership_and_restores_view() {
+    let _apartment = ShellApartment::initialize_sta().unwrap();
+    let state = Rc::new(RefCell::new(test_state()));
+    let id = PanelId::new(1);
+    create_view(&state, id).unwrap();
+    let before = state.borrow().workspace.desktop_items().to_vec();
+    assert!(!state.borrow().views[0].model.borrow().is_list());
+    handle(&state, id, Event::ToggleListView).unwrap();
+    {
+        let app = state.borrow();
+        assert_eq!(app.workspace.desktop_items(), before);
+        let model = app.views[0].model.borrow();
+        assert!(model.is_list());
+        let grid = model.grid(440.0, 300.0);
+        assert_eq!(grid.columns, 1);
+        assert_eq!(grid.content_top, layout::HEADER + layout::PADDING);
+        assert!(app.store.load_workspace().unwrap().panel(id).unwrap().list_view());
+    }
+    handle(&state, id, Event::ToggleListView).unwrap();
+    assert!(!state.borrow().views[0].model.borrow().is_list());
+    assert!(!state.borrow().store.load_workspace().unwrap().panel(id).unwrap().list_view());
+}
+
+#[test]
 fn search_pane_creation_and_close_preserve_desktop_membership() {
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
     let state = Rc::new(RefCell::new(test_state()));
@@ -267,7 +291,7 @@ fn folder_pane_creation_switch_and_close_preserve_real_files() {
         .model
         .borrow_mut()
         .select_item(0, false, false);
-    handle(&state, id, Event::ToggleFolderView).unwrap();
+    handle(&state, id, Event::ToggleListView).unwrap();
     assert!(!state.borrow().views[0].model.borrow().is_list());
     assert!(
         !state
@@ -277,10 +301,10 @@ fn folder_pane_creation_switch_and_close_preserve_real_files() {
             .unwrap()
             .panel(id)
             .unwrap()
-            .folder_list()
+            .list_view()
     );
     assert_eq!(state.borrow().views[0].model.borrow().selected, Some(0));
-    handle(&state, id, Event::ToggleFolderView).unwrap();
+    handle(&state, id, Event::ToggleListView).unwrap();
     assert!(
         state
             .borrow()
@@ -289,7 +313,7 @@ fn folder_pane_creation_switch_and_close_preserve_real_files() {
             .unwrap()
             .panel(id)
             .unwrap()
-            .folder_list()
+            .list_view()
     );
     assert_eq!(
         state
@@ -417,7 +441,7 @@ fn activation_releases_state_and_model_before_shell_reentry() {
 fn snapped_content_bottom_and_scrollbar_use_the_same_row_metrics() {
     let mut model = GroupModel {
         folder_sort: (0, false),
-        folder_list: false,
+        list_view: false,
         folder: None,
         folder_status: None,
         options: desktop_core::PaneOptions::default(),
@@ -529,7 +553,7 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
     let model = Rc::new(RefCell::new(GroupModel {
         folder_sort: (0, false),
-        folder_list: false,
+        list_view: false,
         folder: None,
         folder_status: None,
         options: desktop_core::PaneOptions::default(),
@@ -853,7 +877,7 @@ fn pane_layer_switch_and_wallpaper_material_initialize() {
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
     let model = Rc::new(RefCell::new(GroupModel {
         folder_sort: (0, false),
-        folder_list: false,
+        list_view: false,
         folder: None,
         folder_status: None,
         options: desktop_core::PaneOptions::default(),
@@ -1693,7 +1717,7 @@ fn reconciliation_preserves_groups_and_appends_new_items_after_existing_order() 
 fn multiselection_preserves_anchor_toggle_and_file_identity_on_refresh() {
     let mut model = GroupModel {
         folder_sort: (0, false),
-        folder_list: false,
+        list_view: false,
         folder: None,
         folder_status: None,
         options: desktop_core::PaneOptions::default(),

@@ -824,6 +824,7 @@ where
                     let s = scale(hwnd);
                     let r = client(hwnd);
                     if model.borrow().is_list()
+                        && model.borrow().folder.is_some()
                         && p.y as f32 / s >= HEADER
                         && p.y as f32 / s < HEADER + super::layout::LIST_HEADER
                     {
@@ -938,7 +939,12 @@ where
                                     .into_iter()
                                     .filter_map(|index| {
                                         let item = m.items.get(index)?;
-                                        let pixels = super::drag_drop::image::item_pixels(
+                                        let render = if m.is_list() {
+                                            super::drag_drop::image::list_item_pixels
+                                        } else {
+                                            super::drag_drop::image::item_pixels
+                                        };
+                                        let pixels = render(
                                             item.image.as_deref().unwrap_or(&placeholder),
                                             &item.label,
                                             grid,
@@ -1320,7 +1326,7 @@ where
                         invalidate(hwnd);
                         let is_folder = {
                             let model = model.borrow();
-                            model.folder.as_ref().map(|_| model.folder_list)
+                            (model.folder.is_some(), model.is_list())
                         };
                         let command =
                             menu(hwnd, lparam, auto_hide, locked, theme, backdrop, is_folder);
@@ -1334,7 +1340,7 @@ where
                                 event(Event::ToggleLocked);
                             }
                             22 => {
-                                event(Event::ToggleFolderView);
+                                event(Event::ToggleListView);
                             }
                             19 => {
                                 event(Event::NewFolder);
@@ -1450,7 +1456,7 @@ fn menu(
     locked: bool,
     theme: desktop_core::PanelTheme,
     backdrop: desktop_core::Backdrop,
-    folder: Option<bool>,
+    folder: (bool, bool),
 ) -> i32 {
     let anchored = lparam == -1;
     let mut anchor = point(lparam);

@@ -4,7 +4,7 @@ use super::*;
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Clone)]
 pub struct GroupModel {
-    pub folder_list: bool,
+    pub list_view: bool,
     pub folder_sort: (u8, bool),
     pub folder: Option<std::path::PathBuf>,
     pub folder_status: Option<String>,
@@ -37,7 +37,14 @@ pub struct GroupModel {
 
 impl GroupModel {
     pub(super) fn is_list(&self) -> bool {
-        self.folder.is_some() && self.folder_list
+        self.list_view
+    }
+    pub(super) fn list_columns(&self, width: f32) -> [f32; 4] {
+        if self.folder.is_some() {
+            layout::list_columns(width)
+        } else {
+            [32.0, width, width, width]
+        }
     }
     pub(super) fn clear_selection(&mut self) {
         self.selected = None;
@@ -146,7 +153,13 @@ impl GroupModel {
 
     pub(super) fn grid(&self, width: f32, height: f32) -> layout::Grid {
         if self.is_list() {
-            return layout::Grid::list(width, height);
+            let mut grid = layout::Grid::list(width, height);
+            if self.folder.is_none() {
+                grid.content_top = layout::HEADER + layout::PADDING;
+                grid.visible_rows = ((height - grid.content_top - layout::PADDING)
+                    / layout::LIST_ROW).floor().max(1.0) as usize;
+            }
+            return grid;
         }
         let mut grid = layout::Grid::system(width, height, self.icon_size, self.spacing);
         if !self.items.is_empty() {

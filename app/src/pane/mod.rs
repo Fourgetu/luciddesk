@@ -159,7 +159,7 @@ enum Event {
     Peek,
     FileCommand(desktop_shell::FileCommand),
     FileDrag,
-    ToggleFolderView,
+    ToggleListView,
     Drop { index: usize, point: POINT },
     Geometry(RectDip),
     Collapse,
@@ -214,7 +214,7 @@ fn create_view(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> 
     };
     let model = Rc::new(RefCell::new(GroupModel {
         folder_sort: (0, false),
-        folder_list: panel.folder_list(),
+        list_view: panel.list_view(),
         folder: panel.folder().map(Path::to_path_buf),
         folder_status: None,
         options: state.borrow().workspace.pane_options(),
