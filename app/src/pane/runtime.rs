@@ -159,7 +159,7 @@ pub(super) fn maintain(state: &Rc<RefCell<PaneApp>>, force: bool) -> Result<(), 
 }
 
 pub(super) fn backup_status(s: &PaneApp) -> String {
-    recovery::view(s).status
+    s.runtime.as_ref().map(|runtime| runtime.backup.view.status.clone()).unwrap_or_default()
 }
 
 pub(super) fn reload(state: &Rc<RefCell<PaneApp>>) -> Result<(), String> {

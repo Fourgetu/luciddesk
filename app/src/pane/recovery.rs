@@ -64,14 +64,14 @@ pub(super) struct Record {
 }
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(super) struct View {
-    pub records: Vec<Record>,
+    pub records: Arc<[Record]>,
     pub status: String,
     pub busy: bool,
     pub undo: Option<PathBuf>,
 }
 struct Completed {
     result: Result<Outcome, String>,
-    records: Vec<Record>,
+    records: Arc<[Record]>,
 }
 struct RestoreInput {
     original: PathBuf,
@@ -233,7 +233,7 @@ fn begin(
             let result = work(directory.clone());
             let _ = tx.send(Completed {
                 result,
-                records: records(&directory),
+                records: records(&directory).into(),
             });
             wake.notify();
         })
@@ -744,6 +744,20 @@ fn execute(state: &Rc<RefCell<PaneApp>>, event: &Event) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn backup_views_share_history_and_keep_previous_snapshot_stable() {
+        let mut current = super::View {
+            records: (0..1000).map(|index| super::Record {
+                path: std::path::PathBuf::from(format!("backup-{index}.db")),
+                date: "2026-09-14".into(), kind: "manual", bytes: 1024,
+            }).collect(), ..Default::default()
+        };
+        let previous = current.clone();
+        assert!(std::sync::Arc::ptr_eq(&current.records, &previous.records));
+        current.records = Default::default();
+        assert_eq!(previous.records.len(), 1000);
+    }
+
     use super::*;
     fn state(root: &Path) -> Rc<RefCell<PaneApp>> {
         let mut state = super::super::tests::test_state();

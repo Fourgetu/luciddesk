@@ -20,6 +20,25 @@ pub(super) fn unique_backup_path(path: &Path, label: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn compact_backup_content_is_order_independent_typed_and_binary_safe() {
+        let store = WorkspaceStore::open_in_memory().unwrap();
+        store.connection.execute_batch("CREATE TABLE memory_payload (value); INSERT INTO memory_payload VALUES (1), ('1'), (NULL), (1.5);").unwrap();
+        let first = store.backup_content().unwrap();
+        store.connection.execute_batch("DELETE FROM memory_payload; INSERT INTO memory_payload VALUES (1.5), (NULL), ('1'), (1);").unwrap();
+        assert_eq!(first, store.backup_content().unwrap());
+        store.connection.execute_batch("DELETE FROM memory_payload WHERE typeof(value)='text'; INSERT INTO memory_payload VALUES (x'31');").unwrap();
+        assert_ne!(first, store.backup_content().unwrap());
+        store.connection.execute_batch("DELETE FROM memory_payload;").unwrap();
+        let baseline = store.backup_content().unwrap().len();
+        let blob = vec![255u8; 1024 * 1024];
+        store.connection.execute("INSERT INTO memory_payload VALUES (?1)", [&blob]).unwrap();
+        let bytes = store.backup_content().unwrap();
+        assert!(bytes.len() - baseline < blob.len() + 64, "binary content must not expand into debug strings");
+        store.save_preference("backup_manifest_version", "test").unwrap();
+        assert_eq!(bytes, store.backup_content().unwrap());
+    }
+
     fn temp(label: &str) -> PathBuf {
         unique_backup_path(&std::env::temp_dir().join("lucidpane-recovery"), label)
     }
@@ -115,7 +134,7 @@ impl WorkspaceStore {
         copy_database(&source, &mut connection)?;
         Self::from_connection(connection)
     }
-    pub fn backup_file_content(path: &Path) -> Result<String, StoreError> {
+    pub fn backup_file_content(path: &Path) -> Result<Vec<u8>, StoreError> {
         Self::read_backup(path)?.backup_content()
     }
     /// Captures a consistent, independent snapshot for background file operations.
@@ -134,15 +153,20 @@ impl WorkspaceStore {
     }
 
     /// Compares logical rows rather than database pages or write counters.
-    pub fn backup_content(&self) -> Result<String, StoreError> {
+    pub fn backup_content(&self) -> Result<Vec<u8>, StoreError> {
+        use rusqlite::types::ValueRef;
+
+        fn field(output: &mut Vec<u8>, value: &[u8]) {
+            output.extend_from_slice(&(value.len() as u64).to_le_bytes());
+            output.extend_from_slice(value);
+        }
+
         let tables: Vec<String> = self.connection.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")?
             .query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?;
-        let mut result = String::new();
+        let mut result = Vec::new();
         for table in tables {
             let quoted = table.replace('"', "\"\"");
-            let mut statement = self
-                .connection
-                .prepare(&format!("SELECT * FROM \"{quoted}\""))?;
+            let mut statement = self.connection.prepare(&format!("SELECT * FROM \"{quoted}\""))?;
             let columns = statement.column_count();
             let mut records = Vec::new();
             let mut rows = statement.query([])?;
@@ -150,13 +174,29 @@ impl WorkspaceStore {
                 if table == "metadata" && row.get::<_, String>(0)?.starts_with("backup_manifest_") {
                     continue;
                 }
-                let values: Vec<_> = (0..columns)
-                    .map(|i| row.get_ref(i).map(|v| format!("{v:?}")))
-                    .collect::<Result<_, _>>()?;
-                records.push(format!("{values:?}"));
+                let mut record = Vec::new();
+                for column in 0..columns {
+                    match row.get_ref(column)? {
+                        ValueRef::Null => record.push(0),
+                        ValueRef::Integer(value) => {
+                            record.push(1);
+                            record.extend_from_slice(&value.to_le_bytes());
+                        }
+                        ValueRef::Real(value) => {
+                            record.push(2);
+                            record.extend_from_slice(&value.to_bits().to_le_bytes());
+                        }
+                        ValueRef::Text(value) => { record.push(3); field(&mut record, value); }
+                        ValueRef::Blob(value) => { record.push(4); field(&mut record, value); }
+                    }
+                }
+                records.push(record);
             }
-            records.sort();
-            result.push_str(&format!("{table:?}{records:?}"));
+            records.sort_unstable();
+            field(&mut result, table.as_bytes());
+            result.extend_from_slice(&(columns as u64).to_le_bytes());
+            result.extend_from_slice(&(records.len() as u64).to_le_bytes());
+            for record in records { field(&mut result, &record); }
         }
         Ok(result)
     }
