@@ -1,6 +1,8 @@
 //! Live folder sources are separate from Explorer desktop membership.
 use super::*;
 use std::path::PathBuf;
+use std::sync::Mutex;
+mod images;
 #[cfg(test)]
 use std::time::{Duration, Instant};
 use windows::Win32::{
@@ -14,7 +16,9 @@ pub(super) struct Source {
     history: Vec<PathBuf>,
     pub sort: (u8, bool),
     request: Arc<Commands>,
+    cache: images::SharedCache,
     updates: mpsc::Receiver<Result<Vec<Item>, String>>,
+    images: mpsc::Receiver<Vec<Item>>,
     pub items: Vec<Item>,
     pub status: Option<String>,
     pub loading: bool,
@@ -23,6 +27,8 @@ pub(super) struct Source {
 struct Commands {
     event: isize,
     stop: std::sync::atomic::AtomicBool,
+    images_pending: std::sync::atomic::AtomicBool,
+    priority: Mutex<Vec<String>>,
 }
 impl Commands {
     fn new() -> Result<Self, String> {
@@ -40,6 +46,8 @@ impl Commands {
         Ok(Self {
             event: event as isize,
             stop: false.into(),
+            images_pending: false.into(),
+            priority: Mutex::new(Vec::new()),
         })
     }
     fn signal(&self) {
@@ -133,10 +141,17 @@ impl Source {
         [!self.history.is_empty(), self.path != self.root]
     }
 
+    #[cfg(test)]
     fn start(path: PathBuf, wake: wake::Wake) -> Result<Self, String> {
+        Self::start_with(path, wake, Arc::default(), (0, false))
+    }
+
+    fn start_with(path: PathBuf, wake: wake::Wake, cache: images::SharedCache, sort: (u8, bool)) -> Result<Self, String> {
         let request = Arc::new(Commands::new()?);
         let commands = Arc::clone(&request);
         let (sender, updates) = mpsc::channel();
+        let (image_sender, image_updates) = mpsc::channel();
+        let worker_cache = Arc::clone(&cache);
         let root = path.clone();
         std::thread::Builder::new()
             .name("folder-pane".into())
@@ -150,97 +165,57 @@ impl Source {
                     }
                 };
                 let mut watch = Watch::new(&root);
-                let mut cache: HashMap<String, (Option<std::time::SystemTime>, Item)> =
-                    HashMap::new();
+                let cache = worker_cache;
                 loop {
                     if commands.stop.load(std::sync::atomic::Ordering::Acquire) {
                         break;
                     }
                     {
+                        let mut jobs = Vec::new();
                         let result = desktop_shell::enumerate_folder(&root)
                             .map(|entries| {
-                                let mut next = HashMap::new();
-                                let items: Vec<Item> = entries
-                                    .into_iter()
-                                    .map(|entry| {
-                                        let key = entry.identity.persistent_key();
-                                        let image = cache
-                                            .get(&key)
-                                            .filter(|(modified, item)| {
-                                                *modified == entry.modified
-                                                    && item.identity == entry.identity
-                                            })
-                                            .and_then(|(_, item)| item.image.clone());
-                                        let item = Item {
-                                            details: ItemDetails {
-                                                kind: cache
-                                                    .get(&key)
-                                                    .map(|(_, item)| item.details.kind.clone())
-                                                    .unwrap_or_default(),
-                                                modified: modified_text(entry.modified),
-                                                folder: entry.attributes.folder,
-                                                modified_time: entry.modified,
-                                            },
-                                            identity: entry.identity,
-                                            label: entry.display_name,
-                                            image,
-                                        };
-                                        next.insert(key, (entry.modified, item.clone()));
-                                        item
-                                    })
-                                    .collect();
-                                cache = next;
+                                let mut cache = cache.lock().unwrap();
+                                let mut items: Vec<Item> = entries.into_iter().map(|entry| {
+                                    let mut item = Item {
+                                        details: ItemDetails {
+                                            modified: modified_text(entry.modified),
+                                            folder: entry.attributes.folder,
+                                            modified_time: entry.modified,
+                                            ..Default::default()
+                                        },
+                                        identity: entry.identity,
+                                        label: entry.display_name,
+                                        image: None,
+                                    };
+                                    if !cache.restore(&mut item) { jobs.push(item.clone()); }
+                                    item
+                                }).collect();
+                                cache.retain_folder(&root, &items.iter().map(|item| item.identity.persistent_key()).collect());
+                                drop(cache);
+                                sort_items(&mut items, sort);
+                                sort_items(&mut jobs, sort);
                                 items
                             })
                             .map_err(|error| {
                                 format!("无法读取文件夹，请检查路径或访问权限。\n{error}")
                             });
                         if result.is_err() {
-                            cache.clear();
+                            cache.lock().unwrap().retain_folder(&root, &Default::default());
                             watch = None;
                         }
+                        commands.images_pending.store(!jobs.is_empty(), std::sync::atomic::Ordering::Release);
                         if sender.send(result.clone()).is_err() {
                             break;
                         }
                         wake.notify();
-                        // Publish membership before invoking potentially slow Shell
-                        // thumbnail/type handlers, then update at a bounded rate.
+                        // Send only completed image/type changes while loading. A final
+                        // snapshot also supports consumers waiting for a complete scan.
                         if let Ok(mut items) = result {
-                            let mut published = std::time::Instant::now();
-                            let mut dirty = false;
-                            for index in 0..items.len() {
-                                if commands.stop.load(std::sync::atomic::Ordering::Acquire) {
-                                    return;
-                                }
-                                let item = &mut items[index];
-                                if item.image.is_some() && !item.details.kind.is_empty() {
-                                    continue;
-                                }
-                                if item.details.kind.is_empty() {
-                                    item.details.kind = file_type(&item.identity);
-                                }
-                                if item.image.is_none() {
-                                    item.image =
-                                        assets::load(&item.identity, 128).ok().map(Arc::new);
-                                }
-                                cache.insert(
-                                    item.identity.persistent_key(),
-                                    (item.details.modified_time, item.clone()),
-                                );
-                                dirty = true;
-                                if published.elapsed() >= std::time::Duration::from_millis(100) {
-                                    if sender.send(Ok(items.clone())).is_err() {
-                                        return;
-                                    }
-                                    wake.notify();
-                                    published = std::time::Instant::now();
-                                    dirty = false;
-                                }
-                            }
-                            if dirty {
-                                if sender.send(Ok(items)).is_err() {
-                                    return;
-                                }
+                            if !jobs.is_empty() {
+                                images::enrich(&mut items, jobs, &commands, &cache, &image_sender, &wake);
+                                commands.images_pending.store(false, std::sync::atomic::Ordering::Release);
+                                if commands.stop.load(std::sync::atomic::Ordering::Acquire) { return; }
+                                if sender.send(Ok(items)).is_err() { return; }
                                 wake.notify();
                             }
                         }
@@ -284,10 +259,12 @@ impl Source {
         Ok(Self {
             root: path.clone(),
             history: Vec::new(),
-            sort: (0, false),
+            sort,
             path,
             request,
+            cache,
             updates,
+            images: image_updates,
             items: Vec::new(),
             status: None,
             loading: true,
@@ -310,16 +287,16 @@ pub(super) fn ensure(state: &mut PaneApp, id: PanelId) -> Result<(), String> {
             .get(&id)
             .is_none_or(|source| source.root != path)
         {
-            let mut source = Source::start(path, state.wake.clone())?;
-            source.sort = state
+            let sort = state
                 .store
                 .preference(&format!("panel_folder_sort:{}", id.get()))
                 .map_err(|e| e.to_string())?
                 .and_then(|v| {
                     let (column, direction) = v.split_once(':')?;
-                    Some((column.parse::<u8>().ok()?.min(2), direction == "desc"))
+                    Some((column.parse::<u8>().ok()?.min(3), direction == "desc"))
                 })
                 .unwrap_or((0, false));
+            let source = Source::start_with(path, state.wake.clone(), Arc::default(), sort)?;
             state.folders.insert(id, source);
         }
     } else {
@@ -352,9 +329,49 @@ pub(super) fn poll(state: &mut PaneApp) {
             }
             changed = true;
         }
+        let mut patches = HashMap::new();
+        while let Ok(batch) = source.images.try_recv() {
+            for item in batch { patches.insert(item.identity.persistent_key(), item); }
+        }
+        if !patches.is_empty() {
+            let mut patched = false;
+            for item in &mut source.items {
+                if let Some(update) = patches.remove(&item.identity.persistent_key()) {
+                    // A delayed thumbnail must never overwrite a later scan's
+                    // metadata or resurrect a removed/replaced file.
+                    if item.identity == update.identity
+                        && item.details.modified_time == update.details.modified_time
+                        && item.details.folder == update.details.folder
+                    {
+                        item.image = update.image;
+                        item.details.kind = update.details.kind;
+                        patched = true;
+                    }
+                }
+            }
+            if patched && source.sort.0 == 1 { sort_items(&mut source.items, source.sort); }
+            changed |= patched;
+        }
     }
     if changed {
         refresh_views(state);
+    }
+    // Re-evaluate the viewport while work arrives, including after scrolling or
+    // changing the sort order. Unseen files remain queued behind these entries.
+    for view in &state.views {
+        let Some(source) = state.folders.get(&view.id) else { continue; };
+        if !changed && !source.request.images_pending.load(std::sync::atomic::Ordering::Acquire) { continue; }
+        let model = view.model.borrow();
+        let mut bounds = RECT::default();
+        let hwnd = view.window.hwnd().cast();
+        unsafe { windows_sys::Win32::UI::WindowsAndMessaging::GetClientRect(hwnd, &raw mut bounds); }
+        let scale = unsafe { windows_sys::Win32::UI::HiDpi::GetDpiForWindow(hwnd) }.max(96) as f32 / 96.0;
+        let grid = model.grid(bounds.right as f32 / scale, bounds.bottom as f32 / scale);
+        let start = model.scroll.saturating_mul(grid.columns).min(model.items.len());
+        let count = (grid.visible_rows + 2).saturating_mul(grid.columns);
+        let priority: Vec<_> = model.items.iter().skip(start).take(count).map(|item| item.identity.persistent_key()).collect();
+        source.cache.lock().unwrap().touch(&priority);
+        *source.request.priority.lock().unwrap() = priority;
     }
 }
 
@@ -432,7 +449,7 @@ pub(super) fn navigate(
         };
         path
     };
-    let mut source = Source::start(path.clone(), state.wake.clone())?;
+    let mut source = Source::start_with(path.clone(), state.wake.clone(), Arc::clone(&old.cache), old.sort)?;
     source.root = old.root.clone();
     source.history = history;
     source.sort = old.sort;
@@ -608,6 +625,42 @@ pub(super) fn request_picker(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "Read-only thumbnail diagnostic; set LUCIDPANE_TEST_FOLDER"]
+    fn real_folder_images_survive_parent_child_navigation() {
+        let root = PathBuf::from(std::env::var_os("LUCIDPANE_TEST_FOLDER").expect("test folder"));
+        let cache: images::SharedCache = Arc::default();
+        let started = Instant::now();
+        let source = Source::start_with(root.clone(), Default::default(), Arc::clone(&cache), (2, true)).unwrap();
+        let first = source.updates.recv_timeout(Duration::from_secs(30)).unwrap().unwrap();
+        eprintln!("directory membership: {} entries in {:?}", first.len(), started.elapsed());
+        let target = first.len().min(32);
+        let mut loaded = HashMap::new();
+        let deadline = Instant::now() + Duration::from_secs(45);
+        while loaded.len() < target {
+            let batch = source.images.recv_timeout(deadline.saturating_duration_since(Instant::now())).expect("thumbnail batch");
+            for item in batch {
+                if let Some(image) = item.image { loaded.insert(item.identity.persistent_key(), image); }
+            }
+        }
+        eprintln!("first {} real images: {:?}", loaded.len(), started.elapsed());
+        let child = first.iter().find(|item| item.details.folder).and_then(|item| item.identity.file_system_path()).map(Path::to_path_buf);
+        drop(source);
+        if let Some(child) = child {
+            let child = Source::start_with(child, Default::default(), Arc::clone(&cache), (2, true)).unwrap();
+            child.updates.recv_timeout(Duration::from_secs(30)).unwrap().unwrap();
+            drop(child);
+        }
+        let started = Instant::now();
+        let returned = Source::start_with(root, Default::default(), cache, (2, true)).unwrap();
+        let first = returned.updates.recv_timeout(Duration::from_secs(30)).unwrap().unwrap();
+        let reused = first.iter().filter(|item| {
+            item.image.as_ref().zip(loaded.get(&item.identity.persistent_key())).is_some_and(|(image, old)| Arc::ptr_eq(image, old))
+        }).count();
+        eprintln!("back navigation: {reused}/{} prior image allocations reused in first snapshot ({:?})", loaded.len(), started.elapsed());
+        assert_eq!(reused, loaded.len());
+    }
 
     #[test]
     #[ignore = "Read-only diagnostic; set LUCIDPANE_TEST_FOLDER to an existing directory"]
