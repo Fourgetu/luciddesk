@@ -993,7 +993,6 @@ mod tests {
             theme: desktop_core::PanelTheme::Dark,
             dark: true,
 
-            spacing: (88.0, 96.0),
             hovered_item: None,
             focused: true,
             auto_hide: false,

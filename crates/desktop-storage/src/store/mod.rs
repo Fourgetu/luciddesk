@@ -216,7 +216,14 @@ impl WorkspaceStore {
         let options = self.preference("pane_options")?;
         if let Some(value) = options {
             let parts = value.split('|').collect::<Vec<_>>();
-            let [radius, border, snap, text @ ..] = parts.as_slice() else {
+            let grid_scale = if parts.len() == 6 {
+                let value: f32 = parts[5].parse().map_err(|_| StoreError::InvalidData("invalid grid scale".into()))?;
+                let (min, max) = desktop_core::PaneOptions::GRID_SCALE_RANGE;
+                if !(min..=max).contains(&value) { return Err(StoreError::InvalidData("invalid grid scale".into())); }
+                value
+            } else { 100.0 };
+            let base = if parts.len() == 6 { &parts[..5] } else { parts.as_slice() };
+            let [radius, border, snap, text @ ..] = base else {
                 return Err(StoreError::InvalidData("invalid pane options".into()));
             };
             let invalid = || StoreError::InvalidData("invalid pane options".into());
@@ -232,6 +239,7 @@ impl WorkspaceStore {
             }
             workspace.set_pane_options(desktop_core::PaneOptions {
                 corner_radius,
+                grid_scale,
                 border: border.parse().map_err(|_| invalid())?,
                 snap: snap.parse().map_err(|_| invalid())?,
                 text: match text {
@@ -258,12 +266,12 @@ impl WorkspaceStore {
         self.save_preference(
             "pane_options",
             &format!(
-                "{}|{}|{}|{}|{}",
+                "{}|{}|{}|{}|{}|{}",
                 options.corner_radius,
                 options.border,
                 options.snap,
                 encode_panel_text(options.text),
-                options.text_protection
+                options.text_protection, options.grid_scale
             ),
         )
     }

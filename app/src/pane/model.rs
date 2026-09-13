@@ -12,7 +12,6 @@ pub struct GroupModel {
     pub theme: desktop_core::PanelTheme,
     pub dark: bool,
 
-    pub spacing: (f32, f32),
     pub hovered_item: Option<usize>,
     pub focused: bool,
     pub auto_hide: bool,
@@ -122,11 +121,17 @@ impl GroupModel {
             .collect();
     }
 
+    fn icon_grid_spacing(&self) -> (f32, f32) {
+        let scale = (self.options.grid_scale / 100.0)
+            .max((self.icon_size + 16.0) / 88.0)
+            .max((self.icon_size + 34.0) / 96.0);
+        (88.0 * scale, 96.0 * scale)
+    }
     pub(super) fn resize_cell(&self) -> (f32, f32) {
         if self.is_list() {
             return (396.0, layout::LIST_ROW);
         }
-        let grid = layout::Grid::system(0.0, 0.0, self.icon_size, self.spacing);
+        let grid = layout::Grid::system(0.0, 0.0, self.icon_size, self.icon_grid_spacing());
         (grid.cell_width, grid.cell_height)
     }
 
@@ -161,7 +166,7 @@ impl GroupModel {
             }
             return grid;
         }
-        let mut grid = layout::Grid::system(width, height, self.icon_size, self.spacing);
+        let mut grid = layout::Grid::system(width, height, self.icon_size, self.icon_grid_spacing());
         if !self.items.is_empty() {
             let rows = self.row_contents(grid);
             let available = height - layout::HEADER - layout::PADDING;

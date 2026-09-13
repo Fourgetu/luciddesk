@@ -341,6 +341,7 @@ pub(super) fn handle(
     if matches!(
         event,
         Event::SetCornerRadius(_)
+            | Event::SetIconGrid(_)
             | Event::SetPanelText(_)
             | Event::ToggleTextProtection
             | Event::ToggleBorder
@@ -357,6 +358,12 @@ pub(super) fn handle(
                 }
                 options.corner_radius =
                     radius.clamp(0.0, desktop_core::PaneOptions::MAX_CORNER_RADIUS)
+            }
+            Event::SetIconGrid(value) => {
+                if !value.is_finite() { return Ok(false); }
+                let range = desktop_core::PaneOptions::GRID_SCALE_RANGE;
+                let value = value.round().clamp(range.0, range.1);
+                options.grid_scale = value;
             }
             Event::ToggleBorder => options.border = !options.border,
             Event::SetPanelText(text) => options.text = text,
@@ -378,7 +385,13 @@ pub(super) fn handle(
             return Err(error);
         }
         for view in &s.views {
-            view.model.borrow_mut().options = options;
+            let mut model = view.model.borrow_mut();
+            model.options = options;
+            if !model.is_list() && (options.grid_scale != old.grid_scale) {
+                model.scroll = 0;
+                model.hovered_item = None;
+            }
+            drop(model);
             unsafe {
                 InvalidateRect(view.window.hwnd().cast(), std::ptr::null(), 0);
             }
@@ -707,6 +720,7 @@ pub(super) fn handle(
         Event::Theme(_)
         | Event::Material(_)
         | Event::SetCornerRadius(_)
+            | Event::SetIconGrid(_)
         | Event::SetPanelText(_)
         | Event::ToggleTextProtection
         | Event::ToggleBorder
@@ -1004,6 +1018,33 @@ pub(super) fn handle(
 }
 
 /// Preview only; the settings gesture commits its final value separately.
+pub(super) fn preview_grid(state: &mut PaneApp, value: f32) {
+    if !value.is_finite() { return; }
+    let range = desktop_core::PaneOptions::GRID_SCALE_RANGE;
+    let value = value.clamp(range.0, range.1);
+    let mut options = state.workspace.pane_options();
+    options.grid_scale = value;
+    if options == state.workspace.pane_options() { return; }
+    state.workspace.set_pane_options(options);
+    for view in &state.views {
+        let mut model = view.model.borrow_mut();
+        model.options = options;
+        if !model.is_list() { model.scroll = 0; model.hovered_item = None; }
+        drop(model);
+        unsafe { InvalidateRect(view.window.hwnd().cast(), std::ptr::null(), 0); }
+    }
+}
+
+pub(super) fn commit_grid(state: &mut PaneApp, original: f32) -> Result<(), String> {
+    let options = state.workspace.pane_options();
+    if options.grid_scale == original { return Ok(()); }
+    if let Err(error) = state.store.save_pane_options(options) {
+        preview_grid(state, original);
+        return Err(error.to_string());
+    }
+    Ok(())
+}
+
 pub(super) fn preview_radius(state: &mut PaneApp, radius: f32) {
     if !radius.is_finite() {
         return;

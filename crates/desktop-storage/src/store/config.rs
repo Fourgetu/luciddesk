@@ -40,6 +40,7 @@ opacity = 0.85
 
 [panel_defaults]
 corner_radius = 6.0
+grid_scale = 100.0
 border = true
 snap = true
 text = "auto"
@@ -250,11 +251,12 @@ pub(super) fn decode(doc: &DocumentMut) -> Result<BTreeMap<String, String>, Stor
     map.insert(
         "pane_options".into(),
         format!(
-            "{}|{}|{}|{text}|{}",
+            "{}|{}|{}|{text}|{}|{}",
             n(&["panel_defaults", "corner_radius"], 24.0)?,
             b(&["panel_defaults", "border"])?,
             b(&["panel_defaults", "snap"])?,
-            b(&["panel_defaults", "text_protection"])?
+            b(&["panel_defaults", "text_protection"])?,
+            grid_dimension(doc, &defaults, "grid_scale", desktop_core::PaneOptions::GRID_SCALE_RANGE)?
         ),
     );
     map.insert(
@@ -285,12 +287,18 @@ pub(super) fn decode(doc: &DocumentMut) -> Result<BTreeMap<String, String>, Stor
     Ok(map)
 }
 
+fn grid_dimension(doc: &DocumentMut, defaults: &DocumentMut, name: &str, range: (f32, f32)) -> Result<f64, StoreError> {
+    let value = number(doc, defaults, &["panel_defaults", name], f64::from(range.1))?;
+    if value < f64::from(range.0) { return Err(error(format!("panel_defaults.{name} is too small"))); }
+    Ok(value)
+}
+
 fn update(doc: &mut DocumentMut, key: &str, raw: &str) -> Result<(), StoreError> {
     let parts: Vec<_> = raw.split('|').collect();
     let f = |s: &str| s.parse::<f64>().map_err(io);
     let flag = |s: &str| s.parse::<bool>().map_err(io);
     match key {
-        "pane_options" if (3..=5).contains(&parts.len()) => {
+        "pane_options" if (3..=5).contains(&parts.len()) || parts.len() == 6 => {
             let radius = match parts[0] {
                 "true" => 7.0,
                 "false" => 0.0,
@@ -298,6 +306,7 @@ fn update(doc: &mut DocumentMut, key: &str, raw: &str) -> Result<(), StoreError>
             };
             for (name, v) in [
                 ("corner_radius", value(radius)),
+                ("grid_scale", value(parts.get(5).map(|v| f(v)).transpose()?.unwrap_or(100.0))),
                 ("border", value(flag(parts[1])?)),
                 ("snap", value(flag(parts[2])?)),
                 ("text", value(*parts.get(3).unwrap_or(&"auto"))),

@@ -368,6 +368,7 @@ fn pane_options_round_trip_without_panels() {
             snap: bits & 4 != 0,
             text: desktop_core::PanelText::Auto,
             text_protection: true,
+            ..desktop_core::PaneOptions::DEFAULT
         };
         let mut workspace = Workspace::new();
         workspace.set_pane_options(options);

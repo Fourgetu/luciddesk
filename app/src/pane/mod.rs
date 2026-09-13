@@ -133,6 +133,7 @@ enum Event {
     ToggleTopmost,
     ToggleLocked,
     SetCornerRadius(f32),
+    SetIconGrid(f32),
     SetPanelText(desktop_core::PanelText),
     ToggleTextProtection,
     ToggleBorder,
@@ -221,7 +222,6 @@ fn create_view(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> 
         theme: panel.theme(),
         dark: theme::is_dark(panel.theme()),
 
-        spacing: (88.0, 96.0),
         hovered_item: None,
         focused: false,
         auto_hide: panel.auto_hide(),

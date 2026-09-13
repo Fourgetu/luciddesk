@@ -17,12 +17,12 @@ pub(super) fn workspace_preferences(
     let mut values = vec![(
         "pane_options",
         format!(
-            "{}|{}|{}|{}|{}",
+            "{}|{}|{}|{}|{}|{}",
             options.corner_radius,
             options.border,
             options.snap,
             encode_panel_text(options.text),
-            options.text_protection
+            options.text_protection, options.grid_scale
         ),
     )];
     if let Some((theme, backdrop)) = workspace.appearance() {

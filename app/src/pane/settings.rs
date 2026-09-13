@@ -63,6 +63,7 @@ enum Action {
     Page(usize),
     Change(Event),
     Radius(f32),
+    GridSize(f32),
     Opacity(u8),
     Strength(u8),
     StrengthReset,
@@ -98,6 +99,30 @@ struct Scene {
     controls: Vec<Control>,
     previews: Vec<(Rect, u32, f32)>,
     app_icon: Option<Rect>,
+}
+
+fn grid_range() -> (f32, f32) {
+    desktop_core::PaneOptions::GRID_SCALE_RANGE
+}
+
+fn grid_slider_position(value: f32) -> f32 {
+    let (min, max) = grid_range();
+    let value = value.clamp(min, max);
+    if value <= 100.0 {
+        0.5 * (value - min) / (100.0 - min)
+    } else {
+        0.5 + 0.5 * (value - 100.0) / (max - 100.0)
+    }
+}
+
+fn grid_slider_value(position: f32) -> f32 {
+    let (min, max) = grid_range();
+    let position = position.clamp(0.0, 1.0);
+    if position <= 0.5 {
+        (min + position * 2.0 * (100.0 - min)).round()
+    } else {
+        (100.0 + (position - 0.5) * 2.0 * (max - 100.0)).round()
+    }
 }
 
 fn radius_from_pointer(bounds: Rect, x: f32) -> f32 {
@@ -585,6 +610,7 @@ impl Painter {
                     }
                     if let Some(value) = match c.action {
                         Action::Radius(value) => Some(value),
+                        Action::GridSize(value) => Some(grid_slider_position(value)),
                         Action::Opacity(value)
                         | Action::Strength(value)
                         | Action::Channel(_, value) => Some(f32::from(value)),
@@ -597,6 +623,7 @@ impl Painter {
                         let max = match c.action {
                             Action::Opacity(_) | Action::Strength(_) => 100.0,
                             Action::Channel(_, _) => 255.0,
+                            Action::GridSize(_) => 1.0,
                             _ => 24.0,
                         };
                         let cx = left + (right - left) * value / max;
@@ -606,7 +633,7 @@ impl Painter {
                             radius_y: 2.0,
                         };
                         t.fill_rounded_rect(&rail, &border);
-                        let (fill_start, fill_width) = if matches!(c.action, Action::Strength(_)) {
+                        let (fill_start, fill_width) = if matches!(c.action, Action::Strength(_) | Action::GridSize(_)) {
                             let middle = (left + right) * 0.5;
                             t.fill_rect(
                                 &Rect::from_xywh(middle - 0.5, cy - 5.0, 1.0, 10.0),
@@ -1017,6 +1044,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
     let mut keyboard_focus = false;
     let mut pressed = None;
     let mut radius_original = None;
+    let mut grid_original = None;
     let mut material_original = None;
     let mut style_input: Option<(bool, String)> = None;
     let mut cached_scene = None;
@@ -1137,6 +1165,9 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     if let Err(error) = events::commit_radius(&mut owner, original) {
                         window::error(&error);
                     }
+                }
+                if let Some(original) = grid_original.take() {
+                    if let Err(error) = events::commit_grid(&mut owner, original) { window::error(&error); }
                 }
                 let window = if owner
                     .settings
@@ -1319,6 +1350,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
             let interaction_before = (hover, focus, keyboard_focus, pressed);
             let mut activate = None;
             let mut radius_change = None;
+            let mut grid_change = None;
             let mut opacity_change = None;
             let mut strength_change = None;
             let mut channel_change = None;
@@ -1446,6 +1478,10 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         if matches!(control.action, Action::Opacity(_)) {
                             opacity_change = Some((((x - control.bounds.left - 8.0) / (control.bounds.right - control.bounds.left - 16.0).max(1.0)).clamp(0.0, 1.0) * 100.0).round() as u8);
                         }
+                        if let Action::GridSize(_) = control.action {
+                            let fraction = ((x - control.bounds.left - 8.0) / (control.bounds.right - control.bounds.left - 16.0).max(1.0)).clamp(0.0, 1.0);
+                            grid_change = Some(grid_slider_value(fraction));
+                        }
                         if matches!(control.action, Action::Radius(_)) {
                             radius_change = Some(radius_from_pointer(control.bounds, x));
                         }
@@ -1523,6 +1559,14 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                                 VK_HOME => Some(0), VK_END => Some(100), _ => None,
                             };
                         }
+                        if let Action::GridSize(value) = control.action {
+                            let range = grid_range();
+                            grid_change = match wp as u16 {
+                                VK_LEFT => Some((value - 1.0).max(range.0)),
+                                VK_RIGHT => Some((value + 1.0).min(range.1)),
+                                VK_HOME => Some(range.0), VK_END => Some(range.1), _ => None,
+                            };
+                        }
                         if let Action::Radius(value) = control.action {
                             radius_change = match wp as u16 {
                                 VK_LEFT => Some((value - 0.1).max(0.0)),
@@ -1595,6 +1639,21 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
             if available && matches!(msg, WM_LBUTTONUP | WM_CAPTURECHANGED | WM_CANCELMODE) {
                 if let Some(original) = material_original.take() {
                     if let Err(error) = events::commit_material(&mut state.borrow_mut(), original) { window::error(&error); }
+                }
+            }
+            if let Some(value) = grid_change.filter(|_| available) {
+                if msg == WM_KEYDOWN {
+                    if let Err(error) = handle(&state, selected, Event::SetIconGrid(value)) { window::error(&error); }
+                } else {
+                    let mut owner = state.borrow_mut();
+                    let options = owner.workspace.pane_options();
+                    grid_original.get_or_insert(options.grid_scale);
+                    events::preview_grid(&mut owner, value);
+                }
+            }
+            if available && matches!(msg, WM_LBUTTONUP | WM_CAPTURECHANGED | WM_CANCELMODE) {
+                if let Some(original) = grid_original.take() {
+                    if let Err(error) = events::commit_grid(&mut state.borrow_mut(), original) { window::error(&error); }
                 }
             }
             if let Some(radius) = radius_change.filter(|_| available) {
@@ -1712,7 +1771,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         toggle_motion.clear();
                         focus = None;
                     }
-                    Action::Radius(_) | Action::Opacity(_) | Action::Strength(_) | Action::Channel(_, _) => {}
+                    Action::GridSize(_) | Action::Radius(_) | Action::Opacity(_) | Action::Strength(_) | Action::Channel(_, _) => {}
                     Action::Change(Event::Material(value)) if value.strength().is_some() => {
                         let backdrop = material_style(&state.borrow().store, *value);
                         if let Err(error) = handle(&state, selected, Event::Material(backdrop)) { window::error(&error); }
@@ -1728,6 +1787,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 && (scene_changed
                     || interaction_before != (hover, focus, keyboard_focus, pressed)
                     || activate.is_some()
+                    || grid_change.is_some()
                     || radius_change.is_some_and(|radius| radius != options.corner_radius)
                     || matches!(msg, WM_SIZE | WM_ACTIVATE | WM_TIMER))
             {

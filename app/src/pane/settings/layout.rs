@@ -368,6 +368,14 @@ pub(super) fn scene(
             "关闭后保留原始通透效果，文字颜色仍按上方选择。",
             0,
         );
+        let value = options.grid_scale;
+        s.text(Rect::from_xywh(x + 18.0, 446.0, w - 258.0, 34.0), "图标网格缩放", 1);
+        s.controls.push(Control {
+            bounds: Rect::from_xywh(x + w - 248.0, 446.0, 168.0, 34.0),
+            label: String::new(), action: Action::GridSize(value),
+            selected: false, enabled: true, toggle: false,
+        });
+        s.text(Rect::from_xywh(x + w - 74.0, 446.0, 66.0, 34.0), format!("{value:.0}%"), 0);
     } else if page == 3 {
         for y in [198.0, 348.0] {
             s.separators

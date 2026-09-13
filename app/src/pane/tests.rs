@@ -156,6 +156,37 @@ fn desktop_list_toggle_preserves_membership_and_restores_view() {
 }
 
 #[test]
+fn custom_icon_grid_previews_reflows_and_keeps_list_geometry() {
+    let _apartment = ShellApartment::initialize_sta().unwrap();
+    let state = Rc::new(RefCell::new(test_state()));
+    let id = PanelId::new(1);
+    create_view(&state, id).unwrap();
+    let original = state.borrow().workspace.pane_options();
+    let members = state.borrow().workspace.desktop_items().to_vec();
+    events::preview_grid(&mut state.borrow_mut(), 150.0);
+    assert_eq!(state.borrow().store.load_workspace().unwrap().pane_options(), original);
+    {
+        let app = state.borrow();
+        let model = app.views[0].model.borrow();
+        let grid = model.grid(440.0, 300.0);
+        assert_eq!((grid.cell_width, grid.cell_height), (132.0, 144.0));
+        assert_eq!(grid.columns, 3);
+        let (x, y) = model.cell(grid, 1);
+        assert_eq!(model.hit(grid, x + 20.0, y + 5.0, 1.0), Some(1));
+    }
+    events::commit_grid(&mut state.borrow_mut(), original.grid_scale).unwrap();
+    assert_eq!(state.borrow().store.load_workspace().unwrap().pane_options().grid_scale, 150.0);
+    handle(&state, id, Event::ToggleListView).unwrap();
+    let before = state.borrow().views[0].model.borrow().grid(440.0, 300.0);
+    handle(&state, id, Event::SetIconGrid(180.0)).unwrap();
+    let after = state.borrow().views[0].model.borrow().grid(440.0, 300.0);
+    assert_eq!((before.cell_width, before.cell_height), (after.cell_width, after.cell_height));
+    assert_eq!(state.borrow().workspace.desktop_items(), members);
+    handle(&state, id, Event::ResetPaneOptions).unwrap();
+    assert_eq!(state.borrow().workspace.pane_options(), original);
+}
+
+#[test]
 fn search_pane_creation_and_close_preserve_desktop_membership() {
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
     let state = Rc::new(RefCell::new(test_state()));
@@ -459,7 +490,7 @@ fn snapped_content_bottom_and_scrollbar_use_the_same_row_metrics() {
         title: "Sizing test".into(),
         items: vec![],
         icon_size: 48.0,
-        spacing: (88.0, 96.0),
+
         selected: None,
         selection: Default::default(),
         selection_anchor: None,
@@ -571,7 +602,7 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
         title: "Keyboard regression".into(),
         items: vec![],
         icon_size: 48.0,
-        spacing: (88.0, 96.0),
+
         selected: None,
         selection: Default::default(),
         selection_anchor: None,
@@ -895,7 +926,7 @@ fn pane_layer_switch_and_wallpaper_material_initialize() {
         title: "Layer test".into(),
         items: vec![],
         icon_size: 48.0,
-        spacing: (88.0, 96.0),
+
         selected: None,
         selection: Default::default(),
         selection_anchor: None,
@@ -1137,6 +1168,7 @@ fn pane_options_apply_globally_and_can_disable_snapping() {
         snap: false,
         text: desktop_core::PanelText::Auto,
         text_protection: false,
+        ..desktop_core::PaneOptions::DEFAULT
     };
     assert_eq!(state.borrow().workspace.pane_options(), options);
     assert_eq!(
@@ -1735,7 +1767,7 @@ fn multiselection_preserves_anchor_toggle_and_file_identity_on_refresh() {
         title: "Sizing test".into(),
         items: vec![],
         icon_size: 48.0,
-        spacing: (88.0, 96.0),
+
         selected: None,
         selection: Default::default(),
         selection_anchor: None,

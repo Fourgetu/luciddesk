@@ -43,6 +43,7 @@ pub enum PanelText {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PaneOptions {
     pub corner_radius: f32,
+    pub grid_scale: f32,
     pub border: bool,
     pub snap: bool,
     pub text: PanelText,
@@ -50,9 +51,11 @@ pub struct PaneOptions {
 }
 
 impl PaneOptions {
+    pub const GRID_SCALE_RANGE: (f32, f32) = (90.0, 200.0);
     pub const MAX_CORNER_RADIUS: f32 = 24.0;
     pub const DEFAULT: Self = Self {
         corner_radius: 6.0,
+        grid_scale: 100.0,
         border: true,
         snap: true,
         text: PanelText::Auto,

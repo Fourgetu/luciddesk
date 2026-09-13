@@ -1,6 +1,19 @@
 use super::*;
 
 #[test]
+fn grid_slider_centers_default_and_scales_in_both_directions() {
+    assert_eq!(grid_slider_position(100.0), 0.5);
+    assert_eq!(grid_slider_value(0.5), 100.0);
+    assert_eq!(grid_slider_value(0.0), grid_range().0);
+    assert_eq!(grid_slider_value(1.0), grid_range().1);
+    for value in 90..=200 {
+        assert_eq!(grid_slider_value(grid_slider_position(value as f32)), value as f32);
+    }
+    assert!(grid_slider_value(0.25) < 100.0);
+    assert!(grid_slider_value(0.75) > 100.0);
+}
+
+#[test]
 fn radius_drag_preserves_fractional_values() {
     let bounds = Rect::from_xywh(0.0, 0.0, 180.0, 34.0);
     let first = radius_from_pointer(bounds, 80.0);

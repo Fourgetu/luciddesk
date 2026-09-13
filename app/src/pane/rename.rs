@@ -637,7 +637,6 @@ mod tests {
             theme: desktop_core::PanelTheme::System,
             dark: true,
 
-            spacing: (100.0, 110.0),
             hovered_item: None,
             focused: true,
             auto_hide: false,

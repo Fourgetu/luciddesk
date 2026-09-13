@@ -8,6 +8,25 @@ fn open() -> (tempfile::TempDir, WorkspaceStore) {
 }
 
 #[test]
+fn icon_grid_settings_round_trip_and_reject_invalid_dimensions() {
+    let (dir, store) = open();
+    let options = desktop_core::PaneOptions {
+        grid_scale: 150.0,
+        ..desktop_core::PaneOptions::DEFAULT
+    };
+    store.save_pane_options(options).unwrap();
+    drop(store);
+    let reopened = WorkspaceStore::open(&dir.path().join("workspace.db")).unwrap();
+    assert_eq!(reopened.load_workspace().unwrap().pane_options(), options);
+    let source = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
+    assert!(source.contains("grid_scale = 150.0"));
+    for value in ["0.0", "201.0", "nan", "inf"] {
+        let invalid = source.replace("grid_scale = 150.0", &format!("grid_scale = {value}"));
+        assert!(config::ConfigFile::parse(dir.path().join("config.toml"), invalid).is_err());
+    }
+}
+
+#[test]
 fn new_files_ignore_legacy_database_and_keep_preferences_out_of_sqlite() {
     let dir = tempfile::tempdir().unwrap();
     let old = dir.path().join("hook-desktop.db");
@@ -144,7 +163,7 @@ fn missing_fields_default_and_malformed_tables_do_not() {
         .parse()
         .unwrap();
     let values = config::decode(&doc).unwrap();
-    assert_eq!(values["pane_options"], "2.5|true|true|auto|false");
+    assert_eq!(values["pane_options"], "2.5|true|true|auto|false|100");
     for invalid in [
         "config_version=1\nappearance=2",
         "config_version=1\n[appearance.solid]\ncolor='blue'",
