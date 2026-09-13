@@ -14,6 +14,7 @@
 | 文档 | 主题 |
 | --- | --- |
 | [架构说明](architecture.md) | 模块职责、启动流程、Hook 与兼容边界 |
+| [目录结构](structure.md) | 源码目录、功能归属与新增文件约定 |
 | [混合桌面与成员同步](hybrid-desktop.md) | 身份、收纳、排序、布局发布与恢复 |
 | [绘图与绑定](rendering.md) | Canvas、DComp、WinRT、动画与生成绑定 |
 | [存储与版本约定](storage.md) | TOML 配置、工作区数据库、备份和开发期版本策略 |

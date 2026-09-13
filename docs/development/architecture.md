@@ -15,7 +15,9 @@ Explorer 保留桌面 Shell 项目、未收纳图标及原生交互。LucidPane 
 | `app/src/main.rs` | 参数解析、DPI/STA 初始化、配置路径与启动错误 |
 | `app/src/pane/hybrid.rs` | Hook 生命周期、Shell 清单同步、图标通知与后台加载 |
 | `app/src/pane/runtime.rs`、`display_layout.rs` | 连接重试、窗口恢复、显示器布局切换与自动备份调度 |
-| `app/src/pane/folder.rs`、`search_hotkey.rs` | 文件夹监听和导航排序、全局搜索快捷键生命周期 |
+| `app/src/pane/folder.rs`、`search/hotkey.rs` | 文件夹监听和导航排序、全局搜索快捷键生命周期 |
+| `app/src/pane/search/` | 搜索窗口、Everything 查询与配置、快捷键和测试 |
+| `app/src/pane/drag_drop/` | 拖放注册、拖动预览和临时描述 |
 | `app/src/pane/recovery.rs` | 配置导出和恢复入口 |
 | `app/src/pane/mod.rs`、`model.rs`、`events.rs` | 分组集合、布局、选择、操作与保存 |
 | `app/src/pane/window.rs`、`render.rs`、`settings*.rs` | 分组窗口、绘制、设置与输入 |
@@ -26,6 +28,33 @@ Explorer 保留桌面 Shell 项目、未收纳图标及原生交互。LucidPane 
 | `desktop-hook` | DLL 引导、协议校验、几何映射、选择隔离和控制端存活监测 |
 | `desktop-graphics` | 工具生成的 DWM/DComp 绑定及合成内容层 |
 | `desktop-window` | 显示器枚举与错误提示 |
+
+### Rust 模块边界
+
+`desktop-core/src/lib.rs` 只承担 crate 文档与公共类型重导出。领域实现分别放在
+`identity.rs`（身份）、`geometry.rs`（坐标）、`appearance.rs`（外观）、
+`item.rs`（桌面成员）、`panel.rs`（面板）和 `workspace.rs`（集合与默认值），
+测试集中在 `tests.rs`。调用方仍使用 `desktop_core::Panel` 等根路径。
+
+面板内容来源由内部枚举表示，桌面、文件夹、搜索三种来源互斥；独立的 UI 偏好保留布尔值。
+`Panel::new` 与 `set_rect` 都应用最小尺寸限制。
+
+`desktop-storage` 的公共错误位于 `src/error.rs`，存储实现及其测试位于 `src/store/`，
+外观编解码和桌面成员持久化分别位于 `codec.rs` 和 `desktop_items.rs`。
+`desktop-shell/src/apartment.rs` 独立管理 OLE 初始化；守卫不能直接构造或跨线程传递，
+应在依赖 OLE 的资源释放之后析构。
+
+`desktop-shell/src/lib.rs` 只声明模块和导出 API；枚举与身份解析、桌面查询、通知注册、
+激活与拖放身份解码、错误定义分属独立文件。`desktop-graphics/src/layer.rs` 管理合成层，
+生成绑定仍位于 `bindings/`。`desktop-hook/src/client/discovery.rs` 负责桌面发现和冲突检测，
+会话持有与 IPC 仍位于 `client.rs`。各库入口见 [crates 导航](../../crates/README.md)。
+
+应用子模块按真实归属存放：`pane/hybrid/icon_changes.rs` 处理图标通知，
+`pane/settings/layout.rs` 处理设置页布局，使用常规 `mod` 声明加载。
+搜索功能归入 `pane/search/`，拖放功能归入 `pane/drag_drop/`；搜索和设置的单元测试
+分别放在对应目录的 `tests.rs`，模块路径保持在所属功能之下。
+完整目录和新增文件的归属规则见[目录结构](structure.md)。
+本次审查依据和验证范围见 [Rust API 审查](rust-api-review.md)。
 
 ## 启动与退出
 
@@ -41,7 +70,7 @@ DLL 运行副本解决已加载文件无法覆盖的问题。分离会撤销回�
 ## 当前兼容边界
 
 - Hook 仅提供几何后端，协议为 v2；连接成功的引擎必有几何会话。
-- 具体系统映像的哈希、大小和入口指令由 `geometry_profile.rs` 校验。它不是跨版本稳定 ABI，校验失败必须拒绝安装。
+- 具体系统映像的哈希、大小和入口指令由 `desktop-hook/src/geometry/profile.rs` 校验。它不是跨版本稳定 ABI，校验失败必须拒绝安装。
 - Hook 会话可在故障时缺失；文件夹与搜索 pane 独立运行，桌面分组保留归属并等待重连。
 - 全局偏好保存在 `config.toml`，工作区数据库为 `workspace.db`，开发阶段不迁移旧库。成员仅通过 Shell 身份与 `DesktopPlacement` 表示。
 - `native_graphics.rs` 集中转换两版绑定的 COM 引用与 HRESULT；普通绘图直接使用 Canvas 类型。
