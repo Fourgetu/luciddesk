@@ -139,6 +139,27 @@ fn backup_contains_config_and_restore_replaces_both() {
 }
 
 #[test]
+fn background_snapshot_is_independent_and_export_replaces_only_when_requested() {
+    let (dir, store) = open();
+    store.save_preference("search_enabled", "0").unwrap();
+    let snapshot = store.backup_snapshot().unwrap();
+    let content = snapshot.backup_content().unwrap();
+    store.save_preference("search_enabled", "1").unwrap();
+    assert_eq!(snapshot.backup_content().unwrap(), content);
+    let path = dir.path().join("export.db");
+    snapshot.export_backup(&path).unwrap();
+    assert_eq!(WorkspaceStore::backup_file_content(&path).unwrap(), content);
+    assert_eq!(WorkspaceStore::inspect_backup(&path).unwrap(), 0);
+    assert!(store.export_backup(&path).is_err());
+    store.export_backup_replace(&path).unwrap();
+    assert_ne!(WorkspaceStore::backup_file_content(&path).unwrap(), content);
+    let original = std::fs::read(&path).unwrap();
+    std::fs::write(store.config_path().unwrap(), "invalid configuration").unwrap();
+    assert!(store.export_backup_replace(&path).is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), original);
+}
+
+#[test]
 fn corrupted_backup_config_is_rejected_before_changing_live_state() {
     let (dir, mut store) = open();
     let backup = dir.path().join("snapshot.db");

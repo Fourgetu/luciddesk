@@ -109,6 +109,96 @@ mod tests {
 }
 
 impl WorkspaceStore {
+    pub fn read_backup(path: &Path) -> Result<Self, StoreError> {
+        let source = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        let mut connection = Connection::open_in_memory()?;
+        copy_database(&source, &mut connection)?;
+        Self::from_connection(connection)
+    }
+    pub fn backup_file_content(path: &Path) -> Result<String, StoreError> {
+        Self::read_backup(path)?.backup_content()
+    }
+    /// Captures a consistent, independent snapshot for background file operations.
+    pub fn backup_snapshot(&self) -> Result<Self, StoreError> {
+        let mut connection = Connection::open_in_memory()?;
+        copy_database(&self.connection, &mut connection)?;
+        if let Some(config) = &self.config {
+            let config = config.borrow();
+            config.check_disk()?;
+            connection.execute(
+                "INSERT OR REPLACE INTO metadata VALUES ('backup_config',?1)",
+                [&config.source],
+            )?;
+        }
+        Self::from_connection(connection)
+    }
+
+    /// Compares logical rows rather than database pages or write counters.
+    pub fn backup_content(&self) -> Result<String, StoreError> {
+        let tables: Vec<String> = self.connection.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")?
+            .query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?;
+        let mut result = String::new();
+        for table in tables {
+            let quoted = table.replace('"', "\"\"");
+            let mut statement = self
+                .connection
+                .prepare(&format!("SELECT * FROM \"{quoted}\""))?;
+            let columns = statement.column_count();
+            let mut records = Vec::new();
+            let mut rows = statement.query([])?;
+            while let Some(row) = rows.next()? {
+                if table == "metadata" && row.get::<_, String>(0)?.starts_with("backup_manifest_") {
+                    continue;
+                }
+                let values: Vec<_> = (0..columns)
+                    .map(|i| row.get_ref(i).map(|v| format!("{v:?}")))
+                    .collect::<Result<_, _>>()?;
+                records.push(format!("{values:?}"));
+            }
+            records.sort();
+            result.push_str(&format!("{table:?}{records:?}"));
+        }
+        Ok(result)
+    }
+
+    /// Validates a portable backup without modifying the live store.
+    pub fn inspect_backup(path: &Path) -> Result<usize, StoreError> {
+        let source = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        let config: String = source.query_row(
+            "SELECT value FROM metadata WHERE key='backup_config'",
+            [],
+            |r| r.get(0),
+        )?;
+        config::ConfigFile::parse(path.with_extension("toml"), config)?;
+        let mut scratch = Self::open_in_memory()?;
+        scratch.restore_backup(path)?;
+        Ok(scratch.load_workspace()?.panels().len())
+    }
+
+    /// Atomically replaces an explicitly approved export destination.
+    pub fn export_backup_replace(&self, path: &Path) -> Result<(), StoreError> {
+        let directory = tempfile::tempdir_in(
+            path.parent()
+                .ok_or_else(|| StoreError::InvalidData("invalid destination".into()))?,
+        )
+        .map_err(|e| StoreError::InvalidData(e.to_string()))?;
+        let staged = directory.path().join("snapshot.db");
+        self.export_backup(&staged)?;
+        let mut output = tempfile::NamedTempFile::new_in(path.parent().unwrap())
+            .map_err(|e| StoreError::InvalidData(e.to_string()))?;
+        let mut input =
+            std::fs::File::open(staged).map_err(|e| StoreError::InvalidData(e.to_string()))?;
+        std::io::copy(&mut input, &mut output)
+            .map_err(|e| StoreError::InvalidData(e.to_string()))?;
+        output
+            .as_file()
+            .sync_all()
+            .map_err(|e| StoreError::InvalidData(e.to_string()))?;
+        output
+            .persist(path)
+            .map_err(|e| StoreError::InvalidData(e.to_string()))?;
+        Ok(())
+    }
     /// Number of row changes made through this connection, used to avoid redundant snapshots.
     #[must_use]
     pub fn change_count(&self) -> u64 {
