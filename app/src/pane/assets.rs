@@ -329,7 +329,7 @@ fn extract_link_icon(item: &IShellItem, size: i32) -> windows::core::Result<Pixe
     }
 }
 
-fn icon_pixels(
+pub(super) fn icon_pixels(
     icon: windows::Win32::UI::WindowsAndMessaging::HICON,
 ) -> windows::core::Result<Pixels> {
     use windows::Win32::Graphics::Imaging::*;

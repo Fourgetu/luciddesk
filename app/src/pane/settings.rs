@@ -96,6 +96,7 @@ struct Scene {
     separators: Vec<Rect>,
     controls: Vec<Control>,
     previews: Vec<(Rect, u32, f32)>,
+    app_icon: Option<Rect>,
 }
 
 fn radius_from_pointer(bounds: Rect, x: f32) -> f32 {
@@ -231,6 +232,10 @@ fn frame_hit(x: f32, y: f32, width: f32, height: f32, maximized: bool) -> u32 {
     }
 }
 fn with_titlebar(mut scene: Scene, width: f32, maximized: bool) -> Scene {
+    if let Some(r) = &mut scene.app_icon {
+        r.top += TITLE_HEIGHT;
+        r.bottom += TITLE_HEIGHT;
+    }
     for (r, _, _) in &mut scene.text {
         r.top += TITLE_HEIGHT;
         r.bottom += TITLE_HEIGHT;
@@ -344,6 +349,7 @@ unsafe extern "system" fn frame_proc(
 }
 
 struct Painter {
+    app_icon: super::assets::Pixels,
     formats: Vec<windows_canvas::TextFormat>,
     button_format: windows_canvas::TextFormat,
 }
@@ -372,6 +378,11 @@ impl Painter {
             .with_alignment(windows_canvas::TextAlignment::Center);
         super::canvas::ellipsis(&button_format)?;
         Ok(Self {
+            app_icon: {
+                let icon = crate::app_icon::load(128, 128)
+                    .map_err(|message| windows::core::Error::new(windows::Win32::Foundation::E_FAIL, message))?;
+                super::assets::icon_pixels(windows::Win32::UI::WindowsAndMessaging::HICON(icon.0))?
+            },
             formats,
             button_format,
         })
@@ -463,6 +474,11 @@ impl Painter {
                     },
                     &page_background,
                 );
+                if let Some(bounds) = &s.app_icon {
+                    let pixels = &self.app_icon;
+                    let bitmap = canvas_result(t.create_bitmap(&pixels.data, pixels.width, pixels.height))?;
+                    t.draw_bitmap(&bitmap, bounds, 1.0);
+                }
                 for r in &s.separators {
                     t.fill_rect(r, &border);
                 }
@@ -2035,7 +2051,7 @@ mod tests {
             (PanelTheme::Dark, Backdrop::Mica), desktop_core::PaneOptions::default());
         layout::about_status(&mut body, width, "桌面分组已连接", true);
         let s = with_titlebar(body, width, false);
-        for bounds in s.text.iter().map(|(bounds, _, _)| bounds)
+        for bounds in s.text.iter().map(|(bounds, _, _)| bounds).chain(s.app_icon.iter())
             .chain(s.cards.iter()).chain(s.controls.iter().map(|c| &c.bounds)) {
             assert!(bounds.left >= 0.0 && bounds.top >= 0.0
                 && bounds.right <= width && bounds.bottom <= height);
