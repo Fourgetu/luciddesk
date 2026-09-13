@@ -6,6 +6,8 @@
 
 | 文档 |
 | --- |
+| [Hook 与绘图消融实验（2026-09-14）](hook-render-ablation-20260914.md) |
+| [存储层代码消融实验（2026-09-13）](storage-ablation-20260913.md) |
 | [Animation / Bindgen 评估（2026-09-11）](animation-bindgen-evaluation.md) |
 | [Canvas 接入验证（2026-09-11）](canvas-evaluation.md) |
 | [桌面尾部插入边界修正（2026-09-09）](desktop-tail-insertion-20260909.md) |

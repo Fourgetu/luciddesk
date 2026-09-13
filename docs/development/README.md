@@ -22,6 +22,7 @@
 | [选择与刷新时序](selection-latency.md) | 异步选择清理和后台清单读取 |
 | [运行时托盘](tray.md) | 托盘消息、资源释放和验证入口 |
 | [验证记录](validation.md) | 最近一次检查结果与未覆盖范围 |
+| [消融实验后的优化方案](ablation-optimization-plan.md) | 存储、Hook 与绘图的改进顺序及验收标准 |
 
 ## 历史资料与维护约定
 
