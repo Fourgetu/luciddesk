@@ -39,6 +39,10 @@ pub(super) fn insert_desktop_items(
     transaction: &Transaction<'_>,
     items: &[DesktopItem],
 ) -> Result<(), StoreError> {
+    let mut statement = transaction.prepare("INSERT INTO desktop_items(
+                 identity_key, identity_kind, identity_value, volume_id, file_id, display_name,
+                 placement_kind, monitor_id, x, y, pane_id, grid_column, grid_row
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) ON CONFLICT(identity_key) DO UPDATE SET identity_kind=excluded.identity_kind,identity_value=excluded.identity_value,volume_id=excluded.volume_id,file_id=excluded.file_id,display_name=excluded.display_name,placement_kind=excluded.placement_kind,monitor_id=excluded.monitor_id,x=excluded.x,y=excluded.y,pane_id=excluded.pane_id,grid_column=excluded.grid_column,grid_row=excluded.grid_row WHERE (identity_kind,identity_value,volume_id,file_id,display_name,placement_kind,monitor_id,x,y,pane_id,grid_column,grid_row) IS NOT (excluded.identity_kind,excluded.identity_value,excluded.volume_id,excluded.file_id,excluded.display_name,excluded.placement_kind,excluded.monitor_id,excluded.x,excluded.y,excluded.pane_id,excluded.grid_column,excluded.grid_row)")?;
     for item in items {
         let (identity_kind, identity_value, volume_id, file_id) = match item.identity() {
             ShellIdentity::FileSystem {
@@ -47,19 +51,19 @@ pub(super) fn insert_desktop_items(
                 file_id,
             } => (
                 "filesystem",
-                path.as_os_str().to_string_lossy().into_owned(),
+                path.as_os_str().to_string_lossy(),
                 volume_id.map(|value| value.to_string()),
                 file_id.map(|value| value.to_string()),
             ),
             ShellIdentity::Namespace { parsing_name } => {
-                ("namespace", parsing_name.clone(), None, None)
+                ("namespace", std::borrow::Cow::Borrowed(parsing_name.as_str()), None, None)
             }
         };
         let (placement_kind, monitor_id, x, y, pane_id, grid_column, grid_row) =
             match item.placement() {
                 DesktopPlacement::FreeDesktop { monitor, position } => (
                     "free",
-                    Some(monitor.as_str().to_string()),
+                    Some(monitor.as_str()),
                     Some(f64::from(position.x)),
                     Some(f64::from(position.y)),
                     None,
@@ -78,11 +82,7 @@ pub(super) fn insert_desktop_items(
                     Some(i64::from(position.row)),
                 ),
             };
-        transaction.execute(
-            "INSERT INTO desktop_items(
-                 identity_key, identity_kind, identity_value, volume_id, file_id, display_name,
-                 placement_kind, monitor_id, x, y, pane_id, grid_column, grid_row
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) ON CONFLICT(identity_key) DO UPDATE SET identity_kind=excluded.identity_kind,identity_value=excluded.identity_value,volume_id=excluded.volume_id,file_id=excluded.file_id,display_name=excluded.display_name,placement_kind=excluded.placement_kind,monitor_id=excluded.monitor_id,x=excluded.x,y=excluded.y,pane_id=excluded.pane_id,grid_column=excluded.grid_column,grid_row=excluded.grid_row WHERE (identity_kind,identity_value,volume_id,file_id,display_name,placement_kind,monitor_id,x,y,pane_id,grid_column,grid_row) IS NOT (excluded.identity_kind,excluded.identity_value,excluded.volume_id,excluded.file_id,excluded.display_name,excluded.placement_kind,excluded.monitor_id,excluded.x,excluded.y,excluded.pane_id,excluded.grid_column,excluded.grid_row)",
+        statement.execute(
             params![
                 item.identity().persistent_key(),
                 identity_kind,

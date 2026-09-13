@@ -23,20 +23,17 @@ pub(super) fn validate_and_upgrade(connection: &Connection) -> Result<(), StoreE
                 |r| r.get(0),
             )
             .optional()?;
+        let actual = actual.as_deref().map(normalize);
+        let normalized_expected = normalize(&expected);
+        if actual.as_deref() == Some(normalized_expected.as_str()) {
+            continue;
+        }
         if name == "panel_folder_settings"
-            && actual.as_deref().is_some_and(|sql| {
-                normalize(sql)
-                    == normalize(
-                        &expected
-                            .replace("sort_column BETWEEN 0 AND 3", "sort_column BETWEEN 0 AND 2"),
-                    )
-            })
+            && actual.as_deref() == Some(normalized_expected
+                .replace("sort_columnbetween0and3", "sort_columnbetween0and2").as_str())
         {
             folder_upgrade = Some(expected);
-        } else if actual
-            .as_deref()
-            .is_none_or(|sql| normalize(sql) != normalize(&expected))
-        {
+        } else {
             return Err(StoreError::InvalidData(format!(
                 "数据库结构不兼容（{name}），请使用新的开发数据目录。"
             )));
