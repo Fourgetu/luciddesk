@@ -72,7 +72,7 @@ impl ShellIdentity {
                     }
                     _ => false,
                 };
-                stable_match || path_key(left_path) == path_key(right_path)
+                stable_match || paths_equal(left_path, right_path)
             }
             (
                 Self::Namespace { parsing_name: left },
@@ -101,8 +101,15 @@ impl ShellIdentity {
     }
 }
 
-fn path_key(path: &Path) -> String {
-    path.as_os_str().to_string_lossy().to_lowercase()
+fn paths_equal(left: &Path, right: &Path) -> bool {
+    if left.as_os_str() == right.as_os_str() { return true; }
+    let left = left.as_os_str().to_string_lossy();
+    let right = right.as_os_str().to_string_lossy();
+    if left.is_ascii() && right.is_ascii() {
+        left.eq_ignore_ascii_case(&right)
+    } else {
+        left.to_lowercase() == right.to_lowercase()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -171,5 +178,23 @@ impl std::fmt::Display for MonitorId {
 impl Default for MonitorId {
     fn default() -> Self {
         Self::new("primary")
+    }
+}
+
+#[cfg(test)]
+mod path_comparison_tests {
+    use super::*;
+
+    #[test]
+    fn fast_paths_preserve_unicode_and_ascii_comparison() {
+        let paths = ["C:/Folder/File.txt", "c:/folder/file.TXT", "C:/OTHER.txt",
+            "C:/\u{6587}\u{4ef6}.txt", "C:/\u{c4}.txt", "C:/\u{e4}.txt", "C:/\u{39f}\u{3a3}.txt",
+            "C:/\u{3bf}\u{3c2}.txt", "C:/\u{130}.txt", "C:/i\u{307}.txt", "C:/a/../b", "C:/b"];
+        for left in paths {
+            for right in paths {
+                assert_eq!(paths_equal(Path::new(left), Path::new(right)),
+                    left.to_lowercase() == right.to_lowercase(), "{left} / {right}");
+            }
+        }
     }
 }
