@@ -104,6 +104,10 @@ pub(super) fn handle(
         folder::navigate(&mut state.borrow_mut(), id, None)?;
         return Ok(false);
     }
+    if matches!(event, Event::FolderHome) {
+        folder::home(&mut state.borrow_mut(), id)?;
+        return Ok(false);
+    }
     if let Event::Activate(index) = event {
         let folder = {
             let s = state.borrow();
@@ -677,6 +681,7 @@ pub(super) fn handle(
         Event::SortFolder(_)
         | Event::NavigateFolder(_)
         | Event::FolderBack
+        | Event::FolderHome
         | Event::ExportBackup
         | Event::RestoreBackup
         | Event::OpenBackups

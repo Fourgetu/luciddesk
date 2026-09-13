@@ -155,6 +155,7 @@ enum Event {
     SortFolder(u8),
     NavigateFolder(std::path::PathBuf),
     FolderBack,
+    FolderHome,
     Activate(usize),
     ActivateSelection,
     Peek,
@@ -215,6 +216,7 @@ fn create_view(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> 
     };
     let model = Rc::new(RefCell::new(GroupModel {
         folder_sort: (0, false),
+        folder_navigation: [false; 2],
         list_view: panel.list_view(),
         folder: panel.folder().map(Path::to_path_buf),
         folder_status: None,
@@ -293,6 +295,8 @@ fn refresh_changed_views(state: &mut PaneApp, force: bool) {
                 .folders
                 .get(&view.id)
                 .map_or((0, false), |source| source.sort);
+            let navigation = state.folders.get(&view.id)
+                .map_or([false; 2], folder::Source::navigation);
             let status = state
                 .folders
                 .get(&view.id)
@@ -301,7 +305,8 @@ fn refresh_changed_views(state: &mut PaneApp, force: bool) {
                 .folders
                 .get(&view.id)
                 .is_none_or(|source| source.loading);
-            if model.folder_status != status || model.loading != loading {
+            if model.folder_status != status || model.loading != loading || model.folder_navigation != navigation {
+                model.folder_navigation = navigation;
                 model.folder_status = status;
                 model.loading = loading;
                 unsafe {

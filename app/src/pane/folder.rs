@@ -129,6 +129,10 @@ impl Drop for Watch {
 }
 
 impl Source {
+    pub(super) fn navigation(&self) -> [bool; 2] {
+        [!self.history.is_empty(), self.path != self.root]
+    }
+
     fn start(path: PathBuf, wake: wake::Wake) -> Result<Self, String> {
         let request = Arc::new(Commands::new()?);
         let commands = Arc::clone(&request);
@@ -156,7 +160,7 @@ impl Source {
                         let result = desktop_shell::enumerate_folder(&root)
                             .map(|entries| {
                                 let mut next = HashMap::new();
-                                let items = entries
+                                let items: Vec<Item> = entries
                                     .into_iter()
                                     .map(|entry| {
                                         let key = entry.identity.persistent_key();
@@ -166,15 +170,13 @@ impl Source {
                                                 *modified == entry.modified
                                                     && item.identity == entry.identity
                                             })
-                                            .and_then(|(_, item)| item.image.clone())
-                                            .or_else(|| {
-                                                assets::load(&entry.identity, 128)
-                                                    .ok()
-                                                    .map(Arc::new)
-                                            });
+                                            .and_then(|(_, item)| item.image.clone());
                                         let item = Item {
                                             details: ItemDetails {
-                                                kind: file_type(&entry.identity),
+                                                kind: cache
+                                                    .get(&key)
+                                                    .map(|(_, item)| item.details.kind.clone())
+                                                    .unwrap_or_default(),
                                                 modified: modified_text(entry.modified),
                                                 folder: entry.attributes.folder,
                                                 modified_time: entry.modified,
@@ -197,10 +199,51 @@ impl Source {
                             cache.clear();
                             watch = None;
                         }
-                        if sender.send(result).is_err() {
+                        if sender.send(result.clone()).is_err() {
                             break;
                         }
                         wake.notify();
+                        // Publish membership before invoking potentially slow Shell
+                        // thumbnail/type handlers, then update at a bounded rate.
+                        if let Ok(mut items) = result {
+                            let mut published = std::time::Instant::now();
+                            let mut dirty = false;
+                            for index in 0..items.len() {
+                                if commands.stop.load(std::sync::atomic::Ordering::Acquire) {
+                                    return;
+                                }
+                                let item = &mut items[index];
+                                if item.image.is_some() && !item.details.kind.is_empty() {
+                                    continue;
+                                }
+                                if item.details.kind.is_empty() {
+                                    item.details.kind = file_type(&item.identity);
+                                }
+                                if item.image.is_none() {
+                                    item.image =
+                                        assets::load(&item.identity, 128).ok().map(Arc::new);
+                                }
+                                cache.insert(
+                                    item.identity.persistent_key(),
+                                    (item.details.modified_time, item.clone()),
+                                );
+                                dirty = true;
+                                if published.elapsed() >= std::time::Duration::from_millis(100) {
+                                    if sender.send(Ok(items.clone())).is_err() {
+                                        return;
+                                    }
+                                    wake.notify();
+                                    published = std::time::Instant::now();
+                                    dirty = false;
+                                }
+                            }
+                            if dirty {
+                                if sender.send(Ok(items)).is_err() {
+                                    return;
+                                }
+                                wake.notify();
+                            }
+                        }
                     }
                     use windows_sys::Win32::System::Threading::*;
                     let handles = [
@@ -319,7 +362,7 @@ fn sort_items(items: &mut Vec<Item>, sort: (u8, bool)) {
     let mut sorted: Vec<_> = std::mem::take(items)
         .into_iter()
         .map(|item| {
-            // Reuse the worker's Shell snapshot; sorting must not touch disk
+            // Reuse the worker's directory snapshot; sorting must not touch disk
             // on the UI thread (especially for network folders).
             let folder = item.details.folder;
             let modified = item.details.modified_time;
@@ -328,7 +371,16 @@ fn sort_items(items: &mut Vec<Item>, sort: (u8, bool)) {
         })
         .collect();
     sorted.sort_by(|(af, an, at, a), (bf, bn, bt, b)| {
-        bf.cmp(af).then_with(|| {
+        // Time sorting is a single timeline for files and folders.
+        let grouping = if sort.0 == 2 {
+            std::cmp::Ordering::Equal
+        } else {
+            bf.cmp(af)
+        };
+        grouping.then_with(|| {
+            if sort.0 == 2 && (at.is_none() || bt.is_none()) {
+                return at.is_none().cmp(&bt.is_none()).then_with(|| an.cmp(bn));
+            }
             let order = match sort.0 {
                 1 => a.details.kind.cmp(&b.details.kind),
                 2 => at.cmp(bt),
@@ -391,6 +443,16 @@ pub(super) fn navigate(
         model.clear_selection();
         model.scroll = 0;
     }
+    refresh_changed_views(state, true);
+    Ok(())
+}
+
+pub(super) fn home(state: &mut PaneApp, id: PanelId) -> Result<(), String> {
+    let Some(source) = state.folders.get(&id) else { return Ok(()); };
+    if source.path == source.root { return Ok(()); }
+    let root = source.root.clone();
+    navigate(state, id, Some(root))?;
+    state.folders.get_mut(&id).unwrap().history.clear();
     refresh_changed_views(state, true);
     Ok(())
 }
@@ -548,6 +610,108 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore = "Read-only diagnostic; set LUCIDPANE_TEST_FOLDER to an existing directory"]
+    fn real_folder_snapshot_matches_directory_and_sorts_newest_first() {
+        let root = PathBuf::from(std::env::var_os("LUCIDPANE_TEST_FOLDER").expect("test folder"));
+        let mut expected: Vec<_> = std::fs::read_dir(&root)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect();
+        expected.sort();
+        let started = Instant::now();
+        let source = Source::start(root, Default::default()).unwrap();
+        let mut items = source
+            .updates
+            .recv_timeout(Duration::from_secs(30))
+            .unwrap()
+            .unwrap();
+        let mut actual: Vec<_> = items
+            .iter()
+            .map(|item| item.identity.file_system_path().unwrap().to_path_buf())
+            .collect();
+        actual.sort();
+        assert_eq!(actual, expected);
+        sort_items(&mut items, (2, true));
+        assert!(
+            items
+                .windows(2)
+                .all(|pair| pair[0].details.modified_time >= pair[1].details.modified_time)
+        );
+        eprintln!(
+            "{} entries, first sorted snapshot in {:?}",
+            items.len(),
+            started.elapsed()
+        );
+        for item in items.iter().take(10) {
+            eprintln!("{}  {}", item.details.modified, item.label);
+        }
+    }
+
+    #[test]
+    fn first_snapshot_includes_hidden_children_before_loading_images() {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Storage::FileSystem::{
+            FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_SYSTEM, SetFileAttributesW,
+        };
+        let root = std::env::temp_dir().join(format!(
+            "lucidpane-complete-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        for index in 0..256 {
+            std::fs::write(root.join(format!("file-{index}.txt")), b"").unwrap();
+        }
+        let hidden = root.join("file-0.txt");
+        let wide: Vec<_> = hidden.as_os_str().encode_wide().chain(Some(0)).collect();
+        assert_ne!(
+            unsafe {
+                SetFileAttributesW(wide.as_ptr(), FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM)
+            },
+            0
+        );
+        std::fs::create_dir(root.join("child")).unwrap();
+        std::fs::write(root.join("child/nested.txt"), b"").unwrap();
+        let source = Source::start(root.clone(), Default::default()).unwrap();
+        let request = Arc::downgrade(&source.request);
+        let started = Instant::now();
+        let items = source
+            .updates
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap()
+            .unwrap();
+        eprintln!(
+            "first folder snapshot: {} entries in {:?}",
+            items.len(),
+            started.elapsed()
+        );
+        assert_eq!(items.len(), 257);
+        assert!(
+            items
+                .iter()
+                .any(|item| item.identity.file_system_path() == Some(hidden.as_path()))
+        );
+        assert!(items.iter().all(|item| item.image.is_none()));
+        assert!(
+            items
+                .iter()
+                .all(|item| item.identity.file_system_path().unwrap().parent()
+                    == Some(root.as_path()))
+        );
+        drop(source);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while request.upgrade().is_some() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(request.upgrade().is_none());
+        // Only the uniquely created test directory is removed.
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn dropping_an_idle_source_wakes_worker_and_releases_handles() {
         let source = Source::start(
             std::env::temp_dir().join(format!(
@@ -602,12 +766,12 @@ mod tests {
         sort_items(&mut items, (2, false));
         assert_eq!(
             items.iter().map(|i| i.label.as_str()).collect::<Vec<_>>(),
-            ["z-folder", "z-old", "a-new"]
+            ["z-old", "a-new", "z-folder"]
         );
         sort_items(&mut items, (2, true));
         assert_eq!(
             items.iter().map(|i| i.label.as_str()).collect::<Vec<_>>(),
-            ["z-folder", "a-new", "z-old"]
+            ["a-new", "z-old", "z-folder"]
         );
         sort_items(&mut items, (0, false));
         assert_eq!(
@@ -679,6 +843,7 @@ mod tests {
         navigate(&mut state, id, Some(root.join("child"))).unwrap();
         ensure(&mut state, id).unwrap();
         assert_eq!(state.folders[&id].path, root.join("child"));
+        assert_eq!(state.folders[&id].navigation(), [true, true]);
         assert_eq!(
             state
                 .store
@@ -689,6 +854,13 @@ mod tests {
                 .folder(),
             Some(root.as_path())
         );
+        navigate(&mut state, id, None).unwrap();
+        assert_eq!(state.folders[&id].path, root);
+        navigate(&mut state, id, Some(root.join("child"))).unwrap();
+        home(&mut state, id).unwrap();
+        assert_eq!(state.folders[&id].path, root);
+        assert!(state.folders[&id].history.is_empty());
+        assert_eq!(state.folders[&id].navigation(), [false, false]);
         navigate(&mut state, id, None).unwrap();
         assert_eq!(state.folders[&id].path, root);
         state.folders.remove(&id);
@@ -735,7 +907,9 @@ mod tests {
         std::fs::create_dir(root.join("child")).unwrap();
         std::fs::write(root.join("child/nested.txt"), b"nested").unwrap();
         let items = wait(&mut source, &|result| {
-            result.as_ref().is_ok_and(|items| items.len() == 2)
+            result.as_ref().is_ok_and(|items| {
+                items.len() == 2 && items.iter().all(|item| item.image.is_some())
+            })
         })
         .unwrap();
         assert!(

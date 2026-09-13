@@ -106,7 +106,7 @@ fn sync_pointer(hwnd: HWND, model: &RefCell<GroupModel>) {
             windows_sys::Win32::Graphics::Gdi::ScreenToClient(hwnd, &raw mut p);
         }
         let m = model.borrow();
-        let in_client = frame_hit(client(hwnd), p, scale(hwnd), m.collapsed, m.locked) == HTCLIENT;
+        let in_client = pane_hit(client(hwnd), p, scale(hwnd), &m) == HTCLIENT;
         drop(m);
         if in_client {
             update_pointer(hwnd, model, Some(p));
@@ -135,7 +135,7 @@ fn update_pointer(hwnd: HWND, model: &RefCell<GroupModel>, pointer: Option<POINT
     let (button, item) = if let Some(p) = pointer {
         let s = scale(hwnd);
         let button = {
-            super::layout::header_button(
+            m.header_button(
                 client(hwnd).right as f32 / s,
                 p.x as f32 / s,
                 p.y as f32 / s,
@@ -153,6 +153,14 @@ fn update_pointer(hwnd: HWND, model: &RefCell<GroupModel>, pointer: Option<POINT
         m.hovered_item = item;
         drop(m);
         invalidate(hwnd);
+    }
+}
+
+fn pane_hit(r: RECT, p: POINT, scale: f32, model: &GroupModel) -> u32 {
+    if model.header_button(r.right as f32 / scale, p.x as f32 / scale, p.y as f32 / scale).is_some() {
+        HTCLIENT
+    } else {
+        frame_hit(r, p, scale, model.collapsed, model.locked)
     }
 }
 
@@ -626,7 +634,7 @@ where
                     }
                     let r = client(hwnd);
                     let m = model.borrow();
-                    let hit = frame_hit(r, p, scale(hwnd), m.collapsed, m.locked);
+                    let hit = pane_hit(r, p, scale(hwnd), &m);
                     Some(isize::try_from(hit).unwrap_or_default())
                 }
                 WM_SYSCOMMAND if model.borrow().locked && wparam as u32 & 0xfff0 == SC_MOVE => {
@@ -839,7 +847,7 @@ where
                         return Some(0);
                     }
                     if p.y as f32 / s < HEADER {
-                        let button = super::layout::header_button(
+                        let button = model.borrow().header_button(
                             r.right as f32 / s,
                             p.x as f32 / s,
                             p.y as f32 / s,
@@ -993,7 +1001,7 @@ where
                     if let Some(button) = pressed {
                         let p = point(lparam);
                         let s = scale(hwnd);
-                        let released = super::layout::header_button(
+                        let released = model.borrow().header_button(
                             client(hwnd).right as f32 / s,
                             p.x as f32 / s,
                             p.y as f32 / s,
@@ -1003,7 +1011,7 @@ where
                         }
                         update_pointer(hwnd, &model, Some(p));
                         invalidate(hwnd);
-                        if released == Some(button) {
+                        if released == Some(button) && model.borrow().header_button_enabled(button) {
                             match button {
                                 0 => {
                                     event(Event::Collapse);
@@ -1011,6 +1019,8 @@ where
                                 1 => unsafe {
                                     PostMessageW(hwnd, WM_CONTEXTMENU, 0, -1);
                                 },
+                                2 => { event(Event::FolderBack); },
+                                3 => { event(Event::FolderHome); },
                                 _ => {}
                             }
                         }

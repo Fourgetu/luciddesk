@@ -472,6 +472,7 @@ fn activation_releases_state_and_model_before_shell_reentry() {
 fn snapped_content_bottom_and_scrollbar_use_the_same_row_metrics() {
     let mut model = GroupModel {
         folder_sort: (0, false),
+        folder_navigation: [false; 2],
         list_view: false,
         folder: None,
         folder_status: None,
@@ -584,6 +585,7 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
     let model = Rc::new(RefCell::new(GroupModel {
         folder_sort: (0, false),
+        folder_navigation: [false; 2],
         list_view: false,
         folder: None,
         folder_status: None,
@@ -908,6 +910,7 @@ fn pane_layer_switch_and_wallpaper_material_initialize() {
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
     let model = Rc::new(RefCell::new(GroupModel {
         folder_sort: (0, false),
+        folder_navigation: [false; 2],
         list_view: false,
         folder: None,
         folder_status: None,
@@ -1749,6 +1752,7 @@ fn reconciliation_preserves_groups_and_appends_new_items_after_existing_order() 
 fn multiselection_preserves_anchor_toggle_and_file_identity_on_refresh() {
     let mut model = GroupModel {
         folder_sort: (0, false),
+        folder_navigation: [false; 2],
         list_view: false,
         folder: None,
         folder_status: None,

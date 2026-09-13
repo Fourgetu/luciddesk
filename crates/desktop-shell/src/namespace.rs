@@ -8,23 +8,19 @@ use std::{
     ptr,
     time::SystemTime,
 };
-use windows::{
-    Win32::{
-        Foundation::HWND as WindowsHwnd,
-        System::{
-            Com::CoTaskMemFree as CoTaskMemFreeCom,
-            SystemServices::{
-                SFGAO_CANDELETE, SFGAO_CANRENAME, SFGAO_FILESYSTEM, SFGAO_FOLDER, SFGAO_HIDDEN,
-                SFGAO_LINK,
-            },
-        },
-        UI::Shell::{
-            BHID_SFObject, IShellFolder, IShellItem, SHCONTF_FOLDERS, SHCONTF_NONFOLDERS,
-            SHCreateItemFromParsingName, SHCreateItemWithParent, SHGetDesktopFolder,
-            SIGDN_DESKTOPABSOLUTEPARSING, SIGDN_FILESYSPATH, SIGDN_NORMALDISPLAY,
+use windows::Win32::{
+    Foundation::HWND as WindowsHwnd,
+    System::{
+        Com::CoTaskMemFree as CoTaskMemFreeCom,
+        SystemServices::{
+            SFGAO_CANDELETE, SFGAO_CANRENAME, SFGAO_FILESYSTEM, SFGAO_FOLDER, SFGAO_HIDDEN,
+            SFGAO_LINK,
         },
     },
-    core::HSTRING,
+    UI::Shell::{
+        IShellFolder, IShellItem, SHCONTF_FOLDERS, SHCONTF_NONFOLDERS, SHCreateItemWithParent,
+        SHGetDesktopFolder, SIGDN_DESKTOPABSOLUTEPARSING, SIGDN_FILESYSPATH, SIGDN_NORMALDISPLAY,
+    },
 };
 use windows_sys::Win32::{
     Storage::FileSystem::{
@@ -99,14 +95,45 @@ pub fn enumerate_desktop_namespace(owner: isize) -> Result<Vec<DesktopShellItem>
     enumerate_shell_folder(&desktop, owner)
 }
 
-/// Enumerates a filesystem folder using Shell display names and attributes.
+/// Enumerates every direct filesystem child, including hidden and system entries.
 /// # Errors
-/// Returns a Shell error if the folder cannot be opened or enumerated.
+/// Returns an I/O error if the folder cannot be opened or enumerated.
 pub fn enumerate_folder(path: &Path) -> Result<Vec<DesktopShellItem>, ShellError> {
-    let item: IShellItem =
-        unsafe { SHCreateItemFromParsingName(&HSTRING::from(path.as_os_str()), None) }?;
-    let folder: IShellFolder = unsafe { item.BindToHandler(None, &BHID_SFObject) }?;
-    enumerate_shell_folder(&folder, 0)
+    use std::os::windows::fs::MetadataExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_HIDDEN,
+    };
+
+    // Directory metadata is supplied by the Windows enumeration. Do not open
+    // every child for a persistent file ID or resolve it through Shell handlers.
+    // Folder mappings use path identities and do not own desktop membership.
+    fs::read_dir(path)?
+        .map(|entry| {
+            let entry = entry?;
+            let path = entry.path();
+            let metadata = entry.metadata().ok();
+            let attributes = metadata.as_ref().map_or(0, MetadataExt::file_attributes);
+            Ok(DesktopShellItem {
+                display_name: entry.file_name().to_string_lossy().into_owned(),
+                attributes: ShellAttributes {
+                    folder: attributes & FILE_ATTRIBUTE_DIRECTORY != 0,
+                    hidden: attributes & FILE_ATTRIBUTE_HIDDEN != 0,
+                    file_system: true,
+                    link: path
+                        .extension()
+                        .is_some_and(|ext| ext.eq_ignore_ascii_case("lnk")),
+                    can_rename: true,
+                    can_delete: true,
+                },
+                modified: metadata.and_then(|value| value.modified().ok()),
+                identity: ShellIdentity::FileSystem {
+                    path,
+                    volume_id: None,
+                    file_id: None,
+                },
+            })
+        })
+        .collect()
 }
 
 fn enumerate_shell_folder(

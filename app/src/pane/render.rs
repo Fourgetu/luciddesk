@@ -33,6 +33,7 @@ pub struct Renderer {
     details: windows_canvas::TextFormat,
     menu_shortcut: windows_canvas::TextFormat,
     icons: windows_canvas::TextFormat,
+    navigation_icons: windows_canvas::TextFormat,
     target: Option<(u32, u32, Option<canvas::Offscreen>, ID2D1DeviceContext)>,
     images: HashMap<String, ImageBitmap>,
     states: HashMap<(u32, u32, u32, i32), windows_canvas::Bitmap>,
@@ -194,6 +195,10 @@ impl Renderer {
                 .with_alignment(windows_canvas::TextAlignment::Center)
                 .with_paragraph_alignment(ParagraphAlignment::Center)
                 .with_word_wrapping(WordWrapping::NoWrap),
+            navigation_icons: canvas_result(TextFormat::new("Segoe Fluent Icons", 12.0))?
+                .with_alignment(TextAlignment::Center)
+                .with_paragraph_alignment(ParagraphAlignment::Center)
+                .with_word_wrapping(WordWrapping::NoWrap),
             target: None,
             images: HashMap::new(),
             states: HashMap::new(),
@@ -327,7 +332,11 @@ impl Renderer {
     #[allow(clippy::too_many_lines)]
     fn draw(&mut self, width: u32, height: u32, scale: f32, model: &GroupModel) -> Result<()> {
         let w = width as f32 / scale;
-        let (title_left, title_space) = super::layout::title_area(w);
+        let (mut title_left, mut title_space) = super::layout::title_area(w);
+        if model.folder.is_some() {
+            title_space = (title_space - (74.0 - title_left).max(0.0)).max(1.0);
+            title_left = title_left.max(74.0);
+        }
         let show_icon = model.folder.is_some() && title_space >= 42.0;
         let icon_width = if model.folder.is_some() { 24.0 } else { 0.0 };
         let title = self.layout_title(&model.title, (title_space - icon_width).max(1.0), scale)?;
@@ -393,14 +402,15 @@ impl Renderer {
                         );
                     }
                     target.clipped_layout(&title, group_left + icon_width, 0.0, &white);
-                    for button in 0..2 {
+                    for button in 0..if model.folder.is_some() { 4 } else { 2 } {
                         let x = super::layout::header_button_x(w, button);
-                        let hovered = model.hovered_button == Some(button);
+                        let enabled = model.header_button_enabled(button);
+                        let hovered = enabled && model.hovered_button == Some(button);
                         let glyph = canvas_result(target.create_solid_brush(ColorF::new(
                             ink,
                             ink,
                             ink,
-                            if hovered { 1.0 } else { 0.85 },
+                            if !enabled { 0.3 } else if hovered { 1.0 } else { 0.85 },
                         )))?;
                         if hovered {
                             let fill = canvas_result(
@@ -416,7 +426,14 @@ impl Renderer {
                             );
                         }
                         let center = x + 14.0;
-                        if button == 0 {
+                        if button >= 2 {
+                            target.clipped_text(
+                                if button == 2 { "\u{e72b}" } else { "\u{e80f}" },
+                                &self.navigation_icons,
+                                &Rect::from_xywh(x, 5.0, 28.0, 28.0),
+                                &glyph,
+                            );
+                        } else if button == 0 {
                             let amount = model.reveal.clamp(0.0, 1.0);
                             let points = [
                                 (center - 2.0 - 2.0 * amount, 15.0 + 2.0 * amount),
@@ -823,6 +840,11 @@ mod tests {
         let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
         let mut model = sample_model();
         model.folder = Some(std::path::PathBuf::from(r"C:\Documents"));
+        assert!(!model.header_button_enabled(2));
+        assert!(!model.header_button_enabled(3));
+        model.folder_navigation = [true, true];
+        assert!(model.header_button_enabled(2));
+        assert!(model.header_button_enabled(3));
         model.list_view = true;
         model.items[0].label = "项目进度报告.txt".into();
         model.items[0].details = super::super::ItemDetails {
@@ -986,6 +1008,7 @@ mod tests {
     fn sample_model() -> GroupModel {
         GroupModel {
             folder_sort: (0, false),
+        folder_navigation: [false; 2],
             list_view: false,
             folder: None,
             folder_status: None,

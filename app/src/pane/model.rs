@@ -6,6 +6,7 @@ use super::*;
 pub struct GroupModel {
     pub list_view: bool,
     pub folder_sort: (u8, bool),
+    pub folder_navigation: [bool; 2],
     pub folder: Option<std::path::PathBuf>,
     pub folder_status: Option<String>,
     pub options: desktop_core::PaneOptions,
@@ -35,6 +36,23 @@ pub struct GroupModel {
 }
 
 impl GroupModel {
+    pub(super) fn header_button_enabled(&self, button: usize) -> bool {
+        match button {
+            2 | 3 => self.folder.is_some() && self.folder_navigation[button - 2],
+            _ => true,
+        }
+    }
+
+    pub(super) fn header_button(&self, width: f32, x: f32, y: f32) -> Option<usize> {
+        layout::header_button(width, x, y).or_else(|| {
+            if self.folder.is_none() || !(5.0..33.0).contains(&y) { return None; }
+            (2..4).find(|&button| {
+                let left = layout::header_button_x(width, button);
+                (left..left + 28.0).contains(&x)
+            })
+        })
+    }
+
     pub(super) fn is_list(&self) -> bool {
         self.list_view
     }

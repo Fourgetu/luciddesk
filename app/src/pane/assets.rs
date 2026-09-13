@@ -39,6 +39,17 @@ pub fn load(identity: &ShellIdentity, size: i32) -> windows::core::Result<Pixels
         {
             return Ok(pixels);
         }
+        // Folder previews and executable thumbnails can contain a baked-in
+        // frame or an opaque background. Use their actual Shell icon instead.
+        let icon_only = identity.file_system_path().is_some_and(|path| {
+            path.extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("exe"))
+        }) || item
+            .GetAttributes(windows::Win32::System::SystemServices::SFGAO_FOLDER)
+            .is_ok_and(|attributes| attributes.0 != 0);
+        if icon_only {
+            return shell_icon(&item, size);
+        }
         let factory: IShellItemImageFactory = item.cast()?;
         let bitmap = factory.GetImage(SIZE { cx: size, cy: size }, SIIGBF_BIGGERSIZEOK)?;
         let result = (|| {
@@ -131,10 +142,15 @@ fn recycle_state_icon(full: bool, size: i32) -> windows::core::Result<Pixels> {
 // shortcut icons while hiding the arrow in LucidPane only.
 #[allow(clippy::wildcard_imports)]
 fn link_icon(item: &IShellItem, size: i32) -> windows::core::Result<Pixels> {
-    use windows::Win32::UI::{Controls::IImageList, Shell::*, WindowsAndMessaging::DestroyIcon};
     if let Ok(pixels) = extract_link_icon(item, size) {
         return Ok(pixels);
     }
+    shell_icon(item, size)
+}
+
+#[allow(clippy::wildcard_imports)]
+fn shell_icon(item: &IShellItem, size: i32) -> windows::core::Result<Pixels> {
+    use windows::Win32::UI::{Controls::IImageList, Shell::*, WindowsAndMessaging::DestroyIcon};
     unsafe {
         let pidl = SHGetIDListFromObject(item)?;
         let mut info = SHFILEINFOW::default();
@@ -211,6 +227,48 @@ fn is_padded_jumbo(pixels: &Pixels) -> bool {
 #[cfg(test)]
 mod padding_tests {
     use super::*;
+
+    #[test]
+    #[ignore = "Read-only icon diagnostic; set LUCIDPANE_TEST_FOLDER and LUCIDPANE_ICON_OUTPUT"]
+    fn downloads_icons_preserve_transparency_and_fill_the_canvas() {
+        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let root = std::path::PathBuf::from(std::env::var_os("LUCIDPANE_TEST_FOLDER").unwrap());
+        let output = std::path::PathBuf::from(std::env::var_os("LUCIDPANE_ICON_OUTPUT").unwrap());
+        std::fs::create_dir_all(&output).unwrap();
+        for name in [
+            "openfences.exe",
+            "wireguard-installer.exe",
+            "VC_redist.x64.exe",
+            "ArmouryCrateInstallTool",
+        ] {
+            let pixels = load(
+                &ShellIdentity::FileSystem {
+                    path: root.join(name),
+                    volume_id: None,
+                    file_id: None,
+                },
+                128,
+            )
+            .unwrap();
+            eprintln!(
+                "{name}: transparent pixels {}",
+                pixels
+                    .data
+                    .chunks_exact(4)
+                    .filter(|pixel| pixel[3] == 0)
+                    .count()
+            );
+            if name != "openfences.exe" {
+                assert!(pixels.data.chunks_exact(4).any(|pixel| pixel[3] == 0));
+            }
+            assert!(!is_padded_jumbo(&pixels), "{name}: padded jumbo icon");
+            let mut bytes = pixels.width.to_le_bytes().to_vec();
+            bytes.extend(pixels.height.to_le_bytes());
+            bytes.extend(&pixels.data);
+            std::fs::write(output.join(format!("{name}.bgra")), bytes).unwrap();
+            eprintln!("{name}: {}x{}", pixels.width, pixels.height);
+        }
+    }
 
     #[test]
     fn recycle_states_have_distinct_high_resolution_pixels() {

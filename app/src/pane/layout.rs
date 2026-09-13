@@ -39,6 +39,7 @@ pub fn title_area(width: f32) -> (f32, f32) {
 }
 
 pub fn header_button_x(width: f32, button: usize) -> f32 {
+    if button >= 2 { return 6.0 + (button - 2) as f32 * 32.0; }
     // Visual order: collapse, menu.
     width - HEADER_BUTTONS_WIDTH + button as f32 * 32.0
 }
