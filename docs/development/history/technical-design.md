@@ -36,7 +36,7 @@
 - [x] Pane 和桌面图标表面都是 Shell 拥有的非置顶 `WS_POPUP | WS_EX_TOOLWINDOW`，普通应用窗口可覆盖它们。
 - [x] 多显示器枚举、有效 DPI、显示器局部 DIP 坐标、显示器丢失后的主屏迁移与边界钳制。
 - [x] 单击选择、双击或 Enter Shell 执行、自由桌面拖动、自由桌面与 Pane 间的逻辑分组。
-- [x] SQLite schema v5 持久化 Shell 身份、显示名和桌面位置/Pane 网格位置。
+- [x] SQLite schema 持久化 Shell 身份、显示名和桌面位置/Pane 网格位置。
 - [x] 拖动/重排/移动缩放结束、标题与外观变更、刷新、显示器变化和会话结束时事务提交工作区，不再只依赖正常退出保存。
 - [x] 正常退出恢复 Explorer 图标；独立守护进程处理进程崩溃；磁盘接管标记和 `--restore-shell` 处理跨重启残留。
 - [x] `SHGetSetSettings` 为首选接管接口；当当前 Explorer 版本回滚该状态时，由 `desktop-shell` 内聚的 `FolderView` 可见性兼容后备完成隐藏/恢复。
@@ -422,7 +422,7 @@ Peek 将所有面板临时提升到普通窗口之上，退出后恢复到桌面
 - 项目引用与手工分组关系。
 - 自动规则和手工覆盖。
 - 布局快照和撤销日志。
-- Schema 版本。
+- 数据库结构校验。
 
 ### 12.2 配置文件
 
@@ -562,7 +562,7 @@ MVP 满足以下条件后可以进入发布稳定化阶段：
 
 ## 19. 当前仓库落地顺序
 
-当前代码已经完成 Shell Namespace 枚举/通知、稳定文件身份、Shell-owned 稀疏桌面表面、空 Pane、双向逻辑分组、Shell 执行、SQLite v5、Explorer 重挂载与三层接管恢复。后续按以下顺序演进：
+当前代码已经完成 Shell Namespace 枚举/通知、稳定文件身份、Shell-owned 稀疏桌面表面、空 Pane、双向逻辑分组、Shell 执行、SQLite、Explorer 重挂载与三层接管恢复。后续按以下顺序演进：
 
 1. 为 Pane 增加显示器 ID，并完成其 `WM_DPICHANGED` DIP/像素换算与建议矩形应用。
 2. 将当前 Shell 通知后的全量对账优化为基于受影响 PIDL 的增量对账，并完善通知风暴测试。

@@ -105,7 +105,7 @@ cargo test -p lucidpane --bin lucidpane --offline --target-dir target\convergenc
 
 ### 启动检查
 
-使用 `target/convergence-check/debug` 中配套的主程序与 Hook DLL，从实际桌面会话启动。确认新分组窗口可见，`target/dev-data-v9/hook-desktop.db` 已建立，schema 为 9，启动错误日志为空。
+使用 `target/convergence-check/debug` 中配套的主程序与 Hook DLL，从实际桌面会话启动。确认新分组窗口可见，`target/dev-data-v9/hook-desktop.db` 已建立，启动错误日志为空。
 
 受限会话首次启动无法访问 Explorer 桌面视图，未创建数据库；关闭该提示后，在实际桌面会话启动成功。该差异是运行环境限制，不能用受限会话的失败推断全部平台不兼容。
 
@@ -119,11 +119,11 @@ cargo test -p lucidpane --bin lucidpane --offline --target-dir target\convergenc
 后续涉及 Hook、菜单或布局的修改，按[构建与验证](build.md)执行自动检查，再记录实际桌面操作及观察结果。
 # 2026-09-12 恢复、备份与日常操作
 
-- 新增桌面连接独立恢复、显示器组合布局、v9 到 v10 的备份升级、配置导入导出与自动快照。
+- 新增桌面连接独立恢复、显示器组合布局、旧开发版的备份升级、配置导入导出与自动快照。
 - 新增跨分组多选拖动、文件夹列表列排序和目录导航、搜索全局唤起快捷键、Windows 预览构建工作流与本地打包脚本。
 - 实机发现一次初始化失败被 Hook 永久缓存，已改为只缓存成功安装，并通过失败后重试测试。
 - 自动验证：应用 94 项、core 5 项、storage 15 项、Hook 11 项、Shell 4 项、Canvas 集成 4 项通过，共 133 项；7 项需要独立交互环境的测试未执行。
-- 隔离配置启动时移除 DLL，文件夹与搜索窗口仍可见；补回 DLL 后普通桌面分组自动出现。恢复用户配置时完成 v9 备份升级，随后普通、文件夹和搜索窗口均可见。
+- 隔离配置启动时移除 DLL，文件夹与搜索窗口仍可见；补回 DLL 后普通桌面分组自动出现。恢复用户配置时完成 旧开发版备份升级，随后普通、文件夹和搜索窗口均可见。
 - 实际按下 Ctrl+Shift+Space，核对 GUI 线程焦点进入搜索编辑框；重复启动的新进程退出，保留一个运行实例。
 - Release ZIP 中两个二进制的 SHA-256 与构建清单一致，ZIP 校验值通过。本地工作区仍有未提交修改，包名标记 dirty；GitHub Actions 工作流尚未在远端运行。
 - 未进行真实显示器拔插、不同 Windows 版本或真实 Explorer 重启验证；自动测试覆盖连接失效、窗口保留与布局边界，不能代替这些实机场景。

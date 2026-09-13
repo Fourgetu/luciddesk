@@ -41,7 +41,7 @@
 | Shell 右键菜单 | 以自定义菜单为主 | 已实现 `IContextMenu/IContextMenu2/IContextMenu3` 消息转发 | 尚未实现 | 优先借鉴 MiniFences |
 | 拖放 | 自定义 WPF 拖放和预览 | WPF 拖放 + COM `IDataObject` 兼容层 + Shell drag helper | 当前是应用内拖动，完整 OLE 拖放未完成 | 优先借鉴 MiniFences 的协议边界 |
 | 渲染 | WPF 控件树、图标缓存、后台懒加载 | WPF 控件树、异步图标、虚拟化 WrapPanel | 当前 GDI PoC，目标 D2D/DWrite/DirectComposition | 借鉴异步与虚拟化策略，不借 WPF 实现 |
-| 存储 | Profile 目录中的 JSON 和快捷方式资源，强调 portable | `%APPDATA%` JSON、布局文件、操作历史 | SQLite schema v5，事务式全量快照 | 保持 SQLite，增加版本化子模型 |
+| 存储 | Profile 目录中的 JSON 和快捷方式资源，强调 portable | `%APPDATA%` JSON、布局文件、操作历史 | SQLite schema，事务式全量快照 | 保持 SQLite，增加版本化子模型 |
 | 多显示器 | 有屏幕边界与吸附处理 | 按显示组合、bounds、DPI 建 topology key 并保存布局 | 已有稳定显示器 ID、DPI、显示器消失迁移 | 借鉴 topology profile 与 remap |
 | 文件操作安全 | 自动分类可直接移动真实文件，提供冲突策略 | 操作日志、跨盘安全移动、部分完成状态和崩溃恢复 | Managed Desktop 分组只改元数据；真实 Folder Portal 操作尚未完整实现 | 在引入真实文件操作前先做 journal |
 | 测试 | 仓库中未见独立测试项目 | 约 3000 行 SmokeTests + VisualHarness | 已有 Rust 单元及 Win32 集成测试 | 扩充为 MiniFences 风格的场景矩阵 |
@@ -224,7 +224,7 @@ LucidPane 的自由桌面图标按显示器拆分为独立稀疏 HWND，Pane 也
 
 ### 5.5 事务持久化
 
-SQLite schema v5 已经事务化保存 Pane、Shell identity 和 placement。后续 Profiles、Tabs、display topology、operation journal 都应延续强类型、可迁移、事务式的方向。
+SQLite schema 已经事务化保存 Pane、Shell identity 和 placement。后续 Profiles、Tabs、display topology、operation journal 都应延续强类型、可迁移、事务式的方向。
 
 ## 6. 建议借鉴项目清单
 
