@@ -157,12 +157,14 @@ pub fn show_file_items_menu(
     if selected.is_empty() {
         return Ok(false);
     }
+    crate::menu_theme::apply(owner.0);
     unsafe {
         let context: IContextMenu = shell_items(selected)?.BindToHandler(None, &BHID_SFUIObject)?;
         let menu = Menu(CreatePopupMenu()?);
         context
             .QueryContextMenu(menu.0, 0, 1, 0x7fff, CMF_NORMAL | CMF_CANRENAME)
             .ok()?;
+        add_location_command(menu.0, selected)?;
         let messages = Box::new(MenuMessages {
             context: context.clone(),
             owner,
@@ -176,6 +178,7 @@ pub fn show_file_items_menu(
         {
             return Err(windows::core::Error::from_thread());
         }
+        let frame = crate::menu_frame::MenuFrame::install(owner.0, windows_sys::Win32::Foundation::POINT { x: point.x, y: point.y });
         let chosen = TrackPopupMenuEx(
             menu.0,
             (TPM_RETURNCMD | TPM_RIGHTBUTTON).0,
@@ -185,8 +188,13 @@ pub fn show_file_items_menu(
             None,
         )
         .0;
+        drop(frame);
         drop(messages);
         if chosen == 0 {
+            return Ok(false);
+        }
+        if chosen as usize == OPEN_LOCATION {
+            open_location(&selected[0])?;
             return Ok(false);
         }
         let offset = chosen as usize - 1;
@@ -210,6 +218,34 @@ pub fn show_file_items_menu(
         };
         context.InvokeCommand(&command)?;
         Ok(false)
+    }
+}
+
+// Outside the range assigned to Shell extensions by QueryContextMenu.
+const OPEN_LOCATION: usize = 0x8000;
+
+fn add_location_command(menu: HMENU, selected: &[ShellIdentity]) -> Result<()> {
+    if selected.len() == 1
+        && selected[0].file_system_path().and_then(std::path::Path::parent).is_some()
+    {
+        unsafe {
+            InsertMenuW(menu, 1, MF_BYPOSITION | MF_STRING, OPEN_LOCATION,
+                windows::core::w!("打开所在文件夹"))?;
+            InsertMenuW(menu, 2, MF_BYPOSITION | MF_SEPARATOR, 0, None)?;
+        }
+    }
+    Ok(())
+}
+
+fn open_location(identity: &ShellIdentity) -> Result<()> {
+    // Passing the item's full PIDL with no child array opens its parent and
+    // selects the item, including a folder or shortcut itself (not its target).
+    unsafe {
+        let item = shell_item(identity)?;
+        let pidl = SHGetIDListFromObject(&item)?;
+        let result = SHOpenFolderAndSelectItems(pidl, None, 0);
+        windows::Win32::System::Com::CoTaskMemFree(Some(pidl.cast()));
+        result
     }
 }
 
@@ -415,6 +451,27 @@ pub fn invoke_file_commands(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn location_command_preserves_shell_ids_and_requires_a_single_filesystem_item() {
+        use super::*;
+        let item = ShellIdentity::FileSystem {
+            path: r"C:\Folder\file.txt".into(), volume_id: None, file_id: None,
+        };
+        unsafe {
+            let menu = Menu(CreatePopupMenu().unwrap());
+            AppendMenuW(menu.0, MF_STRING, 1, windows::core::w!("Shell command")).unwrap();
+            add_location_command(menu.0, std::slice::from_ref(&item)).unwrap();
+            assert_eq!(GetMenuItemCount(Some(menu.0)), 3);
+            assert_eq!(GetMenuItemID(menu.0, 0), 1);
+            assert_eq!(GetMenuItemID(menu.0, 1), OPEN_LOCATION as u32);
+            for items in [vec![], vec![item.clone(), item], vec![ShellIdentity::Namespace { parsing_name: "virtual".into() }]] {
+                let menu = Menu(CreatePopupMenu().unwrap());
+                add_location_command(menu.0, &items).unwrap();
+                assert_eq!(GetMenuItemCount(Some(menu.0)), 0);
+            }
+        }
+    }
+
     use super::*;
 
     #[test]

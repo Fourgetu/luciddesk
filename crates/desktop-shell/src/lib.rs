@@ -7,6 +7,8 @@ mod file_command;
 mod namespace;
 mod native_layout;
 mod native_menu;
+mod menu_theme;
+mod menu_frame;
 mod notification;
 mod rename;
 

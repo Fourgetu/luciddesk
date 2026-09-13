@@ -8,9 +8,10 @@ license.workspace = true
 [dependencies]
 desktop-core.workspace = true
 windows.workspace = true
-windows-sys.workspace = true
+windows-sys = { workspace = true, features = ["Win32_System_LibraryLoader", "Win32_System_SystemInformation", "Win32_UI_Accessibility"] }
 
 [dev-dependencies]
+windows-window.workspace = true
 desktop-hook.workspace = true
 desktop-window.workspace = true
 
