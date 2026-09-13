@@ -1,3 +1,4 @@
+use super::search::everything_settings;
 use super::*;
 
 #[test]

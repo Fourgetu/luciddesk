@@ -1,4 +1,5 @@
 //! Group commands and their persisted state transitions.
+use super::search::everything_settings;
 use super::*;
 
 fn enable_search_view(

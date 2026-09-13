@@ -414,7 +414,7 @@ where
     let mut surface: Option<Surface> = None;
     let mut drag: Option<(usize, POINT, bool)> = None;
     let mut drag_identity = None;
-    let mut drag_image: Option<super::drag_image::DragImage> = None;
+    let mut drag_image: Option<super::drag_drop::image::DragImage> = None;
     let mut fold: Option<super::animation::Fold> = None;
     let mut move_origin: Option<super::snap::DragOrigin> = None;
     let mut hover_state: Option<(bool, std::time::Instant)> = None;
@@ -938,7 +938,7 @@ where
                                     .into_iter()
                                     .filter_map(|index| {
                                         let item = m.items.get(index)?;
-                                        let pixels = super::drag_image::item_pixels(
+                                        let pixels = super::drag_drop::image::item_pixels(
                                             item.image.as_deref().unwrap_or(&placeholder),
                                             &item.label,
                                             grid,
@@ -955,7 +955,7 @@ where
                                     })
                                     .collect::<Vec<_>>();
                                 if let Some((pixels, origin)) =
-                                    super::drag_image::selection_pixels(&cells)
+                                    super::drag_drop::image::selection_pixels(&cells)
                                 {
                                     let hotspot = POINT {
                                         x: start.x - origin.x,
@@ -966,7 +966,7 @@ where
                                         cy: pixels.height as i32,
                                     };
                                     drop(m);
-                                    drag_image = super::drag_image::DragImage::new(
+                                    drag_image = super::drag_drop::image::DragImage::new(
                                         hwnd, &pixels, screen, hotspot, size,
                                     );
                                 }

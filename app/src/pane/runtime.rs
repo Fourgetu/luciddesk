@@ -1,4 +1,5 @@
 //! Desktop integration can recover without taking independent panes down.
+use super::search::{everything_settings, hotkey as search_hotkey};
 use super::*;
 use std::{
     path::PathBuf,

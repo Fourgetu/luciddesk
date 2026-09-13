@@ -1,10 +1,11 @@
 //! A single global activation binding, owned by the runtime window.
-use super::*;
+use super::everything_settings;
+use crate::pane::*;
 use windows_sys::Win32::UI::{Input::KeyboardAndMouse::*, WindowsAndMessaging::*};
 
-pub(super) const ID: i32 = 0x4c50;
+pub(in crate::pane) const ID: i32 = 0x4c50;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct Shortcut {
+pub(in crate::pane) struct Shortcut {
     pub key: u16,
     pub modifiers: u8,
 }
@@ -20,13 +21,13 @@ thread_local! {
     static CONFIG: RefCell<Shortcut> = RefCell::new(Shortcut::default());
     static STATUS: RefCell<String> = const { RefCell::new(String::new()) };
 }
-pub(super) fn settings() -> Shortcut {
+pub(in crate::pane) fn settings() -> Shortcut {
     CONFIG.with(|s| *s.borrow())
 }
-pub(super) fn status() -> String {
+pub(in crate::pane) fn status() -> String {
     STATUS.with(|s| s.borrow().clone())
 }
-pub(super) fn valid(value: Shortcut) -> bool {
+pub(in crate::pane) fn valid(value: Shortcut) -> bool {
     // Require Ctrl or Alt; reserve system/menu combinations and the debugger's F12.
     value.modifiers <= 7
         && value.modifiers & 5 != 0
@@ -41,7 +42,7 @@ fn decode(raw: &str) -> Option<Shortcut> {
     };
     valid(value).then_some(value)
 }
-pub(super) fn load(store: &WorkspaceStore) -> Result<(), String> {
+pub(in crate::pane) fn load(store: &WorkspaceStore) -> Result<(), String> {
     let value = store
         .preference("search_hotkey")
         .map_err(|e| e.to_string())?
@@ -50,7 +51,7 @@ pub(super) fn load(store: &WorkspaceStore) -> Result<(), String> {
     CONFIG.with(|s| *s.borrow_mut() = value);
     Ok(())
 }
-pub(super) fn save(store: &WorkspaceStore, value: Shortcut) -> Result<(), String> {
+pub(in crate::pane) fn save(store: &WorkspaceStore, value: Shortcut) -> Result<(), String> {
     if !valid(value) {
         return Err(
             "请使用 Ctrl 或 Alt 搭配字母、数字、空格或功能键，避开现有文件操作和系统快捷键。"
@@ -66,7 +67,7 @@ pub(super) fn save(store: &WorkspaceStore, value: Shortcut) -> Result<(), String
     CONFIG.with(|s| *s.borrow_mut() = value);
     Ok(())
 }
-pub(super) fn label(value: Shortcut) -> String {
+pub(in crate::pane) fn label(value: Shortcut) -> String {
     peek::shortcut_label(&peek::Settings {
         key: value.key,
         modifiers: value.modifiers,
@@ -88,7 +89,7 @@ fn flags(value: Shortcut) -> u32 {
         | if value.modifiers & 4 != 0 { MOD_ALT } else { 0 }
 }
 #[derive(Default)]
-pub(super) struct Registration {
+pub(in crate::pane) struct Registration {
     hwnd: isize,
     desired: Option<Shortcut>,
     registered: bool,
@@ -135,7 +136,7 @@ impl Drop for Registration {
     }
 }
 
-pub(super) fn activate(state: &Rc<RefCell<PaneApp>>) {
+pub(in crate::pane) fn activate(state: &Rc<RefCell<PaneApp>>) {
     let target = {
         let s = state.borrow();
         if !everything_settings::enabled(&s.store).unwrap_or(false) {

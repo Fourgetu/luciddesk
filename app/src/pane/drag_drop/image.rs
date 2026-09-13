@@ -6,7 +6,7 @@
     clippy::cast_precision_loss,
     clippy::wildcard_imports
 )]
-use super::assets::Pixels;
+use crate::pane::assets::Pixels;
 use windows_sys::Win32::{
     Foundation::{HWND, POINT, SIZE},
     Graphics::Gdi::*,
@@ -22,14 +22,14 @@ pub struct DragImage {
 pub fn item_pixels(
     image: &Pixels,
     name: &str,
-    grid: super::layout::Grid,
+    grid: crate::pane::layout::Grid,
     scale: f32,
 ) -> Option<Pixels> {
     if image.width == 0 || image.height == 0 {
         return None;
     }
     let width = (grid.cell_width * scale).round().max(1.0) as u32;
-    let label = super::label::raster(name, width, (96.0 * scale).round() as u32, 2)?;
+    let label = crate::pane::label::raster(name, width, (96.0 * scale).round() as u32, 2)?;
     let label_y = ((grid.icon_size + crate::pane::layout::LABEL_OFFSET) * scale).round() as u32
         - label.padding;
     let height = label_y + label.pixels.height;
@@ -272,7 +272,7 @@ mod tests {
     fn drag_preview_includes_label_at_each_dpi() {
         for scale in [1.0, 1.5, 2.0] {
             {
-                let grid = super::super::layout::Grid::system(400.0, 300.0, 48.0, (88.0, 96.0));
+                let grid = crate::pane::layout::Grid::system(400.0, 300.0, 48.0, (88.0, 96.0));
                 for (width, height) in [(16, 16), (32, 16), (16, 32)] {
                     let source = Pixels {
                         width,
@@ -310,7 +310,7 @@ mod tests {
     #[test]
     fn multi_selection_keeps_cells_gaps_and_pointer_anchor_at_each_dpi() {
         for scale in [1.0, 1.5, 2.0] {
-            let grid = super::super::layout::Grid::system(400.0, 300.0, 48.0, (88.0, 96.0));
+            let grid = crate::pane::layout::Grid::system(400.0, 300.0, 48.0, (88.0, 96.0));
             let icon = |color: [u8; 4]| Pixels {
                 width: 16,
                 height: 16,

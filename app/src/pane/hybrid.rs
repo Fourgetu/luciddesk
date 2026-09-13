@@ -1,7 +1,7 @@
 //! Self-rendered panes with a reversible, compacted native desktop outside them.
-#[path = "icon_changes.rs"]
 mod icon_changes;
 use super::assets::RECYCLE_BIN_PARSING_NAME;
+use super::search::{everything_settings, hotkey as search_hotkey};
 use super::*;
 use desktop_hook::{HookSession, protocol::*};
 use desktop_shell::{NativeDesktopSnapshot, native_desktop_snapshot};
@@ -113,8 +113,8 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
     let first_run = !path.exists();
     let mut store = WorkspaceStore::open(path).map_err(|e| e.to_string())?;
     super::peek::load(&store)?;
-    super::search_hotkey::load(&store)?;
-    super::everything_settings::load(&store)?;
+    search_hotkey::load(&store)?;
+    everything_settings::load(&store)?;
     let mut workspace = store.load_workspace().map_err(|e| e.to_string())?;
     // Migrate older workspaces that allowed multiple search panes.
     let duplicates: Vec<_> = workspace
@@ -410,7 +410,7 @@ pub(super) fn register_drop(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result
         .window
         .hwnd();
     let weak = Rc::downgrade(state);
-    let registration = super::drop_target::Registration::new(
+    let registration = super::drag_drop::target::Registration::new(
         windows::Win32::Foundation::HWND(hwnd.cast()),
         if state
             .borrow()

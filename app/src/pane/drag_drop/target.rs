@@ -22,7 +22,7 @@ struct Target {
     helper: Option<IDropTargetHelper>,
     accept: Accept,
     items: RefCell<Vec<ShellIdentity>>,
-    description: RefCell<Option<Rc<super::drop_description::QuietDescription>>>,
+    description: RefCell<Option<Rc<super::description::QuietDescription>>>,
 }
 impl IDropTarget_Impl for Target_Impl {
     fn DragEnter(
@@ -56,7 +56,7 @@ impl IDropTarget_Impl for Target_Impl {
         if self.effect == DROPEFFECT_LINK && unsafe { *effect != DROPEFFECT_NONE } {
             *self.description.borrow_mut() = data
                 .as_ref()
-                .map(|data| Rc::new(super::drop_description::QuietDescription::new(data)));
+                .map(|data| Rc::new(super::description::QuietDescription::new(data)));
         }
         let description = self.description.borrow().clone();
         if let Some(description) = description {
@@ -157,7 +157,7 @@ impl Target_Impl {
         }
     }
 }
-pub(super) struct Registration {
+pub(in crate::pane) struct Registration {
     hwnd: HWND,
     _target: IDropTarget,
 }

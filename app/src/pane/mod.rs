@@ -10,12 +10,8 @@ mod assets;
 mod canvas;
 mod composition;
 mod display_layout;
-mod drag_image;
-mod drop_description;
-mod drop_target;
+mod drag_drop;
 mod events;
-mod everything;
-mod everything_settings;
 mod folder;
 mod hybrid;
 mod keyboard;
@@ -31,7 +27,6 @@ mod render;
 mod render_bench;
 mod runtime;
 mod search;
-mod search_hotkey;
 mod settings;
 use events::handle;
 mod shell_menu;
@@ -103,7 +98,7 @@ struct PaneApp {
     settings: Option<windows_window::Window>,
     // Desktop membership is suspended while Explorer/its compatible Hook is unavailable.
     session: Option<hybrid::Session>,
-    drops: Vec<drop_target::Registration>,
+    drops: Vec<drag_drop::target::Registration>,
     runtime: Option<runtime::State>,
     workspace: Workspace,
     store: WorkspaceStore,

@@ -5,15 +5,15 @@ use std::{
 };
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(super) struct Settings {
+pub(in crate::pane) struct Settings {
     pub path: String,
 }
 static SETTINGS: LazyLock<RwLock<Settings>> = LazyLock::new(|| RwLock::new(Settings::default()));
-pub(super) fn settings() -> Settings {
+pub(in crate::pane) fn settings() -> Settings {
     SETTINGS.read().unwrap().clone()
 }
 // Older workspaces used the presence of a search panel as the enabled state.
-pub(super) fn enabled(store: &WorkspaceStore) -> Result<bool, String> {
+pub(in crate::pane) fn enabled(store: &WorkspaceStore) -> Result<bool, String> {
     Ok(store
         .preference("search_enabled")
         .map_err(|e| e.to_string())?
@@ -21,7 +21,7 @@ pub(super) fn enabled(store: &WorkspaceStore) -> Result<bool, String> {
         != Some("0")
         && resolved(&settings()).is_some())
 }
-pub(super) fn set_enabled(store: &WorkspaceStore, enabled: bool) -> Result<(), String> {
+pub(in crate::pane) fn set_enabled(store: &WorkspaceStore, enabled: bool) -> Result<(), String> {
     store
         .save_preference("search_enabled", if enabled { "1" } else { "0" })
         .map_err(|e| e.to_string())
@@ -31,7 +31,7 @@ fn decode(raw: &str) -> Option<Settings> {
     // Accept the legacy startup flag only to preserve existing executable paths.
     matches!(flag, "0" | "1").then(|| Settings { path: path.into() })
 }
-pub(super) fn load(store: &WorkspaceStore) -> Result<(), String> {
+pub(in crate::pane) fn load(store: &WorkspaceStore) -> Result<(), String> {
     *SETTINGS.write().unwrap() = store
         .preference("everything")
         .map_err(|e| e.to_string())?
@@ -39,14 +39,14 @@ pub(super) fn load(store: &WorkspaceStore) -> Result<(), String> {
         .unwrap_or_default();
     Ok(())
 }
-pub(super) fn save(store: &WorkspaceStore, value: Settings) -> Result<(), String> {
+pub(in crate::pane) fn save(store: &WorkspaceStore, value: Settings) -> Result<(), String> {
     store
         .save_preference("everything", &format!("0\n{}", value.path))
         .map_err(|e| e.to_string())?;
     *SETTINGS.write().unwrap() = value;
     Ok(())
 }
-pub(super) fn detect() -> Option<PathBuf> {
+pub(in crate::pane) fn detect() -> Option<PathBuf> {
     for (variable, base) in [
         ("ProgramFiles", "Everything"),
         ("ProgramFiles(x86)", "Everything"),
@@ -64,7 +64,7 @@ pub(super) fn detect() -> Option<PathBuf> {
         .and_then(|p| p.parent().map(|p| p.join("Everything.exe")))
         .filter(|p| p.is_file())
 }
-pub(super) fn resolved(value: &Settings) -> Option<PathBuf> {
+pub(in crate::pane) fn resolved(value: &Settings) -> Option<PathBuf> {
     if value.path.is_empty() {
         detect()
     } else {
@@ -75,7 +75,7 @@ pub(super) fn resolved(value: &Settings) -> Option<PathBuf> {
         })
     }
 }
-pub(super) fn launch() -> Result<(), String> {
+pub(in crate::pane) fn launch() -> Result<(), String> {
     let path = resolved(&settings())
         .filter(|p| p.is_file())
         .ok_or("未找到 Everything，请在设置中选择 Everything.exe")?;
@@ -85,7 +85,7 @@ pub(super) fn launch() -> Result<(), String> {
         .map_err(|e| format!("无法启动 Everything：{e}"))?;
     Ok(())
 }
-pub(super) fn browse(owner: isize) -> Result<Option<String>, String> {
+pub(in crate::pane) fn browse(owner: isize) -> Result<Option<String>, String> {
     use windows_sys::Win32::UI::Controls::Dialogs::*;
     let mut file = [0u16; 32768];
     let mut dialog = OPENFILENAMEW {
