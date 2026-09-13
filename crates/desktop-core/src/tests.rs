@@ -16,6 +16,21 @@ fn rect_enforces_minimum_size() {
 }
 
 #[test]
+fn panel_constructor_and_setter_enforce_the_same_minimum_size() {
+    let raw = RectDip {
+        x: -10.0,
+        y: 20.0,
+        width: 1.0,
+        height: 2.0,
+    };
+    let created = Panel::new(PanelId::new(1), "Small", raw);
+    let mut updated = panel(2);
+    updated.set_rect(raw);
+    assert_eq!(created.rect(), updated.rect());
+    assert_eq!(created.rect(), RectDip::new(-10.0, 20.0, 1.0, 2.0));
+}
+
+#[test]
 fn switching_content_sources_preserves_independent_preferences() {
     let mut panel = panel(1);
     let path = PathBuf::from(r"C:\folder");

@@ -28,6 +28,7 @@ pub struct Panel {
 }
 
 impl Panel {
+    /// Creates a desktop pane, enforcing the same minimum size as [`Self::set_rect`].
     #[must_use]
     pub fn new(id: PanelId, title: impl Into<String>, rect: RectDip) -> Self {
         Self {
@@ -35,7 +36,7 @@ impl Panel {
             source: PanelSource::Desktop,
             folder_list: true,
             title: title.into(),
-            rect,
+            rect: RectDip::new(rect.x, rect.y, rect.width, rect.height),
             collapsed: false,
             auto_hide: false,
             theme: PanelTheme::System,
