@@ -1,0 +1,623 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-14",
+  "application_version": "0.9.1",
+  "git_revision": "0574300388688d429ba9ea76a122119ddacff1be",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "configuration": {
+    "profile": "debug",
+    "render_probe_backend": "warp",
+    "main_rounds": 3,
+    "storage_rounds": "same process per variant",
+    "hook_render_rounds": "fresh processes; shuffled with seed 20260914",
+    "timing_is_ci_threshold": false
+  },
+  "evidence": {
+    "storage": "target/storage-ablation/20260914-150053-216447/results.json",
+    "hook_render": "target/hook-render-ablation/20260914-150127-148569/results.json",
+    "supplementary": "target/hook-render-ablation/20260914-150127-148569/supplementary/results.json",
+    "baseline_recheck": "target/hook-render-ablation/20260914-150127-148569/baseline-recheck.json"
+  },
+  "verification": {
+    "snapshot_hashes_match": true,
+    "production_sources_match_snapshot": true,
+    "source_drift": [],
+    "storage_variants": 5,
+    "storage_metric_groups": 75,
+    "hook_render_processes": 40,
+    "hook_render_metric_groups": 156,
+    "matching_main_captures": 36,
+    "matching_recheck_captures": 9
+  },
+  "tests": {
+    "storage": {
+      "passed": 35,
+      "failed": 0,
+      "ignored": 0
+    },
+    "hook_render": {
+      "hook_tests": [
+        "test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s"
+      ],
+      "pane__render__tests__": [
+        "test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 157 filtered out; finished in 1.45s"
+      ],
+      "pane__label__": [
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 172 filtered out; finished in 0.51s"
+      ],
+      "pane__canvas__tests__": [
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 173 filtered out; finished in 0.67s"
+      ]
+    },
+    "supplementary": {
+      "assets": [
+        "test result: ok. 2 passed; 0 failed; 2 ignored; 0 measured; 172 filtered out; finished in 0.02s"
+      ],
+      "folder_images": [
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 170 filtered out; finished in 0.26s"
+      ]
+    },
+    "storage_ablations": {
+      "baseline": {
+        "passed": 35,
+        "failed": 0,
+        "failed_tests": []
+      },
+      "without_value_guard": {
+        "passed": 35,
+        "failed": 0,
+        "failed_tests": []
+      },
+      "without_source_guard": {
+        "passed": 34,
+        "failed": 1,
+        "failed_tests": [
+          "store::config_tests::unchanged_workspace_does_not_rewrite_database_or_config"
+        ]
+      },
+      "without_both_config_guards": {
+        "passed": 34,
+        "failed": 1,
+        "failed_tests": [
+          "store::config_tests::unchanged_workspace_does_not_rewrite_database_or_config"
+        ]
+      },
+      "without_metadata_guard": {
+        "passed": 34,
+        "failed": 1,
+        "failed_tests": [
+          "store::tests::unchanged_preferences_do_not_count_as_database_changes"
+        ]
+      }
+    }
+  },
+  "storage_baseline": {
+    "config_changed": {
+      "rounds": 3,
+      "p50_ns_by_round": [
+        4553400,
+        4076000,
+        3764200
+      ],
+      "p95_ns_by_round": [
+        7534200,
+        5906100,
+        4227900
+      ],
+      "changes_by_round": [
+        50,
+        50,
+        50
+      ],
+      "median_of_p50_us": 4076.0
+    },
+    "config_equivalent": {
+      "rounds": 3,
+      "p50_ns_by_round": [
+        152800,
+        154200,
+        154800
+      ],
+      "p95_ns_by_round": [
+        171000,
+        158600,
+        163500
+      ],
+      "changes_by_round": [
+        0,
+        0,
+        0
+      ],
+      "median_of_p50_us": 154.2
+    },
+    "config_noop": {
+      "rounds": 3,
+      "p50_ns_by_round": [
+        200,
+        200,
+        200
+      ],
+      "p95_ns_by_round": [
+        200,
+        200,
+        400
+      ],
+      "changes_by_round": [
+        0,
+        0,
+        0
+      ],
+      "median_of_p50_us": 0.2
+    },
+    "metadata_noop": {
+      "rounds": 3,
+      "p50_ns_by_round": [
+        116800,
+        107700,
+        106600
+      ],
+      "p95_ns_by_round": [
+        196600,
+        164500,
+        171800
+      ],
+      "changes_by_round": [
+        0,
+        0,
+        0
+      ],
+      "median_of_p50_us": 107.7
+    },
+    "workspace_noop": {
+      "rounds": 3,
+      "p50_ns_by_round": [
+        582500,
+        580000,
+        569900
+      ],
+      "p95_ns_by_round": [
+        720000,
+        700900,
+        659300
+      ],
+      "changes_by_round": [
+        0,
+        0,
+        0
+      ],
+      "median_of_p50_us": 580.0
+    }
+  },
+  "hook_render_baseline": {
+    "device_acquire": {
+      "rounds": 3,
+      "p50_ns_by_round": [
+        400,
+        400,
+        400
+      ],
+      "p95_ns_by_round": [
+        700,
+        800,
+        700
+      ],
+      "work_count_by_round": [
+        0,
+        0,
+        0
+      ],
+      "median_of_p50_us": 0.4
+    },
+    "hit_1580": {
+      "rounds": 3,
+      "p50_ns_by_round": [
+        244200,
+        252600,
+        246100
+      ],
+      "p95_ns_by_round": [
+        385700,
+        374300,
+        309900
+      ],
+      "queries_by_round": [
+        0,
+        0,
+        0
+      ],
+      "median_of_p50_us": 246.1
+    },
+    "layout_40_dpi_144": {
+      "rounds": 3,
+      "p50_ns_by_round": [
+        105500,
+        61000,
+        52700
+      ],
+      "p95_ns_by_round": [
+        1102100,
+        145300,
+        54300
+      ],
+      "work_count_by_round": [
+        0,
+        0,
+        0
+      ],
+      "median_of_p50_us": 61.0
+    },
+    "layout_40_dpi_192": {
+      "rounds": 3,
+      "p50_ns_by_round": [
+        245100,
+        63200,
+        54600
+      ],
+      "p95_ns_by_round": [
+        1947800,
+        892900,
+        641900
+      ],
+      "work_count_by_round": [
+        0,
+        0,
+        0
+      ],
+      "median_of_p50_us": 63.2
+    },
+    "layout_40_dpi_96": {
+      "rounds": 3,
+      "p50_ns_by_round": [
+        1941400,
+        60200,
+        53700
+      ],
+      "p95_ns_by_round": [
+        2730600,
+        103200,
+        157100
+      ],
+      "work_count_by_round": [
+        0,
+        0,
+        0
+      ],
+      "median_of_p50_us": 60.2
+    },
+    "paint_100": {
+      "rounds": 3,
+      "p50_ns_by_round": [
+        396000,
+        400600,
+        400200
+      ],
+      "p95_ns_by_round": [
+        722900,
+        671500,
+        654000
+      ],
+      "queries_by_round": [
+        0,
+        0,
+        0
+      ],
+      "median_of_p50_us": 400.2
+    },
+    "paint_dpi_144": {
+      "rounds": 3,
+      "p50_ns_by_round": [
+        4711300,
+        560000,
+        561200
+      ],
+      "p95_ns_by_round": [
+        6122600,
+        867700,
+        898600
+      ],
+      "work_count_by_round": [
+        0,
+        0,
+        0
+      ],
+      "median_of_p50_us": 561.2
+    },
+    "paint_dpi_192": {
+      "rounds": 3,
+      "p50_ns_by_round": [
+        668000,
+        2768700,
+        1641400
+      ],
+      "p95_ns_by_round": [
+        3821900,
+        3706800,
+        9466900
+      ],
+      "work_count_by_round": [
+        0,
+        0,
+        0
+      ],
+      "median_of_p50_us": 1641.4
+    },
+    "paint_dpi_96": {
+      "rounds": 3,
+      "p50_ns_by_round": [
+        5077100,
+        532900,
+        503000
+      ],
+      "p95_ns_by_round": [
+        10850900,
+        706500,
+        897500
+      ],
+      "work_count_by_round": [
+        0,
+        0,
+        0
+      ],
+      "median_of_p50_us": 532.9
+    },
+    "paint_readback_dpi_144": {
+      "rounds": 3,
+      "p50_ns_by_round": [
+        5661600,
+        1363700,
+        1436600
+      ],
+      "p95_ns_by_round": [
+        7011900,
+        1899700,
+        1987600
+      ],
+      "work_count_by_round": [
+        0,
+        0,
+        0
+      ],
+      "median_of_p50_us": 1436.6
+    },
+    "paint_readback_dpi_192": {
+      "rounds": 3,
+      "p50_ns_by_round": [
+        1954800,
+        4082200,
+        3136800
+      ],
+      "p95_ns_by_round": [
+        5171900,
+        5144600,
+        10785800
+      ],
+      "work_count_by_round": [
+        0,
+        0,
+        0
+      ],
+      "median_of_p50_us": 3136.8
+    },
+    "paint_readback_dpi_96": {
+      "rounds": 3,
+      "p50_ns_by_round": [
+        5652400,
+        1010400,
+        1064000
+      ],
+      "p95_ns_by_round": [
+        11474000,
+        1317700,
+        1426800
+      ],
+      "work_count_by_round": [
+        0,
+        0,
+        0
+      ],
+      "median_of_p50_us": 1064.0
+    },
+    "warm_paint": {
+      "rounds": 3,
+      "queries_by_round": [
+        0,
+        0,
+        0
+      ]
+    }
+  },
+  "render_recheck": {
+    "device_acquire": {
+      "rounds": 3,
+      "p50_ns_by_round": [
+        400,
+        400,
+        400
+      ],
+      "p95_ns_by_round": [
+        800,
+        800,
+        700
+      ],
+      "work_count_by_round": [
+        0,
+        0,
+        0
+      ],
+      "median_of_p50_us": 0.4
+    },
+    "layout_40_dpi_144": {
+      "rounds": 3,
+      "p50_ns_by_round": [
+        64800,
+        60900,
+        53000
+      ],
+      "p95_ns_by_round": [
+        480900,
+        84900,
+        191400
+      ],
+      "work_count_by_round": [
+        0,
+        0,
+        0
+      ],
+      "median_of_p50_us": 60.9
+    },
+    "layout_40_dpi_192": {
+      "rounds": 3,
+      "p50_ns_by_round": [
+        62600,
+        60900,
+        52800
+      ],
+      "p95_ns_by_round": [
+        157000,
+        73000,
+        266700
+      ],
+      "work_count_by_round": [
+        0,
+        0,
+        0
+      ],
+      "median_of_p50_us": 60.9
+    },
+    "layout_40_dpi_96": {
+      "rounds": 3,
+      "p50_ns_by_round": [
+        561600,
+        61000,
+        54600
+      ],
+      "p95_ns_by_round": [
+        1514100,
+        224700,
+        334400
+      ],
+      "work_count_by_round": [
+        0,
+        0,
+        0
+      ],
+      "median_of_p50_us": 61.0
+    },
+    "paint_dpi_144": {
+      "rounds": 3,
+      "p50_ns_by_round": [
+        2254200,
+        563900,
+        591500
+      ],
+      "p95_ns_by_round": [
+        4311400,
+        847900,
+        1911600
+      ],
+      "work_count_by_round": [
+        0,
+        0,
+        0
+      ],
+      "median_of_p50_us": 591.5
+    },
+    "paint_dpi_192": {
+      "rounds": 3,
+      "p50_ns_by_round": [
+        1278600,
+        663800,
+        668100
+      ],
+      "p95_ns_by_round": [
+        2934300,
+        1912700,
+        1930000
+      ],
+      "work_count_by_round": [
+        0,
+        0,
+        0
+      ],
+      "median_of_p50_us": 668.1
+    },
+    "paint_dpi_96": {
+      "rounds": 3,
+      "p50_ns_by_round": [
+        2736500,
+        552500,
+        483000
+      ],
+      "p95_ns_by_round": [
+        3699000,
+        885900,
+        1364300
+      ],
+      "work_count_by_round": [
+        0,
+        0,
+        0
+      ],
+      "median_of_p50_us": 552.5
+    },
+    "paint_readback_dpi_144": {
+      "rounds": 3,
+      "p50_ns_by_round": [
+        3322300,
+        1364600,
+        1446500
+      ],
+      "p95_ns_by_round": [
+        5117700,
+        1867400,
+        2759900
+      ],
+      "work_count_by_round": [
+        0,
+        0,
+        0
+      ],
+      "median_of_p50_us": 1446.5
+    },
+    "paint_readback_dpi_192": {
+      "rounds": 3,
+      "p50_ns_by_round": [
+        2920500,
+        1961500,
+        2093500
+      ],
+      "p95_ns_by_round": [
+        4345600,
+        3138200,
+        3240300
+      ],
+      "work_count_by_round": [
+        0,
+        0,
+        0
+      ],
+      "median_of_p50_us": 2093.5
+    },
+    "paint_readback_dpi_96": {
+      "rounds": 3,
+      "p50_ns_by_round": [
+        3232000,
+        1044400,
+        960900
+      ],
+      "p95_ns_by_round": [
+        4242400,
+        1558800,
+        1792500
+      ],
+      "work_count_by_round": [
+        0,
+        0,
+        0
+      ],
+      "median_of_p50_us": 1044.4
+    }
+  },
+  "interpretation": "Primary measurements are retained. Three later rendering rechecks investigate timing variability; they do not replace primary samples. Counters and pixels match expectations; timing differences alone do not establish a regression."
+}
