@@ -83,7 +83,15 @@ impl Surface {
         Self::disable_window_shadow(hwnd)?;
         // On Windows 11, forced DWM rounding casts an activation shadow even with
         // non-client rendering disabled. Round our backdrop instead of the HWND.
-        unsafe { set_attribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &DWMWCP_DONOTROUND)? };
+        // Windows 10 has no DWM corner preference (E_INVALIDARG). It does not
+        // need this Windows 11 workaround; keep our own backdrop clipping active.
+        if let Err(error) = unsafe {
+            set_attribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &DWMWCP_DONOTROUND)
+        } {
+            if error.code() != windows::Win32::Foundation::E_INVALIDARG {
+                return Err(error);
+            }
+        }
         surface.rounded_backdrop = Some(hwnd);
         Ok(surface)
     }
