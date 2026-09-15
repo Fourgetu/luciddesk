@@ -12,9 +12,15 @@ windows-core = "0.62.2"
 windows-sys = { workspace = true, features = ["Win32_System_LibraryLoader", "Win32_System_SystemInformation", "Win32_UI_Accessibility"] }
 
 [dev-dependencies]
+windows = { workspace = true, features = ["Win32_System_Search", "Win32_System_Search_Common", "Win32_Storage_EnhancedStorage"] }
 windows-window.workspace = true
 desktop-hook.workspace = true
 desktop-window.workspace = true
 
 [lints]
 workspace = true
+
+[[example]]
+name = "desktop_filter_probe_hook"
+path = "examples/support/desktop_filter_probe_hook.rs"
+crate-type = ["cdylib"]
