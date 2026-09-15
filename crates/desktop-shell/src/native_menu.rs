@@ -2,22 +2,22 @@
 mod input;
 mod lifetime;
 pub use input::MenuInvocation;
+#[cfg(feature = "desktop-menu-diagnostics")]
+mod legacy;
+#[cfg(feature = "desktop-menu-diagnostics")]
+mod legacy_input;
 mod peek;
+#[cfg(feature = "desktop-menu-diagnostics")]
 mod performance;
 mod selection;
+#[cfg(feature = "desktop-menu-diagnostics")]
+pub use legacy::{show_desktop_item_menu, show_desktop_items_menu};
 pub use peek::peek_desktop_item;
 pub(crate) use selection::update_hints;
 
-use desktop_core::ShellIdentity;
 use std::cell::Cell;
-use windows::Win32::Foundation::{ERROR_BUSY, HWND, POINT};
-use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
-use windows::Win32::UI::Shell::{
-    CMF_CANRENAME, CMF_ITEMMENU, IContextMenu, IContextMenuSite, IFolderView2, IShellWindows,
-    SVGIO_SELECTION, SVSI_DESELECTOTHERS, SVSI_FOCUSED, SVSI_SELECT, SVUIA_ACTIVATE_FOCUS,
-    ShellWindows,
-};
-use windows::core::{Interface, Result};
+use windows::Win32::Foundation::{ERROR_BUSY, HWND};
+use windows::core::Result;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AllowSetForegroundWindow, GA_ROOT, GetAncestor, GetForegroundWindow, GetWindowThreadProcessId,
     IsWindowVisible, SetForegroundWindow,
@@ -108,123 +108,16 @@ fn focus_trace(stage: &str, owner: HWND, desktop: HWND, accepted: Option<i32>) {
     }
 }
 
-/// Opens the real Explorer menu for a desktop item at physical screen coordinates.
-/// Pumps UI messages until dismissal; callers must release model borrows first.
-/// A missing desktop item is an error, never a request for a background menu.
-///
-/// # Errors
-/// Returns an error when the Shell host, target, focus handoff or popup observation
-/// is unavailable, another menu is active, or selection restoration fails.
-pub fn show_desktop_item_menu(
-    owner: HWND,
-    identity: &ShellIdentity,
-    point: POINT,
-    invocation: MenuInvocation,
-) -> Result<()> {
-    show_desktop_items_menu(owner, std::slice::from_ref(identity), point, invocation)
-}
-
-/// Opens the Explorer menu for the complete desktop selection.
-/// # Errors
-/// Returns errors resolving any selected item or showing the Shell menu.
-pub fn show_desktop_items_menu(
-    owner: HWND,
-    identities: &[ShellIdentity],
-    point: POINT,
-    invocation: MenuInvocation,
-) -> Result<()> {
-    if identities.is_empty() {
-        return Ok(());
-    }
-    let _active = ActiveMenu::acquire()?;
-    let mut timings = performance::Timings::new();
-    unsafe {
-        let shell: IShellWindows = CoCreateInstance(&ShellWindows, None, CLSCTX_ALL)?;
-        let view = crate::desktop::shell_view(&shell)?;
-        let folder: IFolderView2 = view.cast()?;
-        timings.mark("explorer-connected");
-        let indices: Vec<_> = identities
-            .iter()
-            .map(|identity| {
-                selection::resolve(&folder, &identity.activation_name().to_string_lossy())
-            })
-            .collect::<Result<_>>()?;
-        timings.mark("target-resolved");
-        let site: IContextMenuSite = view.cast()?;
-        let hwnd = view.GetWindow()?.0;
-        let mut pid = 0;
-        let thread = GetWindowThreadProcessId(hwnd, &raw mut pid);
-        if pid == 0 || thread == 0 {
-            return Err(windows::core::Error::from_thread());
-        }
-        let observer = lifetime::Observer::new(pid, thread)?;
-        timings.mark("observer-ready");
-        let restore = if owner.0.is_null() {
-            selection::RestoreSelection::capture(&folder)?
-        } else {
-            selection::RestoreSelection::deselect_on_close(&folder)
-        };
-        // Drop before RestoreSelection, including on error paths, so restoring
-        // the user's selection does not briefly paint an active desktop highlight.
-        let return_focus = ReturnFocus {
-            owner,
-            desktop: HWND(GetAncestor(hwnd, GA_ROOT)),
-        };
-        focus_trace("target-before", owner, return_focus.desktop, None);
-        // Prepare the hidden menu target before activating the desktop, instead
-        // of activating its old selection and immediately replacing it.
-        for (at, index) in indices.into_iter().enumerate() {
-            let flags = SVSI_SELECT.0
-                | if at == 0 {
-                    SVSI_FOCUSED.0 | SVSI_DESELECTOTHERS.0
-                } else {
-                    0
-                };
-            folder.SelectItem(index, flags.cast_unsigned())?;
-        }
-        timings.mark("target-selected");
-        focus_trace("target-after", owner, return_focus.desktop, None);
-        if AllowSetForegroundWindow(pid) == 0
-            || SetForegroundWindow(GetAncestor(hwnd, GA_ROOT)) == 0
-        {
-            return Err(windows::core::Error::new(
-                windows::Win32::Foundation::E_FAIL,
-                "Explorer menu focus handoff failed",
-            ));
-        }
-        view.UIActivate(SVUIA_ACTIVATE_FOCUS.0.cast_unsigned())?;
-        timings.mark("focus-ready");
-        focus_trace("menu-activated", owner, return_focus.desktop, None);
-        timings.mark("context-ready");
-        let result = match invocation {
-            MenuInvocation::Mouse => input::open_mouse(HWND(hwnd), point),
-            MenuInvocation::Keyboard => {
-                let menu: IContextMenu = view.GetItemObject(SVGIO_SELECTION)?;
-                site.DoContextMenuPopup(&menu, CMF_ITEMMENU | CMF_CANRENAME, point)
-            }
-        }
-        .and_then(|()| observer.wait_for_close());
-        if let Some(visible) = observer.first_visible() {
-            timings.at("popup-first-observed", visible);
-        }
-        let desktop = return_focus.desktop;
-        focus_trace("menu-closed", owner, desktop, None);
-        drop(return_focus);
-        let restored = restore.finish();
-        focus_trace("selection-restored", owner, desktop, None);
-        result.and(restored)
-    }
-}
-
 /// Shows a menu in an independently prepared Explorer Shell view. The caller
 /// retains that view until this function returns, then finishes the menu session.
 /// The backend may keep the idle host for reuse or for outstanding command dialogs.
+/// The prepared host already owns the validated physical popup anchor.
 /// # Errors
 /// Fails if the host is invalid, focus cannot be handed off, or no popup appears.
 pub fn show_isolated_item_menu(
     owner: HWND,
     host: HWND,
-    point: POINT,
+    _point: windows::Win32::Foundation::POINT,
     invocation: MenuInvocation,
 ) -> Result<()> {
     let _active = ActiveMenu::acquire()?;
@@ -242,7 +135,6 @@ pub fn show_isolated_item_menu(
         // Preparation may already have handed foreground permission to Explorer.
         // A second grant can fail after that handoff; the host checks activation.
         AllowSetForegroundWindow(pid);
-        let _ = point; // The prepared host owns the validated physical anchor.
         if windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW(
             host.0,
             windows_sys::Win32::UI::WindowsAndMessaging::RegisterWindowMessageW(windows_sys::w!(
@@ -255,7 +147,8 @@ pub fn show_isolated_item_menu(
             return Err(windows::core::Error::from_thread());
         }
         let result = observer.wait_for_close();
-        if cfg!(debug_assertions) {
+        #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
+        {
             use windows_sys::Win32::UI::WindowsAndMessaging::GetPropW;
             eprintln!(
                 "menu_shell_get_item_us={} menu_shell_build_us={} busy_cursor_cleared={}",

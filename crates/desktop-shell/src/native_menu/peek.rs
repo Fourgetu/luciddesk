@@ -1,8 +1,15 @@
 //! Use Peek's resident Shell entry point, preserving display names and virtual items.
 use super::*;
+use desktop_core::ShellIdentity;
 use std::time::{Duration, Instant};
+use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
+use windows::Win32::UI::Shell::{
+    IFolderView2, IShellWindows, SVGIO_SELECTION, SVSI_DESELECTOTHERS, SVSI_FOCUSED, SVSI_SELECT,
+    SVUIA_ACTIVATE_FOCUS, ShellWindows,
+};
 use windows::Win32::{Foundation::E_FAIL, UI::Shell::SIGDN_NORMALDISPLAY};
 use windows::core::Error;
+use windows::core::Interface;
 use windows_sys::Win32::{
     Foundation::{CloseHandle as CloseRawHandle, HANDLE},
     System::Threading::{

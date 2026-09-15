@@ -11,7 +11,7 @@ use windows::{
     },
     core::{HSTRING, Interface},
 };
-#[path = "../src/native_menu/input.rs"]
+#[path = "../src/native_menu/legacy_input.rs"]
 mod input;
 #[path = "../src/native_menu/lifetime.rs"]
 mod lifetime;

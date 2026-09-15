@@ -110,6 +110,7 @@ pub struct RestoreSelection {
 }
 
 impl RestoreSelection {
+    #[cfg(feature = "desktop-menu-diagnostics")]
     pub fn capture(folder: &IFolderView2) -> Result<Self> {
         let mut selected = Vec::new();
         unsafe {

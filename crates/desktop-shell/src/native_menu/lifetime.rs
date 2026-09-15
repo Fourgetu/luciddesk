@@ -71,6 +71,7 @@ impl Observer {
         Ok(result)
     }
 
+    #[cfg(feature = "desktop-menu-diagnostics")]
     pub fn first_visible(&self) -> Option<Instant> {
         FIRST_VISIBLE.get()
     }
