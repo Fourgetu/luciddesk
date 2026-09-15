@@ -8,9 +8,8 @@ mod acrylic;
 mod animation;
 mod assets;
 mod canvas;
-mod composition;
 mod columns;
-mod scrollbar;
+mod composition;
 mod display_layout;
 mod drag_drop;
 mod events;
@@ -28,6 +27,7 @@ mod render;
 #[cfg(test)]
 mod render_bench;
 mod runtime;
+mod scrollbar;
 mod search;
 mod settings;
 use events::handle;
@@ -118,8 +118,8 @@ struct Loaded {
 #[derive(Clone)]
 enum Event {
     PaneItemFocus,
-    MenuSelection(bool),
-    ItemMenuEnded(ShellIdentity),
+    BeginItemMenu(Rc<RefCell<Option<Result<Rc<desktop_hook::filter::FilterSession>, String>>>>),
+    EndItemMenu,
     RenameItem(ShellIdentity),
     RenameTitle,
     SetTitle(String),
@@ -306,7 +306,9 @@ fn refresh_changed_views(state: &mut PaneApp, force: bool) {
                 .folders
                 .get(&view.id)
                 .map_or((0, false), |source| source.sort);
-            let navigation = state.folders.get(&view.id)
+            let navigation = state
+                .folders
+                .get(&view.id)
                 .map_or([false; 2], folder::Source::navigation);
             let status = state
                 .folders
@@ -316,7 +318,10 @@ fn refresh_changed_views(state: &mut PaneApp, force: bool) {
                 .folders
                 .get(&view.id)
                 .is_none_or(|source| source.loading);
-            if model.folder_status != status || model.loading != loading || model.folder_navigation != navigation {
+            if model.folder_status != status
+                || model.loading != loading
+                || model.folder_navigation != navigation
+            {
                 model.folder_navigation = navigation;
                 model.folder_status = status;
                 model.loading = loading;

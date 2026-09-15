@@ -132,7 +132,15 @@ pub(super) fn handle(
     }
     if matches!(
         event,
-        Event::ExportBackup | Event::CreateBackup | Event::RestoreBackupPath(_) | Event::ExportBackupPath(_) | Event::DeleteBackup(_) | Event::RestoreBackup | Event::OpenBackups | Event::OpenConfigDirectory | Event::ReloadConfig
+        Event::ExportBackup
+            | Event::CreateBackup
+            | Event::RestoreBackupPath(_)
+            | Event::ExportBackupPath(_)
+            | Event::DeleteBackup(_)
+            | Event::RestoreBackup
+            | Event::OpenBackups
+            | Event::OpenConfigDirectory
+            | Event::ReloadConfig
     ) {
         recovery::request(state, &event);
         return Ok(false);
@@ -372,7 +380,9 @@ pub(super) fn handle(
                     radius.clamp(0.0, desktop_core::PaneOptions::MAX_CORNER_RADIUS)
             }
             Event::SetIconGrid(value) => {
-                if !value.is_finite() { return Ok(false); }
+                if !value.is_finite() {
+                    return Ok(false);
+                }
                 let range = desktop_core::PaneOptions::GRID_SCALE_RANGE;
                 let value = value.round().clamp(range.0, range.1);
                 options.grid_scale = value;
@@ -539,36 +549,12 @@ pub(super) fn handle(
         hybrid::clear_desktop_selection(&s)?;
         return Ok(false);
     }
-    if let Event::MenuSelection(allow) = event {
-        hybrid::menu(&state.borrow(), allow)?;
+    if let Event::BeginItemMenu(reply) = event {
+        *reply.borrow_mut() = Some(hybrid::begin_item_menu(&state.borrow()));
         return Ok(false);
     }
-    if let Event::ItemMenuEnded(identity) = event {
-        hybrid::invalidate_icon(&state.borrow(), &identity);
-        let requested = hybrid::menu(&state.borrow(), false)?;
-        if requested {
-            let target = {
-                let s = state.borrow();
-                s.views.iter().find(|v| v.id == id).and_then(|v| {
-                    let model = v.model.borrow();
-                    model
-                        .items
-                        .iter()
-                        .find(|item| item.identity == identity)
-                        .map(|item| {
-                            (
-                                v.window.hwnd().cast(),
-                                item.identity.clone(),
-                                item.label.clone(),
-                                v.model.clone(),
-                            )
-                        })
-                })
-            };
-            if let Some((owner, identity, title, model)) = target {
-                rename::show(owner, &identity, &title, model)?;
-            }
-        }
+    if let Event::EndItemMenu = event {
+        hybrid::end_item_menu(&state.borrow());
         return Ok(false);
     }
     if let Event::RenameItem(identity) = event {
@@ -585,7 +571,11 @@ pub(super) fn handle(
             })
         };
         if let Some((owner, label, model)) = target {
-            rename::show(owner, &identity, &label, model)?;
+            let weak = Rc::downgrade(state);
+            rename::show_managed(owner, &identity, &label, model, Rc::new(move |identity, name| {
+                let state = weak.upgrade().ok_or("分组已关闭")?;
+                hybrid::rename_item(&state, owner, identity, name)
+            }))?;
         }
         return Ok(false);
     }
@@ -736,13 +726,13 @@ pub(super) fn handle(
             refresh_views(&mut s);
         }
         Event::PaneItemFocus
-        | Event::MenuSelection(_)
-        | Event::ItemMenuEnded(_)
+        | Event::BeginItemMenu(_)
+        | Event::EndItemMenu
         | Event::RenameItem(_) => unreachable!("Handled before borrowing PaneApp"),
         Event::Theme(_)
         | Event::Material(_)
         | Event::SetCornerRadius(_)
-            | Event::SetIconGrid(_)
+        | Event::SetIconGrid(_)
         | Event::SetPanelText(_)
         | Event::ToggleTextProtection
         | Event::ToggleBorder
@@ -1023,25 +1013,36 @@ pub(super) fn handle(
 
 /// Preview only; the settings gesture commits its final value separately.
 pub(super) fn preview_grid(state: &mut PaneApp, value: f32) {
-    if !value.is_finite() { return; }
+    if !value.is_finite() {
+        return;
+    }
     let range = desktop_core::PaneOptions::GRID_SCALE_RANGE;
     let value = value.clamp(range.0, range.1);
     let mut options = state.workspace.pane_options();
     options.grid_scale = value;
-    if options == state.workspace.pane_options() { return; }
+    if options == state.workspace.pane_options() {
+        return;
+    }
     state.workspace.set_pane_options(options);
     for view in &state.views {
         let mut model = view.model.borrow_mut();
         model.options = options;
-        if !model.is_list() { model.scroll = 0; model.hovered_item = None; }
+        if !model.is_list() {
+            model.scroll = 0;
+            model.hovered_item = None;
+        }
         drop(model);
-        unsafe { InvalidateRect(view.window.hwnd().cast(), std::ptr::null(), 0); }
+        unsafe {
+            InvalidateRect(view.window.hwnd().cast(), std::ptr::null(), 0);
+        }
     }
 }
 
 pub(super) fn commit_grid(state: &mut PaneApp, original: f32) -> Result<(), String> {
     let options = state.workspace.pane_options();
-    if options.grid_scale == original { return Ok(()); }
+    if options.grid_scale == original {
+        return Ok(());
+    }
     if let Err(error) = state.store.save_pane_options(options) {
         preview_grid(state, original);
         return Err(error.to_string());

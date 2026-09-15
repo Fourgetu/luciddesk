@@ -68,6 +68,7 @@ struct Editor {
     composing: bool,
     finishing: bool,
     title_commit: Option<Box<dyn Fn(String) -> Result<(), String>>>,
+    item_commit: Option<Rc<dyn Fn(&ShellIdentity, &str) -> Result<bool, String>>>,
     background: HBRUSH,
 }
 pub(super) fn show_title(
@@ -84,19 +85,27 @@ pub(super) fn show_title(
         &title,
         model,
         Some(commit),
+        None,
     )
 }
 pub(super) fn active(owner: HWND) -> bool {
     unsafe { !GetPropW(owner, PROPERTY).is_null() }
 }
 
+#[cfg(test)]
 pub(super) fn show(
     owner: HWND,
     identity: &ShellIdentity,
     label: &str,
     model: Rc<RefCell<GroupModel>>,
 ) -> Result<(), String> {
-    show_editor(owner, identity, label, model, None)
+    show_editor(owner, identity, label, model, None, None)
+}
+pub(super) fn show_managed(
+    owner: HWND, identity: &ShellIdentity, label: &str, model: Rc<RefCell<GroupModel>>,
+    commit: Rc<dyn Fn(&ShellIdentity, &str) -> Result<bool, String>>,
+) -> Result<(), String> {
+    show_editor(owner, identity, label, model, None, Some(commit))
 }
 fn show_editor(
     owner: HWND,
@@ -104,6 +113,7 @@ fn show_editor(
     label: &str,
     model: Rc<RefCell<GroupModel>>,
     title_commit: Option<Box<dyn Fn(String) -> Result<(), String>>>,
+    item_commit: Option<Rc<dyn Fn(&ShellIdentity, &str) -> Result<bool, String>>>,
 ) -> Result<(), String> {
     unsafe {
         if active(owner) {
@@ -174,6 +184,7 @@ fn show_editor(
             composing: false,
             finishing: false,
             title_commit,
+            item_commit,
             background: if title {
                 CreateSolidBrush(if model.borrow().dark {
                     0x002c2926
@@ -439,14 +450,18 @@ unsafe fn finish(edit: HWND, pointer: *mut Editor, commit: bool) {
             value == (*pointer).name.text,
         )
     };
+    // Retain the callback independently: Shell may close the editor while pumping.
+    let item_commit = unsafe { (*pointer).item_commit.clone() };
     let result = if unchanged {
         Ok(true)
+    } else if let Some(commit) = item_commit {
+        commit(&identity, &name)
     } else {
         desktop_shell::rename_shell_identity(
             windows::Win32::Foundation::HWND(owner),
             &identity,
             &name,
-        )
+        ).map_err(|error| error.to_string())
     };
     // Shell can pump messages, including closing the owning pane.
     if unsafe { GetPropW(owner, PROPERTY) } != edit {
