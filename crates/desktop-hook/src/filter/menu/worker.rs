@@ -1,6 +1,6 @@
 //! One Explorer STA per filter session. Reuse idle menu hosts and keep command
 //! dialogs alive when changing targets; all Shell objects stay on this thread.
-use super::{super::wire::MenuContext, MenuHost};
+use super::{super::wire::MenuContext, MenuHost, selection::ResolvedTargets};
 use std::{
     cell::RefCell,
     sync::{
@@ -16,23 +16,36 @@ use windows_sys::Win32::{
     UI::WindowsAndMessaging::*,
 };
 
-type Reply = mpsc::SyncSender<std::result::Result<isize, i32>>;
+type Reply<T> = mpsc::SyncSender<std::result::Result<T, i32>>;
 enum Request {
     Prepare {
         names: Vec<String>,
         context: MenuContext,
-        reply: Reply,
+        reply: Reply<isize>,
         cancelled: Arc<AtomicBool>,
     },
-    Finish {
-        cancel: bool,
-        reply: Reply,
+    Finish,
+    Cancel {
+        reply: Reply<()>,
     },
 }
 pub struct Worker {
     requests: mpsc::Sender<Request>,
     thread: std::thread::JoinHandle<()>,
-    active: RefCell<Option<(Arc<AtomicBool>, isize)>>,
+    active: RefCell<Option<ActiveInvocation>>,
+}
+
+struct ActiveInvocation {
+    cancelled: Arc<AtomicBool>,
+    hwnd: isize,
+}
+impl ActiveInvocation {
+    fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Release);
+        unsafe {
+            PostMessageW(self.hwnd as _, WM_CANCELMODE, 0, 0);
+        }
+    }
 }
 impl Worker {
     pub fn create(desktop: windows_sys::Win32::Foundation::HWND) -> Result<Self> {
@@ -60,42 +73,14 @@ impl Worker {
                                 if cancelled.load(Ordering::Acquire) {
                                     continue;
                                 }
-                                let result = (|| -> Result<isize> {
-                                    if current.as_ref().is_some_and(MenuHost::is_busy) {
-                                        return Err(windows::core::HRESULT::from_win32(
-                                            windows::Win32::Foundation::ERROR_BUSY.0,
-                                        )
-                                        .into());
-                                    }
-                                    if let Some(host) = &current {
-                                        if host.reprepare(&names, context, cancelled.clone())? {
-                                            return host.view_hwnd();
-                                        }
-                                    }
-                                    // Validate before releasing a useful cached host. Tear down an
-                                    // idle presenter before initializing its replacement on this STA.
-                                    for name in &names {
-                                        let _: windows::Win32::UI::Shell::IShellItem =
-                                            windows::Win32::UI::Shell::SHCreateItemFromParsingName(
-                                                &windows::core::HSTRING::from(name),
-                                                None,
-                                            )?;
-                                    }
-                                    if let Some(previous) = current.take() {
-                                        if previous.has_owned_windows() {
-                                            retired.push(previous);
-                                        }
-                                    }
-                                    let next = MenuHost::create(
-                                        desktop as _,
-                                        &names,
-                                        context,
-                                        cancelled.clone(),
-                                    )?;
-                                    let hwnd = next.view_hwnd()?;
-                                    current = Some(next);
-                                    Ok(hwnd)
-                                })()
+                                let result = prepare_host(
+                                    desktop as _,
+                                    &mut current,
+                                    &mut retired,
+                                    &names,
+                                    context,
+                                    &cancelled,
+                                )
                                 .map_err(|error| error.code().0);
                                 if cancelled.load(Ordering::Acquire) {
                                     if let Some(host) = &current {
@@ -105,10 +90,15 @@ impl Worker {
                                 }
                                 let _ = reply.send(result);
                             }
-                            Ok(Request::Finish { cancel, reply }) => {
+                            Ok(Request::Finish) => {
+                                if let Some(host) = &current {
+                                    let _ = host.finish(false);
+                                }
+                            }
+                            Ok(Request::Cancel { reply }) => {
                                 let result =
-                                    current.as_ref().map_or(Ok(()), |host| host.finish(cancel));
-                                let _ = reply.send(result.map(|()| 0).map_err(|e| e.code().0));
+                                    current.as_ref().map_or(Ok(()), |host| host.finish(true));
+                                let _ = reply.send(result.map_err(|e| e.code().0));
                             }
                             Err(mpsc::TryRecvError::Disconnected) => break 'worker,
                             Err(mpsc::TryRecvError::Empty) => break,
@@ -140,7 +130,10 @@ impl Worker {
     pub fn prepare(&self, names: &[String], context: MenuContext) -> Result<isize> {
         let (reply, result) = mpsc::sync_channel(1);
         let cancelled = Arc::new(AtomicBool::new(false));
-        *self.active.borrow_mut() = Some((cancelled.clone(), 0));
+        *self.active.borrow_mut() = Some(ActiveInvocation {
+            cancelled: cancelled.clone(),
+            hwnd: 0,
+        });
         self.requests
             .send(Request::Prepare {
                 names: names.to_vec(),
@@ -154,7 +147,7 @@ impl Worker {
             match result.try_recv() {
                 Ok(Ok(hwnd)) => {
                     if let Some(active) = self.active.borrow_mut().as_mut() {
-                        active.1 = hwnd;
+                        active.hwnd = hwnd;
                     }
                     return Ok(hwnd);
                 }
@@ -170,31 +163,28 @@ impl Worker {
         }
     }
     pub fn finish(&self, cancel: bool) -> Result<()> {
-        if let Some((token, hwnd)) = self.active.borrow().as_ref() {
-            if cancel {
-                token.store(true, Ordering::Release);
-                unsafe {
-                    PostMessageW(*hwnd as _, WM_CANCELMODE, 0, 0);
-                }
-            }
+        // Properties may still own a modal loop on the Shell STA. Normal
+        // dismissal only queues cleanup and never allocates an unused reply.
+        if !cancel {
+            return self
+                .requests
+                .send(Request::Finish)
+                .map_err(|_| windows::core::Error::from_hresult(E_FAIL));
+        }
+        if let Some(active) = self.active.borrow().as_ref() {
+            active.cancel();
         }
         let (reply, result) = mpsc::sync_channel(1);
         self.requests
-            .send(Request::Finish { cancel, reply })
+            .send(Request::Cancel { reply })
             .map_err(|_| windows::core::Error::from_hresult(E_FAIL))?;
-        // Normal dismissal may have launched an owned modal Properties window.
-        // Only cancellation waits for a native close; do not make normal commands
-        // fail just because their dialog is still running on the Shell STA.
-        if !cancel {
-            return Ok(());
-        }
         // Return only after the menu STA has dismissed/closed the presenter.
         // If an extension stalls, its atomic token still prevents later display
         // and command invocation; never forcibly terminate Explorer's thread.
         let start = Instant::now();
         loop {
             match result.try_recv() {
-                Ok(Ok(_)) => return Ok(()),
+                Ok(Ok(())) => return Ok(()),
                 Ok(Err(code)) => return Err(windows::core::HRESULT(code).into()),
                 Err(mpsc::TryRecvError::Disconnected) => return Err(E_FAIL.into()),
                 _ => {}
@@ -211,14 +201,45 @@ impl Worker {
 }
 impl Drop for Worker {
     fn drop(&mut self) {
-        if let Some((token, hwnd)) = self.active.get_mut() {
-            token.store(true, Ordering::Release);
-            unsafe {
-                PostMessageW(*hwnd as _, WM_CANCELMODE, 0, 0);
-            }
+        if let Some(active) = self.active.get_mut() {
+            active.cancel();
         }
     }
 }
+
+/// Runs only on the menu STA; resolve before replacing a useful host and keep
+/// hosts with outstanding command dialogs alive until the periodic cleanup.
+fn prepare_host(
+    desktop: windows_sys::Win32::Foundation::HWND,
+    current: &mut Option<MenuHost>,
+    retired: &mut Vec<MenuHost>,
+    names: &[String],
+    context: MenuContext,
+    cancelled: &Arc<AtomicBool>,
+) -> Result<isize> {
+    if current.as_ref().is_some_and(MenuHost::is_busy) {
+        return Err(
+            windows::core::HRESULT::from_win32(windows::Win32::Foundation::ERROR_BUSY.0).into(),
+        );
+    }
+    let targets = ResolvedTargets::resolve(names)?;
+    if let Some(host) = current.as_ref() {
+        if host.reprepare(&targets, context, cancelled.clone())? {
+            return host.view_hwnd();
+        }
+    }
+    // Tear down an idle presenter before initializing its replacement.
+    if let Some(previous) = current.take() {
+        if previous.has_owned_windows() {
+            retired.push(previous);
+        }
+    }
+    let next = MenuHost::create(desktop, &targets, context, cancelled.clone())?;
+    let hwnd = next.view_hwnd()?;
+    *current = Some(next);
+    Ok(hwnd)
+}
+
 /// Wait on the desktop thread while filter state is borrowed. Service only
 /// synchronous COM calls; dispatching posted filter requests would reenter it.
 fn wait_for_shell_reply() {
@@ -259,5 +280,38 @@ fn pump_messages() -> bool {
             }
         }
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn modal_worker_does_not_block_normal_finish_and_cancel_propagates_close_failure() {
+        let (requests, receiver) = mpsc::channel();
+        let (unblock, modal) = mpsc::channel();
+        let thread = std::thread::spawn(move || {
+            // Simulate a Properties dialog keeping the Shell worker occupied.
+            modal.recv().unwrap();
+            assert!(matches!(receiver.recv().unwrap(), Request::Finish));
+            let Request::Cancel { reply } = receiver.recv().unwrap() else {
+                panic!("Expected a cancellation acknowledgement request");
+            };
+            reply
+                .send(Err(windows::Win32::Foundation::E_ACCESSDENIED.0))
+                .unwrap();
+        });
+        let worker = Worker {
+            requests,
+            thread,
+            active: RefCell::new(None),
+        };
+        worker.finish(false).unwrap();
+        unblock.send(()).unwrap();
+        assert_eq!(
+            worker.finish(true).unwrap_err().code(),
+            windows::Win32::Foundation::E_ACCESSDENIED
+        );
     }
 }

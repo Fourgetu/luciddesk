@@ -9,6 +9,7 @@ mod selection;
 
 pub mod worker;
 use super::{RENAME, wire::MenuContext};
+use selection::ResolvedTargets;
 use std::{
     cell::{Cell, RefCell},
     ptr::null_mut,
@@ -54,21 +55,23 @@ struct MenuCallbacks {
     classic: RefCell<Option<IContextMenu>>,
 }
 impl MenuHost {
-    pub fn create(
+    fn create(
         desktop: windows_sys::Win32::Foundation::HWND,
-        names: &[String],
+        targets: &ResolvedTargets,
         context: MenuContext,
         cancelled: Arc<AtomicBool>,
     ) -> Result<Self> {
-        Self::create_impl(desktop, names, context, cancelled, true)
+        Self::create_impl(desktop, targets, context, cancelled, true)
     }
     fn create_impl(
         desktop: windows_sys::Win32::Foundation::HWND,
-        names: &[String],
+        targets: &ResolvedTargets,
         context: MenuContext,
         cancelled: Arc<AtomicBool>,
         compact_available: bool,
     ) -> Result<Self> {
+        let names = &targets.names;
+        let items = &targets.items;
         unsafe {
             if names.is_empty() || IsWindow(context.owner as _) == 0 {
                 return Err(E_INVALIDARG.into());
@@ -159,8 +162,7 @@ impl MenuHost {
             let results: IResultsFolder = folder.GetFolder().map_err(|e| {
                 windows::core::Error::new(e.code(), format!("获取独立集合失败：{e}"))
             })?;
-            let items = selection::resolve(names)?;
-            for item in &items {
+            for item in items {
                 results.AddItem(item)?;
             }
             let deadline = Instant::now() + Duration::from_secs(2);
@@ -195,7 +197,7 @@ impl MenuHost {
             if selected.GetCount()? as usize != items.len() {
                 return Err(windows::core::Error::new(E_FAIL, "独立视图选择数不匹配"));
             }
-            if !selection::contains_all(&selected, &items)? {
+            if !selection::contains_all(&selected, items)? {
                 return Err(windows::core::Error::new(E_FAIL, "独立菜单目标校验失败"));
             }
             let view: IShellView = folder.cast()?;
@@ -254,13 +256,13 @@ impl MenuHost {
     }
     /// Reuse only an idle host whose complete live identity set still matches.
     /// A disappeared/renamed target must never invoke a cached, stale selection.
-    pub fn reprepare(
+    fn reprepare(
         &self,
-        names: &[String],
+        targets: &ResolvedTargets,
         context: MenuContext,
         cancelled: Arc<AtomicBool>,
     ) -> Result<bool> {
-        if self.is_busy() || self.names != names || self.has_owned_windows() {
+        if self.is_busy() || self.names != targets.names || self.has_owned_windows() {
             return Ok(false);
         }
         unsafe {
@@ -271,13 +273,13 @@ impl MenuHost {
             if callbacks.context.get().owner != context.owner || IsWindow(context.owner as _) == 0 {
                 return Ok(false);
             }
-            let items = selection::resolve(names)?;
+            let items = &targets.items;
             let folder: IFolderView2 = callbacks.view.cast()?;
             let live: IShellItemArray = folder.Items(SVGIO_ALLVIEW)?;
             if live.GetCount()? as usize != items.len() {
                 return Ok(false);
             }
-            if !selection::contains_all(&live, &items)? {
+            if !selection::contains_all(&live, items)? {
                 return Ok(false);
             }
             selection::select_all(&folder, items.len())?;
@@ -409,6 +411,7 @@ unsafe extern "system" fn menu_messages(
             if callbacks.busy.replace(true) {
                 return 0;
             }
+            #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
             let started = Instant::now();
             let result = (|| -> Result<()> {
                 let context = callbacks.context.get();
@@ -428,6 +431,7 @@ unsafe extern "system" fn menu_messages(
                     callbacks.first.set(None);
                     let menu: IContextMenu = callbacks.view.GetItemObject(SVGIO_SELECTION)?;
                     cursor::normal_pointer();
+                    #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
                     SetPropW(
                         hwnd,
                         windows_sys::w!("LucidPane.Menu.GetItemUs"),
@@ -461,6 +465,7 @@ unsafe extern "system" fn menu_messages(
                 }
             })();
             cursor::normal_pointer();
+            #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
             SetPropW(
                 hwnd,
                 windows_sys::w!("LucidPane.Menu.BuildUs"),
@@ -527,9 +532,11 @@ mod fallback_tests {
             ));
             std::fs::write(&path, b"owned menu fixture").unwrap();
             {
+                let targets =
+                    ResolvedTargets::resolve(&[path.to_string_lossy().into_owned()]).unwrap();
                 let host = MenuHost::create_impl(
                     owner,
-                    &[path.to_string_lossy().into_owned()],
+                    &targets,
                     MenuContext {
                         owner: owner as u64,
                         x: 20,
@@ -539,6 +546,18 @@ mod fallback_tests {
                     false,
                 )
                 .unwrap();
+                assert!(
+                    host.reprepare(
+                        &targets,
+                        MenuContext {
+                            owner: owner as u64,
+                            x: 30,
+                            y: 30
+                        },
+                        Arc::new(AtomicBool::new(false)),
+                    )
+                    .unwrap()
+                );
                 let callbacks = host.callbacks.as_ref().unwrap();
                 assert!(callbacks.presenter.is_none());
                 let menu: IContextMenu = callbacks.view.GetItemObject(SVGIO_SELECTION).unwrap();

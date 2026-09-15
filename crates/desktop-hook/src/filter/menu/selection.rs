@@ -7,11 +7,23 @@ use windows::{
     core::{HSTRING, Result},
 };
 
-pub(super) fn resolve(names: &[String]) -> Result<Vec<IShellItem>> {
-    names
-        .iter()
-        .map(|name| unsafe { SHCreateItemFromParsingName(&HSTRING::from(name), None) })
-        .collect()
+/// Request-local objects, created and released on the menu STA. Never send
+/// these COM interfaces through the worker channel or cache them across requests.
+pub(super) struct ResolvedTargets {
+    pub names: Vec<String>,
+    pub items: Vec<IShellItem>,
+}
+impl ResolvedTargets {
+    pub fn resolve(names: &[String]) -> Result<Self> {
+        let items = names
+            .iter()
+            .map(|name| unsafe { SHCreateItemFromParsingName(&HSTRING::from(name), None) })
+            .collect::<Result<_>>()?;
+        Ok(Self {
+            names: names.to_vec(),
+            items,
+        })
+    }
 }
 
 pub(super) fn select_all(folder: &IFolderView2, count: usize) -> Result<()> {
