@@ -6,7 +6,7 @@
 
 - Windows x64 交互桌面，Explorer 正常运行。
 - Rust MSVC 工具链；仓库声明的最低 Rust 版本为 1.95，使用 edition 2024。
-- Visual Studio C++ 构建工具与 Windows SDK，用于链接 Win32 库及编译 MinHook。
+- Visual Studio C++ 构建工具与 Windows SDK，用于链接 Win32 库；仅显式启用旧几何实验时编译 MinHook。
 
 首次获取依赖时省略 `--offline`。已有锁文件和依赖缓存后，可按以下方式离线构建。
 
@@ -19,6 +19,36 @@ $env:LUCIDPANE_DATA_DIR = Join-Path $PWD 'target\dev-data'
 ```
 
 主程序与 Hook DLL 必须来自同次构建，位于同一目录。当前应用使用视图过滤协议 v1（旧几何探针仍使用 v2），数据库为 `workspace.db`，全局设置为 `config.toml`。不使用旧运行模式参数，也不提供旧数据库迁移。
+
+默认 feature 集为空：不编译旧几何 Hook、MinHook 和旧桌面菜单入口。应用继续使用 `FilterSession` 与独立 Shell 菜单；启用旧几何 feature 仅使实验代码可用，不会自动切换应用后端。
+
+## 显式启用实验与诊断
+
+| Feature | 所属包 | 用途 |
+| --- | --- | --- |
+| `legacy-geometry` | desktop-hook；app/desktop-shell 提供转发 | 旧几何后端及探针，默认关闭 |
+| `desktop-menu-diagnostics` | desktop-shell | 在真实桌面选择项目的旧菜单对照入口，默认关闭 |
+| `menu-diagnostics` | desktop-hook、desktop-shell；app 同时转发 | 在 Release 中收集菜单计时，默认关闭；Debug 自动收集 |
+
+旧实验使用独立目录，避免与默认产物混用。调用探针前仍需阅读其交互范围。
+
+```powershell
+# 显式构建旧几何 DLL 和独立 ListView 实验
+cargo build -p desktop-hook --features legacy-geometry --target-dir target\legacy-geometry --locked --offline
+cargo build -p desktop-hook --example geometry_probe --features legacy-geometry --target-dir target\legacy-geometry --locked --offline
+
+# 依赖旧几何后端的 Shell / 应用实验
+cargo build -p desktop-shell --example geometry_layout_probe --features legacy-geometry --target-dir target\legacy-geometry --locked --offline
+cargo build -p lucidpane --example native_backdrop_probe --features legacy-geometry --target-dir target\legacy-geometry --locked --offline
+
+# 旧桌面菜单入口仅供对照实验
+cargo build -p desktop-shell --example desktop_menu_service_probe --features desktop-menu-diagnostics --target-dir target\desktop-menu-diagnostics --locked --offline
+
+# 同时启用主程序、Hook 和 Shell 的 Release 菜单计时
+cargo build -p lucidpane -p desktop-hook --release --features lucidpane/menu-diagnostics --target-dir target\menu-diagnostics --locked --offline
+```
+
+`drag-trace`、`input-trace` 是旧几何实验选项，显式启用它们也会启用 `legacy-geometry`。默认构建和打包不启用这些选项。`tools/package-preview.ps1` 在 `target\production` 构建并取件，显式禁用默认 feature；不要用 `--all-features` 生成发布包。
 
 `LUCIDPANE_DATA_DIR` 仅影响该环境下启动的程序。无需自定义目录时，在启动前移除该环境变量，程序会使用 LocalAppData。
 
@@ -81,7 +111,7 @@ cargo run --locked --offline --manifest-path tools/windows-bindings/Cargo.toml -
 `geometry_probe` 使用独立虚拟 ListView，适合检查原生几何和绘制；`geometry_layout_probe` 涉及真实桌面，运行前应阅读源码确认操作范围。旧 `hook_probe`、`hook_layout_probe`、`desktop_probe` 已删除，历史文档中的命令不能在当前主线使用。
 
 ```powershell
-cargo build -p desktop-hook --example geometry_probe --offline
+cargo build -p desktop-hook --example geometry_probe --features legacy-geometry --target-dir target\legacy-geometry --offline
 ```
 
 自动测试不能代替实际拖入、拖出、排序、重命名、退出恢复及混合 DPI 检查。最近记录见[验证记录](validation.md)。
