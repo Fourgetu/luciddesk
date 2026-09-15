@@ -2,7 +2,6 @@
 mod icon_changes;
 mod inventory;
 mod rename_transaction;
-pub(super) use rename_transaction::commit as rename_item;
 use super::assets::RECYCLE_BIN_PARSING_NAME;
 use super::search::{everything_settings, hotkey as search_hotkey};
 use super::*;
@@ -11,6 +10,7 @@ use desktop_hook::{
     notifications::{DESKTOP_INPUT_MESSAGE, SCENE_DIRTY_MESSAGE},
 };
 use inventory::Inventory;
+pub(super) use rename_transaction::commit as rename_item;
 use std::{
     cell::Cell,
     time::{Duration, Instant},
@@ -277,8 +277,7 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), S
     let notify = Rc::clone(&dirty);
     let icons_dirty = Rc::new(RefCell::new(icon_changes::Pending::default()));
     let icon_notify = Rc::clone(&icons_dirty);
-    let input_state = Rc::new(RefCell::new(Rc::downgrade(state)));
-    let input_receiver = Rc::clone(&input_state);
+    let input_receiver = Rc::downgrade(state);
     let pending_desktop_input = Rc::new(Cell::new(None));
     let pending_input = Rc::clone(&pending_desktop_input);
     let work_ready = state.borrow().wake.clone();
@@ -317,7 +316,7 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), S
                 work_ready.notify();
                 if wparam as isize == view {
                     pending_input.set(Some(lparam as u32));
-                    if let Some(state) = input_receiver.borrow().upgrade() {
+                    if let Some(state) = input_receiver.upgrade() {
                         if let Ok(s) = state.try_borrow() {
                             clear_pane_selection_on_desktop_input(&s);
                         }
@@ -384,7 +383,7 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), S
     let mut s = state.borrow_mut();
     s.receiver = receiver;
     s.session = Some(session);
-    if let Err(error) = refresh(&mut s) {
+    if let Err(error) = reconcile_inventory(&mut s) {
         s.session.take();
         return Err(error);
     }
@@ -523,16 +522,15 @@ fn managed_identities(s: &PaneApp) -> Vec<ShellIdentity> {
         .map(|item| item.identity().clone())
         .collect()
 }
-fn refresh(s: &mut PaneApp) -> Result<(), String> {
-    accept_inventory(s, inventory::capture(&managed_identities(s))?)
-}
-fn accept_inventory(s: &mut PaneApp, snapshot: Inventory) -> Result<(), String> {
+// Apply the captured inventory without another synchronous Shell enumeration.
+fn reconcile_inventory(s: &mut PaneApp) -> Result<(), String> {
     normalize_pane_orders(s);
+    let snapshot = &s.session.as_ref().unwrap().snapshot;
     s.workspace.reconcile_desktop_items(
         snapshot
             .items
             .iter()
-            .map(|(item, _, _)| DesktopItem::new(item.identity.clone(), item.display_name.clone())),
+            .map(|item| DesktopItem::new(item.identity.clone(), item.display_name.clone())),
     );
     let valid: Vec<_> = s.workspace.panels().iter().map(Panel::id).collect();
     for item in s.workspace.desktop_items_mut() {
@@ -544,13 +542,12 @@ fn accept_inventory(s: &mut PaneApp, snapshot: Inventory) -> Result<(), String> 
     let live: std::collections::HashSet<_> = snapshot
         .items
         .iter()
-        .map(|(item, _, _)| item.identity.persistent_key())
+        .map(|item| item.identity.persistent_key())
         .collect();
     s.images.retain(|key, _| live.contains(key));
     let h = s.session.as_mut().unwrap();
     h.requested.retain(|key| live.contains(key));
     h.icon_failures.retain(|key, _| live.contains(key));
-    h.snapshot = snapshot;
     h.last_reconcile = Instant::now();
     queue_pane_icons(s, true);
     s.store
@@ -559,16 +556,9 @@ fn accept_inventory(s: &mut PaneApp, snapshot: Inventory) -> Result<(), String> 
     refresh_views(s);
     Ok(())
 }
-pub(super) fn sync(s: &mut PaneApp) -> Result<(), String> {
-    let Some(h) = s.session.as_mut() else {
-        return Ok(());
-    };
-    if h.menu_active.get() {
-        return Ok(());
-    }
-    if !h.hook.is_alive() {
-        return Err("Explorer 视图过滤连接已断开".into());
-    }
+/// Hide a managed item only after its Pane image is available. Both normal
+/// synchronization and committed renames must publish the same complete set.
+fn hidden_names(s: &PaneApp) -> Vec<String> {
     let mut names: Vec<_> = s
         .workspace
         .desktop_items()
@@ -586,6 +576,21 @@ pub(super) fn sync(s: &mut PaneApp) -> Result<(), String> {
         .collect();
     names.sort();
     names.dedup();
+    names
+}
+
+pub(super) fn sync(s: &mut PaneApp) -> Result<(), String> {
+    let Some(h) = s.session.as_ref() else {
+        return Ok(());
+    };
+    if h.menu_active.get() {
+        return Ok(());
+    }
+    if !h.hook.is_alive() {
+        return Err("Explorer 视图过滤连接已断开".into());
+    }
+    let names = hidden_names(s);
+    let h = s.session.as_mut().unwrap();
     if *h.published.borrow() != names {
         h.hook.set_hidden(&names)?;
         *h.published.borrow_mut() = names;
@@ -642,17 +647,16 @@ fn clear_pane_selection_on_desktop_input(s: &PaneApp) {
     }
 }
 
-pub(super) fn menu(s: &PaneApp, allow: bool) -> Result<bool, String> {
+pub(super) fn pause_for_preview(s: &PaneApp, allow: bool) -> Result<(), String> {
     if let Some(h) = &s.session {
         if allow {
             h.last_pane_input
                 .set(Some(unsafe { GetMessageTime() } as u32));
         }
-        let rename = h.hook.pause(allow)?;
+        h.hook.pause(allow)?;
         h.menu_active.set(allow);
-        return Ok(rename);
     }
-    Ok(false)
+    Ok(())
 }
 
 pub(super) fn begin_item_menu(s: &PaneApp) -> Result<Rc<FilterSession>, String> {
@@ -718,7 +722,9 @@ fn tick_once(s: &mut PaneApp) -> Result<(), String> {
         return Ok(());
     }
     if h.pending_workspace_save {
-        s.store.save_workspace(&s.workspace).map_err(|e| e.to_string())?;
+        s.store
+            .save_workspace(&s.workspace)
+            .map_err(|e| e.to_string())?;
         h.pending_workspace_save = false;
     }
     if h.last_tick.elapsed() < Duration::from_millis(20) {
@@ -747,7 +753,7 @@ fn tick_once(s: &mut PaneApp) -> Result<(), String> {
                 .snapshot
                 .items
                 .iter()
-                .any(|(item, _, _)| item.identity.persistent_key() == *key)
+                .any(|item| item.identity.persistent_key() == *key)
             {
                 let attempts = h
                     .icon_failures
@@ -766,7 +772,7 @@ fn tick_once(s: &mut PaneApp) -> Result<(), String> {
             .snapshot
             .items
             .iter()
-            .map(|(item, _, _)| item.identity.persistent_key())
+            .map(|item| item.identity.persistent_key())
             .collect();
         for (key, image) in loaded.images {
             if !live.contains(&key) {
@@ -801,7 +807,8 @@ fn tick_once(s: &mut PaneApp) -> Result<(), String> {
                     if let Some(snapshot) = result?
                         && !inventory::same(&h.snapshot, &snapshot)
                     {
-                        accept_inventory(s, snapshot)?;
+                        h.snapshot = snapshot;
+                        reconcile_inventory(s)?;
                         urgent = true;
                     }
                 }
@@ -927,7 +934,7 @@ fn refresh_changed_icons(s: &mut PaneApp) -> bool {
                 .snapshot
                 .items
                 .iter()
-                .map(|(item, _, _)| item.identity.persistent_key())
+                .map(|item| item.identity.persistent_key())
                 .collect();
             for (key, image) in images {
                 if !live.contains(&key) {

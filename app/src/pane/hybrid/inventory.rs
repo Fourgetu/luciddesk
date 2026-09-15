@@ -6,7 +6,7 @@ pub(super) struct Inventory {
     pub icon_size: i32,
     pub spacing: (i32, i32),
     pub dpi: u32,
-    pub items: Vec<(DesktopShellItem, i32, i32)>,
+    pub items: Vec<DesktopShellItem>,
 }
 // Stable file IDs deliberately survive rename. An in-flight audit of the old
 // parsing name must nevertheless not overwrite a newly committed identity.
@@ -46,7 +46,7 @@ pub(super) fn capture(managed: &[ShellIdentity]) -> Result<Inventory, String> {
         icon_size: native.icon_size,
         spacing: native.spacing,
         dpi: native.dpi,
-        items: items.into_iter().map(|item| (item, 0, 0)).collect(),
+        items,
     })
 }
 
@@ -73,7 +73,7 @@ pub(super) fn same(a: &Inventory, b: &Inventory) -> bool {
         && a.spacing == b.spacing
         && a.dpi == b.dpi
         && a.items.len() == b.items.len()
-        && a.items.iter().zip(&b.items).all(|((a, _, _), (b, _, _))| {
+        && a.items.iter().zip(&b.items).all(|(a, b)| {
             a.identity == b.identity && a.display_name == b.display_name && a.modified == b.modified
         })
 }

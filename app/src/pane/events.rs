@@ -279,9 +279,9 @@ pub(super) fn handle(
                 {
                     return peek::open_path(identity);
                 }
-                hybrid::menu(&state.borrow(), true)?;
+                hybrid::pause_for_preview(&state.borrow(), true)?;
                 let result = peek::open(owner, identity);
-                let restored = hybrid::menu(&state.borrow(), false).map(|_| ());
+                let restored = hybrid::pause_for_preview(&state.borrow(), false);
                 result.and(restored)
             })?;
         }

@@ -1620,26 +1620,11 @@ where
                                     return;
                                 }
                             };
-                            // Both preparation and popup may pump messages. Own the
-                            // session independently, with no app/event borrow held.
-                            let names: Vec<_> = identities
-                                .iter()
-                                .map(|item| item.activation_name().to_string_lossy().into_owned())
-                                .collect();
-                            let menu_start = std::time::Instant::now();
-                            let shown = hook
-                                .prepare_menu(hwnd as isize, &names, anchor.x, anchor.y)
-                                .and_then(|host| {
-                                    if cfg!(debug_assertions) {
-                                        eprintln!("menu_prepare_us={}", menu_start.elapsed().as_micros());
-                                    }
-                                    super::shell_menu::show_many(hwnd, host, anchor, lparam == -1)
-                                });
-                            let finished = if shown.is_err() {
-                                hook.cancel_menu().map(|()| false)
-                            } else { hook.finish_menu() };
+                            let result = super::shell_menu::show_many(
+                                hwnd, &hook, &identities, anchor, lparam == -1,
+                            );
                             event(Event::EndItemMenu);
-                            match shown.and(finished) {
+                            match result {
                                 Ok(true) => {
                                     event(Event::RenameItem(identity));
                                 }

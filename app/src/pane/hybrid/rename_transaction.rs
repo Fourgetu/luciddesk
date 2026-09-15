@@ -103,13 +103,7 @@ fn reconcile_committed(
     let (names, saved) = {
         let mut s = state.borrow_mut();
         replace_item(&mut s, old, renamed);
-        let mut names: Vec<_> = managed_identities(&s)
-            .into_iter()
-            .filter(|identity| s.images.contains_key(&identity.persistent_key()))
-            .map(|identity| identity.activation_name().to_string_lossy().into_owned())
-            .collect();
-        names.sort();
-        names.dedup();
+        let names = hidden_names(&s);
         let saved = {
             let s = &mut *s;
             s.store
@@ -167,7 +161,7 @@ fn replace_item(s: &mut PaneApp, old: &ShellIdentity, renamed: desktop_shell::De
         }
     }
     if let Some(h) = s.session.as_mut() {
-        for (item, _, _) in &mut h.snapshot.items {
+        for item in &mut h.snapshot.items {
             if item.identity.equivalent_to(old) {
                 *item = renamed.clone();
             }

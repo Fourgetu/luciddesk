@@ -114,12 +114,7 @@ fn focus_trace(stage: &str, owner: HWND, desktop: HWND, accepted: Option<i32>) {
 /// The prepared host already owns the validated physical popup anchor.
 /// # Errors
 /// Fails if the host is invalid, focus cannot be handed off, or no popup appears.
-pub fn show_isolated_item_menu(
-    owner: HWND,
-    host: HWND,
-    _point: windows::Win32::Foundation::POINT,
-    invocation: MenuInvocation,
-) -> Result<()> {
+pub fn show_isolated_item_menu(owner: HWND, host: HWND, invocation: MenuInvocation) -> Result<()> {
     let _active = ActiveMenu::acquire()?;
     unsafe {
         let mut pid = 0;
