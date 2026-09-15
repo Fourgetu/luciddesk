@@ -1,6 +1,7 @@
 //! UI-thread Hook transport for the validated virtual-icon geometry backend.
 mod client;
 mod engine;
+pub mod filter;
 #[cfg(target_arch = "x86_64")]
 pub mod geometry;
 mod pane_surface;
