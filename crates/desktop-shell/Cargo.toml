@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 desktop-core.workspace = true
 windows.workspace = true
+windows-core = "0.62.2"
 windows-sys = { workspace = true, features = ["Win32_System_LibraryLoader", "Win32_System_SystemInformation", "Win32_UI_Accessibility"] }
 
 [dev-dependencies]

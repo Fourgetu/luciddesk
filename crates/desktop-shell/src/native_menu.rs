@@ -226,3 +226,53 @@ pub fn show_desktop_items_menu(
         result.and(restored)
     }
 }
+
+/// Shows a menu in an independently prepared Explorer Shell view. The caller
+/// retains that view until this function returns, then finishes the menu session.
+/// The backend may keep the idle host for reuse or for outstanding command dialogs.
+/// # Errors
+/// Fails if the host is invalid, focus cannot be handed off, or no popup appears.
+pub fn show_isolated_item_menu(
+    owner: HWND,
+    host: HWND,
+    point: POINT,
+    invocation: MenuInvocation,
+) -> Result<()> {
+    let _active = ActiveMenu::acquire()?;
+    unsafe {
+        let mut pid = 0;
+        let thread = GetWindowThreadProcessId(host.0, &raw mut pid);
+        if pid == 0 || thread == 0 {
+            return Err(windows::core::Error::from_thread());
+        }
+        let observer = lifetime::Observer::new(pid, thread)?;
+        let _focus = ReturnFocus {
+            owner,
+            desktop: HWND(GetAncestor(host.0, GA_ROOT)),
+        };
+        // Preparation may already have handed foreground permission to Explorer.
+        // A second grant can fail after that handoff; the host checks activation.
+        AllowSetForegroundWindow(pid);
+        let _ = point; // The prepared host owns the validated physical anchor.
+        if windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW(
+            host.0,
+            windows_sys::Win32::UI::WindowsAndMessaging::RegisterWindowMessageW(windows_sys::w!(
+                "LucidPane.IsolatedMenu.Open.v1"
+            )),
+            usize::from(invocation == MenuInvocation::Keyboard),
+            0,
+        ) == 0
+        {
+            return Err(windows::core::Error::from_thread());
+        }
+        let result = observer.wait_for_close();
+        if cfg!(debug_assertions) {
+            use windows_sys::Win32::UI::WindowsAndMessaging::GetPropW;
+            eprintln!("menu_shell_get_item_us={} menu_shell_build_us={} busy_cursor_cleared={}",
+                (GetPropW(host.0, windows_sys::w!("LucidPane.Menu.GetItemUs")) as usize).saturating_sub(1),
+                (GetPropW(host.0, windows_sys::w!("LucidPane.Menu.BuildUs")) as usize).saturating_sub(1),
+                GetPropW(GetAncestor(host.0, GA_ROOT), windows_sys::w!("LucidPane.Menu.BusyCursorCleared")) as usize);
+        }
+        result
+    }
+}

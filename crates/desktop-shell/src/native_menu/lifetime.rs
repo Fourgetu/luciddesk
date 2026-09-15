@@ -90,14 +90,16 @@ impl Observer {
                     windows::Win32::Foundation::E_ABORT,
                 ));
             }
-            let (observed, visible) = POPUPS.with(|popups| {
+            let visible = POPUPS.with(|popups| {
                 let popups = popups.borrow();
-                (
-                    !popups.is_empty(),
-                    popups.iter().any(|&hwnd| self.is_live_popup(hwnd)),
-                )
+                popups.iter().any(|&hwnd| self.is_live_popup(hwnd))
             });
-            seen |= observed;
+            // XAML creates zero-sized bridge windows before a popup is ready.
+            // Neither those windows nor their release prove a menu was displayed.
+            if visible && !seen {
+                trace!("native_popup_visible_after_ms={}", start.elapsed().as_millis());
+            }
+            seen |= visible;
             if seen && !visible {
                 let hidden = hidden_since.get_or_insert_with(Instant::now);
                 if hidden.elapsed() >= Duration::from_millis(200) {
@@ -116,7 +118,13 @@ impl Observer {
                     windows::Win32::Foundation::E_FAIL,
                 ));
             }
-            std::thread::sleep(Duration::from_millis(20));
+            // Shell/WinUI can synchronously query the Pane during creation.
+            // Wake for those calls immediately instead of delaying every
+            // cross-thread round trip behind a fixed polling sleep.
+            unsafe {
+                use windows_sys::Win32::UI::WindowsAndMessaging::*;
+                MsgWaitForMultipleObjectsEx(0, std::ptr::null(), 20, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+            }
         }
     }
 
@@ -125,6 +133,13 @@ impl Observer {
             let mut process = 0;
             let thread = GetWindowThreadProcessId(hwnd, &raw mut process);
             if process != self.process || thread != self.thread || IsWindowVisible(hwnd) == 0 {
+                return false;
+            }
+            let mut rect = windows_sys::Win32::Foundation::RECT::default();
+            if windows_sys::Win32::UI::WindowsAndMessaging::GetWindowRect(hwnd, &raw mut rect) == 0
+                || rect.right <= rect.left
+                || rect.bottom <= rect.top
+            {
                 return false;
             }
             let mut name = [0u16; 256];
@@ -148,7 +163,12 @@ fn pump_messages() -> bool {
     };
     unsafe {
         let mut message = MSG::default();
-        while PeekMessageW(&raw mut message, std::ptr::null_mut(), 0, 0, PM_REMOVE) != 0 {
+        // Paint/animation producers may keep the queue nonempty. Yield to popup
+        // lifetime checks even under continuous input or render activity.
+        for _ in 0..32 {
+            if PeekMessageW(&raw mut message, std::ptr::null_mut(), 0, 0, PM_REMOVE) == 0 {
+                break;
+            }
             if message.message == WM_QUIT {
                 PostQuitMessage(0);
                 return false;

@@ -94,7 +94,54 @@ pub fn local_app_data_path() -> Result<PathBuf, ShellError> {
 /// Returns a COM or Shell error when the Desktop Folder cannot be enumerated.
 pub fn enumerate_desktop_namespace(owner: isize) -> Result<Vec<DesktopShellItem>, ShellError> {
     let desktop = unsafe { SHGetDesktopFolder() }?;
-    enumerate_shell_folder(&desktop, owner)
+    enumerate_shell_folder(&desktop, owner, false)
+}
+
+/// Reads the source independently of the filtered Explorer view, including hidden
+/// items. Callers must restrict this to their existing managed membership.
+/// # Errors
+/// Any unresolved item aborts the capture so it cannot look like a deletion.
+pub fn enumerate_desktop_source() -> Result<Vec<DesktopShellItem>, ShellError> {
+    let desktop = unsafe { SHGetDesktopFolder() }?;
+    enumerate_shell_folder(&desktop, 0, true)
+}
+
+/// Lightweight source revision, independent of view filtering. No per-item file
+/// identity or icon loading is performed.
+/// # Errors
+/// Fails if source enumeration cannot be completed.
+pub fn desktop_source_revision() -> Result<Vec<Vec<u8>>, ShellError> {
+    unsafe {
+        let desktop = SHGetDesktopFolder()?;
+        let mut enumerator = None;
+        desktop
+            .EnumObjects(
+                WindowsHwnd::default(),
+                (SHCONTF_FOLDERS.0
+                    | SHCONTF_NONFOLDERS.0
+                    | windows::Win32::UI::Shell::SHCONTF_INCLUDEHIDDEN.0
+                    | windows::Win32::UI::Shell::SHCONTF_INCLUDESUPERHIDDEN.0)
+                    as u32,
+                &raw mut enumerator,
+            )
+            .ok()?;
+        let mut ids = Vec::new();
+        if let Some(enumerator) = enumerator {
+            loop {
+                let mut child = [ptr::null_mut()];
+                let mut fetched = 0;
+                enumerator.Next(&mut child, Some(&raw mut fetched)).ok()?;
+                if fetched == 0 {
+                    break;
+                }
+                let child = Pidl::new(child[0]);
+                let length = windows::Win32::UI::Shell::ILGetSize(Some(child.as_ptr())) as usize;
+                ids.push(std::slice::from_raw_parts(child.as_ptr().cast(), length).to_vec());
+            }
+        }
+        ids.sort();
+        Ok(ids)
+    }
 }
 
 /// Enumerates every direct filesystem child, including hidden and system entries.
@@ -127,7 +174,10 @@ pub fn enumerate_folder(path: &Path) -> Result<Vec<DesktopShellItem>, ShellError
                     can_rename: true,
                     can_delete: true,
                 },
-                size: metadata.as_ref().filter(|value| value.is_file()).map(fs::Metadata::len),
+                size: metadata
+                    .as_ref()
+                    .filter(|value| value.is_file())
+                    .map(fs::Metadata::len),
                 modified: metadata.and_then(|value| value.modified().ok()),
                 identity: ShellIdentity::FileSystem {
                     path,
@@ -142,9 +192,17 @@ pub fn enumerate_folder(path: &Path) -> Result<Vec<DesktopShellItem>, ShellError
 fn enumerate_shell_folder(
     desktop: &IShellFolder,
     owner: isize,
+    complete_source: bool,
 ) -> Result<Vec<DesktopShellItem>, ShellError> {
     let mut enumerator = None;
-    let flags = u32::try_from(SHCONTF_FOLDERS.0 | SHCONTF_NONFOLDERS.0).unwrap_or_default();
+    let flags = (SHCONTF_FOLDERS.0
+        | SHCONTF_NONFOLDERS.0
+        | if complete_source {
+            windows::Win32::UI::Shell::SHCONTF_INCLUDEHIDDEN.0
+                | windows::Win32::UI::Shell::SHCONTF_INCLUDESUPERHIDDEN.0
+        } else {
+            0
+        }) as u32;
     let result = unsafe {
         desktop.EnumObjects(
             WindowsHwnd(owner as *mut c_void),
@@ -169,13 +227,22 @@ fn enumerate_shell_folder(
             break;
         }
         let child = Pidl::new(child[0]);
-        let Ok(shell_item): Result<IShellItem, _> =
-            (unsafe { SHCreateItemWithParent(None, desktop, child.as_ptr()) })
-        else {
-            continue;
-        };
-        if let Ok(item) = desktop_shell_item(&shell_item) {
-            items.push(item);
+        let resolved = (|| -> Result<DesktopShellItem, ShellError> {
+            let shell_item: IShellItem =
+                unsafe { SHCreateItemWithParent(None, desktop, child.as_ptr()) }?;
+            let mut item = desktop_shell_item(&shell_item)?;
+            let parsing = shell_item_name(&shell_item, SIGDN_DESKTOPABSOLUTEPARSING)?;
+            if parsing.starts_with("::{") {
+                item.identity = ShellIdentity::Namespace {
+                    parsing_name: parsing,
+                };
+            }
+            Ok(item)
+        })();
+        match resolved {
+            Ok(item) => items.push(item),
+            Err(error) if complete_source => return Err(error),
+            Err(_) => {}
         }
     }
 
@@ -237,7 +304,10 @@ pub(crate) fn desktop_shell_item(item: &IShellItem) -> Result<DesktopShellItem, 
         can_rename: raw_attributes & SFGAO_CANRENAME.0 != 0,
         can_delete: raw_attributes & SFGAO_CANDELETE.0 != 0,
     };
-    let size = metadata.as_ref().filter(|value| value.is_file()).map(fs::Metadata::len);
+    let size = metadata
+        .as_ref()
+        .filter(|value| value.is_file())
+        .map(fs::Metadata::len);
     let modified = metadata.and_then(|metadata| metadata.modified().ok());
     Ok(DesktopShellItem {
         identity,

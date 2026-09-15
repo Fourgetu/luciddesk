@@ -31,6 +31,15 @@ pub struct NativeDesktopSnapshot {
     pub view_indices: Vec<i32>,
 }
 
+impl NativeDesktopSnapshot {
+    /// Reject partial metadata captures before reconciling persisted membership.
+    #[must_use]
+    pub fn is_complete(&self) -> bool {
+        self.items.len() == self.revision.item_ids.len()
+            && self.items.len() == self.view_indices.len()
+    }
+}
+
 /// Captures the actual desktop view, including its visibility preferences and display names.
 /// # Errors
 /// Returns an error when Explorer's desktop COM view cannot be reached.
