@@ -1,12 +1,14 @@
 # 架构说明
 
-更新：2026-09-13。本文描述兼容层收敛后的主线。
+更新：2026-09-15。当前应用使用视图成员过滤后端，Pane 图标保持自绘。
 
 ## 系统分工
 
-Explorer 保留桌面 Shell 项目、未收纳图标及原生交互。LucidPane 使用独立窗口绘制分组内容。几何 Hook 在 Explorer 的视图线程中隐藏已收纳项目的桌面呈现，并将剩余项目映射到紧凑网格。
+Explorer 负责未收纳图标的绘制、排列、命中和原生交互。LucidPane 使用独立窗口绘制分组内容。过滤 Hook 在 Explorer 桌面线程内调用 `IShellFolderView::RemoveObject`，将已收纳项目从视图集合移除；开启系统自动排列时，由 Explorer 补位。
 
-收纳不移动文件，不写入 Explorer 永久图标坐标，不切换系统自动排列设置。完整身份与分组状态由控制端维护，Hook 接收有边界的布局数据。
+收纳不移动文件，不切换系统自动排列设置。原生排列会更新实际视图位置；恢复时在用户没有改变布局的前提下，按原视图顺序恢复基线坐标。完整身份与分组状态由控制端维护，Hook 接收有大小边界的 Shell 解析名集合。
+
+Win11 文件精简菜单由 Explorer 内的独立 Shell 宿主提供文件身份、菜单服务和普通命令执行。该宿主窗口区域为空，不显示图标，也不是完整 Explorer 文件窗口。Pane 保留自身绘制、选择和重命名输入；菜单 rename 动词通过动态编号识别后返回 Pane。命令转发、线程生命周期及实测边界见 [精简菜单技术文档](../win11-compact-menu-command-routing.md)。
 
 ## 模块职责
 
@@ -25,7 +27,7 @@ Explorer 保留桌面 Shell 项目、未收纳图标及原生交互。LucidPane 
 | `desktop-core` | Shell 身份、成员位置与工作区模型 |
 | `desktop-storage` | 当前数据库格式、读取和事务式保存 |
 | `desktop-shell` | Shell 快照、通知、菜单、重命名和 OLE 项目解析 |
-| `desktop-hook` | DLL 引导、协议校验、几何映射、选择隔离和控制端存活监测 |
+| `desktop-hook` | DLL 引导、成员过滤与恢复、协议校验和控制端存活监测 |
 | `desktop-graphics` | 工具生成的 DWM/DComp 绑定及合成内容层 |
 | `desktop-window` | 显示器枚举与错误提示 |
 
@@ -47,7 +49,7 @@ Explorer 保留桌面 Shell 项目、未收纳图标及原生交互。LucidPane 
 `desktop-shell/src/lib.rs` 只声明模块和导出 API；枚举与身份解析、桌面查询、通知注册、
 激活与拖放身份解码、错误定义分属独立文件。`desktop-graphics/src/layer.rs` 管理合成层，
 生成绑定仍位于 `bindings/`。`desktop-hook/src/client/discovery.rs` 负责桌面发现和冲突检测，
-会话持有与 IPC 仍位于 `client.rs`。各库入口见 [crates 导航](../../crates/README.md)。
+当前过滤会话、IPC 和引擎位于 `filter/`，旧几何实现保留用于历史探针对照。各库入口见 [crates 导航](../../crates/README.md)。
 
 应用子模块按真实归属存放：`pane/hybrid/icon_changes.rs` 处理图标通知，
 `pane/settings/layout.rs` 处理设置页布局，使用常规 `mod` 声明加载。
@@ -61,16 +63,17 @@ Explorer 保留桌面 Shell 项目、未收纳图标及原生交互。LucidPane 
 1. 初始化 DPI 与 COM，解析唯一可选参数 `--title`。
 2. 获取当前会话的单实例互斥量；重复启动广播唤起消息。
 3. 读取 `config.toml` 与 `workspace.db`，载入全局设置、工作区和显示器布局；旧格式不自动迁移。
-4. 按 DLL 内容哈希建立运行副本，尝试连接经过版本校验的几何后端；成功后同步原生清单。
+4. 按 DLL 内容哈希建立运行副本，在 Explorer 的异步桌面线程回调中探测 `IShellFolderView`；成功后同步原生视图与独立来源清单。
 5. 创建可用的分组、独立文件夹和搜索窗口、托盘及运行时监控窗口；消息循环调度同步、重连、快捷键与备份。
 6. 正常退出释放窗口、托盘和 Hook 会话；控制端消失时由存活监测触发清理。
 
-DLL 运行副本解决已加载文件无法覆盖的问题。分离会撤销回调、定时器和几何映射；已固定到目标进程的 DLL 代码不立即卸载，以免留下悬空回调。
+DLL 运行副本解决已加载文件无法覆盖的问题。分离会恢复视图成员并撤销回调和定时器；已固定到目标进程的 DLL 代码不立即卸载，以免留下悬空回调。
 
 ## 当前兼容边界
 
-- Hook 仅提供几何后端，协议为 v2；连接成功的引擎必有几何会话。
-- 具体系统映像的哈希、大小和入口指令由 `desktop-hook/src/geometry/profile.rs` 校验。它不是跨版本稳定 ABI，校验失败必须拒绝安装。
+- 应用使用 `FilterSession` 和成员协议 v1，不安装原有五个几何 detour，不依赖固定 RVA 或 PDB。
+- `IShellFolderView` 是已被微软标记为不再提供使用的旧接口；当前 Win11 实测可用，按运行期能力判断连接，不能据此保证所有 Win10/Win11 构建兼容。
+- 刷新/列表变化触发重新过滤，1 秒定时器补查遗漏变化并监视控制端；刷新期间仍可能短暂出现原生项目。
 - Hook 会话可在故障时缺失；文件夹与搜索 pane 独立运行，桌面分组保留归属并等待重连。
 - 全局偏好保存在 `config.toml`，工作区数据库为 `workspace.db`，开发阶段不迁移旧库。成员仅通过 Shell 身份与 `DesktopPlacement` 表示。
 - `native_graphics.rs` 集中转换两版绑定的 COM 引用与 HRESULT；普通绘图直接使用 Canvas 类型。

@@ -18,7 +18,7 @@ $env:LUCIDPANE_DATA_DIR = Join-Path $PWD 'target\dev-data'
 & .\target\debug\lucidpane.exe
 ```
 
-主程序与 Hook DLL 必须来自同次构建，位于同一目录。当前 IPC 协议为 v2，数据库为 `workspace.db`，全局设置为 `config.toml`。不使用旧运行模式参数，也不提供旧数据库迁移。
+主程序与 Hook DLL 必须来自同次构建，位于同一目录。当前应用使用视图过滤协议 v1（旧几何探针仍使用 v2），数据库为 `workspace.db`，全局设置为 `config.toml`。不使用旧运行模式参数，也不提供旧数据库迁移。
 
 `LUCIDPANE_DATA_DIR` 仅影响该环境下启动的程序。无需自定义目录时，在启动前移除该环境变量，程序会使用 LocalAppData。
 
@@ -85,3 +85,15 @@ cargo build -p desktop-hook --example geometry_probe --offline
 ```
 
 自动测试不能代替实际拖入、拖出、排序、重命名、退出恢复及混合 DPI 检查。最近记录见[验证记录](validation.md)。
+
+## 视图过滤后端回归
+
+退出 LucidPane 后运行。探针会临时移除两个原生桌面项目，验证刷新、菜单暂停/恢复、坐标恢复和测试控制进程退出后的恢复，不修改磁盘文件。
+
+```powershell
+cargo build -p desktop-hook
+cargo build -p desktop-shell --example filter_backend_probe
+.\target\debug\examples\filter_backend_probe.exe
+```
+
+结果及兼容边界见[视图过滤验证](../desktop-view-filter-verification.md)。
