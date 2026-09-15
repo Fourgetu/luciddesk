@@ -1,7 +1,5 @@
 // Wire sizes and array counts are bounded by the fixed protocol before conversion.
 #![allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
-mod discovery;
-pub use discovery::{conflicting_desktop_extension, desktop_view};
 
 use crate::protocol::{
     Area, DETACH, MAGIC, MAX_AREAS, MOVE_ITEM, OK, QUERY, REJECTED, Request, SET_AREAS, name_hash,

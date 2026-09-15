@@ -14,7 +14,9 @@ try {
     if ($LASTEXITCODE -ne 0 -or $hostInfo -notcontains 'host: x86_64-pc-windows-msvc') {
         throw 'Preview packaging requires the Windows x64 MSVC Rust toolchain.'
     }
-    $buildArgs = @('build', '--release', '--locked', '-p', 'lucidpane', '-p', 'desktop-hook')
+    # Keep release artifacts separate from explicitly enabled diagnostic backends.
+    $productionTarget = Join-Path $repoRoot 'target\production'
+    $buildArgs = @('build', '--release', '--locked', '--no-default-features', '--target-dir', $productionTarget, '-p', 'lucidpane', '-p', 'desktop-hook')
     if ($Offline) { $buildArgs += '--offline' }
     & cargo @buildArgs
     if ($LASTEXITCODE -ne 0) { throw 'Release build failed.' }
@@ -27,7 +29,7 @@ try {
     $stage = Join-Path $outRoot $name
     New-Item -ItemType Directory -Path $stage | Out-Null
     foreach ($file in @('lucidpane.exe', 'desktop_hook.dll')) {
-        Copy-Item -LiteralPath (Join-Path $metadata.target_directory "release\$file") -Destination $stage
+        Copy-Item -LiteralPath (Join-Path $productionTarget "release\$file") -Destination $stage
     }
     Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\preview.md') -Destination (Join-Path $stage 'README.md')
     Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\usage.md') -Destination (Join-Path $stage 'usage.md')

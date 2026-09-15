@@ -8,7 +8,7 @@ use super::search::{everything_settings, hotkey as search_hotkey};
 use super::*;
 use desktop_hook::{
     filter::FilterSession,
-    protocol::{DESKTOP_INPUT_MESSAGE, SCENE_DIRTY_MESSAGE},
+    notifications::{DESKTOP_INPUT_MESSAGE, SCENE_DIRTY_MESSAGE},
 };
 use inventory::Inventory;
 use std::{

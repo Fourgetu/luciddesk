@@ -1,14 +1,23 @@
-//! UI-thread Hook transport for the validated virtual-icon geometry backend.
+//! Explorer member filtering, with an explicitly enabled legacy geometry experiment.
+#[cfg(feature = "legacy-geometry")]
 mod client;
+mod discovery;
+#[cfg(feature = "legacy-geometry")]
 mod engine;
 pub mod filter;
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "legacy-geometry", target_arch = "x86_64"))]
 pub mod geometry;
+pub mod notifications;
+#[cfg(feature = "legacy-geometry")]
 mod pane_surface;
+#[cfg(feature = "legacy-geometry")]
 pub mod protocol;
 
-pub use client::{HookSession, conflicting_desktop_extension, desktop_view};
+#[cfg(feature = "legacy-geometry")]
+pub use client::HookSession;
+pub use discovery::{conflicting_desktop_extension, desktop_view};
 
+#[cfg(feature = "legacy-geometry")]
 use windows_sys::Win32::UI::WindowsAndMessaging::{CWPSTRUCT, CallNextHookEx};
 
 /// Thread-scoped `WH_CALLWNDPROC` entry point, loaded by Windows into the target process.
@@ -17,6 +26,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{CWPSTRUCT, CallNextHookEx};
 /// # Safety
 /// Only Windows may call this entry with a valid hook callback payload.
 #[unsafe(no_mangle)]
+#[cfg(feature = "legacy-geometry")]
 pub unsafe extern "system" fn LucidPaneDesktopHook(code: i32, wp: usize, lp: isize) -> isize {
     if code >= 0 && lp != 0 {
         // Never unwind through a Windows callback. A failure leaves the original view active.

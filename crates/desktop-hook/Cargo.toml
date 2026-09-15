@@ -9,8 +9,11 @@ license.workspace = true
 crate-type = ["rlib", "cdylib"]
 
 [features]
-drag-trace = []
-input-trace = []
+default = []
+legacy-geometry = ["dep:cc"]
+menu-diagnostics = []
+drag-trace = ["legacy-geometry"]
+input-trace = ["legacy-geometry"]
 
 [dependencies]
 windows = { workspace = true, features = ["Win32_System_Ole", "Win32_System_Com", "Win32_System_SystemServices"] }
@@ -18,7 +21,11 @@ windows-core = "0.62.2"
 windows-sys = { workspace = true, features = ["Win32_System_LibraryLoader", "Win32_System_DataExchange", "Win32_System_SystemInformation", "Win32_System_Diagnostics_ToolHelp", "Win32_Security"] }
 
 [build-dependencies]
-cc = "1.2"
+cc = { version = "1.2", optional = true }
+
+[[example]]
+name = "geometry_probe"
+required-features = ["legacy-geometry"]
 
 [lints]
 workspace = true

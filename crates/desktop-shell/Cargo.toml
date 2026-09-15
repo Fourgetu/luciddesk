@@ -5,6 +5,24 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+default = []
+legacy-geometry = ["desktop-hook/legacy-geometry"]
+desktop-menu-diagnostics = []
+menu-diagnostics = []
+
+[[example]]
+name = "desktop_menu_service_probe"
+required-features = ["desktop-menu-diagnostics"]
+
+[[example]]
+name = "folder_menu_bridge_probe"
+required-features = ["desktop-menu-diagnostics"]
+
+[[example]]
+name = "geometry_layout_probe"
+required-features = ["legacy-geometry"]
+
 [dependencies]
 desktop-core.workspace = true
 windows.workspace = true

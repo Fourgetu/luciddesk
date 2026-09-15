@@ -41,10 +41,7 @@ pub fn clear_selection_message() -> u32 {
 }
 /// Item remains in Shell inventory, but has no desktop presentation or input target.
 pub const HIDDEN_ITEM: u32 = u32::MAX;
-pub const SCENE_DIRTY_MESSAGE: u32 = 0x8000 + 0x4a0;
-/// A real desktop input gesture; wParam is the ListView HWND, lParam is its
-/// GetMessageTime tick (u32). Receivers must reject events older than pane input.
-pub const DESKTOP_INPUT_MESSAGE: u32 = 0x8000 + 0x4a1;
+pub use crate::notifications::{DESKTOP_INPUT_MESSAGE, SCENE_DIRTY_MESSAGE};
 
 pub const LAYOUT_MAGIC: usize = MAGIC + 2;
 pub const MAX_LAYOUT_ITEMS: usize = 512;

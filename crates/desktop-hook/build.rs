@@ -1,4 +1,5 @@
 fn main() {
+    #[cfg(feature = "legacy-geometry")]
     if std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("x86_64") {
         cc::Build::new()
             .include("vendor/minhook/include")

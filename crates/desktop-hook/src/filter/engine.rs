@@ -582,7 +582,7 @@ unsafe extern "system" fn subclass(
                 unsafe {
                     PostMessageW(
                         state.owner,
-                        crate::protocol::DESKTOP_INPUT_MESSAGE,
+                        crate::notifications::DESKTOP_INPUT_MESSAGE,
                         hwnd as usize,
                         GetMessageTime() as isize,
                     );
