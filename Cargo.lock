@@ -40,7 +40,6 @@ dependencies = [
 name = "desktop-hook"
 version = "0.1.0"
 dependencies = [
- "cc",
  "windows",
  "windows-core 0.62.2",
  "windows-sys 0.61.2",

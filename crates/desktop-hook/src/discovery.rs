@@ -1,4 +1,4 @@
-//! Desktop discovery shared by the production filter and optional geometry backend.
+//! Desktop view discovery and conflicting extension detection.
 #![allow(clippy::cast_possible_truncation)]
 use std::{
     mem::size_of,

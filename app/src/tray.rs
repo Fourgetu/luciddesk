@@ -74,7 +74,7 @@ impl Tray {
                     return Some(0);
                 }
                 let event = lp as u32 & 0xffff;
-                // Explorer can send callbacks during HookSession's synchronous
+                // Explorer can send callbacks during FilterSession's synchronous
                 // IPC, while PaneApp is borrowed. Never run actions or pump a
                 // modal menu on that stack. Coalesce callbacks until dispatch.
                 if matches!(event, NIN_SELECT | NIN_KEYSELECT | WM_CONTEXTMENU)

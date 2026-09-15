@@ -12,12 +12,7 @@ path = "src/main.rs"
 
 [features]
 default = []
-legacy-geometry = ["desktop-hook/legacy-geometry"]
 menu-diagnostics = ["desktop-hook/menu-diagnostics", "desktop-shell/menu-diagnostics"]
-
-[[example]]
-name = "native_backdrop_probe"
-required-features = ["legacy-geometry"]
 
 [dependencies]
 desktop-core.workspace = true

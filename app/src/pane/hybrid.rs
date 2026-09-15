@@ -5,10 +5,7 @@ mod rename_transaction;
 use super::assets::RECYCLE_BIN_PARSING_NAME;
 use super::search::{everything_settings, hotkey as search_hotkey};
 use super::*;
-use desktop_hook::{
-    filter::FilterSession,
-    notifications::{DESKTOP_INPUT_MESSAGE, SCENE_DIRTY_MESSAGE},
-};
+use desktop_hook::{filter::FilterSession, notifications::DESKTOP_INPUT_MESSAGE};
 use inventory::Inventory;
 pub(super) use rename_transaction::commit as rename_item;
 use std::{
@@ -307,10 +304,6 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), S
                 icon_notify
                     .borrow_mut()
                     .add([icon_changes::Change::Name(RECYCLE_BIN_PARSING_NAME.into())]);
-                Some(0)
-            } else if message == SCENE_DIRTY_MESSAGE {
-                notify.set(true);
-                work_ready.notify();
                 Some(0)
             } else if message == DESKTOP_INPUT_MESSAGE {
                 work_ready.notify();
