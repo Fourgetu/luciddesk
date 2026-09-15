@@ -60,14 +60,12 @@ app/src/
 - `desktop-shell/src/`：`lib.rs` 导出 API，`namespace`、`desktop`、`notification`、`activation`、`apartment`、`error` 及原有文件操作、原生菜单、布局和重命名模块分别维护。
 - `desktop-hook/src/filter.rs` 和 `filter/`：当前视图成员过滤后端、客户端、IPC、Shell 项目恢复。
 - `app/src/pane/hybrid/inventory.rs`：合并原生视图与独立桌面来源，保留已过滤的分组身份。
-- `desktop-hook/src/geometry/profile.rs`：旧几何探针的精确映像配置，当前应用连接不使用它。
-- `desktop-hook/src/geometry/hidden/native_identity.rs`：隐藏成员模块使用的原生身份缓存。
-- `desktop-hook/src/client/discovery.rs`：控制端发现与冲突检测，`client.rs` 保留 Hook 会话管理。
+- `desktop-hook/src/discovery.rs`：控制端发现与冲突检测；`notifications.rs` 定义桌面输入通知。
 - `desktop-graphics/src/bindings/`：DWM/DComp 生成绑定，`layer.rs` 管理合成层；`desktop-window/src/`：显示器枚举和错误提示。
 
 各 crate 的入口、内部目录和依赖约定见 [crates 导航](../../crates/README.md)。
 
-旧几何探针仍可用于历史对照；当前应用通过 `FilterSession` 连接成员过滤后端。
+当前应用通过 `FilterSession` 连接成员过滤后端。旧几何后端、协议及专用探针已从 `main` 移除，历史对照使用 `hook` 分支。
 
 ## 新增文件约定
 

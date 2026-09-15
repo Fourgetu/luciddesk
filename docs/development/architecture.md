@@ -48,8 +48,8 @@ Win11 文件精简菜单由 Explorer 内的独立 Shell 宿主提供文件身份
 
 `desktop-shell/src/lib.rs` 只声明模块和导出 API；枚举与身份解析、桌面查询、通知注册、
 激活与拖放身份解码、错误定义分属独立文件。`desktop-graphics/src/layer.rs` 管理合成层，
-生成绑定仍位于 `bindings/`。`desktop-hook/src/client/discovery.rs` 负责桌面发现和冲突检测，
-当前过滤会话、IPC 和引擎位于 `filter/`，旧几何实现保留用于历史探针对照。各库入口见 [crates 导航](../../crates/README.md)。
+生成绑定仍位于 `bindings/`。`desktop-hook/src/discovery.rs` 负责桌面发现和冲突检测，
+当前过滤会话、IPC 和引擎位于 `filter/`；旧几何实现及主程序接入仅保留在 `hook` 分支。各库入口见 [crates 导航](../../crates/README.md)。
 
 应用子模块按真实归属存放：`pane/hybrid/icon_changes.rs` 处理图标通知，
 `pane/settings/layout.rs` 处理设置页布局，使用常规 `mod` 声明加载。

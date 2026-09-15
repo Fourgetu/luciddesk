@@ -7,7 +7,7 @@
 | `desktop-core` | 无平台依赖的领域模型、身份、面板与工作区 | [lib.rs](desktop-core/src/lib.rs) |
 | `desktop-storage` | SQLite 工作区与 TOML 配置持久化 | [lib.rs](desktop-storage/src/lib.rs) |
 | `desktop-shell` | Shell 枚举、通知、文件操作和菜单 | [lib.rs](desktop-shell/src/lib.rs) |
-| `desktop-hook` | Hook 控制端、DLL 入口、协议与几何处理 | [lib.rs](desktop-hook/src/lib.rs) |
+| `desktop-hook` | 过滤控制端、DLL 入口、成员恢复与独立 Shell 菜单 | [lib.rs](desktop-hook/src/lib.rs) |
 | `desktop-graphics` | DWM/DComp 绑定和合成层 | [lib.rs](desktop-graphics/src/lib.rs) |
 | `desktop-window` | 显示器枚举和启动错误提示 | [lib.rs](desktop-window/src/lib.rs) |
 
@@ -38,9 +38,9 @@ desktop-shell/src/
   native_menu.rs, native_menu/
 
 desktop-hook/src/
-  lib.rs, protocol.rs, engine.rs, pane_surface.rs
-  client.rs, client/discovery.rs
-  geometry.rs, geometry/   # 包括 profile.rs 和 hidden/native_identity.rs
+  lib.rs, discovery.rs, notifications.rs
+  filter.rs, filter/      # 客户端、IPC、成员过滤与恢复
+  filter/menu/            # 独立 Shell 宿主与原生菜单
 
 desktop-graphics/src/
   lib.rs, layer.rs
@@ -56,7 +56,7 @@ desktop-window/src/
 - 存储实现放在 `store/`，配置和恢复作为其子模块共享私有状态，避免把连接字段公开到 crate 外部。
 - Shell 内部的身份／PIDL 帮助函数通过明确的 `namespace` 路径复用，不塞回根入口。
 - `desktop-core` 不依赖 Windows 或数据库；当前 `desktop-storage`、`desktop-shell`、`desktop-window` 使用其领域类型。
-- 生成绑定和 vendored MinHook 代码保持独立；修改生成结果时同步相应工具，目录整理不重生成 ABI 或映像签名。
+- 修改生成绑定时同步相应工具；旧几何后端与 MinHook 已从主线移除，历史实现见 `hook` 分支。
 - 小库无需为了目录对称而继续拆分。`desktop-window` 的显示器模块和错误入口已足够清楚。
 
 构建与验证命令见[开发指南](../docs/development/build.md)，整体目录规则见[目录结构](../docs/development/structure.md)。
