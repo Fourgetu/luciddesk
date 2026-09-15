@@ -13,6 +13,15 @@ pub const UPDATE_END: u32 = 9;
 pub const REPLACE_IDENTITY: u32 = 10;
 pub const MENU_CANCEL: u32 = 11;
 
+/// Menu and rename-transaction failures use MENU_ERROR, without restoring
+/// desktop membership. These requests also allow the caller to pump UI messages.
+pub fn is_menu_transaction(op: u32) -> bool {
+    matches!(
+        op,
+        MENU_PREPARE | MENU_CANCEL | MENU_FINISH | UPDATE_BEGIN | UPDATE_END | REPLACE_IDENTITY
+    )
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MenuContext {
     pub owner: u64,

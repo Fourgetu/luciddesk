@@ -64,17 +64,7 @@ pub fn peek_desktop_item(owner: HWND, identity: &ShellIdentity) -> Result<()> {
             return Err(Error::new(E_FAIL, "请启动 PowerToys 并启用 Peek（速览）"));
         }
         let shell: IShellWindows = CoCreateInstance(&ShellWindows, None, CLSCTX_ALL)?;
-        let mut desktop_hwnd = 0;
-        let dispatch = shell.FindWindowSW(
-            &VARIANT::from(CSIDL_DESKTOP.cast_signed()),
-            &VARIANT::default(),
-            SWC_DESKTOP,
-            &raw mut desktop_hwnd,
-            SWFO_NEEDDISPATCH,
-        )?;
-        let provider: IServiceProvider = dispatch.cast()?;
-        let browser: IShellBrowser = provider.QueryService(&SID_STopLevelBrowser)?;
-        let view = browser.QueryActiveShellView()?;
+        let view = crate::desktop::shell_view(&shell)?;
         let folder: IFolderView2 = view.cast()?;
         let index = selection::resolve(&folder, &identity.activation_name().to_string_lossy())?;
         let item = selection::item_at(&folder, index)?;

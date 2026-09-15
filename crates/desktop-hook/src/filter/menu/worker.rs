@@ -166,29 +166,7 @@ impl Worker {
                 cancelled.store(true, Ordering::Release);
                 return Err(windows::core::Error::new(E_FAIL, "原生菜单准备超时"));
             }
-            unsafe {
-                // The desktop filter state is borrowed. Service synchronous COM
-                // calls only; never dispatch posted filter requests recursively.
-                let mut msg = MSG::default();
-                PeekMessageW(
-                    &raw mut msg,
-                    std::ptr::null_mut(),
-                    WM_NULL,
-                    WM_NULL,
-                    PM_NOREMOVE,
-                );
-            }
-            unsafe {
-                // Only synchronous calls may reenter the borrowed desktop
-                // state. Do not dispatch posted filter requests here.
-                MsgWaitForMultipleObjectsEx(
-                    0,
-                    std::ptr::null(),
-                    5,
-                    QS_SENDMESSAGE,
-                    MWMO_INPUTAVAILABLE,
-                );
-            }
+            wait_for_shell_reply();
         }
     }
     pub fn finish(&self, cancel: bool) -> Result<()> {
@@ -227,23 +205,7 @@ impl Worker {
                     "菜单取消等待超时，已保留取消标记",
                 ));
             }
-            unsafe {
-                let mut msg = MSG::default();
-                PeekMessageW(
-                    &raw mut msg,
-                    std::ptr::null_mut(),
-                    WM_NULL,
-                    WM_NULL,
-                    PM_NOREMOVE,
-                );
-                MsgWaitForMultipleObjectsEx(
-                    0,
-                    std::ptr::null(),
-                    5,
-                    QS_SENDMESSAGE,
-                    MWMO_INPUTAVAILABLE,
-                );
-            }
+            wait_for_shell_reply();
         }
     }
 }
@@ -257,6 +219,23 @@ impl Drop for Worker {
         }
     }
 }
+/// Wait on the desktop thread while filter state is borrowed. Service only
+/// synchronous COM calls; dispatching posted filter requests would reenter it.
+fn wait_for_shell_reply() {
+    unsafe {
+        let mut msg = MSG::default();
+        PeekMessageW(
+            &raw mut msg,
+            std::ptr::null_mut(),
+            WM_NULL,
+            WM_NULL,
+            PM_NOREMOVE,
+        );
+        MsgWaitForMultipleObjectsEx(0, std::ptr::null(), 5, QS_SENDMESSAGE, MWMO_INPUTAVAILABLE);
+    }
+}
+
+// Runs on the independent menu STA, where WinUI and posted input must dispatch.
 fn pump_messages() -> bool {
     unsafe {
         let mut msg = MSG::default();

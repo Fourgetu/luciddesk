@@ -5,6 +5,7 @@ mod commands;
 mod cursor;
 mod lifecycle;
 mod presenter;
+mod selection;
 
 pub mod worker;
 use super::{RENAME, wire::MenuContext};
@@ -24,7 +25,7 @@ use windows::{
         },
         UI::Shell::*,
     },
-    core::{HSTRING, IUnknown, Interface, Result},
+    core::{IUnknown, Interface, Result},
 };
 use windows_sys::Win32::UI::{
     Controls::*,
@@ -158,10 +159,7 @@ impl MenuHost {
             let results: IResultsFolder = folder.GetFolder().map_err(|e| {
                 windows::core::Error::new(e.code(), format!("获取独立集合失败：{e}"))
             })?;
-            let items: Vec<IShellItem> = names
-                .iter()
-                .map(|name| SHCreateItemFromParsingName(&HSTRING::from(name), None))
-                .collect::<Result<_>>()?;
+            let items = selection::resolve(names)?;
             for item in &items {
                 results.AddItem(item)?;
             }
@@ -192,32 +190,13 @@ impl MenuHost {
             }
             // Select the isolated result set, including mixed folders and namespace
             // items. Validate identities before any menu can invoke a command.
-            for index in 0..items.len() {
-                folder.SelectItem(
-                    index as i32,
-                    (SVSI_SELECT.0
-                        | if index == 0 {
-                            SVSI_DESELECTOTHERS.0 | SVSI_FOCUSED.0
-                        } else {
-                            0
-                        }) as u32,
-                )?;
-            }
+            selection::select_all(&folder, items.len())?;
             let selected: IShellItemArray = folder.Items(SVGIO_SELECTION)?;
             if selected.GetCount()? as usize != items.len() {
                 return Err(windows::core::Error::new(E_FAIL, "独立视图选择数不匹配"));
             }
-            for item in &items {
-                let mut found = false;
-                for index in 0..selected.GetCount()? {
-                    found |= item.Compare(
-                        &selected.GetItemAt(index)?,
-                        (SICHINT_CANONICAL.0 | SICHINT_TEST_FILESYSPATH_IF_NOT_EQUAL.0) as u32,
-                    )? == 0;
-                }
-                if !found {
-                    return Err(windows::core::Error::new(E_FAIL, "独立菜单目标校验失败"));
-                }
+            if !selection::contains_all(&selected, &items)? {
+                return Err(windows::core::Error::new(E_FAIL, "独立菜单目标校验失败"));
             }
             let view: IShellView = folder.cast()?;
             let first = Rc::new(Cell::new(None));
@@ -292,38 +271,16 @@ impl MenuHost {
             if callbacks.context.get().owner != context.owner || IsWindow(context.owner as _) == 0 {
                 return Ok(false);
             }
-            let items: Vec<IShellItem> = names
-                .iter()
-                .map(|name| SHCreateItemFromParsingName(&HSTRING::from(name), None))
-                .collect::<Result<_>>()?;
+            let items = selection::resolve(names)?;
             let folder: IFolderView2 = callbacks.view.cast()?;
             let live: IShellItemArray = folder.Items(SVGIO_ALLVIEW)?;
             if live.GetCount()? as usize != items.len() {
                 return Ok(false);
             }
-            for item in &items {
-                let mut found = false;
-                for index in 0..live.GetCount()? {
-                    found |= item.Compare(
-                        &live.GetItemAt(index)?,
-                        (SICHINT_CANONICAL.0 | SICHINT_TEST_FILESYSPATH_IF_NOT_EQUAL.0) as u32,
-                    )? == 0;
-                }
-                if !found {
-                    return Ok(false);
-                }
+            if !selection::contains_all(&live, &items)? {
+                return Ok(false);
             }
-            for index in 0..items.len() {
-                folder.SelectItem(
-                    index as i32,
-                    (SVSI_SELECT.0
-                        | if index == 0 {
-                            SVSI_DESELECTOTHERS.0 | SVSI_FOCUSED.0
-                        } else {
-                            0
-                        }) as u32,
-                )?;
-            }
+            selection::select_all(&folder, items.len())?;
             callbacks.context.set(context);
             callbacks.invocation.reset(cancelled);
             SetWindowPos(

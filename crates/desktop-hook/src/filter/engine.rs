@@ -535,15 +535,7 @@ unsafe extern "system" fn subclass(
                 }
                 if !state.failed {
                     if let Some(request) = &request {
-                        if matches!(
-                            request.op,
-                            wire::MENU_PREPARE
-                                | wire::MENU_CANCEL
-                                | wire::MENU_FINISH
-                                | wire::UPDATE_BEGIN
-                                | wire::UPDATE_END
-                                | wire::REPLACE_IDENTITY
-                        ) {
+                        if wire::is_menu_transaction(request.op) {
                             unsafe {
                                 RemovePropW(hwnd, MENU_ERROR);
                             }

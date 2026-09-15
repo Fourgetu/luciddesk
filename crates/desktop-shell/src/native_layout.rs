@@ -1,11 +1,7 @@
 //! Native desktop layout access. Explorer retains all rendering and input ownership.
 use windows::Win32::Foundation::POINT;
-use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance, IServiceProvider};
-use windows::Win32::System::Variant::VARIANT;
-use windows::Win32::UI::Shell::{
-    CSIDL_DESKTOP, IFolderView2, IShellBrowser, IShellWindows, SID_STopLevelBrowser, SVGIO_ALLVIEW,
-    SWC_DESKTOP, SWFO_NEEDDISPATCH, ShellWindows,
-};
+use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
+use windows::Win32::UI::Shell::{IFolderView2, IShellWindows, SVGIO_ALLVIEW, ShellWindows};
 use windows::core::Interface;
 
 use crate::namespace::Pidl;
@@ -77,19 +73,16 @@ impl NativeDesktopReader {
 }
 
 fn capture_revision(shell: &IShellWindows) -> windows::core::Result<NativeDesktopRevision> {
-    let capture = || -> windows::core::Result<NativeDesktopRevision> {
-        let (folder, hwnd) = desktop_folder(shell)?;
-        let mut revision = revision_header(&folder, hwnd)?;
-        for index in 0..unsafe { folder.ItemCount(SVGIO_ALLVIEW)? } {
-            if index > 0 && index % 8 == 0 {
-                std::thread::sleep(std::time::Duration::from_millis(1));
-            }
-            let pidl = Pidl::new(unsafe { folder.Item(index)? });
-            revision.item_ids.push(item_id(&pidl));
+    let (folder, hwnd) = desktop_folder(shell)?;
+    let mut revision = revision_header(&folder, hwnd)?;
+    for index in 0..unsafe { folder.ItemCount(SVGIO_ALLVIEW)? } {
+        if index > 0 && index % 8 == 0 {
+            std::thread::sleep(std::time::Duration::from_millis(1));
         }
-        Ok(revision)
-    };
-    capture()
+        let pidl = Pidl::new(unsafe { folder.Item(index)? });
+        revision.item_ids.push(item_id(&pidl));
+    }
+    Ok(revision)
 }
 
 fn revision_header(
@@ -125,17 +118,7 @@ fn desktop_folder(
     shell: &IShellWindows,
 ) -> windows::core::Result<(IFolderView2, windows::Win32::Foundation::HWND)> {
     unsafe {
-        let mut desktop_hwnd = 0;
-        let dispatch = shell.FindWindowSW(
-            &VARIANT::from(CSIDL_DESKTOP.cast_signed()),
-            &VARIANT::default(),
-            SWC_DESKTOP,
-            &raw mut desktop_hwnd,
-            SWFO_NEEDDISPATCH,
-        )?;
-        let provider: IServiceProvider = dispatch.cast()?;
-        let browser: IShellBrowser = provider.QueryService(&SID_STopLevelBrowser)?;
-        let view = browser.QueryActiveShellView()?;
+        let view = crate::desktop::shell_view(shell)?;
         let folder: IFolderView2 = view.cast()?;
         let hwnd = view.GetWindow()?;
         Ok((folder, hwnd))
@@ -158,7 +141,11 @@ fn capture_desktop_snapshot() -> Result<NativeDesktopSnapshot, String> {
                 revision.item_ids.push(item_id(&pidl));
                 let position = folder.GetItemPosition(pidl.as_ptr())?;
                 let item: windows::Win32::UI::Shell::IShellItem =
-                    windows::Win32::UI::Shell::SHCreateItemWithParent(None, &parent, pidl.as_ptr())?;
+                    windows::Win32::UI::Shell::SHCreateItemWithParent(
+                        None,
+                        &parent,
+                        pidl.as_ptr(),
+                    )?;
                 if let Ok(mut entry) = crate::namespace::desktop_shell_item(&item) {
                     // Known-folder desktop objects can expose a filesystem path but have a
                     // different icon and verbs from the underlying directory (e.g. User Files).

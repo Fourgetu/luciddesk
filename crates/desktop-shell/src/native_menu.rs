@@ -11,12 +11,11 @@ pub(crate) use selection::update_hints;
 use desktop_core::ShellIdentity;
 use std::cell::Cell;
 use windows::Win32::Foundation::{ERROR_BUSY, HWND, POINT};
-use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance, IServiceProvider};
-use windows::Win32::System::Variant::VARIANT;
+use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
 use windows::Win32::UI::Shell::{
-    CMF_CANRENAME, CMF_ITEMMENU, CSIDL_DESKTOP, IContextMenu, IContextMenuSite, IFolderView2,
-    IShellBrowser, IShellWindows, SID_STopLevelBrowser, SVGIO_SELECTION, SVSI_DESELECTOTHERS,
-    SVSI_FOCUSED, SVSI_SELECT, SVUIA_ACTIVATE_FOCUS, SWC_DESKTOP, SWFO_NEEDDISPATCH, ShellWindows,
+    CMF_CANRENAME, CMF_ITEMMENU, IContextMenu, IContextMenuSite, IFolderView2, IShellWindows,
+    SVGIO_SELECTION, SVSI_DESELECTOTHERS, SVSI_FOCUSED, SVSI_SELECT, SVUIA_ACTIVATE_FOCUS,
+    ShellWindows,
 };
 use windows::core::{Interface, Result};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -141,17 +140,7 @@ pub fn show_desktop_items_menu(
     let mut timings = performance::Timings::new();
     unsafe {
         let shell: IShellWindows = CoCreateInstance(&ShellWindows, None, CLSCTX_ALL)?;
-        let mut desktop_hwnd = 0;
-        let dispatch = shell.FindWindowSW(
-            &VARIANT::from(CSIDL_DESKTOP.cast_signed()),
-            &VARIANT::default(),
-            SWC_DESKTOP,
-            &raw mut desktop_hwnd,
-            SWFO_NEEDDISPATCH,
-        )?;
-        let provider: IServiceProvider = dispatch.cast()?;
-        let browser: IShellBrowser = provider.QueryService(&SID_STopLevelBrowser)?;
-        let view = browser.QueryActiveShellView()?;
+        let view = crate::desktop::shell_view(&shell)?;
         let folder: IFolderView2 = view.cast()?;
         timings.mark("explorer-connected");
         let indices: Vec<_> = identities
@@ -268,10 +257,17 @@ pub fn show_isolated_item_menu(
         let result = observer.wait_for_close();
         if cfg!(debug_assertions) {
             use windows_sys::Win32::UI::WindowsAndMessaging::GetPropW;
-            eprintln!("menu_shell_get_item_us={} menu_shell_build_us={} busy_cursor_cleared={}",
-                (GetPropW(host.0, windows_sys::w!("LucidPane.Menu.GetItemUs")) as usize).saturating_sub(1),
-                (GetPropW(host.0, windows_sys::w!("LucidPane.Menu.BuildUs")) as usize).saturating_sub(1),
-                GetPropW(GetAncestor(host.0, GA_ROOT), windows_sys::w!("LucidPane.Menu.BusyCursorCleared")) as usize);
+            eprintln!(
+                "menu_shell_get_item_us={} menu_shell_build_us={} busy_cursor_cleared={}",
+                (GetPropW(host.0, windows_sys::w!("LucidPane.Menu.GetItemUs")) as usize)
+                    .saturating_sub(1),
+                (GetPropW(host.0, windows_sys::w!("LucidPane.Menu.BuildUs")) as usize)
+                    .saturating_sub(1),
+                GetPropW(
+                    GetAncestor(host.0, GA_ROOT),
+                    windows_sys::w!("LucidPane.Menu.BusyCursorCleared")
+                ) as usize
+            );
         }
         result
     }

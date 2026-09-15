@@ -1,5 +1,15 @@
-//! Read-only discovery of Explorer's desktop icon view.
+//! Read-only discovery of Explorer's desktop icon window and Shell view.
 use std::ptr;
+use windows::{
+    Win32::{
+        System::{Com::IServiceProvider, Variant::VARIANT},
+        UI::Shell::{
+            CSIDL_DESKTOP, IShellBrowser, IShellView, IShellWindows, SID_STopLevelBrowser,
+            SWC_DESKTOP, SWFO_NEEDDISPATCH,
+        },
+    },
+    core::{Interface, Result},
+};
 use windows_sys::Win32::{
     Foundation::{HWND, LPARAM},
     UI::{
@@ -10,54 +20,23 @@ use windows_sys::Win32::{
 
 const HIDE_DESKTOP_ICONS_BIT: i32 = 1 << 12;
 
-const SHELL_DLL_DEF_VIEW: &[u16] = &[
-    b'S' as u16,
-    b'H' as u16,
-    b'E' as u16,
-    b'L' as u16,
-    b'L' as u16,
-    b'D' as u16,
-    b'L' as u16,
-    b'L' as u16,
-    b'_' as u16,
-    b'D' as u16,
-    b'e' as u16,
-    b'f' as u16,
-    b'V' as u16,
-    b'i' as u16,
-    b'e' as u16,
-    b'w' as u16,
-    0,
-];
-const SYS_LIST_VIEW: &[u16] = &[
-    b'S' as u16,
-    b'y' as u16,
-    b's' as u16,
-    b'L' as u16,
-    b'i' as u16,
-    b's' as u16,
-    b't' as u16,
-    b'V' as u16,
-    b'i' as u16,
-    b'e' as u16,
-    b'w' as u16,
-    b'3' as u16,
-    b'2' as u16,
-    0,
-];
-const FOLDER_VIEW: &[u16] = &[
-    b'F' as u16,
-    b'o' as u16,
-    b'l' as u16,
-    b'd' as u16,
-    b'e' as u16,
-    b'r' as u16,
-    b'V' as u16,
-    b'i' as u16,
-    b'e' as u16,
-    b'w' as u16,
-    0,
-];
+/// Resolve the current desktop view on the caller's COM apartment. The caller
+/// owns the ShellWindows connection, including any reconnect/cache policy.
+pub(crate) fn shell_view(shell: &IShellWindows) -> Result<IShellView> {
+    unsafe {
+        let mut desktop_hwnd = 0;
+        let dispatch = shell.FindWindowSW(
+            &VARIANT::from(CSIDL_DESKTOP.cast_signed()),
+            &VARIANT::default(),
+            SWC_DESKTOP,
+            &raw mut desktop_hwnd,
+            SWFO_NEEDDISPATCH,
+        )?;
+        let provider: IServiceProvider = dispatch.cast()?;
+        let browser: IShellBrowser = provider.QueryService(&SID_STopLevelBrowser)?;
+        browser.QueryActiveShellView()
+    }
+}
 
 /// Returns whether Explorer's native desktop icons are currently hidden.
 #[must_use]
@@ -100,7 +79,7 @@ unsafe fn list_view_under(window: HWND) -> Option<HWND> {
         FindWindowExW(
             window,
             ptr::null_mut(),
-            SHELL_DLL_DEF_VIEW.as_ptr(),
+            windows_sys::w!("SHELLDLL_DefView"),
             ptr::null(),
         )
     };
@@ -111,8 +90,8 @@ unsafe fn list_view_under(window: HWND) -> Option<HWND> {
         FindWindowExW(
             definition,
             ptr::null_mut(),
-            SYS_LIST_VIEW.as_ptr(),
-            FOLDER_VIEW.as_ptr(),
+            windows_sys::w!("SysListView32"),
+            windows_sys::w!("FolderView"),
         )
     };
     if !named.is_null() {
@@ -122,7 +101,7 @@ unsafe fn list_view_under(window: HWND) -> Option<HWND> {
         FindWindowExW(
             definition,
             ptr::null_mut(),
-            SYS_LIST_VIEW.as_ptr(),
+            windows_sys::w!("SysListView32"),
             ptr::null(),
         )
     };

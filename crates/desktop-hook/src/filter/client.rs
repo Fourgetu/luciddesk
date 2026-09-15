@@ -243,15 +243,7 @@ impl FilterSession {
                     return Ok(());
                 }
                 if GetPropW(self.view, ACK) as usize == sequence as usize {
-                    if matches!(
-                        op,
-                        wire::MENU_PREPARE
-                            | wire::MENU_CANCEL
-                            | wire::MENU_FINISH
-                            | wire::UPDATE_BEGIN
-                            | wire::UPDATE_END
-                            | wire::REPLACE_IDENTITY
-                    ) {
+                    if wire::is_menu_transaction(op) {
                         let error = GetPropW(self.view, MENU_ERROR) as usize as u32;
                         return if error == 0 {
                             Ok(())
@@ -273,15 +265,7 @@ impl FilterSession {
                         Err(format!("桌面过滤失败，已请求恢复原生项目 (0x{error:08x})"))
                     };
                 }
-                if matches!(
-                    op,
-                    wire::MENU_PREPARE
-                        | wire::MENU_CANCEL
-                        | wire::MENU_FINISH
-                        | wire::UPDATE_BEGIN
-                        | wire::UPDATE_END
-                        | wire::REPLACE_IDENTITY
-                ) {
+                if wire::is_menu_transaction(op) {
                     // Explorer can synchronously query our windows while creating
                     // its Shell view. Menu callers must hold no UI model borrows.
                     let mut message = MSG::default();
@@ -296,16 +280,6 @@ impl FilterSession {
                         TranslateMessage(&message);
                         DispatchMessageW(&message);
                     }
-                }
-                if matches!(
-                    op,
-                    wire::MENU_PREPARE
-                        | wire::MENU_CANCEL
-                        | wire::MENU_FINISH
-                        | wire::UPDATE_BEGIN
-                        | wire::UPDATE_END
-                        | wire::REPLACE_IDENTITY
-                ) {
                     MsgWaitForMultipleObjectsEx(
                         0,
                         std::ptr::null(),
@@ -317,21 +291,11 @@ impl FilterSession {
                     std::thread::sleep(Duration::from_millis(5));
                 }
             }
-            Err(
-                if matches!(
-                    op,
-                    wire::MENU_PREPARE
-                        | wire::MENU_CANCEL
-                        | wire::MENU_FINISH
-                        | wire::UPDATE_BEGIN
-                        | wire::UPDATE_END
-                        | wire::REPLACE_IDENTITY
-                ) {
-                    "Explorer 菜单准备或释放超时".into()
-                } else {
-                    "桌面过滤响应超时".into()
-                },
-            )
+            Err(if wire::is_menu_transaction(op) {
+                "Explorer 菜单准备或释放超时".into()
+            } else {
+                "桌面过滤响应超时".into()
+            })
         }
     }
 }
