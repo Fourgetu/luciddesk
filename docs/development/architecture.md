@@ -15,7 +15,8 @@ Win11 文件精简菜单由 Explorer 内的独立 Shell 宿主提供文件身份
 | 模块 | 职责 |
 | --- | --- |
 | `app/src/main.rs` | 参数解析、DPI/STA 初始化、配置路径与启动错误 |
-| `app/src/pane/hybrid.rs` | Hook 生命周期、Shell 清单同步、图标通知与后台加载 |
+| `app/src/pane/hybrid.rs` | Hook 生命周期、桌面输入、清单结果核验与同步顺序 |
+| `app/src/pane/hybrid/audit.rs`、`icons.rs` | 后台审计通道与在途请求、图标批次加载和刷新 |
 | `app/src/pane/runtime.rs`、`display_layout.rs` | 连接重试、窗口恢复、显示器布局切换与自动备份调度 |
 | `app/src/pane/folder.rs`、`search/hotkey.rs` | 文件夹监听和导航排序、全局搜索快捷键生命周期 |
 | `app/src/pane/search/` | 搜索窗口、Everything 查询与配置、快捷键和测试 |
@@ -82,3 +83,5 @@ DLL 运行副本解决已加载文件无法覆盖的问题。分离会恢复视�
 旧 `GroupWindow`、`DesktopItemSurface`、`NativeFrame`、宿主抽象、Portal 扫描、桌面隐藏写入及工作区 Hook 后端已经移除。当前原生桌面快照仍用于刷新，不能随旧模式一起删除。
 
 历史应用和专属依赖保存在本地 `leagcy` 分支；主线不保留旧入口，也不承诺新旧库接口兼容。历史背景见[资料索引](history/README.md)。
+
+普通面板的单窗口标签分组、状态归属与事件驱动后台策略见[标签页实现](pane-tabs.md)。

@@ -15,11 +15,11 @@
 | --- | --- |
 | [架构说明](architecture.md) | 模块职责、启动流程、Hook 与兼容边界 |
 | [目录结构](structure.md) | 源码目录、功能归属与新增文件约定 |
-| [混合桌面与成员同步](hybrid-desktop.md) | 身份、收纳、排序、布局发布与恢复 |
+| [原生桌面与成员过滤](hybrid-desktop.md) | 身份、收纳、过滤名单发布与恢复 |
 | [绘图与绑定](rendering.md) | Canvas、DComp、WinRT、动画与生成绑定 |
 | [存储与版本约定](storage.md) | TOML 配置、工作区数据库、备份和开发期版本策略 |
-| [图标菜单与重命名](pane-item-rename.md) | Shell 菜单、临时选择、原生编辑窗口 |
-| [选择与刷新时序](selection-latency.md) | 异步选择清理和后台清单读取 |
+| [图标菜单与重命名](pane-item-rename.md) | 独立 Shell 宿主、原生编辑窗口与改名事务 |
+| [选择与刷新时序](selection-latency.md) | 选择互斥、后台清单读取和过滤发布 |
 | [运行时托盘](tray.md) | 托盘消息、资源释放和验证入口 |
 | [验证记录](validation.md) | 最近一次检查结果与未覆盖范围 |
 | [消融实验后的优化方案](ablation-optimization-plan.md) | 存储、Hook 与绘图的改进顺序及验收标准 |

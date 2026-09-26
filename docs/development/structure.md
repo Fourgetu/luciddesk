@@ -1,6 +1,6 @@
 # 项目目录结构
 
-更新：2026-09-13。路径均相对仓库根目录。
+更新：2026-09-26。路径均相对仓库根目录。
 
 ## 顶层分工
 
@@ -26,9 +26,16 @@ app/src/
     ├── mod.rs              # 应用状态与模块入口
     ├── model.rs
     ├── events.rs
+    ├── folder.rs           # 目录监听、清单更新与导航
+    ├── folder/
+    │   ├── entry_mode.rs   # 文件夹激活策略与全局模式
+    │   ├── preferences.rs  # 视图默认值、列配置与持久化
+    │   └── images.rs       # 目录图像加载与缓存
     ├── runtime.rs
     ├── search/
     │   ├── mod.rs          # 搜索窗口与结果交互
+    │   ├── drawing.rs      # 搜索输入栏、结果与状态绘制
+    │   ├── tooltip.rs      # 完整路径及错误信息悬停提示
     │   ├── everything.rs   # Everything IPC 查询
     │   ├── everything_settings.rs
     │   ├── hotkey.rs       # 全局搜索快捷键
@@ -42,8 +49,17 @@ app/src/
     ├── settings/
     │   ├── layout.rs
     │   └── tests.rs
-    ├── hybrid.rs
-    ├── hybrid/icon_changes.rs
+    ├── hybrid.rs           # 会话、桌面输入与同步顺序
+    ├── hybrid/
+    │   ├── audit.rs        # 后台 STA、请求通道与在途状态
+    │   ├── audit_schedule.rs # 空闲退避与通知失效
+    │   ├── inventory.rs    # 清单合并与身份修订
+    │   ├── icons.rs        # 图标批次、刷新与像素接收
+    │   ├── icons/tests.rs  # 图标加载与回收回归
+    │   ├── icon_changes.rs # Shell 图标通知解码与合并
+    │   ├── image_retention.rs # 闲置图像预算与期限
+    │   └── rename_transaction.rs # 改名身份交接
+    ├── scaled_icons.rs     # 绘图线程共享的 CPU 缩放缓存
     ├── acrylic.rs
     ├── acrylic/effects.rs
     └── …                   # 各功能共享的绘图、布局、窗口和输入模块
@@ -60,6 +76,10 @@ app/src/
 - `desktop-shell/src/`：`lib.rs` 导出 API，`namespace`、`desktop`、`notification`、`activation`、`apartment`、`error` 及原有文件操作、原生菜单、布局和重命名模块分别维护。
 - `desktop-hook/src/filter.rs` 和 `filter/`：当前视图成员过滤后端、客户端、IPC、Shell 项目恢复。
 - `app/src/pane/hybrid/inventory.rs`：合并原生视图与独立桌面来源，保留已过滤的分组身份。
+- `app/src/pane/hybrid/audit.rs`：封装后台审计的通道、在途请求和调度操作；`hybrid.rs` 核验返回的成员修订，再更新模型和发布过滤名单。
+- `app/src/pane/hybrid/icons.rs`：集中初次加载、通知刷新、迟到结果校验和缓存维护；期限与预算策略由 `image_retention.rs` 管理，相关集成回归位于 `icons/tests.rs`。
+- `app/src/pane/folder/preferences.rs`：集中默认视图、显示列和列宽配置；列位掩码的兼容校验与显示列保存各保留一处实现。文件夹激活从事件入口直接调用目录导航，系统打开仍使用延迟执行路径。
+- `app/src/pane/scaled_icons.rs`：复用纯像素缩放结果，不持有或跨线程共享 COM 绘图资源；GPU 纹理仍由 `render.rs` 管理。
 - `desktop-hook/src/discovery.rs`：控制端发现与冲突检测；`notifications.rs` 定义桌面输入通知。
 - `desktop-graphics/src/bindings/`：DWM/DComp 生成绑定，`layer.rs` 管理合成层；`desktop-window/src/`：显示器枚举和错误提示。
 
