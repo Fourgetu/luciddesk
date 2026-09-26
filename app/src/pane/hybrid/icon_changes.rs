@@ -78,11 +78,14 @@ pub(super) unsafe fn capture(wparam: usize, event: u32) -> Vec<Change> {
         .collect()
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(super) struct Pending {
     changes: BTreeSet<Change>,
 }
 impl Pending {
+    pub(super) fn merge(&mut self, other: Self) {
+        self.add(other.changes);
+    }
     pub(super) fn add(&mut self, changes: impl IntoIterator<Item = Change>) {
         for change in changes {
             if self.changes.contains(&Change::All) {

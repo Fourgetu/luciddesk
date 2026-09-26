@@ -17,6 +17,23 @@ fn backup_in_progress_preserves_policy_controls_and_prevents_duplicate_jobs() {
 }
 
 #[test]
+fn folder_modes_fit_minimum_window_and_show_current_choice() {
+    for mode in [folder::EntryMode::Inline, folder::EntryMode::Explorer] {
+        let mut body = scene(800.0, MIN_HEIGHT - TITLE_HEIGHT, 8, false,
+            (PanelTheme::System, Backdrop::Mica), desktop_core::PaneOptions::default());
+        layout::folder_defaults(&mut body, 800.0, folder::Defaults::default(), mode);
+        let s = with_titlebar(body, 800.0, false);
+        for bounds in s.text.iter().map(|(r,_,_)| r).chain(s.controls.iter().map(|c| &c.bounds)) {
+            assert!(bounds.right <= 800.0 && bounds.bottom <= MIN_HEIGHT);
+        }
+        let choices: Vec<_> = s.controls.iter().filter(|c| matches!(c.action, Action::FolderEntryMode(_))).collect();
+        assert_eq!(choices.len(), 2);
+        assert_eq!(choices.iter().filter(|c| c.selected).count(), 1);
+        assert!(choices.iter().any(|c| c.selected && matches!(c.action, Action::FolderEntryMode(value) if value == mode)));
+    }
+}
+
+#[test]
 fn folder_defaults_are_saved_and_only_copied_into_new_panels() {
     let store = WorkspaceStore::open_in_memory().unwrap();
     assert_eq!(folder::Defaults::load(&store).unwrap(), folder::Defaults::default());
@@ -69,7 +86,7 @@ fn initial_library_show_remains_hidden_until_prepared() {
     let window = windows_window::Window::new("LucidPane initial visibility test")
         .style(WS_OVERLAPPEDWINDOW)
         .on_message(move |_, msg, _, lp| {
-            if unsafe { defer_initial_show(msg, lp, callback_prepared.get()) }
+            if unsafe { defer_show(msg, lp, callback_prepared.get()) }
                 || msg == WM_DESTROY
             {
                 Some(0)
@@ -334,7 +351,7 @@ fn settings_layout_and_rendering_at_multiple_scales() {
     {
         let device = windows_canvas::GpuDevice::new_warp().unwrap();
         for scale in [1.0, 1.5, 2.0] {
-            for page in [0, 1, 3, 4, 5, 6, 7, 8, 9, 10] {
+            for page in [0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11] {
                 for dark in [false, true] {
                     let mut body = scene(
                             940.0,
@@ -363,7 +380,8 @@ fn settings_layout_and_rendering_at_multiple_scales() {
                         }).collect(),..Default::default()};
                         if page==9 {layout::backup_history(&mut body,940.0,&view,0);}else{layout::backup_page(&mut body,940.0,&view,recovery::Policy::default(),page==10);}
                     }
-                    if page == 8 { layout::folder_defaults(&mut body, 940.0, folder::Defaults::default()); }
+                    if page == 11 { layout::fonts(&mut body, 940.0, &fonts::installed(), 0); }
+                    if page == 8 { layout::folder_defaults(&mut body, 940.0, folder::Defaults::default(), if dark { folder::EntryMode::Explorer } else { folder::EntryMode::Inline }); }
                     if page == 5 {
                         layout::about_status(&mut body, 940.0, "桌面分组已连接", false);
                     }
@@ -418,6 +436,10 @@ fn settings_layout_and_rendering_at_multiple_scales() {
                         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                             .join("../target")
                             .join(match (page, dark) {
+                                (11, true) => "settings-fonts-dark.bmp",
+                                (11, false) => "settings-fonts-light.bmp",
+                                (8, true) => "settings-folder-dark.bmp",
+                                (8, false) => "settings-folder-light.bmp",
                                 (3, true) => "settings-peek-dark.bmp",
                                 (3, false) => "settings-peek-light.bmp",
                                 (4, true) => "settings-search-dark.bmp",
@@ -470,5 +492,21 @@ fn settings_layout_and_rendering_at_multiple_scales() {
                 }
             }
         }
+    }
+}
+
+#[test]
+fn font_picker_fits_minimum_window_and_exposes_paging_and_reset() {
+    let names: Vec<_> = (0..19).map(|i| format!("Font {i}")).collect();
+    for offset in [0, 7, 14] {
+        let mut body = scene(800.0, MIN_HEIGHT - TITLE_HEIGHT, 11, false,
+            (PanelTheme::Dark, Backdrop::Mica), desktop_core::PaneOptions::default());
+        layout::fonts(&mut body, 800.0, &names, offset);
+        let s = with_titlebar(body, 800.0, false);
+        for r in s.text.iter().map(|(r,_,_)| r).chain(s.controls.iter().map(|c| &c.bounds)) {
+            assert!(r.right <= 800.0 && r.bottom <= MIN_HEIGHT);
+        }
+        assert_eq!(s.controls.iter().filter(|c| matches!(&c.action, Action::Font(name) if name.starts_with("Font "))).count(), (names.len() - offset).min(7));
+        assert!(s.controls.iter().any(|c| matches!(&c.action, Action::Font(name) if name == assets::UI_FONT)));
     }
 }

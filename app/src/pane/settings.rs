@@ -28,18 +28,7 @@ struct PendingReveal {
     fade: bool,
 }
 
-// windows-window::create calls ShowWindow before returning the HWND. Suppress
-// that first show until placement, custom frame and composition are prepared.
-unsafe fn defer_initial_show(msg: u32, lp: isize, prepared: bool) -> bool {
-    if msg != WM_WINDOWPOSCHANGING || prepared {
-        return false;
-    }
-    unsafe {
-        let position = &mut *(lp as *mut WINDOWPOS);
-        position.flags = (position.flags & !SWP_SHOWWINDOW) | SWP_NOACTIVATE;
-    }
-    true
-}
+use crate::window_visibility::defer_show;
 
 unsafe fn cloak(
     hwnd: windows_sys::Win32::Foundation::HWND,
@@ -57,7 +46,10 @@ use windows_sys::Win32::UI::Controls::WM_MOUSELEAVE;
 
 #[derive(Clone)]
 enum Action {
+    Font(String),
+    FontPage(isize),
     FolderDefaults(folder::Defaults),
+    FolderEntryMode(folder::EntryMode),
     BackupPolicy(u8),
     BackupRecord(std::path::PathBuf),
     BackupPage(isize),
@@ -353,7 +345,11 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
     };
     let mut options = state.borrow().workspace.pane_options();
     let mut folder_defaults = folder::Defaults::load(&state.borrow().store)?;
-    let painter = Painter::new().map_err(|e| e.to_string())?;
+    let mut folder_entry_mode = folder::EntryMode::load(&state.borrow().store)?;
+    let mut font_choices = Vec::<String>::new();
+    let mut font_offset = 0usize;
+    let mut painter_family = fonts::family();
+    let mut painter = Painter::new().map_err(|e| e.to_string())?;
     let mut surface: Option<composition::Surface> = None;
     let mut reveal: Option<PendingReveal> = None;
     let mut page = if state
@@ -395,7 +391,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
         .ex_style(WS_EX_APPWINDOW | WS_EX_NOREDIRECTIONBITMAP)
         .on_message(move |raw, msg, wp, lp| {
             let hwnd = raw.cast();
-            if unsafe { defer_initial_show(msg, lp, show_prepared.get()) } {
+            if unsafe { defer_show(msg, lp, show_prepared.get()) } {
                 return Some(0);
             }
             if msg == WM_NCCALCSIZE || msg == WM_NCPAINT {
@@ -609,6 +605,13 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 return None;
             }
             let mut snapshot_changed = false;
+            if painter_family != fonts::family() {
+                if let Ok(fresh) = Painter::new() {
+                    painter = fresh;
+                    painter_family = fonts::family();
+                    snapshot_changed = true;
+                }
+            }
             let available = if let Ok(state) = state.try_borrow() {
                 if panels != state.workspace.panels() {
                     panels = state.workspace.panels().to_vec();
@@ -624,6 +627,9 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 let defaults=folder::Defaults::load(&state.store).unwrap_or_default();
                 snapshot_changed |= defaults != folder_defaults;
                 folder_defaults=defaults;
+                let mode = folder::EntryMode::load(&state.store).unwrap_or_default();
+                snapshot_changed |= mode != folder_entry_mode;
+                folder_entry_mode = mode;
                 options = state.workspace.pane_options();
                 appearance = state
                     .workspace
@@ -657,7 +663,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 (recording_peek, recording_search, search_hotkey::settings(), search_hotkey::status()),
                 unsafe { IsZoomed(hwnd) } != 0,
                 search_visible,
-                desktop_status.clone(),
+                (desktop_status.clone(), header_divider::enabled()),
             );
             let scene_changed = snapshot_changed || scene_key.as_ref() != Some(&key);
             if scene_changed {
@@ -669,7 +675,8 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         appearance,
                         options,
                     );
-                if page == 8 { layout::folder_defaults(&mut body, w, folder_defaults); }
+                if page == 11 { layout::fonts(&mut body, w, &font_choices, font_offset); }
+                if page == 8 { layout::folder_defaults(&mut body, w, folder_defaults, folder_entry_mode); }
                 if matches!(page,6|9|10) {
                     if page==9 {layout::backup_history(&mut body,w,&backup_view,backup_offset);} else {layout::backup_page(&mut body,w,&backup_view,backup_policy,page==10);}
                 }
@@ -948,35 +955,30 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 }
                 _ => return None,
             }
-            if let Some((channel, value)) = channel_change.filter(|_| available) {
-                if let Backdrop::Solid { color, opacity } = appearance.1 {
-                    let backdrop = Backdrop::Solid { color: color_channel(color, channel, value), opacity };
-                    if msg == WM_KEYDOWN {
-                        if let Err(error) = handle(&state, selected, Event::Material(backdrop)) { window::error(&error); }
-                    } else {
-                        material_original.get_or_insert(appearance.1);
-                        events::preview_material(&mut state.borrow_mut(), backdrop);
-                    }
-                }
-            }
-            if let Some(value) = strength_change.filter(|_| available) {
-                let backdrop = appearance.1.with_strength(value);
+            // Keyboard steps persist immediately; pointer gestures share one
+            // preview/commit path regardless of the material property edited.
+            let mut apply_material = |backdrop| {
                 if msg == WM_KEYDOWN {
                     if let Err(error) = handle(&state, selected, Event::Material(backdrop)) { window::error(&error); }
                 } else {
                     material_original.get_or_insert(appearance.1);
                     events::preview_material(&mut state.borrow_mut(), backdrop);
                 }
+            };
+            if let Some((channel, value)) = channel_change.filter(|_| available) {
+                if let Backdrop::Solid { color, opacity } = appearance.1 {
+                    let backdrop = Backdrop::Solid { color: color_channel(color, channel, value), opacity };
+                    apply_material(backdrop);
+                }
+            }
+            if let Some(value) = strength_change.filter(|_| available) {
+                let backdrop = appearance.1.with_strength(value);
+                apply_material(backdrop);
             }
             if let Some(value) = opacity_change.filter(|_| available) {
                 if let Backdrop::Solid { color, .. } = appearance.1 {
                     let backdrop = Backdrop::Solid { color, opacity: f32::from(value) / 100.0 };
-                    if msg == WM_KEYDOWN {
-                        if let Err(error) = handle(&state, selected, Event::Material(backdrop)) { window::error(&error); }
-                    } else {
-                        material_original.get_or_insert(appearance.1);
-                        events::preview_material(&mut state.borrow_mut(), backdrop);
-                    }
+                    apply_material(backdrop);
                 }
             }
             if available && matches!(msg, WM_LBUTTONUP | WM_CAPTURECHANGED | WM_CANCELMODE) {
@@ -1065,6 +1067,12 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                             let event=match result{1=>Some(Event::RestoreBackupPath(path)),2=>Some(Event::ExportBackupPath(path)),3=>Some(Event::DeleteBackup(path)),_=>None};
                             if let Some(event)=event{recovery::request(&state,&event);}
                         });
+                    }
+                    Action::FolderEntryMode(value) => {
+                        match value.save(&state.borrow().store) {
+                            Ok(()) => { folder_entry_mode = *value; scene_key = None; }
+                            Err(error) => window::error(&error),
+                        }
                     }
                     Action::FolderDefaults(value) => {
                         match value.save(&state.borrow().store) {
@@ -1155,7 +1163,26 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         };
                         PostMessageW(hwnd, WM_SYSCOMMAND, command as usize, 0);
                     },
+                    Action::Font(name) => {
+                        let result = (|| -> Result<(), String> {
+                            fonts::save(&state.borrow().store, name)?;
+                            painter = Painter::new().map_err(|e| e.to_string())?;
+                            let mut s = state.borrow_mut();
+                            for view in &s.views { rename::cancel(view.window.hwnd().cast()); }
+                            refresh_changed_views(&mut s, true);
+                            for view in &s.views { unsafe { InvalidateRect(view.window.hwnd().cast(), std::ptr::null(), 0); } }
+                            s.wake.notify();
+                            Ok(())
+                        })();
+                        if let Err(error) = result { window::error(&error); }
+                        scene_key = None;
+                    }
+                    Action::FontPage(step) => {
+                        font_offset = font_offset.saturating_add_signed(*step * 7).min(font_choices.len().saturating_sub(1) / 7 * 7);
+                        scene_key = None;
+                    }
                     Action::Page(value) => {
+                        if *value == 11 { font_choices = fonts::installed(); font_offset = 0; }
                         recording_peek = false;
                         recording_search = false;
                         diagnostics_copied = false;

@@ -264,7 +264,8 @@ fn run(
                 let Ok(_apartment) = ShellApartment::initialize_sta() else {
                     return;
                 };
-                while !commands.stop.load(std::sync::atomic::Ordering::Acquire) {
+                while !commands.stop.load(std::sync::atomic::Ordering::Acquire)
+                    && commands.active.load(std::sync::atomic::Ordering::Acquire) {
                     let next = {
                         let priority = commands.priority.lock().unwrap();
                         queue.lock().unwrap().next(&priority)

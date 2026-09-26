@@ -67,6 +67,7 @@ struct Editor {
     font: HFONT,
     composing: bool,
     finishing: bool,
+    title_target: Option<desktop_core::PanelId>,
     title_commit: Option<Box<dyn Fn(String) -> Result<(), String>>>,
     item_commit: Option<Rc<dyn Fn(&ShellIdentity, &str) -> Result<bool, String>>>,
     background: HBRUSH,
@@ -76,20 +77,26 @@ pub(super) fn show_title(
     model: Rc<RefCell<GroupModel>>,
     commit: Box<dyn Fn(String) -> Result<(), String>>,
 ) -> Result<(), String> {
-    let title = model.borrow().title.clone();
-    show_editor(
-        owner,
-        &ShellIdentity::Namespace {
-            parsing_name: String::new(),
-        },
-        &title,
-        model,
-        Some(commit),
-        None,
-    )
+    show_tab_title(owner, model, None, commit)
+}
+pub(super) fn show_tab_title(
+    owner: HWND, model: Rc<RefCell<GroupModel>>, target: Option<desktop_core::PanelId>,
+    commit: Box<dyn Fn(String) -> Result<(), String>>,
+) -> Result<(), String> {
+    let title = {
+        let m = model.borrow();
+        target.and_then(|id| m.tabs.iter().find(|(tab, _)| *tab == id).map(|(_, title)| title.clone()))
+            .unwrap_or_else(|| m.title.clone())
+    };
+    show_editor(owner, &ShellIdentity::Namespace { parsing_name: String::new() }, &title, model, Some(commit), None, target)
 }
 pub(super) fn active(owner: HWND) -> bool {
     unsafe { !GetPropW(owner, PROPERTY).is_null() }
+}
+
+pub(super) fn cancel(owner: HWND) {
+    let edit = unsafe { GetPropW(owner, PROPERTY) };
+    if !edit.is_null() { unsafe { DestroyWindow(edit); } }
 }
 
 #[cfg(test)]
@@ -99,13 +106,13 @@ pub(super) fn show(
     label: &str,
     model: Rc<RefCell<GroupModel>>,
 ) -> Result<(), String> {
-    show_editor(owner, identity, label, model, None, None)
+    show_editor(owner, identity, label, model, None, None, None)
 }
 pub(super) fn show_managed(
     owner: HWND, identity: &ShellIdentity, label: &str, model: Rc<RefCell<GroupModel>>,
     commit: Rc<dyn Fn(&ShellIdentity, &str) -> Result<bool, String>>,
 ) -> Result<(), String> {
-    show_editor(owner, identity, label, model, None, Some(commit))
+    show_editor(owner, identity, label, model, None, Some(commit), None)
 }
 fn show_editor(
     owner: HWND,
@@ -114,6 +121,7 @@ fn show_editor(
     model: Rc<RefCell<GroupModel>>,
     title_commit: Option<Box<dyn Fn(String) -> Result<(), String>>>,
     item_commit: Option<Rc<dyn Fn(&ShellIdentity, &str) -> Result<bool, String>>>,
+    title_target: Option<desktop_core::PanelId>,
 ) -> Result<(), String> {
     unsafe {
         if active(owner) {
@@ -134,9 +142,13 @@ fn show_editor(
         }
         super::assets::use_ui_font(&mut logical_font);
         let title = title_commit.is_some();
-        if title {
+        if title && model.borrow().tabs.len() > 1 {
+            // Match the 12 DIP tab label instead of the larger desktop icon font.
+            logical_font.lfHeight = -(12.0 * dpi as f32 / 96.0).round() as i32;
+            logical_font.lfWeight = 400;
+        } else if title {
             logical_font.lfHeight -= (dpi as f32 / 96.0).round() as i32;
-        } else if !model.borrow().is_list() {
+        } else if !title && !model.borrow().is_list() {
             logical_font.lfHeight = (logical_font.lfHeight as f32
                 * model.borrow().options.grid_scale / 100.0).round() as i32;
         }
@@ -184,10 +196,11 @@ fn show_editor(
             composing: false,
             finishing: false,
             title_commit,
+            title_target,
             item_commit,
             background: if title {
                 CreateSolidBrush(if model.borrow().dark {
-                    0x002c2926
+                    0x002b2b2b
                 } else {
                     0x00ffffff
                 })
@@ -248,20 +261,22 @@ unsafe fn resize(edit: HWND, pointer: *mut Editor) {
             let scale = GetDpiForWindow(editor.owner).max(96) as f32 / 96.0;
             let mut client = RECT::default();
             GetClientRect(editor.owner, &raw mut client);
-            let (title_left, title_width) = super::layout::title_area(client.right as f32 / scale);
+            let width = client.right as f32 / scale;
+            let bounds = editor.title_target.and_then(|target| super::tabs::strip(&model, width).into_iter()
+                .find(|(id, _)| *id == target).map(|(_, rect)| rect)).unwrap_or_else(|| title_bounds(&model, width));
             let mut origin = POINT {
-                x: ((title_left - 6.0) * scale).round() as i32,
-                y: (5.0 * scale).round() as i32,
+                x: (bounds.x * scale).round() as i32,
+                y: (bounds.y * scale).round() as i32,
             };
             ClientToScreen(editor.owner, &raw mut origin);
-            let width = ((title_width + 12.0) * scale).round().max(1.0) as i32;
-            let height = (28.0 * scale).round() as i32;
+            let width = (bounds.width * scale).round().max(1.0) as i32;
+            let height = (bounds.height * scale).round() as i32;
             let mut before = RECT::default();
             GetWindowRect(edit, &raw mut before);
             let size_changed =
                 before.right - before.left != width || before.bottom - before.top != height;
             if size_changed {
-                let region = title_region(width, height, scale);
+                let region = title_region(width, height, scale, model.options.corner_radius);
                 if !region.is_null() && SetWindowRgn(edit, region, 0) == 0 {
                     DeleteObject(region);
                 }
@@ -283,7 +298,7 @@ unsafe fn resize(edit: HWND, pointer: *mut Editor) {
             GetTextMetricsW(dc, &raw mut metrics);
             SelectObject(dc, old);
             ReleaseDC(edit, dc);
-            let padding = (6.0 * scale).round() as i32;
+            let padding = (if model.tabs.len() > 1 { 10.0 } else { 6.0 } * scale).round() as i32;
             let bounds = RECT {
                 left: padding,
                 top: ((height - metrics.tmHeight) / 2).max(1),
@@ -391,12 +406,26 @@ unsafe fn resize(edit: HWND, pointer: *mut Editor) {
         }
     }
 }
-fn title_corner_diameter(scale: f32) -> i32 {
-    (6.0 * scale).round().max(2.0) as i32
+fn title_bounds(model: &GroupModel, width: f32) -> desktop_core::RectDip {
+    if let Some((_, rect)) = super::tabs::strip(model, width).into_iter().find(|(id, _)| *id == model.active_tab) {
+        return rect;
+    }
+    let (left, width) = super::layout::title_area(width);
+    let inset = super::layout::HEADER_INSET;
+    desktop_core::RectDip {
+        x: left - 6.0,
+        y: inset,
+        width: width + 12.0,
+        height: super::layout::HEADER - inset * 2.0,
+    }
 }
 
-unsafe fn title_region(width: i32, height: i32, scale: f32) -> HRGN {
-    let diameter = title_corner_diameter(scale);
+fn title_corner_diameter(scale: f32, radius: f32) -> i32 {
+    (radius * 2.0 * scale).round().max(0.0) as i32
+}
+
+unsafe fn title_region(width: i32, height: i32, scale: f32, radius: f32) -> HRGN {
+    let diameter = title_corner_diameter(scale, radius);
     // The region rasterizer excludes the last right/bottom pixel that RoundRect
     // paints. Include that pixel so the focus border survives on all four sides.
     unsafe { CreateRoundRectRgn(0, 0, width + 1, height + 1, diameter, diameter) }
@@ -502,16 +531,27 @@ unsafe extern "system" fn edit_proc(
             let dc = GetDC(edit);
             let mut rect = RECT::default();
             GetClientRect(edit, &raw mut rect);
-            let pen = CreatePen(PS_SOLID, 1, 0x00e0a060);
-            let old_pen = SelectObject(dc, pen);
-            let old_brush = SelectObject(dc, GetStockObject(NULL_BRUSH));
-            let diameter = title_corner_diameter(GetDpiForWindow(edit).max(96) as f32 / 96.0);
-            RoundRect(dc, 0, 0, rect.right, rect.bottom, diameter, diameter);
-            SelectObject(dc, old_brush);
-            SelectObject(dc, old_pen);
-            DeleteObject(pen);
+            let dark = (*pointer).model.borrow().dark;
+            // Outline the actual clipped region. RoundRect and window regions
+            // rasterize corner pixels differently, leaving dark corner seams.
+            let region = CreateRectRgn(0, 0, 0, 0);
+            let client = CreateRectRgn(0, 0, rect.right, rect.bottom);
+            if GetWindowRgn(edit, region) != 0 {
+                CombineRgn(region, region, client, RGN_AND);
+                let border = CreateSolidBrush(if dark { 0x00787878 } else { 0x00909090 });
+                FrameRgn(dc, region, border, 1, 1);
+                DeleteObject(border);
+            }
+            DeleteObject(client);
+            DeleteObject(region);
             ReleaseDC(edit, dc);
             return result;
+        },
+        WM_ERASEBKGND if unsafe { (*pointer).title_commit.is_some() } => unsafe {
+            let mut rect = RECT::default();
+            GetClientRect(edit, &raw mut rect);
+            FillRect(wp as HDC, &rect, (*pointer).background);
+            return 1;
         },
         WM_IME_STARTCOMPOSITION => unsafe {
             (*pointer).composing = true;
@@ -555,6 +595,7 @@ unsafe extern "system" fn edit_proc(
                 DeleteObject(editor.font);
                 DeleteObject(editor.background);
                 InvalidateRect(editor.owner, std::ptr::null(), 0);
+                PostMessageW(editor.owner, super::window::SYNC_POINTER, 0, 0);
                 return result;
             }
         }
@@ -577,7 +618,7 @@ unsafe extern "system" fn owner_proc(
             let dark = editor.model.borrow().dark;
             unsafe {
                 SetTextColor(wp as HDC, if dark { 0x00f4f4f4 } else { 0x00202020 });
-                SetBkColor(wp as HDC, if dark { 0x002c2926 } else { 0x00ffffff });
+                SetBkColor(wp as HDC, if dark { 0x002b2b2b } else { 0x00ffffff });
             }
             return editor.background as isize;
         }
@@ -605,7 +646,7 @@ mod tests {
             for scale in [1.0, 1.25, 1.5, 2.0] {
                 let width = (200.0 * scale) as i32;
                 let height = (28.0 * scale) as i32;
-                let region = title_region(width, height, scale);
+                let region = title_region(width, height, scale, 6.0);
                 assert!(!region.is_null());
                 for (x, y) in [
                     (0, 0),
@@ -647,6 +688,8 @@ mod tests {
     fn inline_editor_tracks_label_and_escape_cleans_up_without_a_dialog() {
         let identity = identity("网易云音乐.lnk");
         let model = Rc::new(RefCell::new(GroupModel {
+            tabs: Vec::new(),
+            active_tab: desktop_core::PanelId::new(0),
             folder_sort: (0, false),
             folder_columns: None,
             folder_visible_columns: 15,
@@ -796,7 +839,7 @@ mod tests {
             let mut owner_bounds = RECT::default();
             GetClientRect(owner, &raw mut owner_bounds);
             assert!((bounds.left + bounds.right - owner_bounds.right).abs() <= 1);
-            assert_eq!(bounds.top, (5.0 * dpi).round() as i32);
+            assert_eq!(bounds.top, (super::super::layout::HEADER_INSET * dpi).round() as i32);
             let mut format = RECT::default();
             SendMessageW(edit, EM_GETRECT, 0, (&raw mut format) as isize);
             assert_eq!(format.left, (6.0 * dpi).round() as i32);
@@ -817,7 +860,7 @@ mod tests {
             };
             let before = border_colors();
             assert_eq!(
-                before, [0x00e0a060; 4],
+                before, [0x00787878; 4],
                 "all four focus borders are visible"
             );
             SendMessageW(owner, WM_PAINT, 0, 0);
@@ -837,12 +880,29 @@ mod tests {
             SendMessageW(edit, FINISH, 1, 0);
             assert_eq!(&*committed.borrow(), "工作分组");
             assert!(!active(owner));
-            show_title(
+            {
+                let mut m = model.borrow_mut();
+                m.tabs = vec![(desktop_core::PanelId::new(1), "工作".into()), (desktop_core::PanelId::new(2), "资料".into())];
+                m.active_tab = desktop_core::PanelId::new(2);
+            }
+            show_tab_title(
                 owner,
                 model.clone(),
+                Some(desktop_core::PanelId::new(1)),
                 Box::new(|_| panic!("cancel must not commit")),
             )
             .unwrap();
+            let edit = GetPropW(owner, PROPERTY);
+            assert_eq!(model.borrow().active_tab, desktop_core::PanelId::new(2));
+            let expected = super::super::tabs::strip(&model.borrow(), owner_bounds.right as f32 / dpi).into_iter()
+                .find(|(id, _)| *id == desktop_core::PanelId::new(1)).unwrap().1;
+            GetWindowRect(edit, &raw mut bounds);
+            MapWindowPoints(std::ptr::null_mut(), owner, (&raw mut bounds).cast(), 2);
+            assert_eq!(bounds.left, (expected.x * dpi).round() as i32);
+            assert_eq!(bounds.right - bounds.left, (expected.width * dpi).round() as i32);
+            SendMessageW(edit, EM_GETRECT, 0, (&raw mut format) as isize);
+            assert_eq!(format.left, (10.0 * dpi).round() as i32);
+            assert_ne!(GetWindowLongW(edit, GWL_STYLE) as u32 & ES_CENTER as u32, 0);
             SendMessageW(GetPropW(owner, PROPERTY), FINISH, 0, 0);
             assert!(!active(owner));
             show(owner, &identity, "网易云音乐", model.clone()).unwrap();

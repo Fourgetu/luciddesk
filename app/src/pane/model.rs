@@ -4,6 +4,8 @@ use super::*;
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Clone)]
 pub struct GroupModel {
+    pub tabs: Vec<(PanelId, String)>,
+    pub active_tab: PanelId,
     pub list_view: bool,
     pub folder_sort: (u8, bool),
     pub folder_columns: Option<[f32; 4]>,
@@ -39,18 +41,25 @@ pub struct GroupModel {
 }
 
 impl GroupModel {
+    pub(super) fn content_header(&self) -> f32 { layout::HEADER }
+    pub(super) fn header_button_x(&self, width: f32, button: usize) -> f32 {
+        if self.tabs.len() > 1 && button >= 2 {
+            width - 70.0 + (button - 2) as f32 * 32.0
+        } else { layout::header_button_x(width, button) }
+    }
     pub(super) fn header_button_enabled(&self, button: usize) -> bool {
         match button {
+            0 | 1 if self.tabs.len() > 1 => false,
             2 | 3 => self.folder.is_some() && self.folder_navigation[button - 2],
             _ => true,
         }
     }
 
     pub(super) fn header_button(&self, width: f32, x: f32, y: f32) -> Option<usize> {
-        layout::header_button(width, x, y).or_else(|| {
-            if self.folder.is_none() || !(5.0..33.0).contains(&y) { return None; }
+        layout::header_button(width, x, y).filter(|_| self.tabs.len() < 2).or_else(|| {
+            if self.folder.is_none() || !(layout::HEADER_INSET..layout::HEADER - layout::HEADER_INSET).contains(&y) { return None; }
             (2..4).find(|&button| {
-                let left = layout::header_button_x(width, button);
+                let left = self.header_button_x(width, button);
                 (left..left + 28.0).contains(&x)
             })
         })
@@ -192,7 +201,7 @@ impl GroupModel {
         let mut grid = self.icon_grid(width, height);
         if !self.items.is_empty() {
             let count = self.items.len().div_ceil(grid.columns);
-            let available = height - layout::HEADER - layout::PADDING;
+            let available = height - self.content_header() - layout::PADDING;
             // Positive row heights mean only a viewport-sized suffix can fit at
             // the end; measuring earlier labels cannot affect the scroll limit.
             let candidates = (available.max(0.0) / grid.cell_height).ceil() as usize + 2;

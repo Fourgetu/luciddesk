@@ -4,8 +4,11 @@
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss
 )]
+mod fonts;
+mod header_divider;
 mod acrylic;
 mod animation;
+mod visibility;
 mod assets;
 mod canvas;
 mod columns;
@@ -27,6 +30,9 @@ mod render;
 #[cfg(test)]
 mod render_bench;
 mod runtime;
+mod auto_hide;
+mod tabs;
+mod scaled_icons;
 mod scrollbar;
 mod search;
 mod settings;
@@ -91,6 +97,7 @@ use model::GroupModel;
 
 struct View {
     id: PanelId,
+    target: Rc<std::cell::Cell<PanelId>>,
     window: windows_window::Window,
     model: Rc<RefCell<GroupModel>>,
 }
@@ -98,6 +105,7 @@ struct View {
 struct PaneApp {
     wake: wake::Wake,
     folders: HashMap<PanelId, folder::Source>,
+    tab_models: HashMap<PanelId, GroupModel>,
     settings: Option<windows_window::Window>,
     // Desktop membership is suspended while Explorer/its compatible Hook is unavailable.
     session: Option<hybrid::Session>,
@@ -117,6 +125,14 @@ struct Loaded {
 
 #[derive(Clone)]
 enum Event {
+    NewTab(bool),
+    SelectTab(PanelId),
+    CloseTab,
+    CloseTabId(PanelId),
+    MoveTab(i8),
+    MoveTabId(PanelId, i8),
+    RenameTab(PanelId),
+    ToggleHeaderDivider,
     PaneItemFocus,
     BeginItemMenu(Rc<RefCell<Option<Result<Rc<desktop_hook::filter::FilterSession>, String>>>>),
     EndItemMenu,
@@ -162,7 +178,6 @@ enum Event {
     SortFolder(u8),
     SetFolderColumns([f32; 4]),
     ToggleFolderColumn(u8),
-    NavigateFolder(std::path::PathBuf),
     FolderBack,
     FolderHome,
     Activate(usize),
@@ -216,21 +231,20 @@ fn items_for(state: &PaneApp, id: PanelId) -> Vec<Item> {
         .collect()
 }
 
-fn create_view(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> {
-    folder::ensure(&mut state.borrow_mut(), id)?;
-    let (panel, items) = {
-        let s = state.borrow();
-        (s.workspace.panel(id).unwrap().clone(), items_for(&s, id))
-    };
-    let model = Rc::new(RefCell::new(GroupModel {
+fn create_model(state: &PaneApp, id: PanelId) -> Result<GroupModel, String> {
+    let panel = state.workspace.panel(id).ok_or("标签已关闭")?;
+    let items = items_for(state, id);
+    Ok(GroupModel {
+        tabs: Vec::new(),
+        active_tab: id,
         folder_sort: (0, false),
-        folder_columns: folder::saved_columns(&state.borrow().store, id)?,
-        folder_visible_columns: folder::visible_columns(&state.borrow().store, id)?,
+        folder_columns: folder::saved_columns(&state.store, id)?,
+        folder_visible_columns: folder::visible_columns(&state.store, id)?,
         folder_navigation: [false; 2],
         list_view: panel.list_view(),
         folder: panel.folder().map(Path::to_path_buf),
         folder_status: None,
-        options: state.borrow().workspace.pane_options(),
+        options: state.workspace.pane_options(),
         theme: panel.theme(),
         dark: theme::is_dark(panel.theme()),
 
@@ -256,20 +270,44 @@ fn create_view(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> 
         // Desktop membership is available before creating the view. Only folder
         // sources have an asynchronous inventory to wait for; icons load separately.
         loading: panel.folder().is_some(),
-    }));
+    })
+}
+
+fn create_view(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> {
+    if !state.borrow().workspace.tab_visible(id) { return Ok(()); }
+    folder::ensure(&mut state.borrow_mut(), id)?;
+    let panel = state.borrow().workspace.panel(id).unwrap().clone();
+    let mut initial = create_model(&state.borrow(), id)?;
+    tabs::decorate(&state.borrow().workspace, id, &mut initial);
+    let model = Rc::new(RefCell::new(initial));
+    let target = Rc::new(std::cell::Cell::new(id));
+    let event_target = target.clone();
     let weak = Rc::downgrade(state);
     let callback = move |event| {
         let Some(state) = weak.upgrade() else {
             return false;
         };
+        if matches!(event, Event::ClosePane) {
+            let hwnd = state.borrow().views.iter().find(|v| v.id == event_target.get())
+                .map(|v| v.window.hwnd().cast());
+            if hwnd.is_some_and(visibility::request_close) { return false; }
+        }
+        let closing = matches!(event, Event::ClosePane);
         let wake_needed = !matches!(&event, Event::Moving(_) | Event::Sizing(..));
-        let result = handle(&state, id, event);
+        let result = handle(&state, event_target.get(), event);
         if wake_needed {
             state.borrow().wake.notify();
         }
         match result {
             Ok(done) => done,
             Err(error) => {
+                if closing {
+                    let hwnd = state.borrow().views.iter().find(|v| v.id == event_target.get())
+                        .map(|v| v.window.hwnd().cast());
+                    if let Some(hwnd) = hwnd {
+                        unsafe { windows_sys::Win32::UI::WindowsAndMessaging::SendMessageW(hwnd, visibility::RESTORE, 0, 0); }
+                    }
+                }
                 eprintln!("{error}");
                 window::error(&error);
                 false
@@ -282,7 +320,8 @@ fn create_view(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> 
         window::create(panel.rect(), Rc::clone(&model), callback)?
     };
     window::set_layer(window.hwnd().cast(), panel.always_on_top());
-    state.borrow_mut().views.push(View { id, window, model });
+    state.borrow().wake.watch_window(window.hwnd() as isize)?;
+    state.borrow_mut().views.push(View { id, target, window, model });
     display_layout::place(&state.borrow(), id);
     if state.borrow().session.is_some() || panel.folder().is_some() {
         hybrid::register_drop(state, id)?;
@@ -299,8 +338,8 @@ fn refresh_changed_views(state: &mut PaneApp, force: bool) {
         if state.workspace.panel(view.id).is_some_and(Panel::is_search) {
             continue;
         }
-        let items = items_for(state, view.id);
         let mut model = view.model.borrow_mut();
+        tabs::decorate(&state.workspace, view.id, &mut model);
         if model.folder.is_some() {
             model.folder_sort = state
                 .folders
@@ -330,9 +369,20 @@ fn refresh_changed_views(state: &mut PaneApp, force: bool) {
                 }
             }
         }
-        if !force && same_items(&model.items, &items) && !model.loading {
-            continue;
-        }
+        let items = if let Some(source) = state.folders.get(&view.id) {
+            // Compare the borrowed snapshot before cloning all names, metadata
+            // and pixel Arcs when another pane triggered this refresh.
+            if !force && same_items(&model.items, &source.items) && !model.loading {
+                continue;
+            }
+            source.items.clone()
+        } else {
+            let items = items_for(state, view.id);
+            if !force && same_items(&model.items, &items) && !model.loading {
+                continue;
+            }
+            items
+        };
         model.replace_items(items);
         model.hovered_item = None;
         let hwnd = view.window.hwnd().cast();
@@ -359,6 +409,7 @@ fn refresh_changed_views(state: &mut PaneApp, force: bool) {
 }
 
 fn save(state: &mut PaneApp) -> Result<(), String> {
+    state.workspace.sync_tab_windows();
     hybrid::sync(state)?;
     state
         .store

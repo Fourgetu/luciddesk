@@ -9,6 +9,19 @@ use windows_canvas as c;
 
 /// Canvas does not expose ellipsis trimming; keep this native operation at the boundary.
 pub fn ellipsis(format: &c::TextFormat) -> Result<()> {
+    ellipsis_delimiter(format, 0)
+}
+
+/// Center the visible glyphs, rather than the font's asymmetric line box.
+pub fn text_ink_center_offset(layout: &c::TextLayout) -> Result<f32> {
+    use windows::Win32::Graphics::DirectWrite::IDWriteTextLayout;
+    let native: IDWriteTextLayout = native_interface(layout.raw())?;
+    let ink = unsafe { native.GetOverhangMetrics()? };
+    Ok((ink.top - ink.bottom) * 0.5)
+}
+
+/// Preserve the final path component or extension when trimming long labels.
+pub fn ellipsis_delimiter(format: &c::TextFormat, delimiter: u32) -> Result<()> {
     use windows::Win32::Graphics::DirectWrite::*;
     unsafe {
         let native: IDWriteTextFormat = native_interface(format.raw())?;
@@ -17,6 +30,8 @@ pub fn ellipsis(format: &c::TextFormat) -> Result<()> {
         native.SetTrimming(
             &DWRITE_TRIMMING {
                 granularity: DWRITE_TRIMMING_GRANULARITY_CHARACTER,
+                delimiter,
+                delimiterCount: u32::from(delimiter != 0),
                 ..Default::default()
             },
             &sign,

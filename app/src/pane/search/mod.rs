@@ -1,12 +1,15 @@
 //! Compact search pane using the same composition backdrop as icon panes.
 #![allow(clippy::wildcard_imports, clippy::too_many_lines)]
+mod drawing;
+mod tooltip;
+use drawing::Drawing;
 mod everything;
 pub(super) mod everything_settings;
 pub(super) mod hotkey;
 
 use super::{Event, GroupModel};
-use everything::{Entry, Page};
 use desktop_core::{RectDip, ShellIdentity};
+use everything::{Entry, Page};
 use std::{
     cell::RefCell,
     collections::BTreeSet,
@@ -40,6 +43,8 @@ pub(super) const CLEAR_SELECTION: u32 = WM_APP + 118;
 const POLL: usize = 38;
 const TOP: f32 = 56.0;
 const ROW: f32 = 48.0;
+const FOOTER: f32 = 32.0;
+const ROW_INSET: f32 = 4.0;
 const VISIBLE: usize = 8;
 const EDIT_PROPERTY: windows_sys::core::PCWSTR = windows_sys::w!("LucidPane.SearchInput");
 #[cfg(test)]
@@ -91,6 +96,10 @@ struct Search {
     scroll: usize,
     visible_rows: usize,
     status: Option<String>,
+    replacing: bool,
+    preserve_selection: bool,
+    failed: bool,
+    hovered: Option<usize>,
 }
 impl Search {
     fn new() -> Self {
@@ -126,18 +135,30 @@ impl Search {
             scroll: 0,
             visible_rows: VISIBLE,
             status: None,
+            replacing: false,
+            preserve_selection: false,
+            failed: false,
+            hovered: None,
         }
     }
     fn change(&mut self, value: String) {
         self.wake.notify();
         self.generation += 1;
+        self.preserve_selection = value.trim() == self.query;
         self.query = value.trim().into();
-        self.entries = Vec::new();
-        self.selection.clear();
-        self.focused = None;
-        self.anchor = None;
-        self.scroll = 0;
-        self.total = 0;
+        if !self.preserve_selection || self.query.is_empty() {
+            self.selection.clear();
+            self.focused = None;
+            self.anchor = None;
+            self.scroll = 0;
+        }
+        if self.query.is_empty() {
+            self.entries = Vec::new();
+            self.total = 0;
+        }
+        self.hovered = None;
+        self.failed = false;
+        self.replacing = !self.query.is_empty();
         self.busy = !self.query.is_empty();
         self.status = self.busy.then(|| "正在搜索…".into());
         self.due = self
@@ -154,8 +175,10 @@ impl Search {
             })
             .is_err()
         {
-            self.busy = false;
-            self.status = Some("搜索线程已停止，请重新打开面板。".into());
+            self.accept(
+                self.generation,
+                Err("搜索线程已停止，请重新打开面板。".into()),
+            );
         } else {
             self.busy = true;
         }
@@ -169,9 +192,45 @@ impl Search {
             Ok(page) => {
                 self.total = page.total;
                 if page.offset == 0 {
+                    let selected: BTreeSet<_> = if self.preserve_selection {
+                        self.selection
+                            .iter()
+                            .filter_map(|i| self.entries.get(*i))
+                            .map(|e| e.path.clone())
+                            .collect()
+                    } else {
+                        BTreeSet::new()
+                    };
+                    let focused = self
+                        .focused
+                        .and_then(|i| self.entries.get(i))
+                        .map(|e| e.path.clone());
                     self.entries = page.entries;
+                    self.selection = self
+                        .entries
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, e)| selected.contains(&e.path))
+                        .map(|(i, _)| i)
+                        .collect();
+                    self.focused =
+                        focused.and_then(|path| self.entries.iter().position(|e| e.path == path));
+                    self.anchor = self.focused;
                 } else {
                     self.entries.extend(page.entries);
+                }
+                self.replacing = false;
+                self.failed = false;
+                self.hovered = None;
+                self.scroll = self
+                    .scroll
+                    .min(self.entries.len().saturating_sub(self.visible_rows));
+                if let Some(index) = self.focused {
+                    if index < self.scroll {
+                        self.scroll = index;
+                    } else if index >= self.scroll + self.visible_rows {
+                        self.scroll = index + 1 - self.visible_rows;
+                    }
                 }
                 self.status = if self.entries.is_empty() {
                     Some("没有找到匹配的文件".into())
@@ -179,7 +238,18 @@ impl Search {
                     None
                 };
             }
-            Err(error) => self.status = Some(error),
+            Err(error) => {
+                self.failed = true;
+                if self.replacing {
+                    self.entries = Vec::new();
+                    self.selection.clear();
+                    self.focused = None;
+                    self.anchor = None;
+                    self.total = 0;
+                }
+                self.replacing = false;
+                self.status = Some(error);
+            }
         }
         true
     }
@@ -208,9 +278,9 @@ impl Search {
         if self.query.is_empty() {
             TOP
         } else if self.entries.is_empty() {
-            TOP + 64.0
+            TOP + 96.0
         } else {
-            TOP + ROW * self.entries.len().min(self.visible_rows) as f32 + 12.0
+            TOP + ROW_INSET + ROW * self.entries.len().min(self.visible_rows) as f32 + FOOTER
         }
     }
     fn select(&mut self, index: usize, ctrl: bool, shift: bool) {
@@ -242,6 +312,9 @@ impl Search {
         }
     }
     fn selected(&self) -> Vec<ShellIdentity> {
+        if self.replacing {
+            return Vec::new();
+        }
         self.selection
             .iter()
             .filter_map(|i| self.entries.get(*i))
@@ -255,6 +328,41 @@ impl Search {
             self.selection = selected;
         }
     }
+
+    fn row_at(&self, y: f32) -> Option<usize> {
+        let y = y - TOP - ROW_INSET;
+        if self.replacing || y < 0.0 || y >= ROW * self.entries.len().min(self.visible_rows) as f32
+        {
+            return None;
+        }
+        Some(self.scroll + (y / ROW) as usize).filter(|i| *i < self.entries.len())
+    }
+
+    fn footer(&self) -> String {
+        if self.busy {
+            return if self.replacing {
+                "正在搜索…"
+            } else {
+                "正在加载更多…"
+            }
+            .into();
+        }
+        if self.failed {
+            return "加载失败 · 点击重试".into();
+        }
+        if self.selection.is_empty() {
+            format!("{} 个结果", self.total)
+        } else {
+            format!("{} 个结果 · 已选 {} 项", self.total, self.selection.len())
+        }
+    }
+}
+fn client_width(hwnd: HWND) -> f32 {
+    let mut bounds = RECT::default();
+    unsafe {
+        GetClientRect(hwnd, &raw mut bounds);
+    }
+    bounds.right as f32 / scale(hwnd)
 }
 
 // A color-keyed EDIT exposes the pane backdrop while retaining native IME,
@@ -262,9 +370,11 @@ impl Search {
 struct Editor {
     hwnd: HWND,
     font: HFONT,
+    font_family: String,
     dark: bool,
     dpi: u32,
     line_height: i32,
+    alpha: u8,
 }
 impl Editor {
     fn new(owner: HWND) -> Result<Self, String> {
@@ -296,16 +406,20 @@ impl Editor {
         Ok(Self {
             hwnd,
             font: std::ptr::null_mut(),
+            font_family: String::new(),
             dark: false,
             dpi: 0,
             line_height: 24,
+            alpha: 255,
         })
     }
     fn appearance(&mut self, owner: HWND, dark: bool) {
         let dpi = unsafe { GetDpiForWindow(owner) }.max(96);
-        if self.dpi == dpi && self.dark == dark {
+        let family = crate::pane::fonts::family();
+        if self.dpi == dpi && self.dark == dark && self.font_family == family {
             return;
         }
+        let face: Vec<u16> = family.encode_utf16().chain([0]).collect();
         let font = unsafe {
             CreateFontW(
                 -((14 * dpi / 96) as i32),
@@ -321,7 +435,7 @@ impl Editor {
                 0,
                 ANTIALIASED_QUALITY as u32,
                 0,
-                windows_sys::w!("Microsoft YaHei UI"),
+                face.as_ptr(),
             )
         };
         if !font.is_null() {
@@ -330,10 +444,11 @@ impl Editor {
                 DeleteObject(self.font);
             }
             self.font = font;
+            self.font_family = family;
         }
         unsafe {
             let background = if dark { 0x202020 } else { 0xf5f5f5 };
-            SetLayeredWindowAttributes(self.hwnd, background, 255, LWA_COLORKEY);
+            SetLayeredWindowAttributes(self.hwnd, background, self.alpha, LWA_COLORKEY | LWA_ALPHA);
         }
         self.dark = dark;
         self.dpi = dpi;
@@ -349,6 +464,13 @@ impl Editor {
         }
         self.position(owner);
         invalidate(self.hwnd);
+    }
+    fn opacity(&mut self, opacity: f32) {
+        self.alpha = (opacity.clamp(0.0, 1.0) * 255.0).round() as u8;
+        unsafe {
+            SetLayeredWindowAttributes(self.hwnd, if self.dark { 0x202020 } else { 0xf5f5f5 },
+                self.alpha, LWA_COLORKEY | LWA_ALPHA);
+        }
     }
     fn position(&self, owner: HWND) {
         position_editor(owner, self.hwnd, self.line_height);
@@ -366,7 +488,7 @@ fn position_editor(owner: HWND, editor: HWND, line_height: i32) {
         ClientToScreen(owner, &raw mut p);
         let mut before = RECT::default();
         GetWindowRect(editor, &raw mut before);
-        let width = (r.right - (62.0 * s) as i32).max(1);
+        let width = (r.right - (90.0 * s) as i32).max(1);
         let height = line_height;
         if before.left != p.x
             || before.top != p.y
@@ -442,6 +564,9 @@ unsafe extern "system" fn input_proc(
     _: usize,
 ) -> LRESULT {
     let owner = unsafe { GetParent(hwnd) };
+    if matches!(msg, WM_SETFOCUS | WM_KILLFOCUS) {
+        invalidate(owner);
+    }
     if msg == WM_MOUSEACTIVATE && unsafe { GetFocus() } == hwnd {
         return MA_NOACTIVATE as isize;
     }
@@ -520,200 +645,22 @@ unsafe extern "system" fn input_proc(
     result
 }
 
-struct Drawing {
-    surface: super::composition::Surface,
-    name: windows_canvas::TextFormat,
-    path: windows_canvas::TextFormat,
-    icon: windows_canvas::TextFormat,
-    placeholder: windows_canvas::TextFormat,
-}
-impl Drawing {
-    fn new(hwnd: HWND) -> Result<Self, String> {
-        use windows_canvas::{ParagraphAlignment, TextFormat, WordWrapping};
-        let name = TextFormat::new("Microsoft YaHei UI", 13.0)
-            .map_err(|e| e.to_string())?
-            .with_paragraph_alignment(ParagraphAlignment::Center)
-            .with_word_wrapping(WordWrapping::NoWrap);
-        let path = TextFormat::new("Microsoft YaHei UI", 11.0)
-            .map_err(|e| e.to_string())?
-            .with_paragraph_alignment(ParagraphAlignment::Center)
-            .with_word_wrapping(WordWrapping::NoWrap);
-        super::canvas::ellipsis(&name).map_err(|e| e.to_string())?;
-        super::canvas::ellipsis(&path).map_err(|e| e.to_string())?;
-        Ok(Self {
-            surface: super::composition::Surface::new_pane(windows::Win32::Foundation::HWND(hwnd))
-                .map_err(|e| e.to_string())?,
-            name,
-            path,
-            placeholder: TextFormat::new("Microsoft YaHei UI", 14.0)
-                .map_err(|e| e.to_string())?
-                .with_paragraph_alignment(ParagraphAlignment::Center)
-                .with_word_wrapping(WordWrapping::NoWrap),
-            icon: TextFormat::new("Segoe Fluent Icons", 20.0)
-                .map_err(|e| e.to_string())?
-                .with_alignment(windows_canvas::TextAlignment::Center)
-                .with_paragraph_alignment(ParagraphAlignment::Center)
-                .with_word_wrapping(WordWrapping::NoWrap),
-        })
-    }
-    fn paint(&mut self, hwnd: HWND, model: &GroupModel, state: &Search) -> Result<(), String> {
-        use super::native_graphics::canvas_result;
-        use windows_canvas::{ColorF, Rect, RoundedRect};
-        let s = scale(hwnd);
-        let mut r = RECT::default();
-        unsafe {
-            GetClientRect(hwnd, &raw mut r);
-        }
-        self.surface
-            .theme(windows::Win32::Foundation::HWND(hwnd), model.dark);
-        self.surface
-            .material(windows::Win32::Foundation::HWND(hwnd), model.backdrop);
-        self.surface.pane_corner_radius = model.options.corner_radius;
-        let Some(target) = self
-            .surface
-            .try_begin_frame(r.right.max(1) as u32, r.bottom.max(1) as u32)
-            .map_err(|e| e.to_string())?
-        else {
-            return Ok(());
-        };
-        let native = self.surface.native;
-        let w = r.right as f32 / s;
-        let h = r.bottom as f32 / s;
-        super::canvas::draw(&target, s, |target| {
-            target.clear(ColorF::new(0.0, 0.0, 0.0, 0.0));
-            let contrast = super::theme::panel_contrast(
-                model.backdrop,
-                model.dark,
-                model.options.text,
-                native,
-            );
-            let ink = contrast.ink();
-            let base = contrast.base();
-            let background = canvas_result(target.create_solid_brush(ColorF::new(
-                base,
-                base,
-                base,
-                if !native {
-                    1.0
-                } else if model.options.text_protection {
-                    contrast.scrim
-                } else {
-                    0.0
-                },
-            )))?;
-            let text = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 1.0)))?;
-            let dim = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.85)))?;
-            let line = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.16)))?;
-            let outline = canvas_result(
-                target.create_solid_brush(super::theme::panel_border(model.dark, model.backdrop)),
-            )?;
-            let selected =
-                canvas_result(target.create_solid_brush(ColorF::new(0.75, 0.8, 0.85, 0.17)))?;
-            let shape = RoundedRect {
-                rect: Rect::from_xywh(0.5, 0.5, w - 1.0, h - 1.0),
-                radius_x: model.options.corner_radius,
-                radius_y: model.options.corner_radius,
-            };
-            target.fill_rounded_rect(&shape, &background);
-            if model.options.border {
-                target.draw_rounded_rect(&shape, &outline, 1.0);
-            }
-            target.clipped_text(
-                "\u{e721}",
-                &self.icon,
-                &Rect::from_xywh(12.0, 0.0, 28.0, TOP),
-                &dim,
-            );
-            if unsafe { GetWindowTextLengthW(edit(hwnd)) } == 0 {
-                target.clipped_text(
-                    "搜索文件…",
-                    &self.placeholder,
-                    &Rect::from_xywh(44.0, 0.0, (w - 62.0).max(0.0), TOP),
-                    &dim,
-                );
-            }
-            if !state.query.is_empty() {
-                target.fill_rect(&Rect::from_xywh(12.0, TOP, w - 24.0, 1.0), &line);
-                if state.entries.is_empty() {
-                    target.clipped_text(
-                        state.status.as_deref().unwrap_or("正在搜索…"),
-                        &self.path,
-                        &Rect::from_xywh(18.0, TOP + 6.0, w - 36.0, 52.0),
-                        &dim,
-                    );
-                }
-                for (row, entry) in state
-                    .entries
-                    .iter()
-                    .enumerate()
-                    .skip(state.scroll)
-                    .take(state.visible_rows)
-                {
-                    let y = TOP + (row - state.scroll) as f32 * ROW + 4.0;
-                    if state.selection.contains(&row) {
-                        target.fill_rounded_rect(
-                            &RoundedRect {
-                                rect: Rect::from_xywh(6.0, y, w - 12.0, ROW - 2.0),
-                                radius_x: 4.0,
-                                radius_y: 4.0,
-                            },
-                            &selected,
-                        );
-                    }
-                    let name = entry
-                        .path
-                        .file_name()
-                        .unwrap_or(entry.path.as_os_str())
-                        .to_string_lossy();
-                    let parent = entry.path.parent().unwrap_or(&entry.path).to_string_lossy();
-                    let path = parent;
-                    target.clipped_text(
-                        if entry.folder { "\u{e8b7}" } else { "\u{e8a5}" },
-                        &self.icon,
-                        &Rect::from_xywh(16.0, y, 20.0, ROW - 2.0),
-                        &dim,
-                    );
-                    target.clipped_text(
-                        &name,
-                        &self.name,
-                        &Rect::from_xywh(46.0, y + 2.0, (w - 64.0).max(0.0), 22.0),
-                        &text,
-                    );
-                    target.clipped_text(
-                        &path,
-                        &self.path,
-                        &Rect::from_xywh(46.0, y + 24.0, (w - 64.0).max(0.0), 18.0),
-                        &dim,
-                    );
-                }
-                if state.entries.len() > state.visible_rows {
-                    let track = h - TOP - 10.0;
-                    let thumb =
-                        (track * state.visible_rows as f32 / state.entries.len() as f32).max(12.0);
-                    let y = TOP
-                        + 5.0
-                        + (track - thumb) * state.scroll as f32
-                            / (state.entries.len() - state.visible_rows) as f32;
-                    target.fill_rounded_rect(
-                        &RoundedRect {
-                            rect: Rect::from_xywh(w - 5.0, y, 2.0, thumb),
-                            radius_x: 1.0,
-                            radius_y: 1.0,
-                        },
-                        &dim,
-                    );
-                }
-            }
-            target.finish()
-        })
-        .map_err(|e| e.to_string())?;
-        Ok(())
-    }
-}
-
 fn fit_search(work: RECT, current: RECT, scale: f32, state: &mut Search) -> RECT {
     let previous_rows = state.visible_rows;
-    state.visible_rows = (((work.bottom - work.top) as f32 / scale - TOP - 12.0) / ROW)
+    // Keep the input anchored while results expand. Move only when even one
+    // result (or the empty/error state) cannot fit below the input.
+    let minimum = if state.query.is_empty() {
+        TOP
+    } else if state.entries.is_empty() {
+        TOP + 96.0
+    } else {
+        TOP + ROW_INSET + ROW + FOOTER
+    };
+    let anchor = current.top.clamp(
+        work.top,
+        (work.bottom - (minimum * scale).ceil() as i32).max(work.top),
+    );
+    state.visible_rows = (((work.bottom - anchor) as f32 / scale - TOP - ROW_INSET - FOOTER) / ROW)
         .floor()
         .clamp(1.0, VISIBLE as f32) as usize;
     state.scroll = state
@@ -739,9 +686,7 @@ fn fit_search(work: RECT, current: RECT, scale: f32, state: &mut Search) -> RECT
     let left = current
         .left
         .clamp(work.left, (work.right - width).max(work.left));
-    let top = current
-        .top
-        .clamp(work.top, (work.bottom - height).max(work.top));
+    let top = anchor.clamp(work.top, (work.bottom - height).max(work.top));
     RECT {
         left,
         top,
@@ -821,26 +766,42 @@ pub(super) fn create(
     let editor: Rc<RefCell<Option<Editor>>> = Rc::new(RefCell::new(None));
     let input = Rc::clone(&editor);
     let mut drawing: Option<Drawing> = None;
+    let mut visibility = super::visibility::Transition::default();
     let mut state = Search::new();
     let wake = state.wake.clone();
     let mut last_click: Option<(usize, Instant)> = None;
     let mut move_origin: Option<super::snap::DragOrigin> = None;
+    let mut tooltip: Option<tooltip::Tooltip> = None;
+    let mut error_tip = false;
+    let prepared = Rc::new(std::cell::Cell::new(false));
+    let show_prepared = Rc::clone(&prepared);
     let window = windows_window::Window::new("Everything 搜索")
         .style(WS_POPUP | WS_THICKFRAME)
         .ex_style(WS_EX_TOOLWINDOW | WS_EX_NOREDIRECTIONBITMAP)
         .size(rect.width.max(1.0) as i32, TOP as i32)
         .on_message(move |raw, msg, wp, lp| {
+            if unsafe { crate::window_visibility::defer_show(msg, lp, show_prepared.get()) } {
+                return Some(0);
+            }
             let hwnd = raw.cast();
+            #[cfg(test)]
+            if msg == WM_APP + 199 {
+                return Some(drawing.as_ref().map_or(-1, |d| (d.surface.current_opacity() * 1000.0) as isize));
+            }
+            if visibility.message(hwnd, msg, wp, lp, drawing.as_ref().map(|d| &d.surface), |opacity| {
+                if let Some(editor) = input.borrow_mut().as_mut() { editor.opacity(opacity); }
+            }) { return Some(0); }
             match msg {
                 WM_NCCALCSIZE | WM_ERASEBKGND => return Some(0),
                 WM_DESTROY => {
+                    tooltip = None;
                     state.wake.unbind();
                     unsafe {
                         KillTimer(hwnd, POLL);
                     }
                     return Some(0);
                 }
-                WM_CLOSE => {
+                WM_CLOSE | super::visibility::CLOSED => {
                     let event = Rc::clone(&callback);
                     super::window::defer_action(move || {
                         (event.borrow_mut())(Event::ClosePane);
@@ -868,7 +829,9 @@ pub(super) fn create(
                         ScreenToClient(hwnd, &raw mut point);
                         SetCursor(LoadCursorW(
                             std::ptr::null_mut(),
-                            if point.y as f32 / scale(hwnd) < TOP {
+                            if point.y as f32 / scale(hwnd) < TOP
+                                && point.x as f32 / scale(hwnd) < client_width(hwnd) - 44.0
+                            {
                                 IDC_IBEAM
                             } else {
                                 IDC_ARROW
@@ -990,6 +953,10 @@ pub(super) fn create(
                     let value = text(edit(hwnd));
                     invalidate(hwnd);
                     if value.trim() != state.query {
+                        if let Some(tip) = &mut tooltip {
+                            tip.hide();
+                        }
+                        last_click = None;
                         state.change(value);
                         resize(hwnd, &mut state);
                     }
@@ -1007,6 +974,9 @@ pub(super) fn create(
                         KillTimer(hwnd, POLL);
                     }
                     if state.tick() {
+                        if let Some(tip) = &mut tooltip {
+                            tip.hide();
+                        }
                         resize(hwnd, &mut state);
                     }
                     if let Some(due) = state.due {
@@ -1035,6 +1005,10 @@ pub(super) fn create(
                     return Some(0);
                 }
                 WM_MOUSEWHEEL => {
+                    state.hovered = None;
+                    if let Some(tip) = &mut tooltip {
+                        tip.hide();
+                    }
                     let delta = (wp >> 16) as u16 as i16;
                     if delta > 0 {
                         state.scroll = state.scroll.saturating_sub(3);
@@ -1048,23 +1022,65 @@ pub(super) fn create(
                 }
                 WM_RBUTTONDOWN => {
                     let y = (lp >> 16) as u16 as i16 as f32 / scale(hwnd);
-                    if y >= TOP {
-                        let row = state.scroll + ((y - TOP) / ROW) as usize;
-                        if row < state.entries.len() {
-                            unsafe {
-                                SetFocus(hwnd);
-                            }
-                            if !state.selection.contains(&row) {
-                                state.select(row, false, false);
-                            }
-                            (callback.borrow_mut())(Event::PaneItemFocus);
-                            invalidate(hwnd);
+                    if let Some(row) = state.row_at(y) {
+                        unsafe {
+                            SetFocus(hwnd);
                         }
+                        if !state.selection.contains(&row) {
+                            state.select(row, false, false);
+                        }
+                        (callback.borrow_mut())(Event::PaneItemFocus);
+                        invalidate(hwnd);
                     }
                     return Some(0);
                 }
                 WM_LBUTTONDOWN | WM_LBUTTONDBLCLK => {
                     let y = (lp >> 16) as u16 as i16 as f32 / scale(hwnd);
+                    let x = lp as u16 as i16 as f32 / scale(hwnd);
+                    let width = client_width(hwnd);
+                    if y < TOP
+                        && x >= width - 44.0
+                        && x < width - 8.0
+                        && unsafe { GetWindowTextLengthW(edit(hwnd)) } > 0
+                    {
+                        unsafe {
+                            SetWindowTextW(edit(hwnd), windows_sys::w!(""));
+                            SetFocus(edit(hwnd));
+                        }
+                        return Some(0);
+                    }
+                    if state.failed
+                        && ((!state.entries.is_empty() && y >= state.height() - FOOTER)
+                            || (state.entries.is_empty()
+                                && (TOP + 60.0..TOP + 88.0).contains(&y)
+                                && (18.0..102.0).contains(&x)))
+                    {
+                        unsafe {
+                            PostMessageW(hwnd, WM_COMMAND, REFRESH, 0);
+                        }
+                        return Some(0);
+                    }
+                    if state.failed
+                        && state.entries.is_empty()
+                        && (TOP + 60.0..TOP + 88.0).contains(&y)
+                        && x >= (width - 146.0).max(112.0)
+                        && x < width - 18.0
+                    {
+                        let owner = hwnd as isize;
+                        super::window::defer_action(move || {
+                            if unsafe { IsWindow(owner as _) } == 0 {
+                                return;
+                            }
+                            if let Err(error) = everything_settings::launch() {
+                                super::window::error(&error);
+                            } else {
+                                unsafe {
+                                    PostMessageW(owner as _, WM_COMMAND, REFRESH, 0);
+                                }
+                            }
+                        });
+                        return Some(0);
+                    }
                     if y < TOP {
                         let editor = edit(hwnd);
                         let mut point = POINT {
@@ -1080,31 +1096,28 @@ pub(super) fn create(
                                 (point.x as u16 as usize) | ((point.y as u16 as usize) << 16);
                             SendMessageW(editor, msg, wp, position as isize);
                         }
-                    } else {
-                        let row = state.scroll + ((y - TOP) / ROW) as usize;
-                        if row < state.entries.len() {
-                            unsafe {
-                                SetFocus(hwnd);
-                            }
-                            let ctrl = unsafe { GetKeyState(VK_CONTROL as i32) } < 0;
-                            let shift = unsafe { GetKeyState(VK_SHIFT as i32) } < 0;
-                            state.select(row, ctrl, shift);
-                            (callback.borrow_mut())(Event::PaneItemFocus);
-                            if !ctrl
-                                && !shift
-                                && last_click.is_some_and(|(old, time)| {
-                                    old == row
-                                        && time.elapsed()
-                                            < Duration::from_millis(u64::from(unsafe {
-                                                GetDoubleClickTime()
-                                            }))
-                                })
-                            {
-                                action(hwnd, OPEN, state.selected());
-                                last_click = None;
-                            } else {
-                                last_click = Some((row, Instant::now()));
-                            }
+                    } else if let Some(row) = state.row_at(y) {
+                        unsafe {
+                            SetFocus(hwnd);
+                        }
+                        let ctrl = unsafe { GetKeyState(VK_CONTROL as i32) } < 0;
+                        let shift = unsafe { GetKeyState(VK_SHIFT as i32) } < 0;
+                        state.select(row, ctrl, shift);
+                        (callback.borrow_mut())(Event::PaneItemFocus);
+                        if !ctrl
+                            && !shift
+                            && last_click.is_some_and(|(old, time)| {
+                                old == row
+                                    && time.elapsed()
+                                        < Duration::from_millis(u64::from(unsafe {
+                                            GetDoubleClickTime()
+                                        }))
+                            })
+                        {
+                            action(hwnd, OPEN, state.selected());
+                            last_click = None;
+                        } else {
+                            last_click = Some((row, Instant::now()));
                         }
                     }
                     invalidate(hwnd);
@@ -1128,13 +1141,22 @@ pub(super) fn create(
                         return Some(0);
                     }
                     if mods.ctrl && key == 0x41 {
-                        state.selection.extend(0..state.entries.len());
+                        if !state.replacing {
+                            state.selection.extend(0..state.entries.len());
+                        }
                         (callback.borrow_mut())(Event::PaneItemFocus);
                         invalidate(hwnd);
                         return Some(0);
                     }
                     if matches!(key, VK_UP | VK_DOWN | VK_HOME | VK_END | VK_PRIOR | VK_NEXT) {
-                        if !state.entries.is_empty() {
+                        if key == VK_UP && state.focused == Some(0) && !mods.ctrl && !mods.shift {
+                            unsafe {
+                                SetFocus(edit(hwnd));
+                            }
+                            invalidate(hwnd);
+                            return Some(0);
+                        }
+                        if !state.entries.is_empty() && !state.replacing {
                             let current = state.focused.unwrap_or(0);
                             let index = match key {
                                 VK_UP => current.saturating_sub(1),
@@ -1187,6 +1209,58 @@ pub(super) fn create(
                         action(hwnd, wp, state.selected());
                     }
                     return Some(0);
+                }
+                WM_SETFOCUS | WM_KILLFOCUS => {
+                    invalidate(hwnd);
+                }
+                WM_MOUSELEAVE => {
+                    state.hovered = None;
+                    error_tip = false;
+                    if let Some(tip) = &mut tooltip {
+                        tip.hide();
+                    }
+                    invalidate(hwnd);
+                }
+                WM_MOUSEMOVE => {
+                    let y = (lp >> 16) as u16 as i16 as f32 / scale(hwnd);
+                    let hovered = state.row_at(y);
+                    let show_error = state.failed
+                        && state.entries.is_empty()
+                        && (TOP + 10.0..TOP + 56.0).contains(&y);
+                    if hovered != state.hovered || show_error != error_tip {
+                        state.hovered = hovered;
+                        error_tip = show_error;
+                        if tooltip.is_none() {
+                            tooltip = tooltip::Tooltip::new(hwnd);
+                        }
+                        if let Some(tip) = &mut tooltip {
+                            if let Some(row) = hovered {
+                                tip.show_for_row(
+                                    hwnd,
+                                    &state.entries[row].path.to_string_lossy(),
+                                    TOP + ROW_INSET + (row - state.scroll) as f32 * ROW,
+                                );
+                            } else if show_error {
+                                tip.show_for_row(
+                                    hwnd,
+                                    state.status.as_deref().unwrap_or("请重试"),
+                                    TOP + 10.0,
+                                );
+                            } else {
+                                tip.hide();
+                            }
+                        }
+                        invalidate(hwnd);
+                    }
+                    unsafe {
+                        let mut tracking = TRACKMOUSEEVENT {
+                            cbSize: size_of::<TRACKMOUSEEVENT>() as u32,
+                            dwFlags: TME_LEAVE,
+                            hwndTrack: hwnd,
+                            dwHoverTime: 0,
+                        };
+                        TrackMouseEvent(&raw mut tracking);
+                    }
                 }
                 WM_CONTEXTMENU => {
                     let items = state.selected();
@@ -1292,12 +1366,17 @@ pub(super) fn create(
             (TOP * s) as i32,
             SWP_NOZORDER | SWP_NOACTIVATE,
         );
-        ShowWindow(edit(hwnd), SW_SHOWNOACTIVATE);
     }
     if let Some(input) = editor.borrow().as_ref() {
         input.position(hwnd);
     }
     invalidate(hwnd);
+    unsafe {
+        SendMessageW(hwnd, WM_PAINT, 0, 0);
+        prepared.set(true);
+        ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+        ShowWindow(edit(hwnd), SW_SHOWNOACTIVATE);
+    }
     wake.bind(hwnd as isize);
     Ok(window)
 }

@@ -96,6 +96,10 @@ pub(in crate::pane) struct Registration {
     attempted: Option<std::time::Instant>,
 }
 impl Registration {
+    pub fn retry_deadline(&self) -> Option<std::time::Instant> {
+        self.attempted.filter(|_| self.desired.is_some() && !self.registered)
+            .map(|time| time + std::time::Duration::from_secs(10))
+    }
     pub fn update(&mut self, hwnd: isize, desired: Option<Shortcut>) {
         if self.desired == desired
             && (self.registered

@@ -11,6 +11,7 @@ pub(super) struct State {
     pub path: PathBuf,
     pub desktop_error: Option<String>,
     last_attempt: Instant,
+    last_maintenance: Instant,
     pub layouts: display_layout::Layouts,
     pub backup: recovery::Manager,
 }
@@ -21,6 +22,7 @@ impl State {
             path,
             desktop_error: None,
             last_attempt: Instant::now(),
+            last_maintenance: Instant::now(),
             layouts: Default::default(),
             backup: recovery::Manager::default(),
         }
@@ -77,9 +79,7 @@ fn suspend(state: &Rc<RefCell<PaneApp>>) {
         let mut at = 0;
         while at < s.views.len() {
             let view = &s.views[at];
-            if s.workspace
-                .panel(view.id)
-                .is_some_and(|p| p.folder().is_some() || p.is_search())
+            if tabs::independent(&s.workspace, view.id)
             {
                 at += 1;
             } else {
@@ -95,6 +95,9 @@ fn suspend(state: &Rc<RefCell<PaneApp>>) {
 }
 
 pub(super) fn maintain(state: &Rc<RefCell<PaneApp>>, force: bool) -> Result<(), String> {
+    if let Some(runtime) = &mut state.borrow_mut().runtime {
+        runtime.last_maintenance = Instant::now();
+    }
     display_layout::tick(state)?;
     recovery::maintain(state);
     if state
@@ -142,10 +145,10 @@ pub(super) fn maintain(state: &Rc<RefCell<PaneApp>>, force: bool) -> Result<(), 
                 .panels()
                 .iter()
                 .filter(|p| {
-                    (if p.is_search() {
+                    s.workspace.tab_visible(p.id()) && (if p.is_search() {
                         search_enabled
                     } else {
-                        p.folder().is_some() || s.session.is_some()
+                        tabs::independent(&s.workspace, p.id()) || s.session.is_some()
                     }) && !s.views.iter().any(|v| v.id == p.id())
                 })
                 .map(Panel::id)
@@ -158,6 +161,25 @@ pub(super) fn maintain(state: &Rc<RefCell<PaneApp>>, force: bool) -> Result<(), 
     Ok(())
 }
 
+fn next_work(s: &PaneApp, hotkey: &search_hotkey::Registration) -> Option<u32> {
+    let now = Instant::now();
+    let runtime = s.runtime.as_ref();
+    // Slow safety check for missed window lifecycle notifications or a failed
+    // view creation; ordinary work is driven by notifications and deadlines.
+    let maintenance = runtime.map(|r| r.last_maintenance + Duration::from_secs(30));
+    let reconnect = runtime.filter(|_| s.session.is_none())
+        .map(|r| r.last_attempt + Duration::from_secs(10));
+    hybrid::next_work(s).map(u64::from).map(Duration::from_millis)
+        .map(|delay| now + delay).into_iter()
+        .chain(maintenance)
+        .chain(reconnect)
+        .chain(runtime.and_then(|r| r.layouts.deadline()))
+        .chain(recovery::deadline(s))
+        .chain(hotkey.retry_deadline())
+        .min()
+        .map(|due| due.saturating_duration_since(now).as_millis().clamp(25, u32::MAX as u128) as u32)
+}
+
 pub(super) fn backup_status(s: &PaneApp) -> String {
     s.runtime.as_ref().map(|runtime| runtime.backup.view.status.clone()).unwrap_or_default()
 }
@@ -167,11 +189,14 @@ pub(super) fn reload(state: &Rc<RefCell<PaneApp>>) -> Result<(), String> {
         let mut s = state.borrow_mut();
         let workspace = s.store.load_workspace().map_err(|e| e.to_string())?;
         peek::load(&s.store)?;
+    fonts::load(&s.store)?;
+    header_divider::load(&s.store)?;
         search_hotkey::load(&s.store)?;
         everything_settings::load(&s.store)?;
         s.session.take();
         s.drops.clear();
         s.folders.clear();
+        s.tab_models.clear();
         s.images.clear();
         for v in &s.views {
             window::prepare_close(v.window.hwnd().cast());
@@ -193,7 +218,7 @@ pub(super) fn reload(state: &Rc<RefCell<PaneApp>>) -> Result<(), String> {
                 if p.is_search() {
                     search_enabled
                 } else {
-                    p.folder().is_some() || s.session.is_some()
+                    tabs::independent(&s.workspace, p.id()) || s.session.is_some()
                 }
             })
             .map(Panel::id)
@@ -214,13 +239,24 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
     let weak = Rc::downgrade(state);
     let wake = state.borrow().wake.clone();
     let received = wake.clone();
+    let changed = wake.clone();
+    state.borrow_mut().store.set_change_callback(move || changed.notify());
     let mut hotkey = search_hotkey::Registration::default();
+    let mut search_state = None;
+    let mut search_enabled = false;
+    let mut search_checked = Instant::now();
     let show_message = unsafe { RegisterWindowMessageW(windows_sys::w!("LucidPane.ShowExisting")) };
+    let taskbar_created = unsafe { RegisterWindowMessageW(windows_sys::w!("TaskbarCreated")) };
+    let mut layout_dirty = false;
+    let mut reconnect_hint = false;
     let window = windows_window::Window::new("LucidPane Runtime")
         .size(1, 1)
         .style(WS_POPUP)
         .ex_style(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)
-        .on_message(move |raw, msg, wp, _| {
+        .on_message(move |raw, msg, wp, lp| {
+            if unsafe { crate::window_visibility::defer_show(msg, lp, false) } {
+                return Some(0);
+            }
             if msg == WM_DESTROY {
                 received.unbind();
                 hotkey.update(raw as isize, None);
@@ -253,46 +289,60 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
                 }
                 return Some(0);
             }
-            if msg != WM_TIMER && msg != super::wake::READY {
+            if matches!(msg, WM_DISPLAYCHANGE | WM_SETTINGCHANGE | WM_DPICHANGED | WM_POWERBROADCAST) {
+                layout_dirty = true;
+            } else if taskbar_created != 0 && msg == taskbar_created {
+                reconnect_hint = true;
+                layout_dirty = true;
+            } else if msg != WM_TIMER && msg != super::wake::READY {
                 return None;
             }
             if msg == super::wake::READY {
-                received.received();
+                layout_dirty |= received.received();
             }
             if let Some(state) = weak.upgrade() {
                 if state.try_borrow_mut().is_ok() {
+                    unsafe { KillTimer(raw.cast(), 2); }
                     {
                         let mut s = state.borrow_mut();
+                        if let Some(runtime) = &mut s.runtime {
+                            if std::mem::take(&mut layout_dirty) {
+                                runtime.layouts.invalidate();
+                            }
+                            if std::mem::take(&mut reconnect_hint) {
+                                runtime.last_attempt = Instant::now() - Duration::from_secs(10);
+                            }
+                        }
                         folder::poll(&mut s);
                         if s.session.is_some() {
                             if let Err(error) = hybrid::tick(&mut s) {
                                 eprintln!("Desktop synchronization: {error}");
                             }
                         }
-                        unsafe {
-                            KillTimer(raw.cast(), 2);
-                            if let Some(delay) = hybrid::next_work(&s) {
-                                SetTimer(raw.cast(), 2, delay, None);
-                            }
-                        }
-                    }
-                    if msg != WM_TIMER || wp != 1 {
-                        return Some(0);
                     }
                     let previous = {
                         let s = state.borrow();
                         (status(&s), backup_status(&s), search_hotkey::status())
                     };
-                    if let Err(error) = maintain(&state, false) {
+                    let managed = state.borrow().runtime.is_some();
+                    if managed && let Err(error) = maintain(&state, false) {
                         eprintln!("Runtime recovery: {error}");
                     }
                     let s = state.borrow();
-                    let enabled = s
-                        .views
-                        .iter()
-                        .any(|v| s.workspace.panel(v.id).is_some_and(Panel::is_search))
-                        && everything_settings::enabled(&s.store).unwrap_or(false);
-                    hotkey.update(raw as isize, enabled.then(search_hotkey::settings));
+                    let search_present = s.views.iter()
+                        .any(|v| s.workspace.panel(v.id).is_some_and(Panel::is_search));
+                    let signature = (search_present, s.store.change_count());
+                    if search_state != Some(signature) || search_checked.elapsed() >= Duration::from_secs(30) {
+                        search_enabled = search_present && everything_settings::enabled(&s.store).unwrap_or(false);
+                        search_state = Some(signature);
+                        search_checked = Instant::now();
+                    }
+                    hotkey.update(raw as isize, search_enabled.then(search_hotkey::settings));
+                    unsafe {
+                        if let Some(delay) = next_work(&s, &hotkey) {
+                            SetTimer(raw.cast(), 2, delay, None);
+                        }
+                    }
                     if previous != (status(&s), backup_status(&s), search_hotkey::status())
                         && let Some(settings) = &s.settings
                     {
@@ -312,10 +362,6 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
         })
         .create()
         .map_err(|e| e.to_string())?;
-    unsafe {
-        ShowWindow(window.hwnd().cast(), SW_HIDE);
-        SetTimer(window.hwnd().cast(), 1, 1000, None);
-    }
     wake.bind(window.hwnd() as isize);
     Ok(window)
 }
@@ -323,6 +369,28 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn store_changes_wake_runtime_without_a_fixed_heartbeat() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = super::super::tests::test_state();
+        app.workspace = Workspace::default();
+        app.runtime = Some(State::new(root.path().join("workspace.db")));
+        let state = Rc::new(RefCell::new(app));
+        let supervisor = supervisor(&state).unwrap();
+        unsafe {
+            let mut message = MSG::default();
+            // Remove the initial bind notification so only the write can wake us.
+            PeekMessageW(&raw mut message, supervisor.hwnd().cast(), super::super::wake::READY, super::super::wake::READY, PM_REMOVE);
+        }
+        state.borrow().wake.received();
+        state.borrow().store.save_preference("event-test", "written").unwrap();
+        unsafe {
+            let mut message = MSG::default();
+            assert_ne!(PeekMessageW(&raw mut message, supervisor.hwnd().cast(), super::super::wake::READY, super::super::wake::READY, PM_REMOVE), 0);
+            assert_eq!(KillTimer(supervisor.hwnd().cast(), 1), 0, "no fixed heartbeat");
+        }
+    }
     #[test]
     fn folder_completion_reaches_supervisor_without_timer_polling() {
         let root = std::env::temp_dir().join(format!(

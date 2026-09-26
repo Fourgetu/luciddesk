@@ -7,6 +7,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::*;
 pub(super) struct Layouts {
     monitors: Vec<MonitorDescriptor>,
     pending: Option<(Vec<MonitorDescriptor>, Instant)>,
+    next_check: Option<Instant>,
     pub positions: HashMap<PanelId, RectDip>,
 }
 impl Default for Layouts {
@@ -14,8 +15,18 @@ impl Default for Layouts {
         Self {
             monitors: Vec::new(),
             pending: None,
+            next_check: Some(Instant::now()),
             positions: HashMap::new(),
         }
+    }
+}
+impl Layouts {
+    pub(super) fn invalidate(&mut self) {
+        self.next_check = Some(Instant::now());
+    }
+
+    pub(super) fn deadline(&self) -> Option<Instant> {
+        self.next_check
     }
 }
 fn key(monitors: &[MonitorDescriptor]) -> String {
@@ -99,9 +110,16 @@ pub(super) fn initialize(s: &mut PaneApp, monitors: Vec<MonitorDescriptor>) -> R
         ));
         positions.insert(id, physical);
     }
+    for group in s.workspace.tab_groups() {
+        if let Some(position) = positions.get(&group.active).copied() {
+            for id in &group.members { positions.insert(*id, position); }
+        }
+    }
+    s.workspace.sync_tab_windows();
     runtime.layouts = Layouts {
         monitors,
         pending: None,
+        next_check: None,
         positions,
     };
     Ok(())
@@ -171,6 +189,11 @@ pub(super) fn record(s: &mut PaneApp) -> Result<(), String> {
             ),
         );
     }
+    for group in s.workspace.tab_groups() {
+        if let Some(position) = runtime.layouts.positions.get(&group.active).copied() {
+            for id in &group.members { runtime.layouts.positions.insert(*id, position); }
+        }
+    }
     runtime
         .layouts
         .positions
@@ -187,6 +210,15 @@ pub(super) fn record(s: &mut PaneApp) -> Result<(), String> {
 }
 
 pub(super) fn tick(state: &Rc<RefCell<PaneApp>>) -> Result<(), String> {
+    {
+        let mut s = state.borrow_mut();
+        let Some(runtime) = &mut s.runtime else { return Ok(()); };
+        if runtime.layouts.next_check.is_none_or(|due| due > Instant::now()) {
+            return Ok(());
+        }
+        // Retry transient empty topology and wait for a stable display arrangement.
+        runtime.layouts.next_check = Some(Instant::now() + Duration::from_secs(2));
+    }
     let current = desktop_window::enumerate_monitors();
     if current.is_empty() {
         return Ok(());
@@ -198,6 +230,7 @@ pub(super) fn tick(state: &Rc<RefCell<PaneApp>>) -> Result<(), String> {
         };
         if runtime.layouts.monitors == current {
             runtime.layouts.pending = None;
+            runtime.layouts.next_check = None;
             return Ok(());
         }
         match &runtime.layouts.pending {
@@ -221,6 +254,19 @@ pub(super) fn tick(state: &Rc<RefCell<PaneApp>>) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn settled_layout_is_not_enumerated_until_invalidated() {
+        let mut app = super::super::tests::test_state();
+        app.runtime = Some(runtime::State::new(std::path::PathBuf::from("unused.db")));
+        app.runtime.as_mut().unwrap().layouts.next_check = None;
+        let state = Rc::new(RefCell::new(app));
+        tick(&state).unwrap();
+        assert!(state.borrow().runtime.as_ref().unwrap().layouts.pending.is_none());
+        state.borrow_mut().runtime.as_mut().unwrap().layouts.invalidate();
+        tick(&state).unwrap();
+        let s = state.borrow();
+        assert!(s.runtime.as_ref().unwrap().layouts.deadline().is_some());
+    }
     #[test]
     fn removed_monitor_moves_panes_into_work_area_without_minimum_width() {
         let monitor = MonitorDescriptor {

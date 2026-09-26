@@ -25,12 +25,14 @@ struct TitleLayout {
 }
 
 pub struct Renderer {
+    family: String,
     #[cfg(test)]
     offscreen_device: Option<windows_canvas::GpuDevice>,
     labels: windows_canvas::TextFormat,
     title: windows_canvas::TextFormat,
     title_layout: Option<TitleLayout>,
     details: windows_canvas::TextFormat,
+    tab_title: windows_canvas::TextFormat,
     column_label_widths: [f32; 4],
     sort_icons: windows_canvas::TextFormat,
     menu_shortcut: windows_canvas::TextFormat,
@@ -185,6 +187,11 @@ impl Renderer {
             .with_paragraph_alignment(ParagraphAlignment::Center)
             .with_word_wrapping(WordWrapping::NoWrap);
         canvas::ellipsis(&details)?;
+        let tab_title = canvas_result(TextFormat::new(&family, 12.0))?
+            .with_alignment(TextAlignment::Center)
+            .with_paragraph_alignment(ParagraphAlignment::Center)
+            .with_word_wrapping(WordWrapping::NoWrap);
+        canvas::ellipsis(&tab_title)?;
         let mut column_label_widths = [0.0; 4];
         for (index, name) in ["文件名", "类型", "修改时间", "大小"].iter().enumerate() {
             column_label_widths[index] = canvas_result(windows_canvas::TextLayout::new(
@@ -192,12 +199,14 @@ impl Renderer {
             ))?.metrics().width_including_trailing_whitespace;
         }
         Ok(Self {
+            family: family.clone(),
             #[cfg(test)]
             offscreen_device: None,
             labels,
             title,
             title_layout: None,
             details,
+            tab_title,
             column_label_widths,
             sort_icons: canvas_result(TextFormat::new("Segoe Fluent Icons", 10.0))?
                 .with_alignment(TextAlignment::Center)
@@ -350,6 +359,19 @@ impl Renderer {
 
     #[allow(clippy::too_many_lines)]
     fn draw(&mut self, width: u32, height: u32, scale: f32, model: &GroupModel) -> Result<()> {
+        if self.family != super::fonts::family() {
+            let fresh = Self::new()?;
+            self.family = fresh.family;
+            self.labels = fresh.labels;
+            self.title = fresh.title;
+            self.tab_title = fresh.tab_title;
+            self.details = fresh.details;
+            self.menu_shortcut = fresh.menu_shortcut;
+            self.column_label_widths = fresh.column_label_widths;
+            self.title_layout = None;
+            self.states.clear();
+        }
+
         let mut live_states = HashSet::new();
         let w = width as f32 / scale;
         let (mut title_left, mut title_space) = super::layout::title_area(w);
@@ -413,7 +435,7 @@ impl Renderer {
                     if model.options.border {
                         target.draw_rounded_rect(&rounded, &outline, 1.0);
                     }
-                    if show_icon {
+                    if show_icon && model.tabs.len() < 2 {
                         target.clipped_text(
                             "\u{e8b7}",
                             &self.icons,
@@ -421,9 +443,15 @@ impl Renderer {
                             &white,
                         );
                     }
-                    target.clipped_layout(&title, group_left + icon_width, 0.0, &white);
+                    if model.tabs.len() < 2 {
+                        target.clipped_layout(&title, group_left + icon_width, canvas::text_ink_center_offset(&title)?, &white);
+                    }
                     for button in 0..if model.folder.is_some() { 4 } else { 2 } {
-                        let x = super::layout::header_button_x(w, button);
+                        let top = super::layout::HEADER_INSET;
+                        let button_height = HEADER - top * 2.0;
+                        let center_y = HEADER / 2.0;
+                        if model.tabs.len() > 1 && button < 2 { continue; }
+                        let x = model.header_button_x(w, button);
                         let enabled = model.header_button_enabled(button);
                         let hovered = enabled && model.hovered_button == Some(button);
                         let glyph = canvas_result(target.create_solid_brush(ColorF::new(
@@ -438,7 +466,7 @@ impl Renderer {
                             )?;
                             target.fill_rounded_rect(
                                 &RoundedRect {
-                                    rect: Rect::from_xywh(x + 1.0, 6.0, 26.0, 26.0),
+                                    rect: Rect::from_xywh(x + 1.0, top, 26.0, button_height),
                                     radius_x: 5.0,
                                     radius_y: 5.0,
                                 },
@@ -450,7 +478,7 @@ impl Renderer {
                             target.clipped_text(
                                 if button == 2 { "\u{e72b}" } else { "\u{e80f}" },
                                 &self.navigation_icons,
-                                &Rect::from_xywh(x, 5.0, 28.0, 28.0),
+                                &Rect::from_xywh(x, top, 28.0, button_height),
                                 &glyph,
                             );
                         } else if button == 0 {
@@ -464,11 +492,11 @@ impl Renderer {
                                 target.draw_line(
                                     Vector2 {
                                         x: center + (pair[0].0 - center) * 1.25,
-                                        y: 19.0 + (pair[0].1 - 19.0) * 1.25,
+                                        y: center_y + (pair[0].1 - 19.0) * 1.25,
                                     },
                                     Vector2 {
                                         x: center + (pair[1].0 - center) * 1.25,
-                                        y: 19.0 + (pair[1].1 - 19.0) * 1.25,
+                                        y: center_y + (pair[1].1 - 19.0) * 1.25,
                                     },
                                     &glyph,
                                     1.5,
@@ -480,7 +508,7 @@ impl Renderer {
                                     &Ellipse {
                                         center: Vector2 {
                                             x: center + offset,
-                                            y: 19.0,
+                                            y: center_y,
                                         },
                                         radius_x: 1.1,
                                         radius_y: 1.1,
@@ -491,9 +519,24 @@ impl Renderer {
                         }
                     }
                 }
-                if h > HEADER + 1.0 {
+                for (id, bounds) in super::tabs::strip(model, w) {
+                    let rect = Rect::from_xywh(bounds.x, bounds.y, bounds.width, bounds.height);
+                    let fill = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink,
+                        if id == model.active_tab { 0.14 } else { 0.04 })))?;
+                    target.fill_rounded_rect(&RoundedRect { rect, radius_x: model.options.corner_radius, radius_y: model.options.corner_radius }, &fill);
+                    let text = model.tabs.iter().find(|(tab, _)| *tab == id).map_or("", |(_, title)| title.as_str());
+                    target.clipped_text(text, &self.tab_title, &Rect::from_xywh(rect.left + 10.0, rect.top, (bounds.width - 20.0).max(1.0), bounds.height),
+                        if id == model.active_tab { &white } else { &dim });
+                }
+                if super::header_divider::enabled() && !model.collapsed && h > model.content_header() + 1.0 {
+                    let divider = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.14)))?;
+                    let inset = super::layout::HEADER_INSET;
+                    let divider_y = model.content_header() - inset + 4.0;
+                    target.fill_rect(&Rect::from_xywh(inset, divider_y, (w - inset * 2.0).max(0.0), 1.0), &divider);
+                }
+                if h > model.content_header() + 1.0 {
                     target.push_clip(&{
-                        Rect::from_xywh(6.0, HEADER, w - 12.0, (h - HEADER - 6.0).max(0.0))
+                        Rect::from_xywh(6.0, model.content_header(), w - 12.0, (h - model.content_header() - 6.0).max(0.0))
                     });
                     let grid = model.grid(w, h);
                     let list = model.is_list();
@@ -641,7 +684,7 @@ impl Renderer {
                             if self.images.get(&key).is_none_or(|(source, _, old_size)| {
                                 !Arc::ptr_eq(source, image) || *old_size != size
                             }) {
-                                let pixels = assets::resample(image, size.0, size.1)?;
+                                let pixels = super::scaled_icons::resample(image, size.0, size.1)?;
                                 let bitmap = canvas_result(target.create_bitmap(
                                     &pixels.data,
                                     pixels.width,
@@ -1108,8 +1151,51 @@ mod tests {
     use desktop_core::ShellIdentity;
     use std::sync::Arc;
 
+    #[test]
+    fn tab_strip_renders_at_supported_dpi_and_widths() {
+        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let mut model = sample_model();
+        model.tabs = ["工作", "项目资料", "下载与归档"].into_iter().enumerate()
+            .map(|(at, title)| (desktop_core::PanelId::new(at as u64 + 1), title.into())).collect();
+        model.active_tab = desktop_core::PanelId::new(2);
+        let mut renderer = Renderer::new().unwrap();
+        for scale in [1.0, 1.5, 2.0] {
+            for width in [260, 420, 800] {
+                for dark in [false, true] {
+                    model.dark = dark;
+                    let w = (width as f32 * scale) as u32;
+                    let h = (300.0 * scale) as u32;
+                    let pixels = renderer.pixels(w, h, scale, &model).unwrap();
+                    assert_eq!(pixels.len(), (w * h * 4) as usize);
+                    let mut title_changed = model.clone();
+                    title_changed.title = "这个旧标题不应绘制".into();
+                    assert_eq!(pixels, renderer.pixels(w, h, scale, &title_changed).unwrap());
+                    let mut blank = model.clone();
+                    for (_, title) in &mut blank.tabs { title.clear(); }
+                    assert_ne!(pixels, renderer.pixels(w, h, scale, &blank).unwrap());
+                    if std::env::var_os("LUCIDPANE_TEST_EXPORT_SNAPSHOTS").is_some() && scale == 1.0 && width == 420 && dark {
+                        let mut bmp = vec![0u8; 54];
+                        bmp[..2].copy_from_slice(b"BM");
+                        bmp[2..6].copy_from_slice(&(54u32 + pixels.len() as u32).to_le_bytes());
+                        bmp[10..14].copy_from_slice(&54u32.to_le_bytes());
+                        bmp[14..18].copy_from_slice(&40u32.to_le_bytes());
+                        bmp[18..22].copy_from_slice(&(w as i32).to_le_bytes());
+                        bmp[22..26].copy_from_slice(&(-(h as i32)).to_le_bytes());
+                        bmp[26..28].copy_from_slice(&1u16.to_le_bytes());
+                        bmp[28..30].copy_from_slice(&32u16.to_le_bytes());
+                        bmp.extend_from_slice(&pixels);
+                        let output = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/tabs-preview.bmp");
+                        std::fs::write(output, bmp).unwrap();
+                    }
+                }
+            }
+        }
+    }
+
     fn sample_model() -> GroupModel {
         GroupModel {
+            tabs: Vec::new(),
+            active_tab: desktop_core::PanelId::new(0),
             folder_sort: (0, false),
             folder_columns: None,
             folder_visible_columns: 15,

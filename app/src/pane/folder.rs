@@ -2,7 +2,11 @@
 use super::*;
 use std::path::PathBuf;
 use std::sync::Mutex;
+pub(super) mod entry_mode;
 mod images;
+mod preferences;
+pub(super) use entry_mode::EntryMode;
+pub(super) use preferences::{Defaults, save_columns, saved_columns, toggle_column, visible_columns};
 #[cfg(test)]
 use std::time::{Duration, Instant};
 use windows::Win32::{
@@ -27,6 +31,7 @@ pub(super) struct Source {
 struct Commands {
     event: isize,
     stop: std::sync::atomic::AtomicBool,
+    active: std::sync::atomic::AtomicBool,
     images_pending: std::sync::atomic::AtomicBool,
     priority: Mutex<Vec<String>>,
 }
@@ -46,6 +51,7 @@ impl Commands {
         Ok(Self {
             event: event as isize,
             stop: false.into(),
+            active: true.into(),
             images_pending: false.into(),
             priority: Mutex::new(Vec::new()),
         })
@@ -137,6 +143,10 @@ impl Drop for Watch {
 }
 
 impl Source {
+    pub(super) fn set_active(&self, active: bool) {
+        self.request.active.store(active, std::sync::atomic::Ordering::Release);
+        self.request.signal();
+    }
     pub(super) fn navigation(&self) -> [bool; 2] {
         [!self.history.is_empty(), self.path != self.root]
     }
@@ -170,7 +180,7 @@ impl Source {
                     if commands.stop.load(std::sync::atomic::Ordering::Acquire) {
                         break;
                     }
-                    {
+                    if commands.active.load(std::sync::atomic::Ordering::Acquire) {
                         let mut jobs = Vec::new();
                         let result = desktop_shell::enumerate_folder(&root)
                             .map(|entries| {
@@ -228,7 +238,7 @@ impl Source {
                     ];
                     let result = wait_for_change(
                         &handles[..if watch.is_some() { 2 } else { 1 }],
-                        if watch.is_some() { INFINITE } else { 2000 },
+                        if watch.is_some() || !commands.active.load(std::sync::atomic::Ordering::Acquire) { INFINITE } else { 2000 },
                     );
                     if commands.stop.load(std::sync::atomic::Ordering::Acquire) {
                         break;
@@ -338,17 +348,7 @@ pub(super) fn poll(state: &mut PaneApp) {
             let mut patched = false;
             for item in &mut source.items {
                 if let Some(update) = patches.remove(&item.identity.persistent_key()) {
-                    // A delayed thumbnail must never overwrite a later scan's
-                    // metadata or resurrect a removed/replaced file.
-                    if item.identity == update.identity
-                        && item.details.modified_time == update.details.modified_time
-                        && item.details.folder == update.details.folder
-                        && item.details.size == update.details.size
-                    {
-                        item.image = update.image;
-                        item.details.kind = update.details.kind;
-                        patched = true;
-                    }
+                    patched |= apply_image_patch(item, update);
                 }
             }
             if patched && source.sort.0 == 1 { sort_items(&mut source.items, source.sort); }
@@ -377,63 +377,27 @@ pub(super) fn poll(state: &mut PaneApp) {
     }
 }
 
-pub(super) fn saved_columns(store: &WorkspaceStore, id: PanelId) -> Result<Option<[f32; 4]>, String> {
-    Ok(store.preference(&format!("panel_folder_columns:{}", id.get()))
-        .map_err(|error| error.to_string())?.and_then(|value| super::columns::decode(&value)))
-}
-
-pub(super) fn visible_columns(store: &WorkspaceStore, id: PanelId) -> Result<u8, String> {
-    Ok(store.preference(&format!("panel_folder_visible_columns:{}", id.get()))
-        .map_err(|error| error.to_string())?.and_then(|value| value.parse::<u8>().ok())
-        .map_or(15, |value| (value & 15) | 1))
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct Defaults {
-    pub list: bool,
-    pub columns: u8,
-}
-impl Default for Defaults {
-    fn default() -> Self { Self { list: true, columns: 15 } }
-}
-impl Defaults {
-    pub fn load(store: &WorkspaceStore) -> Result<Self, String> {
-        let saved = store.preference("folder_panel_defaults").map_err(|e| e.to_string())?;
-        Ok(saved.and_then(|value| {
-            let (view, columns) = value.split_once(',')?;
-            let list = match view { "list" => true, "icons" => false, _ => return None };
-            Some(Self { list, columns: (columns.parse::<u8>().ok()? & 15) | 1 })
-        }).unwrap_or_default())
+fn apply_image_patch(item: &mut Item, update: Item) -> bool {
+    // Unknown timestamps cannot establish that a delayed result still belongs
+    // to this scan. Such items receive images through the full final snapshot.
+    if item.identity != update.identity
+        || item.details.modified_time.is_none()
+        || item.details.modified_time != update.details.modified_time
+        || item.details.folder != update.details.folder
+        || item.details.size != update.details.size
+    {
+        return false;
     }
-    pub fn save(self, store: &WorkspaceStore) -> Result<(), String> {
-        store.save_preference("folder_panel_defaults",
-            &format!("{},{}", if self.list { "list" } else { "icons" }, (self.columns & 15) | 1))
-            .map_err(|e| e.to_string())
-    }
-    pub fn apply(self, store: &WorkspaceStore, panel: &mut Panel) -> Result<(), String> {
-        panel.set_list_view(self.list);
-        store.save_preference(&format!("panel_folder_visible_columns:{}", panel.id().get()),
-            &((self.columns & 15) | 1).to_string()).map_err(|e| e.to_string())
-    }
-}
-
-pub(super) fn toggle_column(state: &PaneApp, id: PanelId, column: u8) -> Result<(), String> {
-    if !(1..=3).contains(&column) { return Ok(()); }
-    let Some(view) = state.views.iter().find(|view| view.id == id) else { return Ok(()); };
-    let visible = (view.model.borrow().folder_visible_columns ^ (1 << column)) | 1;
-    state.store.save_preference(&format!("panel_folder_visible_columns:{}", id.get()), &visible.to_string())
-        .map_err(|error| error.to_string())?;
-    view.model.borrow_mut().folder_visible_columns = visible;
-    unsafe { windows_sys::Win32::Graphics::Gdi::InvalidateRect(view.window.hwnd().cast(), std::ptr::null(), 0); }
-    Ok(())
-}
-
-pub(super) fn save_columns(state: &PaneApp, id: PanelId, widths: [f32; 4]) -> Result<(), String> {
-    if !super::columns::valid(widths) { return Ok(()); }
-    state.store.save_preference(
-        &format!("panel_folder_columns:{}", id.get()),
-        &widths.map(|value| format!("{value:.6}")).join(","),
-    ).map_err(|error| error.to_string())
+    let image_changed = match (&item.image, &update.image) {
+        (Some(a), Some(b)) => !Arc::ptr_eq(a, b)
+            && (a.width != b.width || a.height != b.height || a.data != b.data),
+        (None, None) => false,
+        _ => true,
+    };
+    let changed = image_changed || item.details.kind != update.details.kind;
+    if image_changed { item.image = update.image; }
+    item.details.kind = update.details.kind;
+    changed
 }
 
 fn sort_items(items: &mut Vec<Item>, sort: (u8, bool)) {
@@ -527,7 +491,6 @@ pub(super) fn navigate(
     let mut source = Source::start_with(path.clone(), state.wake.clone(), Arc::clone(&old.cache), old.sort)?;
     source.root = old.root.clone();
     source.history = history;
-    source.sort = old.sort;
     state.folders.insert(id, source);
     if let Some(view) = state.views.iter().find(|v| v.id == id) {
         let mut model = view.model.borrow_mut();
@@ -714,6 +677,70 @@ pub(super) fn request_picker(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn patch_item() -> Item {
+        Item {
+            identity: identity(PathBuf::from(r"C:\test\image.png")),
+            label: "image.png".into(),
+            image: Some(Arc::new(assets::Pixels { width: 1, height: 1, data: vec![0; 4] })),
+            details: ItemDetails {
+                modified_time: Some(std::time::UNIX_EPOCH),
+                size: Some(4),
+                kind: "image".into(),
+                ..Default::default()
+            },
+        }
+    }
+
+    #[test]
+    fn image_patch_preserves_allocation_and_skips_unchanged_pixels() {
+        let mut item = patch_item();
+        let original = item.image.clone().unwrap();
+        assert!(!apply_image_patch(&mut item, patch_item()));
+        assert!(Arc::ptr_eq(&original, item.image.as_ref().unwrap()));
+        let mut changed = patch_item();
+        changed.image = Some(Arc::new(assets::Pixels { width: 1, height: 1, data: vec![255; 4] }));
+        assert!(apply_image_patch(&mut item, changed));
+        assert_eq!(item.image.as_ref().unwrap().data, vec![255; 4]);
+        let mut kind = item.clone();
+        kind.details.kind = "new type".into();
+        assert!(apply_image_patch(&mut item, kind));
+        assert_eq!(item.details.kind, "new type");
+    }
+
+    #[test]
+    fn image_patch_rejects_renamed_modified_replaced_and_unknown_items() {
+        for case in 0..5 {
+            let mut item = patch_item();
+            let original = item.image.clone().unwrap();
+            let mut delayed = patch_item();
+            delayed.details.kind = "stale".into();
+            match case {
+                0 => item.identity = identity(PathBuf::from(r"C:\test\renamed.png")),
+                1 => item.details.modified_time = Some(std::time::UNIX_EPOCH + Duration::from_secs(1)),
+                2 => item.details.size = Some(8),
+                3 => item.details.folder = true,
+                _ => { item.details.modified_time = None; delayed.details.modified_time = None; }
+            }
+            assert!(!apply_image_patch(&mut item, delayed), "case {case}");
+            assert!(Arc::ptr_eq(&original, item.image.as_ref().unwrap()));
+            assert_eq!(item.details.kind, "image");
+        }
+    }
+
+    #[test]
+    fn inactive_tab_waits_for_activation_before_rescanning() {
+        let root = tempfile::tempdir().unwrap();
+        let source = Source::start(root.path().to_path_buf(), Default::default()).unwrap();
+        assert!(source.updates.recv_timeout(Duration::from_secs(5)).unwrap().unwrap().is_empty());
+        source.set_active(false);
+        std::fs::write(root.path().join("new.txt"), b"new").unwrap();
+        assert!(matches!(source.updates.recv_timeout(Duration::from_millis(400)), Err(mpsc::RecvTimeoutError::Timeout)));
+        source.set_active(true);
+        let items = source.updates.recv_timeout(Duration::from_secs(5)).unwrap().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].label, "new.txt");
+    }
 
     #[test]
     fn refresh_event_reads_an_unchanged_folder_again() {
@@ -1108,10 +1135,15 @@ mod tests {
         let wait = |source: &mut Source, predicate: &dyn Fn(&Result<Vec<Item>, String>) -> bool| {
             let deadline = Instant::now() + Duration::from_secs(10);
             loop {
-                let result = source
-                    .updates
-                    .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-                    .expect("folder update timed out");
+                // The UI consumes both bounded channels. Leaving thumbnails
+                // unread eventually blocks the worker before its final snapshot.
+                while source.images.try_recv().is_ok() {}
+                assert!(Instant::now() < deadline, "folder update timed out");
+                let result = match source.updates.recv_timeout(Duration::from_millis(25)) {
+                    Ok(result) => result,
+                    Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                    Err(error) => panic!("folder worker disconnected: {error}"),
+                };
                 if predicate(&result) {
                     return result;
                 }

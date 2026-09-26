@@ -98,18 +98,46 @@ fn pane_entries(folder: (bool, bool), visible_columns: u8,
     }
     rows.extend([
         entry(0, "", "", ""),
+        entry(48, "展开 / 收起面板", "", ""),
         entry(10, "锁定面板", if locked { "✓" } else { "" }, ""),
         entry(7, "自动收起", if auto_hide { "✓" } else { "" }, ""),
         entry(12, "始终置顶", if topmost { "✓" } else { "" }, ""),
         entry(0, "", "", ""),
         entry(1, "新建普通面板", "", ""),
         entry(19, "新建文件夹面板…", "", ""),
+        Entry { children: tab_entries(), ..entry(39, "标签页", "", "") },
         entry(0, "", "", ""),
         entry(18, "设置…", "", ""),
         entry(11, "关闭面板", "", ""),
         entry(4, "退出 LucidPane", "", ""),
     ]);
     rows
+}
+
+pub(super) fn tab_entries() -> Vec<Entry> {
+    vec![
+        entry(40, "新建分组标签", "", ""),
+        entry(41, "新建文件夹标签…", "", ""),
+        entry(0, "", "", ""),
+        entry(46, "上一个标签", "", "Ctrl+Shift+Tab"),
+        entry(47, "下一个标签", "", "Ctrl+Tab"),
+        entry(43, "重命名标签", "", ""),
+        entry(44, "向左移动", "", ""),
+        entry(45, "向右移动", "", ""),
+        entry(0, "", "", ""),
+        entry(42, "关闭标签", "", "Ctrl+W"),
+    ]
+}
+
+pub(super) fn tab_context_entries(model: &super::GroupModel, topmost: bool) -> Vec<Entry> {
+    // Keep every ordinary pane command directly accessible from a tab.
+    let mut entries = pane_entries((model.folder.is_some(), model.is_list()),
+        model.folder_visible_columns, model.auto_hide, model.locked, topmost);
+    for row in &mut entries {
+        if row.id == 48 { row.label = if model.collapsed { "展开面板" } else { "收起面板" }; }
+    }
+    entries.splice(0..0, [entry(43, "重命名标签", "", ""), entry(42, "关闭标签", "", "Ctrl+W"), entry(0, "", "", "")]);
+    entries
 }
 
 pub(super) fn column_entries(visible: u8) -> Vec<Entry> {

@@ -86,12 +86,69 @@ pub(super) fn activate_with(
     Ok(())
 }
 
+pub(super) fn activate_item_with(
+    state: &Rc<RefCell<PaneApp>>,
+    id: PanelId,
+    index: usize,
+    open: impl FnOnce(isize, &ShellIdentity) -> Result<(), String> + 'static,
+) -> Result<(), String> {
+    let target = folder::entry_mode::navigation_target(&state.borrow(), id, index)?;
+    if let Some(path) = target {
+        folder::navigate(&mut state.borrow_mut(), id, Some(path))
+    } else {
+        activate_with(state, id, index, open)
+    }
+}
+
 #[allow(clippy::too_many_lines)]
 pub(super) fn handle(
     state: &Rc<RefCell<PaneApp>>,
     id: PanelId,
     event: Event,
 ) -> Result<bool, String> {
+    if matches!(event, Event::ToggleHeaderDivider | Event::ResetPaneOptions) {
+        let s = state.borrow();
+        header_divider::save(&s.store, matches!(event, Event::ResetPaneOptions) || !header_divider::enabled())?;
+        for view in &s.views { unsafe { InvalidateRect(view.window.hwnd().cast(), std::ptr::null(), 0); } }
+        if matches!(event, Event::ToggleHeaderDivider) { return Ok(false); }
+    }
+    match event {
+        Event::RenameTab(target) => {
+            let (owner, model) = {
+                let s = state.borrow();
+                if s.workspace.panel(target).is_none_or(Panel::locked) { return Ok(false); }
+                if !s.workspace.tab_group(id).is_some_and(|g| g.members.contains(&target)) { return Ok(false); }
+                let view = s.views.iter().find(|v| v.id == id).ok_or("面板已关闭")?;
+                (view.window.hwnd().cast(), view.model.clone())
+            };
+            let state = Rc::clone(state);
+            rename::show_tab_title(owner, model, Some(target), Box::new(move |title| handle(&state, target, Event::SetTitle(title)).map(|_| ())))?;
+            return Ok(false);
+        }
+        Event::MoveTabId(target, step) => {
+            let next = state.borrow().workspace.tab_group(id).and_then(|g| {
+                let at = g.members.iter().position(|member| *member == target)?;
+                g.members.get(at.checked_add_signed(step as isize)?).copied()
+            });
+            if let Some(next) = next { tabs::reorder(state, id, target, next)?; }
+            return Ok(false);
+        }
+        Event::NewTab(false) => { tabs::add(state, id, None)?; return Ok(false); }
+        Event::NewTab(true) => { tabs::choose_folder(state, id)?; return Ok(false); }
+        Event::SelectTab(to) => { tabs::select(state, id, to)?; return Ok(false); }
+        Event::CloseTabId(to) => { tabs::close(state, to)?; return Ok(false); }
+        Event::CloseTab => { tabs::close(state, id)?; return Ok(false); }
+        Event::MoveTab(step) => {
+            let destination = state.borrow().workspace.tab_group(id).and_then(|group| {
+                let at = group.members.iter().position(|member| *member == id)?;
+                let next = at.checked_add_signed(step as isize)?;
+                group.members.get(next).copied()
+            });
+            if let Some(to) = destination { tabs::reorder(state, id, id, to)?; }
+            return Ok(false);
+        }
+        _ => {}
+    }
     if let Event::SortFolder(column) = event {
         folder::sort(&mut state.borrow_mut(), id, column)?;
         return Ok(false);
@@ -104,10 +161,6 @@ pub(super) fn handle(
         folder::toggle_column(&state.borrow(), id, column)?;
         return Ok(false);
     }
-    if let Event::NavigateFolder(path) = &event {
-        folder::navigate(&mut state.borrow_mut(), id, Some(path.clone()))?;
-        return Ok(false);
-    }
     if matches!(event, Event::FolderBack) {
         folder::navigate(&mut state.borrow_mut(), id, None)?;
         return Ok(false);
@@ -117,18 +170,10 @@ pub(super) fn handle(
         return Ok(false);
     }
     if let Event::Activate(index) = event {
-        let folder = {
-            let s = state.borrow();
-            s.folders
-                .get(&id)
-                .and_then(|source| source.items.get(index))
-                .and_then(|item| item.identity.file_system_path())
-                .filter(|p| p.is_dir())
-                .map(Path::to_path_buf)
-        };
-        if let Some(path) = folder {
-            return handle(state, id, Event::NavigateFolder(path));
-        }
+        activate_item_with(state, id, index, |owner, identity| {
+            open_shell_identity(owner, identity).map_err(|error| error.to_string())
+        })?;
+        return Ok(false);
     }
     if matches!(
         event,
@@ -343,12 +388,6 @@ pub(super) fn handle(
         }
         return Ok(false);
     }
-    if let Event::Activate(index) = event {
-        activate_with(state, id, index, |owner, identity| {
-            open_shell_identity(owner, identity).map_err(|error| error.to_string())
-        })?;
-        return Ok(false);
-    }
     if matches!(event, Event::RenameTitle | Event::SetTitle(_))
         && state
             .borrow()
@@ -480,10 +519,11 @@ pub(super) fn handle(
         }
         let old = s.workspace.clone();
         let search = s.workspace.panel(id).is_some_and(Panel::is_search);
+        let members = s.workspace.tab_group(id).map_or_else(|| vec![id], |g| g.members.clone());
         let result = if search {
             everything_settings::set_enabled(&s.store, false)
         } else {
-            remove_panel(&mut s.workspace, id);
+            for member in &members { remove_panel(&mut s.workspace, *member); }
             save(&mut s)
         };
         if let Err(error) = result {
@@ -491,7 +531,10 @@ pub(super) fn handle(
             hybrid::sync(&mut s)?;
             return Err(error);
         }
-        s.folders.remove(&id);
+        for member in members {
+            s.folders.remove(&member);
+            s.tab_models.remove(&member);
+        }
         let view = s
             .views
             .iter()
@@ -679,10 +722,12 @@ pub(super) fn handle(
     }
     let mut s = state.borrow_mut();
     match event {
+        Event::RenameTab(_) | Event::MoveTabId(..) | Event::ToggleHeaderDivider
+        | Event::NewTab(_) | Event::SelectTab(_) | Event::CloseTab | Event::CloseTabId(_)
+        | Event::MoveTab(_) => unreachable!("Tabs handled before borrowing PaneApp"),
         Event::SortFolder(_)
         | Event::SetFolderColumns(_)
         | Event::ToggleFolderColumn(_)
-        | Event::NavigateFolder(_)
         | Event::FolderBack
         | Event::FolderHome
         | Event::ExportBackup
@@ -723,7 +768,7 @@ pub(super) fn handle(
                     InvalidateRect(view.window.hwnd().cast(), std::ptr::null(), 0);
                 }
             }
-            refresh_views(&mut s);
+            refresh_changed_views(&mut s, true);
         }
         Event::PaneItemFocus
         | Event::BeginItemMenu(_)

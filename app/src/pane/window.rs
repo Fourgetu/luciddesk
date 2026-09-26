@@ -26,15 +26,15 @@ use windows_window::Window;
 pub const ANIMATE_FOLD: u32 = WM_APP + 10;
 pub(super) fn update_auto_hide(hwnd: HWND, enabled: bool) {
     unsafe {
-        if enabled {
-            SetTimer(hwnd, 3, 60, None);
-        } else {
+        if !enabled {
             KillTimer(hwnd, 3);
         }
+        PostMessageW(hwnd, SYNC_POINTER, 1, 0);
     }
 }
-const SYNC_POINTER: u32 = WM_APP + 11;
+pub(super) const SYNC_POINTER: u32 = WM_APP + 11;
 pub(super) const RUN_POSTED_ACTION: u32 = WM_APP + 12;
+pub(super) const TAB_CHANGED: u32 = WM_APP + 13;
 const DESKTOP_LAYER: windows_sys::core::PCWSTR = windows_sys::w!("LucidPane.DesktopLayer");
 const CLOSING_PANE: windows_sys::core::PCWSTR = windows_sys::w!("LucidPane.ClosingPane");
 
@@ -165,7 +165,17 @@ fn update_pointer(hwnd: HWND, model: &RefCell<GroupModel>, pointer: Option<POINT
     }
 }
 
+fn tab_drag_threshold(origin: POINT, current: POINT, dpi: u32) -> bool {
+    use windows_sys::Win32::UI::HiDpi::GetSystemMetricsForDpi;
+    let dx = unsafe { GetSystemMetricsForDpi(SM_CXDRAG, dpi) }.max(1) as u32;
+    let dy = unsafe { GetSystemMetricsForDpi(SM_CYDRAG, dpi) }.max(1) as u32;
+    origin.x.abs_diff(current.x) >= dx || origin.y.abs_diff(current.y) >= dy
+}
+
 fn pane_hit(r: RECT, p: POINT, scale: f32, model: &GroupModel) -> u32 {
+    if super::tabs::hit(model, r.right as f32 / scale, p.x as f32 / scale, p.y as f32 / scale).is_some() {
+        return HTCLIENT;
+    }
     if super::scrollbar::Bar::for_model(model, r.right as f32 / scale, r.bottom as f32 / scale)
         .is_some_and(|bar| bar.contains(p.x as f32 / scale, p.y as f32 / scale))
     {
@@ -181,7 +191,8 @@ fn pane_hit(r: RECT, p: POINT, scale: f32, model: &GroupModel) -> u32 {
     {
         HTCLIENT
     } else {
-        frame_hit(r, p, scale, model.collapsed, model.locked)
+        let hit = frame_hit(r, p, scale, model.collapsed, model.locked);
+        if hit == HTCLIENT && model.tabs.len() > 1 && !model.locked && (p.y as f32 / scale) < HEADER { HTCAPTION } else { hit }
     }
 }
 
@@ -215,6 +226,17 @@ fn frame_hit(r: RECT, p: POINT, scale: f32, collapsed: bool, locked: bool) -> u3
 #[cfg(test)]
 mod hit_tests {
     use super::*;
+
+    #[test]
+    fn tab_click_jitter_does_not_start_a_pane_drag() {
+        for dpi in [96, 144, 192] {
+            let origin = POINT { x: 120, y: 18 };
+            assert!(!tab_drag_threshold(origin, origin, dpi));
+            assert!(!tab_drag_threshold(origin, POINT { x: 121, y: 19 }, dpi));
+            assert!(tab_drag_threshold(origin, POINT { x: 160, y: 18 }, dpi));
+            assert!(tab_drag_threshold(origin, POINT { x: 120, y: -30 }, dpi));
+        }
+    }
 
     #[test]
     fn locked_pane_blocks_moving_but_preserves_resize_hit_targets() {
@@ -495,6 +517,7 @@ where
     let events = Rc::new(RefCell::new(event));
     let mut renderer = Renderer::new().map_err(|e| e.to_string())?;
     let mut surface: Option<Surface> = None;
+    let mut visibility = super::visibility::Transition::default();
     let mut drag: Option<(usize, POINT, bool)> = None;
     let mut column_drag: Option<ColumnDrag> = None;
     let mut scrollbar_drag: Option<f32> = None;
@@ -505,12 +528,15 @@ where
     let mut drag_image: Option<super::drag_drop::image::DragImage> = None;
     let mut fold: Option<super::animation::Fold> = None;
     let mut move_origin: Option<super::snap::DragOrigin> = None;
-    let mut hover_state: Option<(bool, std::time::Instant)> = None;
+    let mut auto_hide = super::auto_hide::AutoHide::default();
+    let mut tab_press: Option<(desktop_core::PanelId, POINT)> = None;
     let menu_active = Rc::new(std::cell::Cell::new(false));
     let mut paint_error = false;
     let model_init = Rc::clone(&model);
     let inspect = std::env::var_os("LUCIDPANE_INSPECT").is_some();
     let window_title = format!("LucidPane — {}", model.borrow().title);
+    let prepared = Rc::new(std::cell::Cell::new(false));
+    let show_prepared = Rc::clone(&prepared);
     let window = Window::new(&window_title)
         .size(bounds.width as i32, bounds.height as i32)
         .style(WS_POPUP | WS_THICKFRAME | WS_SYSMENU)
@@ -523,9 +549,95 @@ where
                 },
         )
         .on_message(move |raw, message, wparam, lparam| {
+            if unsafe { crate::window_visibility::defer_show(message, lparam, show_prepared.get()) } {
+                return Some(0);
+            }
             let hwnd: HWND = raw.cast();
+            #[cfg(test)]
+            if message == WM_APP + 199 {
+                return Some(surface.as_ref().map_or(-1, |s| (s.current_opacity() * 1000.0) as isize));
+            }
+            if visibility.message(hwnd, message, wparam, lparam, surface.as_ref(), |_| {}) {
+                return Some(0);
+            }
+            if message == super::visibility::CLOSED {
+                let events = Rc::clone(&events);
+                defer_action(move || { (events.borrow_mut())(Event::ClosePane); });
+                return Some(0);
+            }
             let event = |value| (events.borrow_mut())(value);
+            if message == SYNC_POINTER && wparam != 0 {
+                auto_hide.reset();
+            }
+            if matches!(message, WM_MOUSEMOVE | WM_MOUSELEAVE | WM_NCMOUSEMOVE
+                | WM_NCMOUSELEAVE
+                | WM_ACTIVATE | WM_WINDOWPOSCHANGED | WM_EXITSIZEMOVE | SYNC_POINTER)
+                || (message == WM_TIMER && wparam == 3)
+            {
+                unsafe { KillTimer(hwnd, 3); }
+                let (enabled, collapsed) = {
+                    let m = model.borrow();
+                    (m.auto_hide, m.collapsed)
+                };
+                let suspended = menu_active.get() || super::rename::active(hwnd)
+                    || drag.is_some()
+                    || unsafe { windows_sys::Win32::UI::Input::KeyboardAndMouse::GetCapture() } == hwnd;
+                let mut cursor = POINT::default();
+                let hovered = unsafe { GetCursorPos(&raw mut cursor) != 0 && WindowFromPoint(cursor) == hwnd };
+                let (delay, collapse) = auto_hide.update(enabled, suspended, collapsed, hovered, std::time::Instant::now());
+                if let Some(delay) = delay {
+                    unsafe { SetTimer(hwnd, 3, delay.as_millis().max(1) as u32, None); }
+                }
+                if let Some(collapse) = collapse {
+                    if message == WM_TIMER {
+                        event(Event::SetCollapsed(collapse));
+                    } else {
+                        // Position/activation messages can arrive synchronously
+                        // while the owner holds PaneApp. Commit on a later tick.
+                        unsafe { SetTimer(hwnd, 3, 1, None); }
+                    }
+                }
+                if enabled && message == WM_NCMOUSEMOVE {
+                    use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
+                    let mut track = TRACKMOUSEEVENT {
+                        cbSize: size_of::<TRACKMOUSEEVENT>() as u32,
+                        dwFlags: TME_LEAVE | TME_NONCLIENT,
+                        hwndTrack: hwnd,
+                        dwHoverTime: 0,
+                    };
+                    unsafe { TrackMouseEvent(&raw mut track); }
+                }
+            }
             match message {
+                TAB_CHANGED => {
+                    tab_press = None;
+                    drag = None;
+                    drag_image = None;
+                    column_drag = None;
+                    scrollbar_drag = None;
+                    fold = None;
+                    unsafe {
+                        KillTimer(hwnd, 2);
+                        if windows_sys::Win32::UI::Input::KeyboardAndMouse::GetCapture() == hwnd { ReleaseCapture(); }
+                        PostMessageW(hwnd, SYNC_POINTER, 0, 0);
+                    }
+                    invalidate(hwnd);
+                    Some(0)
+                }
+                WM_KEYDOWN if !menu_active.get() && unsafe {
+                    windows_sys::Win32::UI::Input::KeyboardAndMouse::GetKeyState(0x11) < 0
+                } && matches!(wparam, 0x09 | 0x54 | 0x57) => {
+                    match wparam {
+                        0x09 => {
+                            let step = if unsafe { windows_sys::Win32::UI::Input::KeyboardAndMouse::GetKeyState(0x10) } < 0 { -1 } else { 1 };
+                            let next = super::tabs::adjacent(&model.borrow(), step);
+                            if let Some(next) = next { event(Event::SelectTab(next)); }
+                        }
+                        0x54 => { let folder = model.borrow().folder.is_some(); event(Event::NewTab(folder)); }
+                        _ => { event(Event::CloseTab); }
+                    }
+                    Some(0)
+                }
                 WM_DISPLAYCHANGE => {
                     // The runtime supervisor restores the layout after displays settle.
                     invalidate(hwnd);
@@ -668,40 +780,7 @@ where
                     invalidate(hwnd);
                     Some(0)
                 }
-                WM_TIMER if wparam == 3 => {
-                    let (enabled, collapsed) = {
-                        let m = model.borrow();
-                        (m.auto_hide, m.collapsed)
-                    };
-                    if !enabled || menu_active.get() || super::rename::active(hwnd) {
-                        hover_state = None;
-                        return Some(0);
-                    }
-                    // Do not fold a pane while it owns a drag or a resize operation.
-                    if drag.is_some()
-                        || unsafe { windows_sys::Win32::UI::Input::KeyboardAndMouse::GetCapture() }
-                            == hwnd
-                    {
-                        hover_state = None;
-                        return Some(0);
-                    }
-                    let mut cursor = POINT::default();
-                    unsafe {
-                        GetCursorPos(&raw mut cursor);
-                    }
-                    let hovered = unsafe { WindowFromPoint(cursor) } == hwnd;
-                    let now = std::time::Instant::now();
-                    let (previous, since) = *hover_state.get_or_insert((hovered, now));
-                    if previous != hovered {
-                        hover_state = Some((hovered, now));
-                    } else if since.elapsed()
-                        >= std::time::Duration::from_millis(if hovered { 120 } else { 600 })
-                        && collapsed == hovered
-                    {
-                        event(Event::SetCollapsed(!hovered));
-                    }
-                    Some(0)
-                }
+                WM_TIMER if wparam == 3 => Some(0),
                 ANIMATE_FOLD => {
                     let mut enabled = 1i32;
                     unsafe {
@@ -785,12 +864,12 @@ where
                     let cell = m.resize_cell();
                     let s = scale(hwnd);
                     info.ptMinTrackSize.x =
-                        ((cell.0 + super::layout::PADDING * 2.0) * s).ceil() as i32;
+                        ((cell.0 + super::layout::PADDING * 2.0).max(if m.tabs.len() > 1 { desktop_core::RectDip::MIN_WIDTH } else { 0.0 }) * s).ceil() as i32;
                     info.ptMinTrackSize.y = ((if m.collapsed {
                         HEADER
                     } else {
                         let rows = { m.row_contents(grid(hwnd, &m)) };
-                        HEADER
+                        m.content_header()
                             + super::layout::PADDING * 2.0
                             + rows.get(m.scroll).copied().unwrap_or(cell.1)
                     }) * s)
@@ -977,6 +1056,12 @@ where
                     let p = point(lparam);
                     let s = scale(hwnd);
                     let r = client(hwnd);
+                    let hit = super::tabs::hit(&model.borrow(), r.right as f32 / s, p.x as f32 / s, p.y as f32 / s);
+                    if let Some(hit) = hit {
+                        tab_press = Some((hit, p));
+                        unsafe { SetFocus(hwnd); SetCapture(hwnd); }
+                        return Some(0);
+                    }
                     let bar = scrollbar(hwnd, &model.borrow())
                         .filter(|bar| bar.contains(p.x as f32 / s, p.y as f32 / s));
                     if let Some(bar) = bar {
@@ -1026,8 +1111,8 @@ where
                     }
                     if model.borrow().is_list()
                         && model.borrow().folder.is_some()
-                        && p.y as f32 / s >= HEADER
-                        && p.y as f32 / s < HEADER + super::layout::LIST_HEADER
+                        && p.y as f32 / s >= model.borrow().content_header()
+                        && p.y as f32 / s < model.borrow().content_header() + super::layout::LIST_HEADER
                     {
                         let columns = model
                             .borrow()
@@ -1092,6 +1177,24 @@ where
                     Some(0)
                 }
                 WM_MOUSEMOVE => {
+                    if let Some((_, origin)) = tab_press {
+                        let current = point(lparam);
+                        let dpi = unsafe { GetDpiForWindow(hwnd) }.max(96);
+                        let crossed = tab_drag_threshold(origin, current, dpi);
+                        if crossed && !model.borrow().locked && wparam as u32 & 1 != 0 {
+                            // Clear the pending click before handing off to the native move loop.
+                            // Posting avoids re-entering this window callback while it is borrowed.
+                            tab_press = None;
+                            unsafe {
+                                ReleaseCapture();
+                                let mut screen = current;
+                                ClientToScreen(hwnd, &raw mut screen);
+                                let position = (screen.x as u16 as usize | ((screen.y as u16 as usize) << 16)) as isize;
+                                PostMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION as usize, position);
+                            }
+                        }
+                        return Some(0);
+                    }
                     if let Some(offset) = scrollbar_drag {
                         let mut m = model.borrow_mut();
                         if let Some(bar) = scrollbar(hwnd, &m) {
@@ -1215,6 +1318,14 @@ where
                     Some(0)
                 }
                 WM_LBUTTONUP => {
+                    if let Some((pressed, _)) = tab_press.take() {
+                        unsafe { ReleaseCapture(); }
+                        let p = point(lparam);
+                        let scale = scale(hwnd);
+                        let hit = super::tabs::hit(&model.borrow(), client(hwnd).right as f32 / scale, p.x as f32 / scale, p.y as f32 / scale);
+                        if hit == Some(pressed) { event(Event::SelectTab(pressed)); }
+                        return Some(0);
+                    }
                     if scrollbar_drag.take().is_some() {
                         model.borrow_mut().scrollbar.dragging = false;
                         unsafe {
@@ -1309,6 +1420,7 @@ where
                     Some(0)
                 }
                 WM_CAPTURECHANGED | WM_CANCELMODE => {
+                    tab_press = None;
                     scrollbar_drag = None;
                     model.borrow_mut().scrollbar.dragging = false;
                     if let Some(drag) = column_drag.take() {
@@ -1323,9 +1435,14 @@ where
                     invalidate(hwnd);
                     drag = None;
                     drag_image = None;
+                    unsafe { PostMessageW(hwnd, SYNC_POINTER, 0, 0); }
                     Some(0)
                 }
                 WM_LBUTTONDBLCLK => {
+                    let p = point(lparam);
+                    let dpi = scale(hwnd);
+                    let hit = super::tabs::hit(&model.borrow(), client(hwnd).right as f32 / dpi, p.x as f32 / dpi, p.y as f32 / dpi);
+                    if hit.is_some() { return Some(0); }
                     let p = point(lparam);
                     let s = scale(hwnd);
                     if scrollbar(hwnd, &model.borrow())
@@ -1498,7 +1615,7 @@ where
                         return Some(0);
                     }
                     let activity = MenuActivity::begin(Rc::clone(&menu_active), hwnd);
-                    hover_state = None;
+                    auto_hide.reset();
                     let model = Rc::clone(&model);
                     let events = Rc::clone(&events);
                     let window_state = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) };
@@ -1511,17 +1628,22 @@ where
                         }
                         let event = |value| (events.borrow_mut())(value);
                         let mut anchor = point(lparam);
+                        let mut tab_context = None;
                         if lparam != -1 {
                             let mut p = anchor;
                             unsafe {
                                 windows_sys::Win32::Graphics::Gdi::ScreenToClient(hwnd, &raw mut p);
+                            }
+                            let tab = super::tabs::hit(&model.borrow(), client(hwnd).right as f32 / scale(hwnd), p.x as f32 / scale(hwnd), p.y as f32 / scale(hwnd));
+                            if let Some(tab) = tab {
+                                tab_context = Some(tab);
                             }
                             let column_menu = {
                                 let m = model.borrow();
                                 (m.folder.is_some()
                                     && m.is_list()
                                     && !m.collapsed
-                                    && (HEADER..HEADER + super::layout::LIST_HEADER)
+                                    && (m.content_header()..m.content_header() + super::layout::LIST_HEADER)
                                         .contains(&(p.y as f32 / scale(hwnd))))
                                 .then_some((m.theme, m.backdrop, m.folder_visible_columns))
                             };
@@ -1646,7 +1768,10 @@ where
                             (model.folder.is_some(), model.is_list())
                         };
                         let visible_columns = model.borrow().folder_visible_columns;
-                        let command = menu(
+                        let command = if tab_context.is_some() {
+                            let entries = super::menu::tab_context_entries(&model.borrow(), unsafe { GetWindowLongW(hwnd, GWL_EXSTYLE) } as u32 & WS_EX_TOPMOST != 0);
+                            super::menu::show_entries(hwnd, anchor, false, theme, backdrop, entries)
+                        } else { menu(
                             hwnd,
                             lparam,
                             auto_hide,
@@ -1655,10 +1780,24 @@ where
                             backdrop,
                             is_folder,
                             visible_columns,
-                        );
+                        ) };
                         update_pointer(hwnd, &model, None);
                         invalidate(hwnd);
                         match command {
+                            48 => { event(Event::Collapse); }
+                            40 => { event(Event::NewTab(false)); }
+                            41 => { event(Event::NewTab(true)); }
+                            42 => { let id = tab_context.unwrap_or(model.borrow().active_tab); event(Event::CloseTabId(id)); }
+                            43 => { if let Some(id) = tab_context { event(Event::RenameTab(id)); } else { event(Event::RenameTitle); } }
+                            44 | 45 => {
+                                let step = if command == 44 { -1 } else { 1 };
+                                if let Some(id) = tab_context { event(Event::MoveTabId(id, step)); }
+                                else { event(Event::MoveTab(step)); }
+                            }
+                            46 | 47 => {
+                                let next = super::tabs::adjacent(&model.borrow(), if command == 46 { -1 } else { 1 });
+                                if let Some(next) = next { event(Event::SelectTab(next)); }
+                            }
                             31..=33 => {
                                 event(Event::ToggleFolderColumn((command - 30) as u8));
                             }
@@ -1708,11 +1847,12 @@ where
                     Some(0)
                 }
                 WM_CLOSE => {
-                    event(Event::Exit);
+                    let events = Rc::clone(&events);
+                    defer_action(move || { (events.borrow_mut())(Event::ClosePane); });
                     Some(0)
                 }
                 WM_SYSCOMMAND if wparam & 0xfff0 == SC_CLOSE as usize => {
-                    event(Event::Exit);
+                    unsafe { PostMessageW(hwnd, WM_CLOSE, 0, 0); }
                     Some(0)
                 }
                 _ => None,
@@ -1760,15 +1900,14 @@ where
             SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
         );
         if model_init.borrow().auto_hide {
-            SetTimer(hwnd, 3, 60, None);
+            PostMessageW(hwnd, SYNC_POINTER, 0, 0);
         }
     }
     invalidate(hwnd);
     // Bootstrap the transparent composition content before the first visible frame.
     unsafe {
         SendMessageW(hwnd, WM_PAINT, 0, 0);
-        // A hidden launcher can override the first ShowWindow in windows-window::create.
-        // Explicitly reveal only after transparent content has been initialized.
+        prepared.set(true);
         ShowWindow(hwnd, SW_SHOWNOACTIVATE);
     }
     Ok(window)

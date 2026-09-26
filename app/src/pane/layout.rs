@@ -11,7 +11,8 @@ pub struct Grid {
     pub scroll_limit: Option<usize>,
 }
 
-pub const HEADER: f32 = 38.0;
+pub const HEADER: f32 = 40.0;
+pub const HEADER_INSET: f32 = 6.0;
 pub const LIST_HEADER: f32 = 28.0;
 pub const LIST_ROW: f32 = 32.0;
 
@@ -50,7 +51,7 @@ pub fn header_button_x(width: f32, button: usize) -> f32 {
 }
 
 pub fn header_button(width: f32, x: f32, y: f32) -> Option<usize> {
-    if !(5.0..33.0).contains(&y) {
+    if !(HEADER_INSET..HEADER - HEADER_INSET).contains(&y) {
         return None;
     }
     (0..2).find(|&button| {
@@ -258,7 +259,7 @@ mod resize_tests {
                 if !matches!(edge, WMSZ_LEFT | WMSZ_RIGHT) {
                     assert_eq!(
                         r.bottom - r.top,
-                        ((62.0 + 2.0 * 96.0) * scale).ceil() as i32
+                        ((64.0 + 2.0 * 96.0) * scale).ceil() as i32
                     );
                     if matches!(edge, WMSZ_TOP | WMSZ_TOPLEFT | WMSZ_TOPRIGHT) {
                         assert_eq!(r.bottom, old.bottom);
@@ -300,7 +301,7 @@ mod resize_tests {
             );
             assert_eq!((grid.columns, grid.visible_rows), (1, 1));
             assert_eq!(r.right, (112.0 * scale).ceil() as i32);
-            assert_eq!(r.bottom, (158.0 * scale).ceil() as i32);
+            assert_eq!(r.bottom, (160.0 * scale).ceil() as i32);
             resize_pane(&mut r, WMSZ_BOTTOM, (88.0, 96.0), scale, true, &[]);
             assert_eq!(r.bottom, (HEADER * scale).ceil() as i32);
         }
@@ -346,7 +347,7 @@ mod content_tests {
     fn last_row_gap_is_removed_and_padding_can_shrink_before_scrolling() {
         let content = [85.0, 69.0, 85.0];
         let height = pane_content_height(3, 96.0, &content);
-        assert_eq!(height, 339.0);
+        assert_eq!(height, 341.0);
         assert_eq!(fitting_rows(&content, 96.0, height - HEADER - PADDING), 3);
         assert_eq!(
             fitting_rows(&content, 96.0, height - HEADER - PADDING - 11.0),
@@ -356,7 +357,7 @@ mod content_tests {
             fitting_rows(&content, 96.0, height - HEADER - PADDING - 13.0),
             2
         );
-        assert_eq!(pane_content_height(2, 96.0, &content), 227.0);
+        assert_eq!(pane_content_height(2, 96.0, &content), 229.0);
         for scale in [1.0, 1.25, 1.5, 2.0] {
             assert_eq!(
                 snap_content_height(((height + 5.0) * scale) as i32, 96.0, &content, scale),

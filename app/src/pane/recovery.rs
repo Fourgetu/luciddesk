@@ -371,6 +371,20 @@ pub(super) fn maintain(state: &Rc<RefCell<PaneApp>>) {
         }
     }
 }
+pub(super) fn deadline(s: &PaneApp) -> Option<Instant> {
+    let manager = &s.runtime.as_ref()?.backup;
+    if manager.view.busy {
+        return None; // Completion is delivered by Wake.
+    }
+    if !manager.initialized {
+        return Some(Instant::now());
+    }
+    let policy = Policy::load(&s.store);
+    policy.enabled.then(|| {
+        (manager.changed + Duration::from_secs(10))
+            .max(manager.attempted + Duration::from_secs(policy.minutes * 60))
+    })
+}
 fn set_status(state: &Rc<RefCell<PaneApp>>, message: &str) {
     let mut state = state.borrow_mut();
     if let Some(r) = state.runtime.as_mut() {
@@ -744,6 +758,29 @@ fn execute(state: &Rc<RefCell<PaneApp>>, event: &Event) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn completion_reaches_runtime_without_dispatching_timers() {
+        use windows_sys::Win32::UI::WindowsAndMessaging::*;
+        let root = tempfile::tempdir().unwrap();
+        let state = state(root.path());
+        state.borrow_mut().workspace = Workspace::default();
+        Policy { enabled: false, ..Default::default() }.save(&state.borrow().store).unwrap();
+        let supervisor = runtime::supervisor(&state).unwrap();
+        begin(&state, "waiting", |_| Ok(Outcome::Saved("event delivered".into()))).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while view(&state.borrow()).busy && Instant::now() < deadline {
+            unsafe {
+                let mut message = MSG::default();
+                while PeekMessageW(&raw mut message, supervisor.hwnd().cast(), wake::READY, wake::READY, PM_REMOVE) != 0 {
+                    DispatchMessageW(&message);
+                }
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(!view(&state.borrow()).busy);
+        assert_eq!(view(&state.borrow()).status, "event delivered");
+    }
+
     #[test]
     fn backup_views_share_history_and_keep_previous_snapshot_stable() {
         let mut current = super::View {

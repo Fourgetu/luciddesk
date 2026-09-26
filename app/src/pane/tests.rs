@@ -2,6 +2,59 @@ use super::search::everything_settings;
 use super::*;
 
 #[test]
+fn all_pane_types_fade_and_close_after_the_transition() {
+    use windows_sys::Win32::UI::WindowsAndMessaging::*;
+    let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let state = Rc::new(RefCell::new(test_state()));
+    state.borrow_mut().workspace.set_appearance(desktop_core::PanelTheme::Dark,
+        desktop_core::Backdrop::Translucent { opacity: 1.0 });
+    create_view(&state, PanelId::new(1)).unwrap();
+    let folder = tempfile::tempdir().unwrap();
+    handle(&state, PanelId::new(0), Event::MapFolder(folder.path().into())).unwrap();
+    handle(&state, PanelId::new(0), Event::EnableSearch).unwrap();
+    let windows: Vec<_> = state.borrow().views.iter().map(|v| v.window.hwnd().cast()).collect();
+    assert_eq!(windows.len(), 3);
+    let pump = |millis| {
+        let until = std::time::Instant::now() + std::time::Duration::from_millis(millis);
+        while std::time::Instant::now() < until {
+            unsafe {
+                let mut msg = MSG::default();
+                while PeekMessageW(&mut msg, std::ptr::null_mut(), 0, 0, PM_REMOVE) != 0 {
+                    TranslateMessage(&msg);
+                    DispatchMessageW(&msg);
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+    };
+    if scrollbar::animations_enabled() {
+        for &hwnd in &windows { assert_eq!(unsafe { SendMessageW(hwnd, WM_APP + 199, 0, 0) }, 0); }
+    }
+    pump(300);
+    for hwnd in windows {
+        assert_eq!(unsafe { SendMessageW(hwnd, WM_APP + 199, 0, 0) }, 1000);
+        unsafe { PostMessageW(hwnd, WM_CLOSE, 0, 0); }
+        pump(80);
+        if scrollbar::animations_enabled() {
+            assert_ne!(unsafe { IsWindow(hwnd) }, 0);
+            let opacity = unsafe { SendMessageW(hwnd, WM_APP + 199, 0, 0) };
+            assert!((1..1000).contains(&opacity), "closing opacity: {opacity}");
+            let editor = unsafe { GetPropW(hwnd, windows_sys::w!("LucidPane.SearchInput")) };
+            if !editor.is_null() {
+                let mut alpha = 0;
+                let mut key = 0;
+                let mut flags = 0;
+                assert_ne!(unsafe { GetLayeredWindowAttributes(editor, &mut key, &mut alpha, &mut flags) }, 0);
+                assert!(alpha > 0 && alpha < 255);
+            }
+        }
+        pump(300);
+        assert_eq!(unsafe { IsWindow(hwnd) }, 0);
+    }
+    assert!(state.borrow().views.is_empty());
+}
+
+#[test]
 fn batch_drag_preserves_order_and_moves_each_identity_once() {
     let mut s = test_state();
     transfer_many(&mut s, PanelId::new(1), &[0, 2], PanelId::new(2), 0).unwrap();
@@ -86,6 +139,7 @@ pub(super) fn test_state() -> PaneApp {
     PaneApp {
         wake: Default::default(),
         folders: HashMap::new(),
+        tab_models: HashMap::new(),
         settings: None,
         session: None,
         drops: Vec::new(),
@@ -435,7 +489,7 @@ fn activation_releases_state_and_model_before_shell_reentry() {
     let called = Rc::new(std::cell::Cell::new(false));
     let observed = Rc::clone(&called);
     let reentrant = Rc::clone(&state);
-    events::activate_with(&state, PanelId::new(1), 0, move |_, identity| {
+    events::activate_item_with(&state, PanelId::new(1), 0, move |_, identity| {
         assert_eq!(identity, &expected);
         assert!(reentrant.try_borrow_mut().is_ok());
         assert!(model.try_borrow_mut().is_ok());
@@ -469,6 +523,51 @@ fn activation_releases_state_and_model_before_shell_reentry() {
         DispatchMessageW(&message);
     }
     assert!(called.get());
+    let root = tempfile::tempdir().unwrap();
+    let child = root.path().join("child");
+    std::fs::create_dir(&child).unwrap();
+    std::fs::write(root.path().join("file.txt"), b"keep").unwrap();
+    handle(&state, PanelId::new(0), Event::MapFolder(root.path().to_path_buf())).unwrap();
+    let id = PanelId::new(3);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while state.borrow().folders[&id].loading {
+        assert!(std::time::Instant::now() < deadline);
+        folder::poll(&mut state.borrow_mut());
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let model = Rc::clone(&state.borrow().views.iter().find(|v| v.id == id).unwrap().model);
+    let index = model.borrow().items.iter().position(|item| item.identity.file_system_path() == Some(child.as_path())).unwrap();
+    let file = model.borrow().items.iter().position(|item| item.label == "file.txt").unwrap();
+    assert_eq!(folder::entry_mode::navigation_target(&state.borrow(), id, file).unwrap(), None);
+    assert_eq!(folder::entry_mode::navigation_target(&state.borrow(), id, index).unwrap(), Some(child.clone()));
+    folder::EntryMode::Explorer.save(&state.borrow().store).unwrap();
+    let opened = Rc::new(std::cell::Cell::new(false));
+    let observed = Rc::clone(&opened);
+    let reentrant = Rc::clone(&state);
+    let expected = child.clone();
+    events::activate_item_with(&state, id, index, move |_, identity| {
+        assert_eq!(identity.file_system_path(), Some(expected.as_path()));
+        assert!(reentrant.try_borrow_mut().is_ok());
+        assert!(model.try_borrow_mut().is_ok());
+        observed.set(true);
+        Ok(())
+    }).unwrap();
+    assert!(!opened.get());
+    assert_eq!(state.borrow().folders[&id].path, root.path());
+    unsafe {
+        use windows_sys::Win32::UI::WindowsAndMessaging::*;
+        let mut message = MSG::default();
+        let hwnd = state.borrow().views.iter().find(|v| v.id == id).unwrap().window.hwnd().cast();
+        assert_ne!(PeekMessageW(&mut message, hwnd, window::RUN_POSTED_ACTION, window::RUN_POSTED_ACTION, PM_REMOVE), 0);
+        DispatchMessageW(&message);
+    }
+    assert!(opened.get());
+    folder::EntryMode::Inline.save(&state.borrow().store).unwrap();
+    events::activate_item_with(&state, id, index, |_, _| panic!("Inline folders must stay in the pane")).unwrap();
+    assert_eq!(state.borrow().folders[&id].path, child);
+    assert_eq!(state.borrow().workspace.panel(id).unwrap().folder(), Some(root.path()));
+    handle(&state, id, Event::FolderBack).unwrap();
+    assert_eq!(state.borrow().folders[&id].path, root.path());
     let views = std::mem::take(&mut state.borrow_mut().views);
     for view in &views {
         window::prepare_close(view.window.hwnd().cast());
@@ -479,6 +578,8 @@ fn activation_releases_state_and_model_before_shell_reentry() {
 #[test]
 fn snapped_content_bottom_and_scrollbar_use_the_same_row_metrics() {
     let mut model = GroupModel {
+        tabs: Vec::new(),
+        active_tab: desktop_core::PanelId::new(0),
         folder_sort: (0, false),
         folder_columns: None,
         folder_visible_columns: 15,
@@ -595,6 +696,8 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
     };
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
     let model = Rc::new(RefCell::new(GroupModel {
+        tabs: Vec::new(),
+        active_tab: desktop_core::PanelId::new(0),
         folder_sort: (0, false),
         folder_columns: None,
         folder_visible_columns: 15,
@@ -670,6 +773,21 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
     )
     .unwrap();
     let hwnd = pane.hwnd().cast();
+    if scrollbar::animations_enabled() {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{WM_APP, WM_TIMER};
+        // Delayed startup must not consume the fade before the UI loop runs.
+        let opacity = || unsafe { SendMessageW(hwnd, WM_APP + 199, 0, 0) };
+        assert_eq!(opacity(), 0);
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        unsafe { SendMessageW(hwnd, WM_TIMER, 0x4c5056, 0); }
+        assert!(opacity() < 100);
+        std::thread::sleep(std::time::Duration::from_millis(70));
+        unsafe { SendMessageW(hwnd, WM_TIMER, 0x4c5056, 0); }
+        assert!((100..1000).contains(&opacity()));
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        unsafe { SendMessageW(hwnd, WM_TIMER, 0x4c5056, 0); }
+        assert_eq!(opacity(), 1000);
+    }
     for selected in [None, Some(3)] {
         model.borrow_mut().selected = selected;
         model.borrow_mut().selection = selected.into_iter().collect();
@@ -1058,6 +1176,8 @@ fn pane_layer_switch_and_wallpaper_material_initialize() {
     use windows_sys::Win32::UI::WindowsAndMessaging::{GWL_EXSTYLE, GetWindowLongW, WS_EX_TOPMOST};
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
     let model = Rc::new(RefCell::new(GroupModel {
+        tabs: Vec::new(),
+        active_tab: desktop_core::PanelId::new(0),
         folder_sort: (0, false),
         folder_columns: None,
         folder_visible_columns: 15,
@@ -1903,6 +2023,8 @@ fn reconciliation_preserves_groups_and_appends_new_items_after_existing_order() 
 #[test]
 fn multiselection_preserves_anchor_toggle_and_file_identity_on_refresh() {
     let mut model = GroupModel {
+        tabs: Vec::new(),
+        active_tab: desktop_core::PanelId::new(0),
         folder_sort: (0, false),
         folder_columns: None,
         folder_visible_columns: 15,

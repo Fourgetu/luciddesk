@@ -9,6 +9,7 @@ pub(super) struct Painter {
 impl Painter {
     pub(super) fn new() -> windows::core::Result<Self> {
         use windows_canvas::{FontWeight, ParagraphAlignment, TextFormat, WordWrapping};
+        let family = super::super::fonts::family();
         let mut formats = vec![];
         for (i, size) in [12.0, 14.0, 20.0, 28.0, Style::ICON, Style::NAV_ICON]
             .iter()
@@ -18,7 +19,7 @@ impl Painter {
                 if i >= 4 {
                     "Segoe Fluent Icons"
                 } else {
-                    super::super::assets::UI_FONT
+                    &family
                 },
                 *size,
                 FontWeight(if i == 2 || i == 3 { 600 } else { 400 }),
@@ -33,7 +34,7 @@ impl Painter {
             super::super::canvas::ellipsis(&format)?;
             formats.push(format);
         }
-        let button_format = canvas_result(TextFormat::new(super::super::assets::UI_FONT, 14.0))?
+        let button_format = canvas_result(TextFormat::new(&family, 14.0))?
             .with_paragraph_alignment(ParagraphAlignment::Center)
             .with_word_wrapping(WordWrapping::NoWrap)
             .with_alignment(windows_canvas::TextAlignment::Center);

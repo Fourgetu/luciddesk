@@ -1,11 +1,18 @@
 //! Pane UI with Explorer-owned desktop membership, drawing, layout and input.
+mod audit;
+mod audit_schedule;
 mod icon_changes;
+mod icons;
+mod image_retention;
 mod inventory;
 mod rename_transaction;
 use super::assets::RECYCLE_BIN_PARSING_NAME;
 use super::search::{everything_settings, hotkey as search_hotkey};
 use super::*;
+use audit::DesktopAudit;
 use desktop_hook::{filter::FilterSession, notifications::DESKTOP_INPUT_MESSAGE};
+pub(super) use icons::refresh_icons;
+use icons::{queue_pane_icons, retain_pane_images};
 use inventory::Inventory;
 pub(super) use rename_transaction::commit as rename_item;
 use std::{
@@ -23,19 +30,20 @@ pub(super) struct Session {
     _controller: windows_window::Window,
     icons_dirty: Rc<RefCell<icon_changes::Pending>>,
     icon_due: Option<Instant>,
-    icon_reload: Option<mpsc::Receiver<Vec<(String, assets::Pixels)>>>,
+    icon_reload: Option<icons::RefreshJob>,
+    icon_refresh_failures: u32,
     view: isize,
     snapshot: Inventory,
     last_reconcile: Instant,
     audit: DesktopAudit,
     last_tick: Instant,
     tick_deferred: bool,
-    last_sync: Instant,
     last_icon_scan: Instant,
     published: RefCell<Vec<String>>,
     sender: mpsc::Sender<Loaded>,
     requested: std::collections::HashSet<String>,
     icon_failures: HashMap<String, (u32, Instant)>,
+    image_retention: image_retention::ImageRetention,
     initial_batches: usize,
     menu_active: Cell<bool>,
     last_pane_input: Cell<Option<u32>>,
@@ -45,55 +53,6 @@ pub(super) struct Session {
     last_failure: Option<String>,
     pending_workspace_save: bool,
     diagnostic_path: std::path::PathBuf,
-}
-
-struct DesktopAudit {
-    requests: mpsc::Sender<(Vec<ShellIdentity>, bool)>,
-    results: mpsc::Receiver<(Vec<String>, Result<Option<Inventory>, String>)>,
-    pending: bool,
-}
-impl DesktopAudit {
-    fn start(wake: wake::Wake) -> Result<Self, String> {
-        let (requests, receiver) = mpsc::channel::<(Vec<ShellIdentity>, bool)>();
-        let (sender, results) = mpsc::channel();
-        std::thread::Builder::new()
-            .name("desktop-audit".into())
-            .spawn(move || {
-                let apartment = ShellApartment::initialize_sta();
-                let mut reader = desktop_shell::NativeDesktopReader::default();
-                let mut previous = None;
-                while let Ok((managed, force)) = receiver.recv() {
-                    let keys = inventory::revision_keys(&managed);
-                    let result = match &apartment {
-                        Ok(_) => (|| -> Result<Option<Inventory>, String> {
-                            let revision = (
-                                reader.revision()?,
-                                desktop_shell::desktop_source_revision()
-                                    .map_err(|error| error.to_string())?,
-                                keys.clone(),
-                            );
-                            if !force && previous.as_ref() == Some(&revision) {
-                                return Ok(None);
-                            }
-                            let snapshot = inventory::capture(&managed)?;
-                            previous = Some(revision);
-                            Ok(Some(snapshot))
-                        })(),
-                        Err(error) => Err(error.to_string()),
-                    };
-                    if sender.send((keys, result)).is_err() {
-                        break;
-                    }
-                    wake.notify();
-                }
-            })
-            .map_err(|error| error.to_string())?;
-        Ok(Self {
-            requests,
-            results,
-            pending: false,
-        })
-    }
 }
 
 struct OleApartment;
@@ -116,6 +75,8 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
     let first_run = !path.exists();
     let mut store = WorkspaceStore::open(path).map_err(|e| e.to_string())?;
     super::peek::load(&store)?;
+    fonts::load(&store)?;
+    header_divider::load(&store)?;
     search_hotkey::load(&store)?;
     everything_settings::load(&store)?;
     let mut workspace = store.load_workspace().map_err(|e| e.to_string())?;
@@ -151,6 +112,7 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
     let state = Rc::new(RefCell::new(PaneApp {
         wake: Default::default(),
         folders: HashMap::new(),
+        tab_models: HashMap::new(),
         settings: None,
         session: None,
         drops: Vec::new(),
@@ -181,7 +143,7 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
         .iter()
         .filter(|p| {
             (!p.is_search() || search_enabled)
-                && (p.folder().is_some() || p.is_search() || state.borrow().session.is_some())
+                && (tabs::independent(&state.borrow().workspace, p.id()) || state.borrow().session.is_some())
         })
         .map(Panel::id)
         .collect();
@@ -283,6 +245,9 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), S
         .style(WS_POPUP)
         .ex_style(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)
         .on_message(move |_, message, wparam, lparam| {
+            if unsafe { crate::window_visibility::defer_show(message, lparam, false) } {
+                return Some(0);
+            }
             if message == WM_DESTROY {
                 // Releasing a failed/stale connection must not quit independent panes.
                 Some(0)
@@ -322,9 +287,6 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), S
         })
         .create()
         .map_err(|e| e.to_string())?;
-    unsafe {
-        ShowWindow(controller.hwnd().cast(), SW_HIDE);
-    }
     let hook = FilterSession::connect(
         view,
         controller.hwnd() as isize,
@@ -351,18 +313,19 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), S
         icons_dirty,
         icon_due: None,
         icon_reload: None,
+        icon_refresh_failures: 0,
         view,
         snapshot,
         last_reconcile: Instant::now(),
         audit: DesktopAudit::start(state.borrow().wake.clone())?,
         last_tick: Instant::now() - Duration::from_millis(20),
         tick_deferred: false,
-        last_sync: Instant::now(),
         last_icon_scan: Instant::now() - Duration::from_secs(1),
         published: RefCell::new(Vec::new()),
         sender,
         requested: Default::default(),
         icon_failures: HashMap::new(),
+        image_retention: Default::default(),
         initial_batches: 0,
         menu_active: Cell::new(false),
         last_pane_input: Cell::new(None),
@@ -517,6 +480,11 @@ fn managed_identities(s: &PaneApp) -> Vec<ShellIdentity> {
 }
 // Apply the captured inventory without another synchronous Shell enumeration.
 fn reconcile_inventory(s: &mut PaneApp) -> Result<(), String> {
+    s.session
+        .as_mut()
+        .unwrap()
+        .image_retention
+        .invalidate(&mut s.images);
     normalize_pane_orders(s);
     let snapshot = &s.session.as_ref().unwrap().snapshot;
     s.workspace.reconcile_desktop_items(
@@ -543,11 +511,23 @@ fn reconcile_inventory(s: &mut PaneApp) -> Result<(), String> {
     h.icon_failures.retain(|key, _| live.contains(key));
     h.last_reconcile = Instant::now();
     queue_pane_icons(s, true);
-    s.store
-        .save_workspace(&s.workspace)
-        .map_err(|error| error.to_string())?;
+    s.session.as_mut().unwrap().pending_workspace_save = true;
+    persist_workspace(s)?;
     refresh_views(s);
     Ok(())
+}
+
+fn persist_pending(pending: &mut bool, save: impl FnOnce() -> Result<(), String>) -> Result<bool, String> {
+    if !*pending { return Ok(false); }
+    save()?;
+    *pending = false;
+    Ok(true)
+}
+
+fn persist_workspace(s: &mut PaneApp) -> Result<bool, String> {
+    persist_pending(&mut s.session.as_mut().unwrap().pending_workspace_save, || {
+        s.store.save_workspace(&s.workspace).map_err(|error| error.to_string())
+    })
 }
 /// Hide a managed item only after its Pane image is available. Both normal
 /// synchronization and committed renames must publish the same complete set.
@@ -582,13 +562,23 @@ pub(super) fn sync(s: &mut PaneApp) -> Result<(), String> {
     if !h.hook.is_alive() {
         return Err("Explorer 视图过滤连接已断开".into());
     }
+    let h = s.session.as_mut().unwrap();
+    if h.dirty.get() || !h.icons_dirty.borrow().is_empty() {
+        h.image_retention.invalidate(&mut s.images);
+    }
+    let live = retain_pane_images(
+        &s.workspace,
+        &mut s.images,
+        &mut h.image_retention,
+        Instant::now(),
+    );
     let names = hidden_names(s);
     let h = s.session.as_mut().unwrap();
     if *h.published.borrow() != names {
         h.hook.set_hidden(&names)?;
         *h.published.borrow_mut() = names;
     }
-    h.last_sync = Instant::now();
+    h.icon_failures.retain(|key, _| live.contains(key));
     queue_pane_icons(s, true);
     Ok(())
 }
@@ -702,7 +692,6 @@ pub(super) fn tick(s: &mut PaneApp) -> Result<(), String> {
             // Sorting can invalidate the inventory while it is being read. Leave
             // the pane and its membership alive; re-read before the next publish.
             h.dirty.set(true);
-            h.published.borrow_mut().clear();
             h.retry_after = Some(Instant::now() + Duration::from_millis(250));
         }
     }
@@ -710,16 +699,15 @@ pub(super) fn tick(s: &mut PaneApp) -> Result<(), String> {
 }
 
 fn tick_once(s: &mut PaneApp) -> Result<(), String> {
-    let h = s.session.as_mut().unwrap();
-    if h.menu_active.get() {
+    if s.session.as_ref().unwrap().menu_active.get() {
         return Ok(());
     }
-    if h.pending_workspace_save {
-        s.store
-            .save_workspace(&s.workspace)
-            .map_err(|e| e.to_string())?;
-        h.pending_workspace_save = false;
+    if persist_workspace(s)? {
+        // The accepted inventory may already compare equal after a failed save.
+        // Complete its presentation independently of the next audit result.
+        refresh_views(s);
     }
+    let h = s.session.as_mut().unwrap();
     if h.last_tick.elapsed() < Duration::from_millis(20) {
         h.tick_deferred = true;
         return Ok(());
@@ -728,106 +716,49 @@ fn tick_once(s: &mut PaneApp) -> Result<(), String> {
     h.last_tick = Instant::now();
     let mut urgent = h.dirty.replace(false);
     if urgent {
-        h.last_reconcile = Instant::now() - Duration::from_secs(10);
+        h.audit.invalidate();
     }
-    let mut changed = false;
-    queue_pane_icons(s, false);
-    while let Ok(loaded) = s.receiver.try_recv() {
-        let h = s.session.as_mut().unwrap();
-        h.initial_batches = h.initial_batches.saturating_sub(1);
-        changed |= !loaded.images.is_empty();
-        let successful: std::collections::HashSet<_> =
-            loaded.images.iter().map(|(key, _)| key.as_str()).collect();
-        for key in &loaded.requested {
-            h.requested.remove(key);
-            if successful.contains(key.as_str()) {
-                h.icon_failures.remove(key);
-            } else if h
-                .snapshot
-                .items
-                .iter()
-                .any(|item| item.identity.persistent_key() == *key)
-            {
-                let attempts = h
-                    .icon_failures
-                    .get(key)
-                    .map_or(1, |(attempts, _)| attempts + 1);
-                h.icon_failures.insert(
-                    key.clone(),
-                    (
-                        attempts,
-                        Instant::now() + Duration::from_secs(1 << attempts.min(6)),
-                    ),
-                );
-            }
-        }
-        let live: std::collections::HashSet<_> = h
-            .snapshot
-            .items
-            .iter()
-            .map(|item| item.identity.persistent_key())
-            .collect();
-        for (key, image) in loaded.images {
-            if !live.contains(&key) {
-                continue;
-            }
-            s.images.insert(key, Arc::new(image));
-        }
-    }
-    if changed {
-        urgent = true;
-        refresh_views(s);
-    }
-    urgent |= refresh_changed_icons(s);
-    let managed = managed_identities(s);
-    let managed_keys = inventory::revision_keys(&managed);
-    let h = s.session.as_mut().unwrap();
-    if h.last_reconcile.elapsed() >= Duration::from_secs(2) && !h.audit.pending {
-        h.audit
-            .requests
-            .send((managed, urgent))
-            .map_err(|_| "桌面检查线程已退出")?;
-        h.audit.pending = true;
-    }
-    if h.audit.pending {
-        match h.audit.results.try_recv() {
-            Ok((keys, result)) => {
-                h.audit.pending = false;
-                if keys != managed_keys {
-                    h.dirty.set(true);
-                } else {
-                    h.last_reconcile = Instant::now();
-                    if let Some(snapshot) = result?
-                        && !inventory::same(&h.snapshot, &snapshot)
-                    {
-                        h.snapshot = snapshot;
-                        reconcile_inventory(s)?;
-                        urgent = true;
-                    }
-                }
-            }
-            Err(mpsc::TryRecvError::Disconnected) => return Err("桌面检查线程已退出".into()),
-            Err(mpsc::TryRecvError::Empty) => {}
-        }
-    }
-    // Keep a slow repair for unobservable Explorer presentation resets. Normal
-    // updates are driven by input, Shell notifications and worker completions.
-    if s.session.as_ref().unwrap().last_sync.elapsed() >= Duration::from_secs(30) {
-        s.session.as_ref().unwrap().published.borrow_mut().clear();
-    }
-    if sync_due(urgent, s.session.as_ref().unwrap().last_sync.elapsed()) {
+    urgent |= icons::tick(s, urgent);
+    urgent |= poll_inventory(s, urgent)?;
+    // The Hook repairs its retained desired set. Publish only when application
+    // state changed, rather than duplicating its watchdog with periodic SETs.
+    if urgent {
         sync(s)
     } else {
         Ok(())
     }
 }
 
-fn sync_due(urgent: bool, elapsed: Duration) -> bool {
-    urgent || elapsed >= Duration::from_secs(30)
+fn poll_inventory(s: &mut PaneApp, urgent: bool) -> Result<bool, String> {
+    let h = s.session.as_ref().unwrap();
+    if h.audit.due(h.last_reconcile.elapsed()) {
+        let managed = managed_identities(s);
+        s.session.as_mut().unwrap().audit.submit(managed, urgent)?;
+    }
+    let Some(result) = s.session.as_mut().unwrap().audit.poll()? else {
+        return Ok(false);
+    };
+    let managed_keys = inventory::revision_keys(&managed_identities(s));
+    let h = s.session.as_mut().unwrap();
+    if result.member_keys != managed_keys {
+        h.dirty.set(true);
+        return Ok(false);
+    }
+    h.last_reconcile = Instant::now();
+    let snapshot = result.inventory?;
+    let changed = snapshot
+        .as_ref()
+        .is_some_and(|next| !inventory::same(&h.snapshot, next));
+    h.audit.complete(changed);
+    if let Some(snapshot) = snapshot.filter(|_| changed) {
+        h.snapshot = snapshot;
+        reconcile_inventory(s)?;
+    }
+    Ok(changed)
 }
 
-// A one-shot timer exists only for active input, debounce or retry deadlines.
-// The supervisor's slow heartbeat handles audits and missed notifications.
+// Schedule the next input, retry, audit, cache expiry or repair deadline.
+// Worker completions and Shell changes wake the supervisor independently.
 pub(super) fn next_work(s: &PaneApp) -> Option<u32> {
     let h = s.session.as_ref()?;
     let now = Instant::now();
@@ -836,13 +767,17 @@ pub(super) fn next_work(s: &PaneApp) -> Option<u32> {
             retry
                 .saturating_duration_since(now)
                 .as_millis()
-                .clamp(25, 1000) as u32,
+                .clamp(25, u32::MAX as u128) as u32,
         );
     }
     if h.menu_active.get() {
         return None;
     }
-    if h.tick_deferred || h.dirty.get() || h.pending_desktop_input.get().is_some() {
+    if h.tick_deferred
+        || h.dirty.get()
+        || h.pending_desktop_input.get().is_some()
+        || h.audit.due(Duration::ZERO)
+    {
         return Some(25);
     }
     let icon_due = h
@@ -850,6 +785,8 @@ pub(super) fn next_work(s: &PaneApp) -> Option<u32> {
         .filter(|_| h.initial_batches == 0 && h.icon_reload.is_none());
     icon_due
         .into_iter()
+        .chain(h.audit.remaining(h.last_reconcile.elapsed()).map(|delay| now + delay))
+        .chain(h.image_retention.deadline())
         .chain(
             h.icon_failures
                 .iter()
@@ -860,7 +797,7 @@ pub(super) fn next_work(s: &PaneApp) -> Option<u32> {
         .map(|due| {
             due.saturating_duration_since(now)
                 .as_millis()
-                .clamp(25, 1000) as u32
+                .clamp(25, u32::MAX as u128) as u32
         })
 }
 
@@ -900,6 +837,26 @@ pub(super) fn release(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failed_inventory_save_remains_pending_until_persisted_and_presented() {
+        let mut pending = true;
+        let mut presented = 0;
+        for fails in [true, true, false, false] {
+            let result = persist_pending(&mut pending, || {
+                if fails { Err("injected database busy".into()) } else { Ok(()) }
+            });
+            if fails {
+                assert!(result.is_err());
+                assert!(pending);
+            } else if result.unwrap() {
+                presented += 1;
+            }
+        }
+        assert_eq!(presented, 1);
+        assert!(!pending);
+        assert!(!persist_pending(&mut pending, || panic!("already saved")).unwrap());
+    }
     #[test]
     fn desktop_input_order_preserves_newer_pane_selection() {
         assert!(desktop_input_is_newer(120, Some(100)));
@@ -911,222 +868,4 @@ mod tests {
 
 const ICON_CHANGE_MESSAGE: u32 = WM_APP + 0x352;
 
-// Shell notifications are separate from layout revisions: Recycle Bin can change
-// artwork without changing its identity, label, position or item count.
-fn refresh_changed_icons(s: &mut PaneApp) -> bool {
-    let h = s.session.as_mut().unwrap();
-    if !h.icons_dirty.borrow().is_empty() && h.icon_due.is_none() {
-        h.icon_due = Some(Instant::now() + Duration::from_millis(200));
-    }
-    let completed = h.icon_reload.as_ref().map(mpsc::Receiver::try_recv);
-    let mut changed = false;
-    match completed {
-        Some(Ok(images)) => {
-            h.icon_reload = None;
-            let live: std::collections::HashSet<_> = h
-                .snapshot
-                .items
-                .iter()
-                .map(|item| item.identity.persistent_key())
-                .collect();
-            for (key, image) in images {
-                if !live.contains(&key) {
-                    continue;
-                }
-                let differs = s.images.get(&key).is_none_or(|old| {
-                    old.width != image.width || old.height != image.height || old.data != image.data
-                });
-                if std::env::var_os("LUCIDPANE_ICON_TRACE").is_some() {
-                    eprintln!(
-                        "icon-result key={key} differs={differs} hash={:x}",
-                        image
-                            .data
-                            .iter()
-                            .fold(0u64, |h, b| h.wrapping_mul(31).wrapping_add(u64::from(*b)))
-                    );
-                }
-                if differs {
-                    s.images.insert(key, Arc::new(image));
-                    changed = true;
-                }
-            }
-        }
-        Some(Err(mpsc::TryRecvError::Disconnected)) => {
-            h.icon_reload = None;
-        }
-        _ => {}
-    }
-    if h.initial_batches == 0
-        && h.icon_reload.is_none()
-        && h.icon_due.is_some_and(|due| Instant::now() >= due)
-    {
-        h.icon_due = None;
-        let pending = std::mem::take(&mut *h.icons_dirty.borrow_mut());
-        let identities: Vec<_> = s
-            .workspace
-            .desktop_items()
-            .iter()
-            .filter(|item| matches!(item.placement(), DesktopPlacement::Pane { .. }))
-            .map(|item| item.identity().clone())
-            .collect();
-        if !identities.is_empty() {
-            let size = h.snapshot.icon_size.max(128);
-            let (sender, receiver) = mpsc::channel();
-            let wake = h.wake.clone();
-            match std::thread::Builder::new()
-                .name("pane-icon-refresh".into())
-                .spawn(move || {
-                    let Ok(_sta) = ShellApartment::initialize_sta() else {
-                        return;
-                    };
-                    let affected = pending.affected(identities);
-                    if std::env::var_os("LUCIDPANE_ICON_TRACE").is_some() {
-                        eprintln!(
-                            "icon-targets {:?}",
-                            affected
-                                .iter()
-                                .map(ShellIdentity::persistent_key)
-                                .collect::<Vec<_>>()
-                        );
-                    }
-                    let images = affected
-                        .into_iter()
-                        .filter_map(|identity| {
-                            assets::load(&identity, size)
-                                .ok()
-                                .map(|pixels| (identity.persistent_key(), pixels))
-                        })
-                        .collect();
-                    let _ = sender.send(images);
-                    wake.notify();
-                }) {
-                Ok(_) => {
-                    h.icon_reload = Some(receiver);
-                }
-                Err(error) => eprintln!("Icon refresh worker failed: {error}"),
-            }
-        }
-    }
-    if changed {
-        refresh_views(s);
-    }
-    changed
-}
-
 const RECYCLE_CHANGE_MESSAGE: u32 = WM_APP + 0x353;
-
-fn queue_pane_icons(s: &mut PaneApp, force: bool) {
-    let h = s.session.as_mut().unwrap();
-    if !force && h.last_icon_scan.elapsed() < Duration::from_millis(250) {
-        return;
-    }
-    h.last_icon_scan = Instant::now();
-    let requests: Vec<_> = s
-        .workspace
-        .desktop_items()
-        .iter()
-        .filter(|item| matches!(item.placement(), DesktopPlacement::Pane { .. }))
-        .filter_map(|item| {
-            let key = item.identity().persistent_key();
-            (!s.images.contains_key(&key)
-                && h.icon_failures
-                    .get(&key)
-                    .is_none_or(|(attempts, next)| *attempts < 5 && Instant::now() >= *next)
-                && h.requested.insert(key))
-            .then(|| item.identity().clone())
-        })
-        .collect();
-    if requests.is_empty() {
-        return;
-    }
-    let sender = h.sender.clone();
-    let wake = h.wake.clone();
-    let size = h.snapshot.icon_size.max(128);
-    h.initial_batches += 1;
-    std::thread::spawn(move || {
-        let count = requests.len();
-        let started = Instant::now();
-        let requested = requests.iter().map(ShellIdentity::persistent_key).collect();
-        let images = load_icon_batch(requests, size);
-        if std::env::var_os("LUCIDPANE_ICON_TRACE").is_some() {
-            eprintln!(
-                "startup-icon-batch requested={count} loaded={} elapsed_ms={}",
-                images.len(),
-                started.elapsed().as_millis()
-            );
-        }
-        let _ = sender.send(Loaded { requested, images });
-        wake.notify();
-    });
-}
-
-fn load_icon_batch(requests: Vec<ShellIdentity>, size: i32) -> Vec<(String, assets::Pixels)> {
-    let mut batches = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
-    for (index, identity) in requests.into_iter().enumerate() {
-        batches[index % 4].push(identity);
-    }
-    std::thread::scope(|scope| {
-        let workers: Vec<_> = batches
-            .into_iter()
-            .filter(|batch| !batch.is_empty())
-            .map(|batch| {
-                scope.spawn(move || {
-                    let Ok(_sta) = ShellApartment::initialize_sta() else {
-                        return Vec::new();
-                    };
-                    batch
-                        .into_iter()
-                        .filter_map(|identity| match assets::load(&identity, size) {
-                            Ok(image) => Some((identity.persistent_key(), image)),
-                            Err(error) => {
-                                eprintln!("Pane icon load failed: {error}");
-                                None
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                })
-            })
-            .collect();
-        workers
-            .into_iter()
-            .flat_map(|worker| worker.join().unwrap_or_default())
-            .collect()
-    })
-}
-
-#[cfg(test)]
-mod icon_loading_tests {
-    use super::*;
-    #[test]
-    fn initial_batch_loads_all_requested_namespace_icons_together() {
-        let identities = [
-            RECYCLE_BIN_PARSING_NAME,
-            "::{20D04FE0-3AEA-1069-A2D8-08002B30309D}",
-        ]
-        .map(|name| ShellIdentity::Namespace {
-            parsing_name: name.into(),
-        });
-        let expected: std::collections::HashSet<_> = identities
-            .iter()
-            .map(ShellIdentity::persistent_key)
-            .collect();
-        let images = load_icon_batch(identities.to_vec(), 128);
-        assert_eq!(
-            images
-                .iter()
-                .map(|(key, _)| key.clone())
-                .collect::<std::collections::HashSet<_>>(),
-            expected
-        );
-        assert!(images.iter().all(|(_, image)| !image.data.is_empty()));
-    }
-}
-
-pub(super) fn refresh_icons(state: &mut PaneApp) {
-    if let Some(session) = &state.session {
-        session
-            .icons_dirty
-            .borrow_mut()
-            .add([icon_changes::Change::All]);
-    }
-}

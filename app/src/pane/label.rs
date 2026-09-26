@@ -51,12 +51,12 @@ pub struct Label {
 pub fn layout_scaled(text: &str, width: u32, dpi: u32, lines: u32, font_scale: f32) -> Result<(TextLayout, f32)> {
     use std::cell::RefCell;
     thread_local! {
-        static CACHE: RefCell<LayoutCache<(String, u32, u32, u32, u32), (TextLayout, f32)>> = RefCell::new(LayoutCache::new());
-        static FORMAT: RefCell<Option<(u32, TextFormat, f32)>> = const { RefCell::new(None) };
+        static CACHE: RefCell<LayoutCache<(String, String, u32, u32, u32, u32), (TextLayout, f32)>> = RefCell::new(LayoutCache::new());
+        static FORMAT: RefCell<Option<(String, u32, TextFormat, f32)>> = const { RefCell::new(None) };
     }
-    let (_, size) = super::assets::font();
+    let (family, size) = super::assets::font();
     let size = size * font_scale;
-    let key = (text.to_owned(), width, dpi, lines, size.to_bits());
+    let key = (family.clone(), text.to_owned(), width, dpi, lines, size.to_bits());
     CACHE.with(|cache| {
         if let Some(value) = cache.borrow_mut().get(&key) {
             return Ok(value);
@@ -64,18 +64,18 @@ pub fn layout_scaled(text: &str, width: u32, dpi: u32, lines: u32, font_scale: f
         let scale = dpi.max(48) as f32 / 96.0;
         let (format, line_height) = FORMAT.with(|slot| -> Result<_> {
             let mut slot = slot.borrow_mut();
-            if let Some((key, format, height)) = slot.as_ref()
-                && *key == size.to_bits()
+            if let Some((cached_family, key, format, height)) = slot.as_ref()
+                && *key == size.to_bits() && cached_family == &family
             {
                 return Ok((format.clone(), *height));
             }
-            let format = canvas_result(TextFormat::new(super::assets::UI_FONT, size))?
+            let format = canvas_result(TextFormat::new(&family, size))?
                 .with_alignment(TextAlignment::Center)
                 .with_word_wrapping(WordWrapping::Wrap);
             canvas::ellipsis(&format)?;
             let probe = canvas_result(TextLayout::new("A", &format, 1000.0, 1000.0))?;
             let height = probe.metrics().height;
-            *slot = Some((size.to_bits(), format.clone(), height));
+            *slot = Some((family.clone(), size.to_bits(), format.clone(), height));
             Ok((format, height))
         })?;
         let max_height = line_height * lines as f32;

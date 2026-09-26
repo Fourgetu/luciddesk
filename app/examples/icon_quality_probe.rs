@@ -3,6 +3,9 @@
 #[path = "../src/pane/assets.rs"]
 #[allow(dead_code)]
 mod assets;
+#[path = "../src/pane/fonts.rs"]
+#[allow(dead_code)]
+mod fonts;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _apartment = desktop_shell::ShellApartment::initialize_sta()?;

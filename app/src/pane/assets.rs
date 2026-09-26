@@ -324,7 +324,7 @@ pub const UI_FONT: &str = "Microsoft YaHei UI";
 
 pub fn use_ui_font(font: &mut windows_sys::Win32::Graphics::Gdi::LOGFONTW) {
     font.lfFaceName.fill(0);
-    for (out, unit) in font.lfFaceName.iter_mut().zip(UI_FONT.encode_utf16()) {
+    for (out, unit) in font.lfFaceName.iter_mut().zip(super::fonts::family().encode_utf16()) {
         *out = unit;
     }
 }
@@ -347,9 +347,9 @@ pub fn font() -> (String, f32) {
         let dpi = unsafe { windows_sys::Win32::UI::HiDpi::GetDpiForSystem() }.max(96);
         #[allow(clippy::cast_precision_loss)]
         let size = (font.lfHeight.unsigned_abs() as f32 * 96.0 / dpi as f32).max(11.0);
-        (UI_FONT.into(), size)
+        (super::fonts::family(), size)
     } else {
-        (UI_FONT.into(), 12.0)
+        (super::fonts::family(), 12.0)
     }
 }
 

@@ -29,6 +29,10 @@ pub struct Surface {
 }
 
 impl Surface {
+    #[cfg(test)]
+    pub fn current_opacity(&self) -> f32 {
+        self.opacity.get()
+    }
     /// Suppress the DWM non-client frame; forced system rounding can still cast a shadow.
     /// Keep this separate from shared surface initialization so flyout shadows remain.
     pub fn disable_window_shadow(hwnd: HWND) -> Result<()> {

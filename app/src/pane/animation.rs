@@ -9,6 +9,7 @@ pub const HOVER_DURATION: Duration = Duration::from_millis(90);
 pub const TOGGLE_DURATION: Duration = Duration::from_millis(140);
 pub const FOLD_DURATION: Duration = Duration::from_millis(200);
 pub const SETTINGS_DURATION: Duration = Duration::from_millis(160);
+pub const PANE_SHOW_DURATION: Duration = Duration::from_millis(160);
 
 // Weak ownership keeps COM objects on their UI thread without retaining them
 // beyond the last animated window (including short-lived test apartments).

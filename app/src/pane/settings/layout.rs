@@ -1,26 +1,40 @@
 use super::*;
 
-pub(super) fn folder_defaults(s: &mut Scene, width: f32, value: folder::Defaults) {
+pub(super) fn folder_defaults(s: &mut Scene, width: f32, value: folder::Defaults, mode: folder::EntryMode) {
     let x = 248.0;
     let w = width - x - 24.0;
+    s.text(Rect::from_xywh(x, 80.0, w - 220.0, 34.0), "文件夹入口模式", 1);
+    for (i, (label, choice)) in [("穿透模式", folder::EntryMode::Inline), ("普通模式", folder::EntryMode::Explorer)].into_iter().enumerate() {
+        s.button(
+            Rect::from_xywh(x + w - 208.0 + i as f32 * 108.0, 80.0, 100.0, 34.0),
+            label,
+            Action::FolderEntryMode(choice),
+            mode == choice,
+        );
+    }
+    s.text(Rect::from_xywh(x, 120.0, w, 24.0), match mode {
+        folder::EntryMode::Inline => "双击或按 Enter，在面板内进入子文件夹。",
+        folder::EntryMode::Explorer => "双击或按 Enter，在文件资源管理器中打开文件夹。",
+    }, 0);
+    s.text(Rect::from_xywh(x, 148.0, w, 24.0), "立即应用于所有文件夹面板，并记住选择。", 0);
+    s.separators.push(Rect::from_xywh(x, 184.0, w, 1.0));
     s.text(
-        Rect::from_xywh(x, 80.0, w, 28.0),
+        Rect::from_xywh(x, 198.0, w, 28.0),
         "仅用于新建文件夹面板，已有面板保持原样。",
         0,
     );
-    s.text(Rect::from_xywh(x, 130.0, w - 200.0, 34.0), "默认视图", 1);
+    s.text(Rect::from_xywh(x, 236.0, w - 200.0, 34.0), "默认视图", 1);
     for (i, (label, list)) in [("图标", false), ("列表", true)].into_iter().enumerate() {
         s.button(
-            Rect::from_xywh(x + w - 184.0 + i as f32 * 96.0, 130.0, 88.0, 34.0),
+            Rect::from_xywh(x + w - 184.0 + i as f32 * 96.0, 236.0, 88.0, 34.0),
             label,
             Action::FolderDefaults(folder::Defaults { list, ..value }),
             value.list == list,
         );
     }
-    s.separators.push(Rect::from_xywh(x, 184.0, w, 1.0));
-    s.text(Rect::from_xywh(x, 202.0, w, 28.0), "列表默认显示列", 1);
+    s.text(Rect::from_xywh(x, 282.0, w, 28.0), "列表默认显示列", 1);
     s.text(
-        Rect::from_xywh(x, 232.0, w, 24.0),
+        Rect::from_xywh(x, 312.0, w, 24.0),
         "名称始终显示；切换到列表视图时生效。",
         0,
     );
@@ -28,7 +42,7 @@ pub(super) fn folder_defaults(s: &mut Scene, width: f32, value: folder::Defaults
         .into_iter()
         .enumerate()
     {
-        let y = 270.0 + i as f32 * 42.0;
+        let y = 344.0 + i as f32 * 42.0;
         s.text(Rect::from_xywh(x, y, w - 70.0, 28.0), label, 1);
         s.toggle(
             Rect::from_xywh(x + w - 46.0, y + 2.0, 46.0, 24.0),
@@ -41,17 +55,18 @@ pub(super) fn folder_defaults(s: &mut Scene, width: f32, value: folder::Defaults
         );
     }
     s.button(
-        Rect::from_xywh(x, 404.0, 112.0, 34.0),
-        "恢复默认",
+        Rect::from_xywh(x, 472.0, 144.0, 34.0),
+        "恢复视图默认值",
         Action::FolderDefaults(folder::Defaults::default()),
         false,
     );
 }
 
 // Page IDs stay stable; display order is independent of routing.
-const PAGES: [(usize, &str, &str); 7] = [
+const PAGES: [(usize, &str, &str); 8] = [
     (0, "主题与材质", "\u{e790}"),
     (1, "面板布局", "\u{f0e2}"),
+    (11, "字体", "\u{e8d2}"),
     (8, "文件夹面板", "\u{e8b7}"),
     (4, "Everything 搜索", "\u{e721}"),
     (3, "文件预览", "\u{e890}"),
@@ -348,11 +363,12 @@ pub(super) fn scene(
         for (i, (title, enabled, event)) in [
             ("显示边框", options.border, Event::ToggleBorder),
             ("边缘吸附", options.snap, Event::ToggleSnap),
+            ("标题分隔线", super::super::header_divider::enabled(), Event::ToggleHeaderDivider),
         ]
         .iter()
         .enumerate()
         {
-            let y = 164.0 + i as f32 * 56.0;
+            let y = 148.0 + i as f32 * 40.0;
             s.separators
                 .push(Rect::from_xywh(x + 18.0, y - 6.0, w - 36.0, 1.0));
             s.text(
@@ -809,4 +825,20 @@ pub(super) fn backup_history(s: &mut Scene, width: f32, view: &recovery::View, o
             }
         }
     }
+}
+
+
+pub(super) fn fonts(s: &mut Scene, width: f32, choices: &[String], offset: usize) {
+    let x = 248.0;
+    let w = width - x - 24.0;
+    let selected = super::super::fonts::family();
+    s.text(Rect::from_xywh(x, 80.0, w, 28.0), format!("当前字体：{selected}"), 1);
+    s.text(Rect::from_xywh(x, 111.0, w, 24.0), "本机可缩放字体，已检查常用中英文字符。", 0);
+    for (at, name) in choices.iter().skip(offset).take(7).enumerate() {
+        s.button(Rect::from_xywh(x, 145.0 + at as f32 * 38.0, w, 32.0), name, Action::Font(name.clone()), name == &selected);
+    }
+    s.button(Rect::from_xywh(x, 420.0, 88.0, 32.0), "上一页", Action::FontPage(-1), false);
+    s.text(Rect::from_xywh(x + 100.0, 420.0, w - 200.0, 32.0), format!("{} / {} · {} 种字体", offset / 7 + 1, choices.len().div_ceil(7).max(1), choices.len()), 0);
+    s.button(Rect::from_xywh(x + w - 88.0, 420.0, 88.0, 32.0), "下一页", Action::FontPage(1), false);
+    s.button(Rect::from_xywh(x, 464.0, 144.0, 32.0), "恢复默认字体", Action::Font(super::super::assets::UI_FONT.into()), false);
 }

@@ -31,7 +31,7 @@ pub fn list_item_pixels(
     let height = (grid.cell_height * scale).round().max(1.0) as u32;
     let device = gpu_device().ok()?;
     let bitmap = canvas::Offscreen::new(&device, width, height).ok()?;
-    let format = TextFormat::new(crate::pane::assets::UI_FONT, 12.0).ok()?
+    let format = TextFormat::new(&crate::pane::fonts::family(), 12.0).ok()?
         .with_paragraph_alignment(ParagraphAlignment::Center)
         .with_word_wrapping(WordWrapping::NoWrap);
     canvas::ellipsis(&format).ok()?;
