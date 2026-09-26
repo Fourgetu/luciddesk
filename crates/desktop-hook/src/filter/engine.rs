@@ -165,24 +165,7 @@ impl State {
         }
     }
     fn redraw(&mut self, enabled: bool) {
-        unsafe {
-            if enabled && self.redraw_paused {
-                FROZEN_VIEW.with(|view| view.set(null_mut()));
-                SendMessageW(self.hwnd, WM_SETREDRAW, 1, 0);
-                windows_sys::Win32::Graphics::Gdi::RedrawWindow(
-                    self.hwnd,
-                    std::ptr::null(),
-                    null_mut(),
-                    windows_sys::Win32::Graphics::Gdi::RDW_INVALIDATE
-                        | windows_sys::Win32::Graphics::Gdi::RDW_ALLCHILDREN,
-                );
-                self.redraw_paused = false;
-            } else if !enabled && !self.redraw_paused {
-                FROZEN_VIEW.with(|view| view.set(self.hwnd));
-                SendMessageW(self.hwnd, WM_SETREDRAW, 0, 0);
-                self.redraw_paused = true;
-            }
-        }
+        set_redraw(self.hwnd, &mut self.redraw_paused, enabled);
     }
     fn restore(&mut self) {
         if self.membership.restore(&self.folder, &self.legacy).is_err() {
@@ -350,19 +333,48 @@ impl State {
     fn cleanup(&mut self) {
         self.menu_host.take();
         self.restore();
-        unsafe {
-            KillTimer(self.hwnd, TIMER);
-            RemoveWindowSubclass(self.hwnd, Some(subclass), MAGIC);
-            RemoveWindowSubclass(GetParent(self.hwnd), Some(subclass), MAGIC);
-            RemovePropW(self.hwnd, OWNER);
-            RemovePropW(self.hwnd, ACK);
-            RemovePropW(self.hwnd, ERROR);
-            RemovePropW(self.hwnd, RENAME);
-            RemovePropW(self.hwnd, MENU_HOST);
-            RemovePropW(self.hwnd, MENU_ERROR);
-            RemovePropW(self.hwnd, UPDATE_RELEASE);
-            RemovePropW(self.hwnd, UPDATE_RELEASED);
-            RemovePropW(self.hwnd, REQUEST_ERROR);
+        remove_registration(self.hwnd);
+    }
+}
+
+fn remove_registration(hwnd: HWND) {
+    unsafe {
+        KillTimer(hwnd, TIMER);
+        RemoveWindowSubclass(GetParent(hwnd), Some(subclass), MAGIC);
+        RemoveWindowSubclass(hwnd, Some(subclass), MAGIC);
+        for property in [
+            OWNER,
+            ACK,
+            ERROR,
+            RENAME,
+            MENU_HOST,
+            MENU_ERROR,
+            UPDATE_RELEASE,
+            UPDATE_RELEASED,
+            REQUEST_ERROR,
+        ] {
+            RemovePropW(hwnd, property);
+        }
+    }
+}
+
+fn set_redraw(hwnd: HWND, paused: &mut bool, enabled: bool) {
+    unsafe {
+        if enabled && *paused {
+            FROZEN_VIEW.with(|view| view.set(null_mut()));
+            SendMessageW(hwnd, WM_SETREDRAW, 1, 0);
+            windows_sys::Win32::Graphics::Gdi::RedrawWindow(
+                hwnd,
+                std::ptr::null(),
+                null_mut(),
+                windows_sys::Win32::Graphics::Gdi::RDW_INVALIDATE
+                    | windows_sys::Win32::Graphics::Gdi::RDW_ALLCHILDREN,
+            );
+            *paused = false;
+        } else if !enabled && !*paused {
+            FROZEN_VIEW.with(|view| view.set(hwnd));
+            SendMessageW(hwnd, WM_SETREDRAW, 0, 0);
+            *paused = true;
         }
     }
 }
@@ -431,20 +443,7 @@ unsafe extern "system" fn subclass(
             if msg == WM_NCDESTROY {
                 // The dying view cannot accept COM updates; its replacement enumerates
                 // the original data source. No custom membership survives that rebuild.
-                unsafe {
-                    KillTimer(hwnd, TIMER);
-                    RemoveWindowSubclass(GetParent(hwnd), Some(subclass), MAGIC);
-                    RemoveWindowSubclass(hwnd, Some(subclass), MAGIC);
-                    RemovePropW(hwnd, OWNER);
-                    RemovePropW(hwnd, ACK);
-                    RemovePropW(hwnd, ERROR);
-                    RemovePropW(hwnd, RENAME);
-                    RemovePropW(hwnd, MENU_HOST);
-                    RemovePropW(hwnd, MENU_ERROR);
-                    RemovePropW(hwnd, UPDATE_RELEASE);
-                    RemovePropW(hwnd, UPDATE_RELEASED);
-                    RemovePropW(hwnd, REQUEST_ERROR);
-                }
+                remove_registration(hwnd);
                 slot.take();
                 return None;
             }
@@ -462,9 +461,21 @@ unsafe extern "system" fn subclass(
                     }
                     return Some(0);
                 }
-                state.redraw(false);
-                let result = state.membership.apply(&state.folder, &state.legacy, false);
+                // Reading an unchanged view must not invalidate the whole desktop.
+                // Freeze only immediately before a native write, while retaining
+                // the reentrant paint gate for AddObject/RemoveObject callbacks.
+                // COM reads can also pump messages: keep newly inserted rows
+                // from painting during enumeration without toggling WM_SETREDRAW.
+                FROZEN_VIEW.with(|view| view.set(hwnd));
+                let paused = &mut state.redraw_paused;
+                let result = state.membership.apply_before_write(
+                    &state.folder,
+                    &state.legacy,
+                    false,
+                    || set_redraw(hwnd, paused, false),
+                );
                 state.redraw(true);
+                FROZEN_VIEW.with(|view| view.set(null_mut()));
                 if state.apply_result(result).is_some() && !state.failed {
                     unsafe {
                         windows_sys::Win32::Graphics::Gdi::ValidateRect(hwnd, std::ptr::null());
@@ -667,7 +678,15 @@ mod tests {
             );
             assert!(!hwnd.is_null());
             assert_ne!(SetWindowSubclass(hwnd, Some(subclass), MAGIC, 0), 0);
-            SendMessageW(hwnd, WM_SETREDRAW, 0, 0);
+            windows_sys::Win32::Graphics::Gdi::ValidateRect(hwnd, std::ptr::null());
+            let mut paused = false;
+            set_redraw(hwnd, &mut paused, true);
+            assert_eq!(
+                windows_sys::Win32::Graphics::Gdi::GetUpdateRect(hwnd, std::ptr::null_mut(), 0),
+                0,
+                "a read-only membership check must not invalidate the desktop"
+            );
+            set_redraw(hwnd, &mut paused, false);
             let disabled = || !GetPropW(hwnd, windows_sys::w!("SysSetRedraw")).is_null();
             assert!(disabled());
             FROZEN_VIEW.with(|view| view.set(hwnd));
@@ -693,9 +712,14 @@ mod tests {
             });
             SendMessageW(hwnd, WM_SETREDRAW, 1, 0);
             assert!(disabled());
-            FROZEN_VIEW.with(|view| view.set(null_mut()));
-            SendMessageW(hwnd, WM_SETREDRAW, 1, 0);
+            set_redraw(hwnd, &mut paused, true);
             assert!(!disabled());
+            assert!(!paused);
+            assert_ne!(
+                windows_sys::Win32::Graphics::Gdi::GetUpdateRect(hwnd, std::ptr::null_mut(), 0),
+                0,
+                "membership writes still require a repaint when released"
+            );
             RemoveWindowSubclass(hwnd, Some(subclass), MAGIC);
             DestroyWindow(hwnd);
             UnregisterClassW(class, instance);

@@ -47,6 +47,45 @@ impl Drop for Item {
 pub fn key(name: &str) -> String {
     name.to_lowercase()
 }
+
+#[derive(PartialEq, Eq)]
+struct RowRevision {
+    id: Vec<u8>,
+    position: (i32, i32),
+}
+
+fn changed_snapshot() -> windows::core::Error {
+    windows::core::Error::new(
+        windows::core::HRESULT::from_win32(windows::Win32::Foundation::ERROR_RETRY.0),
+        "桌面过滤清单在读取期间变化，暂不写入",
+    )
+}
+
+fn row_revision(row: &Item) -> Result<RowRevision> {
+    if row.pidl.is_null() {
+        return Err(changed_snapshot());
+    }
+    let bytes = unsafe {
+        let size = ILGetSize(Some(row.pidl)) as usize;
+        if size <= 2 {
+            return Err(changed_snapshot());
+        }
+        std::slice::from_raw_parts(row.pidl.cast::<u8>(), size).to_vec()
+    };
+    Ok(RowRevision {
+        id: bytes,
+        position: (row.position.x, row.position.y),
+    })
+}
+
+fn validate_snapshot(before: &[RowRevision], after: &[RowRevision]) -> Result<()> {
+    let ids: BTreeSet<_> = before.iter().map(|row| &row.id).collect();
+    if before != after || ids.len() != before.len() || before.iter().any(|row| row.id.is_empty()) {
+        return Err(changed_snapshot());
+    }
+    Ok(())
+}
+
 pub fn snapshot(folder: &IFolderView2) -> Result<Vec<Item>> {
     unsafe {
         let parent: IShellFolder = folder.GetFolder()?;
@@ -57,6 +96,9 @@ pub fn snapshot(folder: &IFolderView2) -> Result<Vec<Item>> {
                 name: String::new(),
                 position: POINT::default(),
             };
+            if row.pidl.is_null() {
+                return Err(changed_snapshot());
+            }
             row.position = folder.GetItemPosition(row.pidl)?;
             let item: IShellItem = SHCreateItemWithParent(None, &parent, row.pidl)?;
             let raw = item.GetDisplayName(SIGDN_DESKTOPABSOLUTEPARSING)?;
@@ -65,6 +107,38 @@ pub fn snapshot(folder: &IFolderView2) -> Result<Vec<Item>> {
             row.name = key(&name?);
             result.push(row);
         }
+        // Names may invoke Shell extensions and reenter Explorer. Verify the
+        // ordered PIDLs and positions again before using rows as a write plan
+        // or restoration baseline. These reads never freeze or mutate the view.
+        let before = result
+            .iter()
+            .map(row_revision)
+            .collect::<Result<Vec<_>>>()?;
+        let names: BTreeSet<_> = result.iter().map(|row| &row.name).collect();
+        if names.len() != result.len() {
+            return Err(changed_snapshot());
+        }
+        let count = folder.ItemCount(SVGIO_ALLVIEW)?;
+        if usize::try_from(count).ok() != Some(result.len()) {
+            return Err(changed_snapshot());
+        }
+        let mut after = Vec::with_capacity(result.len());
+        for index in 0..count {
+            let mut row = Item {
+                pidl: folder.Item(index)?,
+                name: String::new(),
+                position: POINT::default(),
+            };
+            if row.pidl.is_null() {
+                return Err(changed_snapshot());
+            }
+            row.position = folder.GetItemPosition(row.pidl)?;
+            after.push(row_revision(&row)?);
+        }
+        if folder.ItemCount(SVGIO_ALLVIEW)? != count {
+            return Err(changed_snapshot());
+        }
+        validate_snapshot(&before, &after)?;
         Ok(result)
     }
 }
@@ -78,6 +152,16 @@ pub struct Membership {
     user_layout_changed: bool,
 }
 impl Membership {
+    fn needs_position_restore(&self, current: &[Item], added: bool) -> bool {
+        // New rows may need their original auto-arrange order even when their
+        // current coordinates happen to match. Otherwise leave equal positions alone.
+        added
+            || current.iter().any(|row| {
+                self.baseline
+                    .get(&row.name)
+                    .is_some_and(|point| point.x != row.position.x || point.y != row.position.y)
+            })
+    }
     pub fn replace_identity(&mut self, old: &str, new: &str) -> Result<()> {
         let old = key(old);
         let new = key(new);
@@ -128,6 +212,15 @@ impl Membership {
         legacy: &IShellFolderView,
         paused: bool,
     ) -> std::result::Result<(), ApplyError> {
+        self.apply_before_write(folder, legacy, paused, || {})
+    }
+    pub fn apply_before_write(
+        &mut self,
+        folder: &IFolderView2,
+        legacy: &IShellFolderView,
+        paused: bool,
+        mut before_write: impl FnMut(),
+    ) -> std::result::Result<(), ApplyError> {
         if self.desired.is_empty() && self.hidden.is_empty() && self.baseline.is_empty() {
             return Ok(());
         }
@@ -154,6 +247,7 @@ impl Membership {
         for name in release {
             let row = &self.hidden[&name];
             if !current.iter().any(|item| item.name == name) && exists(&row.name) {
+                before_write();
                 unsafe {
                     legacy.AddObject(row.pidl)?;
                 }
@@ -170,6 +264,7 @@ impl Membership {
             && (paused || self.desired.is_empty())
             && !self.baseline.is_empty()
             && !self.user_layout_changed
+            && self.needs_position_restore(&current, added)
         {
             // With auto-arrange enabled, the batch order influences insertion.
             // Reapply in the original view order, not the order AddObject produced.
@@ -186,6 +281,7 @@ impl Membership {
             if !positioned.is_empty() {
                 let ids: Vec<_> = positioned.iter().map(|(id, _)| *id).collect();
                 let points: Vec<_> = positioned.iter().map(|(_, point)| *point).collect();
+                before_write();
                 unsafe {
                     folder.SelectAndPositionItems(
                         ids.len() as u32,
@@ -203,6 +299,7 @@ impl Membership {
                 .rev()
                 .filter(|row| self.desired.contains(&row.name))
             {
+                before_write();
                 unsafe {
                     legacy.RemoveObject(Some(row.pidl))?;
                 }
@@ -241,6 +338,97 @@ fn exists(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn unchanged_layout_does_not_reposition_but_insertions_keep_original_order() {
+        let mut membership = Membership::default();
+        membership
+            .baseline
+            .insert("one".into(), POINT { x: 10, y: 20 });
+        let mut rows = vec![Item {
+            pidl: std::ptr::null_mut(),
+            name: "one".into(),
+            position: POINT { x: 10, y: 20 },
+        }];
+        assert!(!membership.needs_position_restore(&rows, false));
+        assert!(membership.needs_position_restore(&rows, true));
+        rows[0].position.x += 1;
+        assert!(membership.needs_position_restore(&rows, false));
+        rows[0].name = "unrelated".into();
+        assert!(!membership.needs_position_restore(&rows, false));
+    }
+    #[test]
+    #[ignore = "Read-only live Explorer snapshot; requires an interactive desktop"]
+    fn live_filter_snapshot_reads_without_mutating_desktop() {
+        use windows::{
+            Win32::System::{
+                Com::{
+                    CLSCTX_ALL, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
+                    CoUninitialize, IServiceProvider,
+                },
+                Variant::VARIANT,
+            },
+            core::Interface,
+        };
+        unsafe {
+            CoInitializeEx(None, COINIT_APARTMENTTHREADED).ok().unwrap();
+        }
+        struct Apartment;
+        impl Drop for Apartment {
+            fn drop(&mut self) {
+                unsafe {
+                    CoUninitialize();
+                }
+            }
+        }
+        let _apartment = Apartment;
+        unsafe {
+            let shell: IShellWindows = CoCreateInstance(&ShellWindows, None, CLSCTX_ALL).unwrap();
+            let mut raw = 0;
+            let dispatch = shell
+                .FindWindowSW(
+                    &VARIANT::from(CSIDL_DESKTOP.cast_signed()),
+                    &VARIANT::default(),
+                    SWC_DESKTOP,
+                    &raw mut raw,
+                    SWFO_NEEDDISPATCH,
+                )
+                .unwrap();
+            let provider: IServiceProvider = dispatch.cast().unwrap();
+            let browser: IShellBrowser = provider.QueryService(&SID_STopLevelBrowser).unwrap();
+            let folder: IFolderView2 = browser.QueryActiveShellView().unwrap().cast().unwrap();
+            let rows = snapshot(&folder).unwrap();
+            assert!(
+                rows.iter()
+                    .all(|row| !row.pidl.is_null() && !row.name.is_empty())
+            );
+        }
+    }
+    #[test]
+    fn filter_snapshot_rejects_partial_reordered_replaced_and_moved_rows() {
+        let rows = |ids: &[u8]| {
+            ids.iter()
+                .map(|id| RowRevision {
+                    id: vec![*id],
+                    position: (10, 20),
+                })
+                .collect::<Vec<_>>()
+        };
+        let before = rows(&[1, 2]);
+        assert!(validate_snapshot(&before, &rows(&[1, 2])).is_ok());
+        for ids in [&[1][..], &[1, 2, 3], &[2, 1], &[1, 3]] {
+            assert!(validate_snapshot(&before, &rows(ids)).is_err());
+        }
+        let mut moved = rows(&[1, 2]);
+        moved[1].position.0 += 1;
+        assert!(validate_snapshot(&before, &moved).is_err());
+        assert!(validate_snapshot(&rows(&[1, 1]), &rows(&[1, 1])).is_err());
+        assert!(validate_snapshot(&[], &[]).is_ok());
+        let invalid = vec![RowRevision {
+            id: Vec::new(),
+            position: (0, 0),
+        }];
+        assert!(validate_snapshot(&invalid, &invalid).is_err());
+    }
     #[test]
     fn renamed_membership_uses_new_pidl_and_keeps_original_restore_position() {
         use windows::Win32::System::Com::{
