@@ -142,6 +142,7 @@ fn show_editor(
         }
         super::assets::use_ui_font(&mut logical_font);
         let title = title_commit.is_some();
+        let styled = title || model.borrow().is_list();
         if title && model.borrow().tabs.len() > 1 {
             // Match the 12 DIP tab label instead of the larger desktop icon font.
             logical_font.lfHeight = -(12.0 * dpi as f32 / 96.0).round() as i32;
@@ -163,7 +164,7 @@ fn show_editor(
             windows_sys::w!("EDIT"),
             text.as_ptr(),
             WS_POPUP
-                | if title { 0 } else { WS_BORDER }
+                | if styled { 0 } else { WS_BORDER }
                 | WS_TABSTOP
                 | if title {
                     ES_CENTER as u32 | ES_AUTOHSCROLL as u32
@@ -198,7 +199,7 @@ fn show_editor(
             title_commit,
             title_target,
             item_commit,
-            background: if title {
+            background: if styled {
                 CreateSolidBrush(if model.borrow().dark {
                     0x002b2b2b
                 } else {
@@ -374,7 +375,7 @@ unsafe fn resize(edit: HWND, pointer: *mut Editor) {
             .min(metrics.tmHeight.max(1) * 6)
             + 4;
         let height = if list {
-            height.min(((super::layout::LIST_ROW - 4.0) * scale) as i32)
+            ((super::layout::LIST_ROW - 4.0) * scale).round() as i32
         } else {
             height
         };
@@ -382,6 +383,12 @@ unsafe fn resize(edit: HWND, pointer: *mut Editor) {
             ((center - width as f32 / 2.0).round() as i32).clamp(0, (client.right - width).max(0));
         let mut before = RECT::default();
         GetWindowRect(edit, &raw mut before);
+        if list {
+            if before.right - before.left != width || before.bottom - before.top != height {
+                let region = title_region(width, height, scale, 4.0);
+                if !region.is_null() && SetWindowRgn(edit, region, 0) == 0 { DeleteObject(region); }
+            }
+        }
         // A child EDIT shares the owner's missing GDI redirection bitmap and
         // disappears underneath DirectComposition. An owned popup has its own
         // surface; its position must therefore be expressed in screen pixels.
@@ -403,6 +410,12 @@ unsafe fn resize(edit: HWND, pointer: *mut Editor) {
                 height,
                 SWP_NOACTIVATE,
             );
+        }
+        if list {
+            let padding = (6.0 * scale).round() as i32;
+            let format = RECT { left: padding, top: ((height - metrics.tmHeight) / 2).max(1),
+                right: (width - padding).max(padding + 1), bottom: height - 1 };
+            SendMessageW(edit, EM_SETRECTNP, 0, (&format as *const RECT) as isize);
         }
     }
 }
@@ -526,7 +539,7 @@ unsafe extern "system" fn edit_proc(
 ) -> isize {
     let pointer = data as *mut Editor;
     match msg {
-        WM_PAINT if unsafe { (*pointer).title_commit.is_some() } => unsafe {
+        WM_PAINT if unsafe { !(*pointer).background.is_null() } => unsafe {
             let result = DefSubclassProc(edit, msg, wp, lp);
             let dc = GetDC(edit);
             let mut rect = RECT::default();
@@ -547,7 +560,7 @@ unsafe extern "system" fn edit_proc(
             ReleaseDC(edit, dc);
             return result;
         },
-        WM_ERASEBKGND if unsafe { (*pointer).title_commit.is_some() } => unsafe {
+        WM_ERASEBKGND if unsafe { !(*pointer).background.is_null() } => unsafe {
             let mut rect = RECT::default();
             GetClientRect(edit, &raw mut rect);
             FillRect(wp as HDC, &rect, (*pointer).background);
@@ -614,7 +627,7 @@ unsafe extern "system" fn owner_proc(
     let edit = unsafe { GetPropW(owner, PROPERTY) };
     if msg == WM_CTLCOLOREDIT && lp == edit as isize {
         let editor = unsafe { &*(data as *mut Editor) };
-        if editor.title_commit.is_some() {
+        if !editor.background.is_null() {
             let dark = editor.model.borrow().dark;
             unsafe {
                 SetTextColor(wp as HDC, if dark { 0x00f4f4f4 } else { 0x00202020 });
