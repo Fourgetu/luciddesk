@@ -1,6 +1,6 @@
 use super::{
     DesktopItem, DesktopPlacement, GridPosition, Panel, PanelId, RectDip, ShellIdentity, Workspace,
-    WorkspaceError,
+    WorkspaceError, PaneTabs,
 };
 use std::path::PathBuf;
 
@@ -147,4 +147,20 @@ fn stable_file_identity_preserves_placement_across_a_rename() {
     assert_eq!(renamed.display_name(), "After");
     assert_eq!(renamed.placement(), &placement);
     assert_eq!(renamed.identity(), &after);
+}
+#[test]
+fn tab_groups_validate_members_and_preserve_content_on_activation_and_removal() {
+    let mut workspace = Workspace::new();
+    for id in 1..=3 { workspace.add_panel(Panel::new(PanelId::new(id), format!("Tab {id}"), RectDip::default())).unwrap(); }
+    let group = PaneTabs { members: vec![PanelId::new(1), PanelId::new(2)], active: PanelId::new(2) };
+    workspace.set_tab_groups(vec![group.clone()]).unwrap();
+    assert!(!workspace.tab_visible(PanelId::new(1)));
+    assert!(workspace.tab_visible(PanelId::new(2)));
+    let previous = workspace.clone();
+    assert!(workspace.set_tab_groups(vec![group.clone(), group]).is_err());
+    assert_eq!(workspace, previous);
+    workspace.remove_panel(PanelId::new(2));
+    assert!(workspace.tab_groups().is_empty());
+    assert!(workspace.tab_visible(PanelId::new(1)));
+    assert!(workspace.panel(PanelId::new(1)).is_some());
 }

@@ -24,7 +24,7 @@ pub use geometry::{GridPosition, PointDip, RectDip};
 pub use identity::{MonitorId, PanelId, ShellIdentity};
 pub use item::{DesktopItem, DesktopPlacement};
 pub use panel::Panel;
-pub use workspace::{Workspace, WorkspaceError};
+pub use workspace::{PaneTabs, Workspace, WorkspaceError};
 
 #[cfg(test)]
 mod tests;

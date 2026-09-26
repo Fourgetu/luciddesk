@@ -347,7 +347,7 @@ fn size_sort_upgrades_existing_databases_and_survives_reopen() {
         connection.execute_batch(&schema).unwrap();
         // Seed through the old store directly so the upgrade is exercised with
         // real mappings, view options, and pre-existing sort values.
-        let mut old = WorkspaceStore { connection, config: None };
+        let mut old = WorkspaceStore { connection, config: None, on_change: None };
         let mut panel = Panel::new(PanelId::new(2), "Folder", RectDip::default());
         panel.set_folder(Some(std::path::PathBuf::from(r"C:\Downloads")));
         panel.set_list_view(false);
@@ -511,4 +511,23 @@ fn current_database_reopens_without_reinitializing_it() {
     store.save_workspace(&workspace).unwrap();
     let reopened = WorkspaceStore::from_connection(store.connection).unwrap();
     assert_eq!(reopened.load_workspace().unwrap(), workspace);
+}
+#[test]
+fn successful_changes_notify_without_notifying_for_noops_or_failed_writes() {
+    use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+    let mut store = WorkspaceStore::open_in_memory().unwrap();
+    let count = Arc::new(AtomicUsize::new(0));
+    let notified = count.clone();
+    store.set_change_callback(move || { notified.fetch_add(1, Ordering::Relaxed); });
+    store.save_preference("notification-test", "one").unwrap();
+    assert_eq!(count.load(Ordering::Relaxed), 1);
+    store.save_preference("notification-test", "one").unwrap();
+    assert_eq!(count.load(Ordering::Relaxed), 1);
+    store.connection.execute_batch("PRAGMA query_only=ON").unwrap();
+    assert!(store.save_preference("notification-test", "two").is_err());
+    assert_eq!(count.load(Ordering::Relaxed), 1);
+    store.connection.execute_batch("PRAGMA query_only=OFF").unwrap();
+    let snapshot = store.backup_snapshot().unwrap();
+    snapshot.save_preference("notification-test", "snapshot").unwrap();
+    assert_eq!(count.load(Ordering::Relaxed), 1, "background copies must not notify the live store");
 }

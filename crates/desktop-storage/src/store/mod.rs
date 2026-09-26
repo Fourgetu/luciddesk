@@ -6,6 +6,7 @@ mod config_tests;
 mod desktop_items;
 mod recovery;
 mod schema;
+mod tabs;
 
 use crate::StoreError;
 use desktop_core::{Backdrop, Panel, PanelId, RectDip, Workspace};
@@ -21,6 +22,7 @@ use desktop_items::{insert_desktop_items, load_desktop_items};
 pub struct WorkspaceStore {
     connection: Connection,
     config: Option<std::cell::RefCell<config::ConfigFile>>,
+    on_change: Option<Box<dyn Fn() + Send>>,
 }
 
 impl std::fmt::Debug for WorkspaceStore {
@@ -33,6 +35,24 @@ impl std::fmt::Debug for WorkspaceStore {
 }
 
 impl WorkspaceStore {
+    /// Installs a notification after successful writes. The callback should only
+    /// enqueue work, never access this store or synchronously reenter its owner.
+    pub fn set_change_callback(&mut self, callback: impl Fn() + Send + 'static) {
+        self.on_change = Some(Box::new(callback));
+    }
+
+    fn notify_change(&self, previous: u64) {
+        if self.change_count() != previous {
+            self.notify_restored();
+        }
+    }
+
+    fn notify_restored(&self) {
+        if let Some(callback) = &self.on_change {
+            callback();
+        }
+    }
+
     /// Reads an optional application preference.
     /// # Errors
     /// Returns an error if the database query fails.
@@ -57,14 +77,18 @@ impl WorkspaceStore {
     /// # Errors
     /// Returns an error if the database update fails.
     pub fn save_preference(&self, key: &str, value: &str) -> Result<(), StoreError> {
+        let previous = self.change_count();
         if config::KEYS.contains(&key)
             && let Some(config) = &self.config
         {
-            return config.borrow_mut().save(&[(key, value.to_owned())]);
+            config.borrow_mut().save(&[(key, value.to_owned())])?;
+            self.notify_change(previous);
+            return Ok(());
         }
         if let Some(id) = key.strip_prefix("panel_folder_sort:") {
             let (column, direction) = schema::parse_sort(value)?;
             self.connection.execute("UPDATE panel_folder_settings SET sort_column=?2,sort_direction=?3 WHERE panel_id=?1 AND (sort_column IS NOT ?2 OR sort_direction IS NOT ?3)",params![id,column,direction])?;
+            self.notify_change(previous);
             return Ok(());
         }
         self.connection.execute(
@@ -73,6 +97,7 @@ impl WorkspaceStore {
              WHERE metadata.value != excluded.value",
             params![key, value],
         )?;
+        self.notify_change(previous);
         Ok(())
     }
 
@@ -109,6 +134,7 @@ impl WorkspaceStore {
         Ok(Self {
             connection,
             config: None,
+            on_change: None,
         })
     }
 
@@ -255,6 +281,7 @@ impl WorkspaceStore {
                 },
             });
         }
+        tabs::load(&self.connection, &mut workspace)?;
         Ok(workspace)
     }
 
@@ -281,7 +308,9 @@ impl WorkspaceStore {
     /// # Errors
     /// Returns an error when serialization or commit fails.
     pub fn save_workspace(&mut self, workspace: &Workspace) -> Result<(), StoreError> {
+        let previous = self.change_count();
         let transaction = self.connection.transaction()?;
+        tabs::save(&transaction, workspace)?;
         if self.config.is_none() {
             transaction.execute("DELETE FROM metadata WHERE key = 'appearance'", [])?;
             for (key, value) in workspace_preferences(workspace)? {
@@ -346,6 +375,7 @@ impl WorkspaceStore {
             }
             return Err(error.into());
         }
+        self.notify_change(previous);
         Ok(())
     }
 }

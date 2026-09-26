@@ -9,6 +9,14 @@ pub struct Workspace {
     pane_options: PaneOptions,
     panels: Vec<Panel>,
     desktop_items: Vec<DesktopItem>,
+    tabs: Vec<PaneTabs>,
+}
+
+/// Ordered content panes sharing one window. Content IDs keep their identities.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PaneTabs {
+    pub members: Vec<PanelId>,
+    pub active: PanelId,
 }
 
 impl Default for Workspace {
@@ -33,6 +41,7 @@ impl Workspace {
             appearance: None,
             pane_options: PaneOptions::DEFAULT,
             desktop_items: Vec::new(),
+            tabs: Vec::new(),
         }
     }
 
@@ -53,6 +62,7 @@ impl Workspace {
             appearance: None,
             pane_options: PaneOptions::DEFAULT,
             desktop_items: Vec::new(),
+            tabs: Vec::new(),
         })
     }
 
@@ -128,7 +138,62 @@ impl Workspace {
 
     pub fn remove_panel(&mut self, id: PanelId) -> Option<Panel> {
         let index = self.panels.iter().position(|panel| panel.id() == id)?;
+        for group in &mut self.tabs {
+            let position = group.members.iter().position(|member| *member == id);
+            group.members.retain(|member| *member != id);
+            if group.active == id && !group.members.is_empty() {
+                group.active = group.members[position.unwrap_or(0).min(group.members.len() - 1)];
+            }
+        }
+        self.tabs.retain(|group| group.members.len() > 1);
         Some(self.panels.remove(index))
+    }
+
+    #[must_use]
+    pub fn tab_groups(&self) -> &[PaneTabs] { &self.tabs }
+
+    #[must_use]
+    pub fn tab_group(&self, id: PanelId) -> Option<&PaneTabs> {
+        self.tabs.iter().find(|group| group.members.contains(&id))
+    }
+
+    #[must_use]
+    pub fn tab_visible(&self, id: PanelId) -> bool {
+        self.tab_group(id).is_none_or(|group| group.active == id)
+    }
+
+    /// Replaces tab groups only after validating every content reference.
+    /// # Errors
+    /// Rejects duplicate, missing, search, or inactive-member references.
+    pub fn set_tab_groups(&mut self, groups: Vec<PaneTabs>) -> Result<(), WorkspaceError> {
+        let mut seen = HashSet::new();
+        if groups.iter().any(|group| group.members.len() < 2
+            || !group.members.contains(&group.active)
+            || group.members.iter().any(|id| !seen.insert(*id)
+                || self.panel(*id).is_none_or(Panel::is_search))) {
+            return Err(WorkspaceError::InvalidTabs);
+        }
+        self.tabs = groups;
+        self.sync_tab_windows();
+        Ok(())
+    }
+
+    /// Propagates window preferences from the active content to its siblings.
+    pub fn sync_tab_windows(&mut self) {
+        for group in self.tabs.clone() {
+            let Some(source) = self.panel(group.active).cloned() else { continue; };
+            for id in group.members {
+                if let Some(panel) = self.panel_mut(id) {
+                    panel.set_rect(source.rect());
+                    panel.set_collapsed(source.collapsed());
+                    panel.set_locked(source.locked());
+                    panel.set_auto_hide(source.auto_hide());
+                    panel.set_always_on_top(source.always_on_top());
+                    panel.set_theme(source.theme());
+                    panel.set_backdrop(source.backdrop());
+                }
+            }
+        }
     }
 
     #[must_use]
@@ -153,12 +218,14 @@ impl Workspace {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WorkspaceError {
     DuplicatePanel(PanelId),
+    InvalidTabs,
 }
 
 impl fmt::Display for WorkspaceError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::DuplicatePanel(id) => write!(formatter, "panel {} already exists", id.get()),
+            Self::InvalidTabs => formatter.write_str("invalid pane tab group"),
         }
     }
 }

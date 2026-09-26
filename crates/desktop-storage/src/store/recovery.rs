@@ -349,6 +349,7 @@ impl WorkspaceStore {
             self.connection
                 .execute("DELETE FROM metadata WHERE key='pending_config'", [])?;
         }
+        self.notify_restored();
         Ok(())
     }
 
@@ -386,6 +387,7 @@ impl WorkspaceStore {
             )?;
         }
         tx.commit()?;
+        self.notify_restored();
         Ok(())
     }
 
