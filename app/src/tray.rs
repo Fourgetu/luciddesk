@@ -43,6 +43,9 @@ impl Tray {
             .style(WS_POPUP)
             .ex_style(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)
             .on_message(move |raw, message, wp, lp| {
+                if unsafe { crate::window_visibility::defer_show(message, lp, false) } {
+                    return Some(0);
+                }
                 let hwnd = raw.cast();
                 if message == recreated {
                     // Explorer discards all notification icons when rebuilding
@@ -87,9 +90,6 @@ impl Tray {
             })
             .create()
             .map_err(|e| e.to_string())?;
-        unsafe {
-            ShowWindow(window.hwnd().cast(), SW_HIDE);
-        }
         add(window.hwnd().cast(), icon.0)?;
         Ok(Self {
             window,
