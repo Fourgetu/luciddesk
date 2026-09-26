@@ -261,8 +261,15 @@ impl State {
                 unsafe {
                     RemovePropW(self.hwnd, MENU_HOST);
                 }
-                if let Some(host) = &self.menu_host {
-                    host.finish(request.op == wire::MENU_CANCEL)?;
+                if request.op == wire::MENU_CANCEL {
+                    // Cancellation may follow a stuck WinUI popup. Retire its
+                    // STA as well as the presenter; never reuse that UI state.
+                    // Worker drop signals shutdown without joining Explorer.
+                    if let Some(host) = self.menu_host.take() {
+                        host.finish(true)?;
+                    }
+                } else if let Some(host) = &self.menu_host {
+                    host.finish(false)?;
                 }
                 return Ok(());
             }

@@ -24,9 +24,10 @@ windows_core::define_interface!(
 pub struct PresenterVtbl {
     base: IUnknown_Vtbl,
     initialize: unsafe extern "system" fn(*mut c_void, i32, *mut c_void, HWND, i32) -> HRESULT,
-    // Prepare, DoContextMenu, DismissContextMenu, IsContextMenuOpen.
-    // These slots are not called by this host.
-    _menu_methods: [usize; 4],
+    // Prepare, DoContextMenu; signatures are forwarded by the input adapter.
+    _menu_methods: [usize; 2],
+    dismiss: unsafe extern "system" fn(*mut c_void, *const u16),
+    _is_open: usize,
     invoke: unsafe extern "system" fn(*mut c_void, u32),
 }
 #[implement(IServiceProvider)]
@@ -132,11 +133,19 @@ impl NativePresenter {
     pub fn service(&self) -> IServiceProvider {
         self.site.to_interface()
     }
-    pub fn set_keyboard_invocation(&self, keyboard: bool) {
+    pub fn set_keyboard_invocation(&self, keyboard: bool, hwnd: isize) {
+        input::trace_host(hwnd);
         self.site.keyboard.set(keyboard);
     }
     pub fn close(&self) -> Result<()> {
         self.site.close()
+    }
+    pub fn dismiss(&self) {
+        if !self.site.closed.get() {
+            unsafe {
+                (self.site.presenter.vtable().dismiss)(self.site.presenter.as_raw(), windows_sys::w!("LucidPane.Cancel"));
+            }
+        }
     }
     pub fn handle_command_message(&self, message: u32, command: usize) -> bool {
         if message != self.site.invoke_message {

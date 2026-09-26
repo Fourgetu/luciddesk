@@ -19,6 +19,13 @@ const TIP_TEST: GUID = GUID::from_u128(0x5a8e3042_b975_46b6_b839_50baafe40541);
 // CDefView sets this flag for a mouse WM_CONTEXTMENU. Without an input flag,
 // the native flyout enters access-key display mode when it finishes loading.
 const MOUSE: u32 = 8;
+thread_local! { static TRACE_HOST: Cell<isize> = const { Cell::new(0) }; }
+pub(super) fn trace_host(hwnd: isize) { TRACE_HOST.set(hwnd); }
+fn trace(name: windows_sys::core::PCWSTR, value: usize) {
+    let hwnd = TRACE_HOST.get();
+    if hwnd != 0 { unsafe { windows_sys::Win32::UI::WindowsAndMessaging::SetPropW(hwnd as _, name, value as _); } }
+}
+
 
 #[repr(C)]
 struct Vtable {
@@ -194,11 +201,27 @@ macro_rules! forward {
     };
 }
 forward!(initialize(enabled: i32, callback: *mut c_void, hwnd: HWND, host: i32) -> HRESULT);
-forward!(prepare(location: u32, site: *mut c_void, point: POINT, menu: *mut c_void, first: u32, last: u32, count: i32, verbs: *const c_void, test: GUID, item: *mut c_void) -> HRESULT);
+unsafe extern "system" fn prepare(this: *mut c_void, location: u32, site: *mut c_void, point: POINT, menu: *mut c_void, first: u32, last: u32, count: i32, verbs: *const c_void, test: GUID, item: *mut c_void) -> HRESULT {
+    unsafe {
+        let value = &*(this as *const Adapter);
+        let result = (value.native().prepare)(value.inner.as_raw(), location, site, point, menu, first, last, count, verbs, test, item);
+        trace(windows_sys::w!("LucidPane.Menu.PrepareCalled"), 1);
+        trace(windows_sys::w!("LucidPane.Menu.PrepareResult"), result.0 as u32 as usize);
+        result
+    }
+}
 forward!(dismiss(reason: *const u16) -> ());
 forward!(is_open() -> i32);
 forward!(invoke(command: u32) -> ());
-forward!(is_ready(test: GUID, point: POINT) -> i32);
+unsafe extern "system" fn is_ready(this: *mut c_void, test: GUID, point: POINT) -> i32 {
+    unsafe {
+        let value = &*(this as *const Adapter);
+        let result = (value.native().is_ready)(value.inner.as_raw(), test, point);
+        trace(windows_sys::w!("LucidPane.Menu.ReadyCalled"), 1);
+        trace(windows_sys::w!("LucidPane.Menu.ReadyResult"), result as u32 as usize);
+        result
+    }
+}
 forward!(access_keys() -> ());
 unsafe extern "system" fn show(this: *mut c_void, menu: HMENU, flags: u32, test: GUID) {
     unsafe {
@@ -206,6 +229,7 @@ unsafe extern "system" fn show(this: *mut c_void, menu: HMENU, flags: u32, test:
         if (value.cancelled)() {
             return;
         }
+        trace(windows_sys::w!("LucidPane.Menu.ShowCalled"), 1);
         (value.native().show)(value.inner.as_raw(), menu, value.flags(flags), test);
     }
 }
@@ -223,6 +247,7 @@ unsafe extern "system" fn show_tip(
             return;
         }
         let native = &**(value.inner.as_raw() as *const *const TipVtable);
+        trace(windows_sys::w!("LucidPane.Menu.ShowCalled"), 2);
         (native.show)(
             value.inner.as_raw(),
             menu,
@@ -260,6 +285,25 @@ static TIP_VTABLE: TipVtable = TipVtable {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[ignore = "native Win11 presenter lifecycle diagnostic; run alone"]
+    fn native_presenter_readiness_survives_recreation() {
+        use windows::Win32::System::Com::*;
+        unsafe {
+            CoInitializeEx(None, COINIT_APARTMENTTHREADED).ok().unwrap();
+            for attempt in 0..3 {
+                let native: IUnknown = CoCreateInstance(
+                    &GUID::from_u128(0x86ca1aa0_34aa_4e8b_a509_50c905bae2a2),
+                    None, CLSCTX_INPROC_SERVER).unwrap();
+                let adapter = wrap(native.clone(), Rc::new(Cell::new(false))).unwrap();
+                let ready = is_ready(adapter.as_raw(), GUID::zeroed(), POINT::default());
+                eprintln!("presenter recreation attempt={attempt} ready={ready}");
+                native.cast::<windows::Foundation::IClosable>().unwrap().Close().unwrap();
+                assert_ne!(ready, 0, "recreated presenter must remain ready");
+            }
+            CoUninitialize();
+        }
+    }
     #[test]
     #[ignore = "requires the native Win11 presenter; run in a standalone test process"]
     fn native_presenter_uses_queried_interface_instead_of_unknown_identity() {

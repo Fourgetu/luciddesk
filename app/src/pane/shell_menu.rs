@@ -22,11 +22,12 @@ pub fn show_many(
     let shown = hook
         .prepare_menu(owner as isize, &names, point.x, point.y)
         .and_then(|host| {
+
             #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
             {
                 eprintln!("menu_prepare_us={}", started.elapsed().as_micros());
             }
-            desktop_shell::show_isolated_item_menu(
+            let result = desktop_shell::show_isolated_item_menu(
                 windows::Win32::Foundation::HWND(owner),
                 windows::Win32::Foundation::HWND(host as _),
                 if keyboard {
@@ -35,7 +36,9 @@ pub fn show_many(
                     desktop_shell::MenuInvocation::Mouse
                 },
             )
-            .map_err(|error| format!("无法打开 Explorer 图标菜单：{error}"))
+            .map_err(|error| format!("无法打开 Explorer 图标菜单：{error}"));
+            record_presenter(host);
+            result
         });
     // Always finish/cancel, including when preparation timed out. Keep the
     // original opening error if cleanup also fails; the Hook retains its token.
@@ -45,4 +48,22 @@ pub fn show_many(
         hook.finish_menu()
     };
     shown.and(finished)
+}
+
+fn record_presenter(host: isize) {
+    use std::io::Write;
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetPropW;
+    let (mode, error) = unsafe {
+        (GetPropW(host as _, windows_sys::w!("LucidPane.Menu.Presenter")) as usize,
+         GetPropW(host as _, windows_sys::w!("LucidPane.Menu.PresenterError")) as usize as u32)
+    };
+    let Ok(base) = desktop_shell::local_app_data_path() else { return; };
+    if let Ok(mut log) = std::fs::OpenOptions::new().create(true).append(true)
+        .open(base.join("LucidPane").join("menu-presenter.log")) {
+        let values = unsafe { ["PrepareCalled", "PrepareResult", "ReadyCalled", "ReadyResult", "ShowCalled"].map(|name| {
+            let key: Vec<u16> = format!("LucidPane.Menu.{name}").encode_utf16().chain(Some(0)).collect();
+            GetPropW(host as _, key.as_ptr()) as usize as u32
+        }) };
+        let _ = writeln!(log, "{:?} host={host:x} presenter={mode} initialization_hresult=0x{error:08X} prepare_called={} prepare_hresult=0x{:08X} ready_called={} ready={} show={}", std::time::SystemTime::now(), values[0], values[1], values[2], values[3], values[4]);
+    }
 }

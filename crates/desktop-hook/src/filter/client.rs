@@ -238,7 +238,10 @@ impl FilterSession {
                 return Err("Explorer 拒绝桌面过滤请求".into());
             }
             let started = Instant::now();
-            while started.elapsed() < Duration::from_secs(3) {
+            // The menu worker itself allows three seconds to prepare. Give
+            // its reply time to reach this outer IPC boundary before timing out.
+            let timeout = Duration::from_secs(if wire::is_menu_transaction(op) { 5 } else { 3 });
+            while started.elapsed() < timeout {
                 if op == wire::DETACH && GetPropW(self.view, OWNER).is_null() {
                     return Ok(());
                 }

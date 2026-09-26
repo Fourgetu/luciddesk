@@ -15,7 +15,7 @@ use std::{
     ptr::null_mut,
     rc::Rc,
     sync::{Arc, atomic::AtomicBool},
-    time::{Duration, Instant},
+    time::Instant,
 };
 use windows::{
     Win32::{
@@ -165,31 +165,7 @@ impl MenuHost {
             for item in items {
                 results.AddItem(item)?;
             }
-            let deadline = Instant::now() + Duration::from_secs(2);
-            while folder.ItemCount(SVGIO_ALLVIEW)? as usize != items.len() {
-                if Instant::now() >= deadline {
-                    return Err(windows::core::Error::new(E_FAIL, "独立菜单项目加载超时"));
-                }
-                let mut message = MSG::default();
-                for _ in 0..32 {
-                    if PeekMessageW(&raw mut message, null_mut(), 0, 0, PM_REMOVE) == 0 {
-                        break;
-                    }
-                    if message.message == WM_QUIT {
-                        PostQuitMessage(message.wParam as i32);
-                        return Err(E_FAIL.into());
-                    }
-                    TranslateMessage(&message);
-                    DispatchMessageW(&message);
-                }
-                MsgWaitForMultipleObjectsEx(
-                    0,
-                    std::ptr::null(),
-                    5,
-                    QS_ALLINPUT,
-                    MWMO_INPUTAVAILABLE,
-                );
-            }
+            selection::wait_for_targets(&folder, items)?;
             // Select the isolated result set, including mixed folders and namespace
             // items. Validate identities before any menu can invoke a command.
             selection::select_all(&folder, items.len())?;
@@ -203,6 +179,7 @@ impl MenuHost {
             let view: IShellView = folder.cast()?;
             let first = Rc::new(Cell::new(None));
             let invocation = lifecycle::Invocation::new(cancelled);
+            let mut presenter_error = 0i32;
             let presenter = if compact_available {
                 presenter::NativePresenter::create(
                     &view,
@@ -216,6 +193,7 @@ impl MenuHost {
                     site.SetSite(&presenter.service())?;
                     Ok(presenter)
                 })
+                .inspect_err(|error| presenter_error = error.code().0)
                 .ok()
             } else {
                 None
@@ -224,6 +202,12 @@ impl MenuHost {
             // The validated Shell selection still supplies a public classic menu.
             host.presenter = presenter.clone();
             let view_hwnd = view.GetWindow()?.0;
+            SetPropW(view_hwnd, windows_sys::w!("LucidPane.Menu.Presenter"),
+                if presenter.is_some() { 1usize } else { 2usize } as _);
+            if presenter_error != 0 {
+                SetPropW(view_hwnd, windows_sys::w!("LucidPane.Menu.PresenterError"),
+                    presenter_error as u32 as usize as _);
+            }
             let callbacks = Rc::new(MenuCallbacks {
                 first,
                 busy: Cell::new(false),
@@ -257,12 +241,12 @@ impl MenuHost {
     /// Reuse only an idle host whose complete live identity set still matches.
     /// A disappeared/renamed target must never invoke a cached, stale selection.
     fn reprepare(
-        &self,
+        &mut self,
         targets: &ResolvedTargets,
         context: MenuContext,
         cancelled: Arc<AtomicBool>,
     ) -> Result<bool> {
-        if self.is_busy() || self.names != targets.names || self.has_owned_windows() {
+        if self.is_busy() || self.has_owned_windows() {
             return Ok(false);
         }
         unsafe {
@@ -275,6 +259,15 @@ impl MenuHost {
             }
             let items = &targets.items;
             let folder: IFolderView2 = callbacks.view.cast()?;
+            if self.names != targets.names {
+                // Preserve the native presenter and Shell view across target changes.
+                // A partially updated collection must never be used for commands.
+                callbacks.retired.set(true);
+                let results: IResultsFolder = folder.GetFolder()?;
+                results.RemoveAll().map_err(|e| windows::core::Error::new(e.code(), format!("清空菜单集合失败：{e}")))?;
+                for item in items { results.AddItem(item).map_err(|e| windows::core::Error::new(e.code(), format!("更新菜单集合失败：{e}")))?; }
+                selection::wait_for_targets(&folder, items).map_err(|e| windows::core::Error::new(e.code(), format!("等待替换菜单集合失败：{e}")))?;
+            }
             let live: IShellItemArray = folder.Items(SVGIO_ALLVIEW)?;
             if live.GetCount()? as usize != items.len() {
                 return Ok(false);
@@ -282,7 +275,13 @@ impl MenuHost {
             if !selection::contains_all(&live, items)? {
                 return Ok(false);
             }
-            selection::select_all(&folder, items.len())?;
+            selection::select_all(&folder, items.len()).map_err(|e| windows::core::Error::new(e.code(), format!("选中新菜单集合失败：{e}")))?;
+            let selected: IShellItemArray = folder.Items(SVGIO_SELECTION).map_err(|e| windows::core::Error::new(e.code(), format!("读取新菜单选择失败：{e}")))?;
+            if selected.GetCount()? as usize != items.len() || !selection::contains_all(&selected, items)? {
+                return Err(windows::core::Error::new(E_FAIL, "切换菜单后选择目标不一致"));
+            }
+            self.names.clone_from(&targets.names);
+            callbacks.retired.set(false);
             callbacks.context.set(context);
             callbacks.invocation.reset(cancelled);
             SetWindowPos(
@@ -383,6 +382,9 @@ unsafe extern "system" fn menu_messages(
             return 0;
         }
         if msg == WM_CANCELMODE && callbacks.invocation.cancelled() {
+            if let Some(presenter) = &callbacks.presenter {
+                presenter.dismiss();
+            }
             EndMenu();
             return 0;
         }
@@ -426,7 +428,8 @@ unsafe extern "system" fn menu_messages(
                 cursor::normal_pointer();
                 {
                     if let Some(presenter) = &callbacks.presenter {
-                        presenter.set_keyboard_invocation(wp != 0);
+                        presenter.set_keyboard_invocation(wp != 0, hwnd as isize);
+                        for name in [windows_sys::w!("LucidPane.Menu.PrepareCalled"), windows_sys::w!("LucidPane.Menu.PrepareResult"), windows_sys::w!("LucidPane.Menu.ReadyCalled"), windows_sys::w!("LucidPane.Menu.ReadyResult"), windows_sys::w!("LucidPane.Menu.ShowCalled")] { RemovePropW(hwnd, name); }
                     }
                     callbacks.first.set(None);
                     let menu: IContextMenu = callbacks.view.GetItemObject(SVGIO_SELECTION)?;
@@ -534,7 +537,7 @@ mod fallback_tests {
             {
                 let targets =
                     ResolvedTargets::resolve(&[path.to_string_lossy().into_owned()]).unwrap();
-                let host = MenuHost::create_impl(
+                let mut host = MenuHost::create_impl(
                     owner,
                     &targets,
                     MenuContext {
@@ -558,6 +561,22 @@ mod fallback_tests {
                     )
                     .unwrap()
                 );
+                // A -> B -> A must keep the same host and validate the replacement
+                // selection even though all three collections have one item.
+                let other_path = path.with_extension("other.txt");
+                std::fs::write(&other_path, b"replacement menu fixture").unwrap();
+                let original_hwnd = host.view_hwnd().unwrap();
+                for target_path in [&other_path, &path] {
+                    let next = ResolvedTargets::resolve(&[target_path.to_string_lossy().into_owned()]).unwrap();
+                    assert!(host.reprepare(&next, MenuContext { owner: owner as u64, x: 30, y: 30 },
+                        Arc::new(AtomicBool::new(false))).unwrap());
+                    assert_eq!(host.view_hwnd().unwrap(), original_hwnd);
+                    let folder: IFolderView2 = host.view.as_ref().unwrap().cast().unwrap();
+                    let selected: IShellItemArray = folder.Items(SVGIO_SELECTION).unwrap();
+                    assert_eq!(selected.GetCount().unwrap(), 1);
+                    assert!(selection::contains_all(&selected, &next.items).unwrap());
+                }
+                std::fs::remove_file(other_path).unwrap();
                 let callbacks = host.callbacks.as_ref().unwrap();
                 assert!(callbacks.presenter.is_none());
                 let menu: IContextMenu = callbacks.view.GetItemObject(SVGIO_SELECTION).unwrap();

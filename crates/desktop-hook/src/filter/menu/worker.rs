@@ -12,7 +12,7 @@ use std::{
 };
 use windows::{Win32::Foundation::E_FAIL, core::Result};
 use windows_sys::Win32::{
-    System::{Com::*, LibraryLoader::*},
+    System::{Com::*, LibraryLoader::*, Threading::*},
     UI::WindowsAndMessaging::*,
 };
 
@@ -28,11 +28,34 @@ enum Request {
     Cancel {
         reply: Reply<()>,
     },
+    Shutdown,
 }
 pub struct Worker {
     requests: mpsc::Sender<Request>,
+    signal: Arc<RequestSignal>,
     thread: std::thread::JoinHandle<()>,
     active: RefCell<Option<ActiveInvocation>>,
+}
+
+// The worker owns a reference until its wait loop exits; closing a HANDLE
+// while another thread is waiting on it would be undefined behavior.
+struct RequestSignal(isize);
+impl RequestSignal {
+    fn new() -> Result<Arc<Self>> {
+        let handle = unsafe { CreateEventW(std::ptr::null(), 0, 0, std::ptr::null()) };
+        if handle.is_null() {
+            return Err(windows::core::Error::from_thread());
+        }
+        Ok(Arc::new(Self(handle as isize)))
+    }
+    fn notify(&self) {
+        unsafe { SetEvent(self.0 as _); }
+    }
+}
+impl Drop for RequestSignal {
+    fn drop(&mut self) {
+        unsafe { windows_sys::Win32::Foundation::CloseHandle(self.0 as _); }
+    }
 }
 
 struct ActiveInvocation {
@@ -42,8 +65,8 @@ struct ActiveInvocation {
 impl ActiveInvocation {
     fn cancel(&self) {
         self.cancelled.store(true, Ordering::Release);
-        unsafe {
-            PostMessageW(self.hwnd as _, WM_CANCELMODE, 0, 0);
+        if self.hwnd != 0 {
+            unsafe { PostMessageW(self.hwnd as _, WM_CANCELMODE, 0, 0); }
         }
     }
 }
@@ -51,6 +74,8 @@ impl Worker {
     pub fn create(desktop: windows_sys::Win32::Foundation::HWND) -> Result<Self> {
         let desktop = desktop as isize;
         let (requests, receiver) = mpsc::channel();
+        let signal = RequestSignal::new()?;
+        let worker_signal = signal.clone();
         let thread = std::thread::Builder::new()
             .name("LucidPane native menu".into())
             .spawn(move || unsafe {
@@ -100,6 +125,7 @@ impl Worker {
                                     current.as_ref().map_or(Ok(()), |host| host.finish(true));
                                 let _ = reply.send(result.map_err(|e| e.code().0));
                             }
+                            Ok(Request::Shutdown) => break 'worker,
                             Err(mpsc::TryRecvError::Disconnected) => break 'worker,
                             Err(mpsc::TryRecvError::Empty) => break,
                         }
@@ -107,11 +133,22 @@ impl Worker {
                     if !pump_messages() {
                         break;
                     }
-                    if last_cleanup.elapsed() >= Duration::from_secs(1) {
+                    if !retired.is_empty() && last_cleanup.elapsed() >= Duration::from_secs(1) {
                         retired.retain(MenuHost::has_owned_windows);
                         last_cleanup = Instant::now();
                     }
-                    MsgWaitForMultipleObjects(0, std::ptr::null(), 0, 10, QS_ALLINPUT);
+                    let timeout = if retired.is_empty() {
+                        INFINITE
+                    } else {
+                        Duration::from_secs(1).saturating_sub(last_cleanup.elapsed())
+                            .as_millis().max(1) as u32
+                    };
+                    let handles = [worker_signal.0 as _];
+                    if MsgWaitForMultipleObjectsEx(1, handles.as_ptr(), timeout, QS_ALLINPUT, MWMO_INPUTAVAILABLE)
+                        == windows_sys::Win32::Foundation::WAIT_FAILED
+                    {
+                        break;
+                    }
                 }
                 drop(current);
                 drop(retired);
@@ -120,12 +157,18 @@ impl Worker {
             .map_err(|error| windows::core::Error::new(E_FAIL, error.to_string()))?;
         Ok(Self {
             requests,
+            signal,
             thread,
             active: RefCell::new(None),
         })
     }
     pub fn is_alive(&self) -> bool {
         !self.thread.is_finished()
+    }
+    fn send(&self, request: Request) -> Result<()> {
+        self.requests.send(request).map_err(|_| windows::core::Error::from_hresult(E_FAIL))?;
+        self.signal.notify();
+        Ok(())
     }
     pub fn prepare(&self, names: &[String], context: MenuContext) -> Result<isize> {
         let (reply, result) = mpsc::sync_channel(1);
@@ -134,14 +177,12 @@ impl Worker {
             cancelled: cancelled.clone(),
             hwnd: 0,
         });
-        self.requests
-            .send(Request::Prepare {
+        self.send(Request::Prepare {
                 names: names.to_vec(),
                 context,
                 reply,
                 cancelled: cancelled.clone(),
-            })
-            .map_err(|_| windows::core::Error::from_hresult(E_FAIL))?;
+            })?;
         let deadline = Instant::now() + Duration::from_secs(3);
         loop {
             match result.try_recv() {
@@ -166,18 +207,13 @@ impl Worker {
         // Properties may still own a modal loop on the Shell STA. Normal
         // dismissal only queues cleanup and never allocates an unused reply.
         if !cancel {
-            return self
-                .requests
-                .send(Request::Finish)
-                .map_err(|_| windows::core::Error::from_hresult(E_FAIL));
+            return self.send(Request::Finish);
         }
         if let Some(active) = self.active.borrow().as_ref() {
             active.cancel();
         }
         let (reply, result) = mpsc::sync_channel(1);
-        self.requests
-            .send(Request::Cancel { reply })
-            .map_err(|_| windows::core::Error::from_hresult(E_FAIL))?;
+        self.send(Request::Cancel { reply })?;
         // Return only after the menu STA has dismissed/closed the presenter.
         // If an extension stalls, its atomic token still prevents later display
         // and command invocation; never forcibly terminate Explorer's thread.
@@ -204,6 +240,7 @@ impl Drop for Worker {
         if let Some(active) = self.active.get_mut() {
             active.cancel();
         }
+        let _ = self.send(Request::Shutdown);
     }
 }
 
@@ -223,7 +260,7 @@ fn prepare_host(
         );
     }
     let targets = ResolvedTargets::resolve(names)?;
-    if let Some(host) = current.as_ref() {
+    if let Some(host) = current.as_mut() {
         if host.reprepare(&targets, context, cancelled.clone())? {
             return host.view_hwnd();
         }
@@ -288,7 +325,35 @@ mod tests {
     use super::*;
 
     #[test]
+    fn idle_worker_wakes_for_requests_and_shutdown() {
+        let worker = Worker::create(std::ptr::null_mut()).unwrap();
+        worker.finish(true).unwrap();
+        worker.send(Request::Shutdown).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while worker.is_alive() && Instant::now() < deadline {
+            std::thread::yield_now();
+        }
+        assert!(!worker.is_alive());
+    }
+
+    #[test]
+    fn dropping_worker_signals_shutdown_without_waiting_for_a_timeout() {
+        let (requests, receiver) = mpsc::channel();
+        let signal = RequestSignal::new().unwrap();
+        let waiting = signal.clone();
+        let (done, completion) = mpsc::channel();
+        let thread = std::thread::spawn(move || {
+            assert_eq!(unsafe { WaitForSingleObject(waiting.0 as _, 3000) }, 0);
+            assert!(matches!(receiver.recv().unwrap(), Request::Shutdown));
+            done.send(()).unwrap();
+        });
+        drop(Worker { requests, signal, thread, active: RefCell::new(None) });
+        completion.recv_timeout(Duration::from_secs(3)).unwrap();
+    }
+
+    #[test]
     fn modal_worker_does_not_block_normal_finish_and_cancel_propagates_close_failure() {
+        let cancelled = Arc::new(AtomicBool::new(false));
         let (requests, receiver) = mpsc::channel();
         let (unblock, modal) = mpsc::channel();
         let thread = std::thread::spawn(move || {
@@ -304,8 +369,9 @@ mod tests {
         });
         let worker = Worker {
             requests,
+            signal: RequestSignal::new().unwrap(),
             thread,
-            active: RefCell::new(None),
+            active: RefCell::new(Some(ActiveInvocation { cancelled: cancelled.clone(), hwnd: 0 })),
         };
         worker.finish(false).unwrap();
         unblock.send(()).unwrap();
@@ -313,5 +379,8 @@ mod tests {
             worker.finish(true).unwrap_err().code(),
             windows::Win32::Foundation::E_ACCESSDENIED
         );
+        assert!(cancelled.load(Ordering::Acquire));
+        drop(worker);
+        assert!(cancelled.load(Ordering::Acquire), "retiring a failed worker must not revive late commands");
     }
 }
