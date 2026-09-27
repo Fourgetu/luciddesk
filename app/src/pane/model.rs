@@ -25,6 +25,7 @@ pub struct GroupModel {
     pub auto_hide: bool,
     pub locked: bool,
     pub reveal: f32,
+    pub hovered_tab: Option<PanelId>,
     pub hovered_button: Option<usize>,
     pub pressed_button: Option<usize>,
     pub backdrop: desktop_core::Backdrop,

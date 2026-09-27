@@ -722,6 +722,7 @@ mod tests {
             auto_hide: false,
             locked: false,
             reveal: 1.0,
+            hovered_tab: None,
             hovered_button: None,
             pressed_button: None,
             backdrop: desktop_core::Backdrop::Acrylic,

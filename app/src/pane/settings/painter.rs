@@ -1,7 +1,15 @@
 //! Shared rendering for the explicit settings control types.
 use super::*;
 
+struct CachedPreview {
+    context: ID2D1DeviceContext,
+    material: Backdrop,
+    dark: bool,
+    bitmap: windows_canvas::Bitmap,
+}
+
 pub(super) struct Painter {
+    preview: RefCell<Option<CachedPreview>>,
     app_icon: super::super::assets::Pixels,
     formats: Vec<windows_canvas::TextFormat>,
     button_format: windows_canvas::TextFormat,
@@ -11,9 +19,18 @@ impl Painter {
         use windows_canvas::{FontWeight, ParagraphAlignment, TextFormat, WordWrapping};
         let family = super::super::fonts::family();
         let mut formats = vec![];
-        for (i, size) in [12.0, 14.0, 20.0, 28.0, Style::ICON, Style::NAV_ICON, 12.0]
-            .iter()
-            .enumerate()
+        for (i, size) in [
+            12.0,
+            14.0,
+            20.0,
+            28.0,
+            Style::ICON,
+            Style::NAV_ICON,
+            12.0,
+            14.0,
+        ]
+        .iter()
+        .enumerate()
         {
             let format = canvas_result(TextFormat::with_weight(
                 if matches!(i, 4 | 5) {
@@ -32,6 +49,8 @@ impl Painter {
             });
             let format = if matches!(i, 4 | 5) {
                 format.with_alignment(windows_canvas::TextAlignment::Center)
+            } else if i == Tokens::VALUE_TEXT {
+                format.with_alignment(windows_canvas::TextAlignment::Trailing)
             } else {
                 format
             };
@@ -44,6 +63,7 @@ impl Painter {
             .with_alignment(windows_canvas::TextAlignment::Center);
         super::super::canvas::ellipsis(&button_format)?;
         Ok(Self {
+            preview: RefCell::new(None),
             app_icon: {
                 let icon = crate::app_icon::load(128, 128).map_err(|message| {
                     windows::core::Error::new(windows::Win32::Foundation::E_FAIL, message)
@@ -79,6 +99,10 @@ impl Painter {
         toggles: &std::collections::HashMap<usize, f32>,
     ) -> windows::core::Result<()> {
         {
+            let context = t;
+            if s.previews.is_empty() {
+                self.preview.borrow_mut().take();
+            }
             super::super::canvas::draw(t, scale, |t| {
                 let color = |v: u32| ColorF {
                     r: ((v >> 16) & 255) as f32 / 255.0,
@@ -88,14 +112,26 @@ impl Painter {
                 };
                 let palette = components::Palette::for_theme(dark);
                 let bg = color(palette.background);
-                let card = canvas_result(t.create_solid_brush(ColorF {
-                    a: if native {
-                        if dark { 0.65 } else { 0.72 }
-                    } else {
-                        1.0
-                    },
-                    ..color(palette.card)
-                }))?;
+                let mut chrome = super::super::theme::material_chrome(s.material, dark);
+                if !matches!(
+                    s.material.base(),
+                    Backdrop::Acrylic | Backdrop::Mica | Backdrop::MicaAlt
+                ) {
+                    chrome.card = ColorF {
+                        a: if native {
+                            if dark { 0.65 } else { 0.72 }
+                        } else {
+                            1.0
+                        },
+                        ..color(if dark { 0x2b2b2b } else { 0xffffff })
+                    };
+                    chrome.card_border = ColorF {
+                        a: if native { 0.45 } else { 1.0 },
+                        ..color(palette.border)
+                    };
+                }
+                let card = canvas_result(t.create_solid_brush(chrome.card))?;
+                let card_border = canvas_result(t.create_solid_brush(chrome.card_border))?;
 
                 let ink = canvas_result(t.create_solid_brush(color(palette.ink)))?;
                 let muted = canvas_result(t.create_solid_brush(color(palette.muted)))?;
@@ -157,7 +193,7 @@ impl Painter {
                         radius_y: Tokens::CARD_RADIUS,
                     };
                     t.fill_rounded_rect(&rr, &card);
-                    t.draw_rounded_rect(&rr, &border, 1.0);
+                    t.draw_rounded_rect(&rr, &card_border, 1.0);
                 }
                 if let Some(bounds) = &s.app_icon {
                     let _clip = ContentClip::new(&t, s, true);
@@ -166,71 +202,90 @@ impl Painter {
                         canvas_result(t.create_bitmap(&pixels.data, pixels.width, pixels.height))?;
                     t.draw_bitmap(&bitmap, bounds, 1.0);
                 }
-                for (r, rgb, opacity) in &s.previews {
+                for (r, material) in &s.previews {
                     let _clip = ContentClip::new(&t, s, r.left >= Tokens::CONTENT_X);
-                    let light = canvas_result(t.create_solid_brush(color(if dark {
-                        0x41454b
-                    } else {
-                        0xffffff
-                    })))?;
-                    let shade = canvas_result(t.create_solid_brush(color(if dark {
-                        0x30343a
-                    } else {
-                        0xdfe3e8
-                    })))?;
-                    let tint = canvas_result(t.create_solid_brush(ColorF {
-                        a: *opacity,
-                        ..color(*rgb)
-                    }))?;
-                    let cols = ((r.right - r.left) / 12.0).ceil() as usize;
-                    let rows = ((r.bottom - r.top) / 12.0).ceil() as usize;
-                    for row in 0..rows {
-                        for col in 0..cols {
-                            let x = r.left + col as f32 * 12.0;
-                            let y = r.top + row as f32 * 12.0;
-                            t.fill_rect(
-                                &Rect::from_xywh(
-                                    x,
-                                    y,
-                                    12.0f32.min(r.right - x),
-                                    12.0f32.min(r.bottom - y),
-                                ),
-                                if (row + col) % 2 == 0 { &light } else { &shade },
-                            );
-                        }
+                    // Keep only the current image. Theme, strength, custom color or
+                    // device/context changes invalidate it; hover and scroll do not.
+                    let mut cached = self.preview.borrow_mut();
+                    if cached.as_ref().is_none_or(|cached| {
+                        cached.context != *context
+                            || cached.material != *material
+                            || cached.dark != dark
+                    }) {
+                        let pixels = preview::pixels(*material, dark);
+                        let bitmap = canvas_result(t.create_bitmap(&pixels, 400, 240))?;
+                        *cached = Some(CachedPreview {
+                            context: context.clone(),
+                            material: *material,
+                            dark,
+                            bitmap,
+                        });
                     }
-                    t.fill_rect(r, &tint);
+                    t.draw_bitmap(&cached.as_ref().unwrap().bitmap, r, 1.0);
+                    drop(cached);
+                    let panel = Rect::from_xywh(r.left + 10.0, r.top + 10.0, 180.0, 100.0);
+                    let preview_edge = canvas_result(
+                        t.create_solid_brush(super::super::theme::panel_border(dark, *material)),
+                    )?;
+                    let stroke = 1.0 / scale;
+                    let inset = stroke * 0.5;
                     t.draw_rounded_rect(
                         &RoundedRect {
-                            rect: *r,
-                            radius_x: 0.0,
-                            radius_y: 0.0,
+                            rect: Rect::from_xywh(
+                                panel.left + inset,
+                                panel.top + inset,
+                                180.0 - stroke,
+                                100.0 - stroke,
+                            ),
+                            radius_x: (4.0 - inset).max(0.0),
+                            radius_y: (4.0 - inset).max(0.0),
                         },
-                        &border,
-                        1.0,
+                        &preview_edge,
+                        stroke,
                     );
-                    for i in 0..if r.bottom - r.top >= 64.0 { 3 } else { 0 } {
+                    // Desktop Mica panes expose one continuous material surface.
+                    if !matches!(material.base(), Backdrop::Mica | Backdrop::MicaAlt) {
+                        let layer = canvas_result(t.create_solid_brush(ColorF {
+                            a: if dark { 0.10 } else { 0.48 },
+                            ..color(0xffffff)
+                        }))?;
                         t.fill_rounded_rect(
                             &RoundedRect {
                                 rect: Rect::from_xywh(
-                                    r.left + 16.0 + i as f32 * 42.0,
-                                    r.top + 18.0,
-                                    26.0,
-                                    26.0,
+                                    panel.left + 4.0,
+                                    panel.top + 27.0,
+                                    172.0,
+                                    69.0,
                                 ),
+                                radius_x: 3.0,
+                                radius_y: 3.0,
+                            },
+                            &layer,
+                        );
+                    }
+                    t.clipped_text(
+                        "桌面面板",
+                        &self.formats[0],
+                        &Rect::from_xywh(panel.left + 10.0, panel.top + 2.0, 120.0, 24.0),
+                        &ink,
+                    );
+                    for i in 0..3 {
+                        let left = panel.left + 18.0 + i as f32 * 52.0;
+                        t.fill_rounded_rect(
+                            &RoundedRect {
+                                rect: Rect::from_xywh(left, panel.top + 39.0, 28.0, 28.0),
                                 radius_x: 5.0,
                                 radius_y: 5.0,
                             },
                             &accent,
                         );
-                        t.fill_rect(
-                            &Rect::from_xywh(
-                                r.left + 18.0 + i as f32 * 42.0,
-                                r.top + 51.0,
-                                22.0,
-                                2.0,
-                            ),
-                            &ink,
+                        t.fill_rounded_rect(
+                            &RoundedRect {
+                                rect: Rect::from_xywh(left - 2.0, panel.top + 77.0, 32.0, 3.0),
+                                radius_x: 1.5,
+                                radius_y: 1.5,
+                            },
+                            &muted,
                         );
                     }
                 }

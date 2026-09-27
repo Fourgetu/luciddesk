@@ -948,3 +948,174 @@ fn color_channel_titles_align_with_slider_centers() {
         }
     }
 }
+
+#[test]
+fn material_choices_reach_the_preview_with_their_strength() {
+    let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let painter = Painter::new().unwrap();
+    let device = windows_canvas::GpuDevice::new_warp().unwrap();
+    for dark in [false, true] {
+        for (name, material) in [
+            ("mica", Backdrop::Mica),
+            ("mica-alt", Backdrop::MicaAlt),
+            ("acrylic", Backdrop::Acrylic),
+        ] {
+            for strength in [0, 50, 100] {
+                let material = material.with_strength(strength);
+                let mut s = with_titlebar(
+                    scene(
+                        940.0,
+                        588.0,
+                        0,
+                        false,
+                        (
+                            if dark {
+                                PanelTheme::Dark
+                            } else {
+                                PanelTheme::Light
+                            },
+                            material,
+                        ),
+                        Default::default(),
+                    ),
+                    940.0,
+                    false,
+                );
+                assert_eq!(s.previews[0].1, material);
+                s.scroll_to(940.0, 620.0, &mut 0.0);
+                if strength != 50 {
+                    continue;
+                }
+                let bitmap = super::super::canvas::Offscreen::new(&device, 940, 620).unwrap();
+                painter
+                    .paint(
+                        &bitmap.target,
+                        &s,
+                        940.0,
+                        620.0,
+                        1.0,
+                        dark,
+                        false,
+                        None,
+                        None,
+                        &Default::default(),
+                    )
+                    .unwrap();
+                if std::env::var_os("LUCIDPANE_TEST_EXPORT_SNAPSHOTS").is_some() {
+                    let pixels = bitmap.pixels().unwrap();
+                    let mut bmp = vec![0u8; 54];
+                    bmp[0..2].copy_from_slice(b"BM");
+                    bmp[2..6].copy_from_slice(&(54 + pixels.len() as u32).to_le_bytes());
+                    bmp[10..14].copy_from_slice(&54u32.to_le_bytes());
+                    bmp[14..18].copy_from_slice(&40u32.to_le_bytes());
+                    bmp[18..22].copy_from_slice(&940i32.to_le_bytes());
+                    bmp[22..26].copy_from_slice(&(-620i32).to_le_bytes());
+                    bmp[26..28].copy_from_slice(&1u16.to_le_bytes());
+                    bmp[28..30].copy_from_slice(&32u16.to_le_bytes());
+                    bmp.extend(pixels);
+                    std::fs::write(
+                        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                            .join("../target")
+                            .join(format!(
+                                "settings-{name}-{}.bmp",
+                                if dark { "dark" } else { "light" }
+                            )),
+                        bmp,
+                    )
+                    .unwrap();
+                }
+            }
+        }
+    }
+}
+
+
+// Called by the isolated native-window scenario so composition stays on one STA.
+pub(in crate::pane) fn solid_settings_edit_preview_save_and_remember_style() {
+    let state = Rc::new(RefCell::new(super::super::tests::test_state()));
+    show(&state, PanelId::new(1)).unwrap();
+    let hwnd = state.borrow().settings.as_ref().unwrap().hwnd().cast();
+    let point = |page, predicate: fn(&Action) -> bool, fraction: f32| unsafe {
+        // Reset actual scrolling, then locate the semantic control in the current layout.
+        let scale = GetDpiForWindow(hwnd).max(96) as f32 / 96.0;
+        let mut pointer = windows_sys::Win32::Foundation::POINT {
+            x: ((Tokens::CONTENT_X + 32.0) * scale) as i32,
+            y: (200.0 * scale) as i32,
+        };
+        ClientToScreen(hwnd, &raw mut pointer);
+        let screen_point = ((pointer.y as isize) << 16) | (pointer.x as isize & 0xffff);
+        SendMessageW(hwnd, WM_MOUSEWHEEL, (32760usize) << 16, screen_point);
+        let mut rect = RECT::default();
+        GetClientRect(hwnd, &raw mut rect);
+        let w = rect.right as f32 / scale;
+        let h = rect.bottom as f32 / scale;
+        let s = state.borrow();
+        let appearance = s.workspace.appearance().unwrap_or((PanelTheme::System, Backdrop::Mica));
+        let mut body = with_titlebar(scene(w, h - TITLE_HEIGHT, page, false, appearance, Default::default()), w, false);
+        let mut scroll = 0.0;
+        body.scroll_to(w, h, &mut scroll);
+        let bounds = body.controls.iter().find(|c| predicate(&c.action)).expect("settings control missing").bounds;
+        let viewport = body.viewport.unwrap();
+        while bounds.bottom - scroll > viewport.bottom {
+            SendMessageW(hwnd, WM_MOUSEWHEEL, ((-120i16) as u16 as usize) << 16, screen_point);
+            let next = (scroll + 64.0).min(body.scroll_max);
+            assert!(next > scroll, "control cannot be scrolled into view");
+            scroll = next;
+        }
+        SendMessageW(hwnd, WM_PAINT, 0, 0);
+        let x = (bounds.left + (bounds.right - bounds.left) * fraction) * scale;
+        let y = ((bounds.top + bounds.bottom) * 0.5 - scroll) * scale;
+        ((y as isize) << 16) | (x as isize & 0xffff)
+    };
+    let click = |p| unsafe {
+        SendMessageW(hwnd, WM_LBUTTONDOWN, 1, p);
+        SendMessageW(hwnd, WM_LBUTTONUP, 0, p);
+        SendMessageW(hwnd, WM_PAINT, 0, 0);
+    };
+    click(point(0, |a| matches!(a, Action::Change(Event::Material(Backdrop::Acrylic))), 0.5));
+    let before = state.borrow().store.change_count();
+    let slider = point(0, |a| matches!(a, Action::Strength(_)), 0.75);
+    unsafe { SendMessageW(hwnd, WM_LBUTTONDOWN, 1, slider); }
+    let adjusted = state.borrow().workspace.appearance().unwrap().1;
+    assert_ne!(adjusted.strength(), Some(50));
+    assert_eq!(state.borrow().store.change_count(), before, "drag must defer persistence");
+    unsafe { SendMessageW(hwnd, WM_LBUTTONUP, 0, slider); }
+    assert_eq!(state.borrow().store.load_workspace().unwrap().appearance().unwrap().1, adjusted);
+    click(point(0, |a| matches!(a, Action::Change(Event::Material(Backdrop::Mica))), 0.5));
+    assert_eq!(state.borrow().workspace.appearance().unwrap().1.strength(), Some(50));
+    click(point(0, |a| matches!(a, Action::Change(Event::Material(Backdrop::Acrylic))), 0.5));
+    assert_eq!(state.borrow().workspace.appearance().unwrap().1, adjusted);
+    click(point(0, |a| matches!(a, Action::StrengthReset), 0.5));
+    assert_eq!(state.borrow().workspace.appearance().unwrap().1, Backdrop::Acrylic);
+    click(point(0, |a| matches!(a, Action::Strength(_)), 0.5));
+    for (key, value) in [(VK_HOME, 0), (VK_END, 100)] {
+        unsafe { SendMessageW(hwnd, WM_KEYDOWN, key as usize, 0); }
+        assert_eq!(state.borrow().workspace.appearance().unwrap().1.strength(), Some(value));
+    }
+    click(point(0, |a| matches!(a, Action::Change(Event::Material(Backdrop::Solid { .. }))), 0.5));
+    click(point(0, |a| matches!(a, Action::SolidColor), 0.5));
+    click(point(7, |a| matches!(a, Action::StyleInput(false)), 0.5));
+    unsafe {
+        for c in "#1234AB".chars() { SendMessageW(hwnd, WM_CHAR, c as usize, 0); }
+        SendMessageW(hwnd, WM_KEYDOWN, VK_RETURN as usize, 0);
+    }
+    assert!(matches!(state.borrow().store.load_workspace().unwrap().appearance().unwrap().1,
+        Backdrop::Solid { color: 0x1234ab, .. }));
+    unsafe {
+        SendMessageW(hwnd, WM_KEYDOWN, VK_ESCAPE as usize, 0);
+        SendMessageW(hwnd, WM_PAINT, 0, 0);
+    }
+    assert!(state.borrow().settings.is_some(), "Escape should leave the picker");
+    let before = state.borrow().store.change_count();
+    let opacity = point(0, |a| matches!(a, Action::Opacity(_)), 0.5);
+    unsafe { SendMessageW(hwnd, WM_LBUTTONDOWN, 1, opacity); }
+    assert_eq!(state.borrow().store.change_count(), before);
+    unsafe { SendMessageW(hwnd, WM_LBUTTONUP, 0, opacity); }
+    let solid = state.borrow().workspace.appearance().unwrap().1;
+    assert!(matches!(solid, Backdrop::Solid { color: 0x1234ab, opacity } if (opacity - 0.5).abs() < 0.02));
+    assert_eq!(state.borrow().store.load_workspace().unwrap().appearance().unwrap().1, solid);
+    click(point(0, |a| matches!(a, Action::Change(Event::Material(Backdrop::Mica))), 0.5));
+    click(point(0, |a| matches!(a, Action::Change(Event::Material(Backdrop::Solid { .. }))), 0.5));
+    assert_eq!(state.borrow().workspace.appearance().unwrap().1, solid);
+    unsafe { SendMessageW(hwnd, WM_CLOSE, 0, 0); }
+}

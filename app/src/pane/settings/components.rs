@@ -10,11 +10,11 @@ impl Tokens {
     pub const CARD_RADIUS: f32 = 8.0;
     pub const CONTROL_HEIGHT: f32 = 32.0;
     pub const MAX_WIDTH: f32 = 1000.0;
+    pub const VALUE_TEXT: usize = 7;
 }
 
 pub(super) struct Palette {
     pub background: u32,
-    pub card: u32,
     pub ink: u32,
     pub muted: u32,
     pub border: u32,
@@ -25,7 +25,6 @@ impl Palette {
         if dark {
             Self {
                 background: 0x202020,
-                card: 0x2b2b2b,
                 ink: 0xf5f5f5,
                 muted: 0xadadad,
                 border: 0x424242,
@@ -34,7 +33,6 @@ impl Palette {
         } else {
             Self {
                 background: 0xf3f3f3,
-                card: 0xffffff,
                 ink: 0x202020,
                 muted: 0x666666,
                 border: 0xdfdfdf,
@@ -338,35 +336,62 @@ impl<'a> SettingsForm<'a> {
         action: Action,
     ) {
         let r = self.card(title, description, 232.0);
-        self.scene
-            .slider(Rect::from_xywh(r.left, r.top, 164.0, 32.0), value, action);
-        self.scene
-            .text(Rect::from_xywh(r.left + 172.0, r.top, 60.0, 32.0), label, 1);
+        // Reserve only the space needed by the value's format. Keep it stable
+        // while dragging so changing digit counts cannot move the slider endpoint.
+        let value_width = if matches!(action, Action::GridSize(_) | Action::Opacity(_)) {
+            40.0
+        } else {
+            32.0
+        };
+        let gap = 4.0;
+        self.scene.slider(
+            Rect::from_xywh(r.left, r.top, r.right - r.left - value_width - gap, 32.0),
+            value,
+            action,
+        );
+        self.scene.text(
+            Rect::from_xywh(r.right - value_width, r.top, value_width, 32.0),
+            label,
+            Tokens::VALUE_TEXT,
+        );
     }
     pub fn button(&mut self, title: &str, description: &str, label: &str, action: Action) {
         let r = self.card(title, description, 112.0);
         self.scene.button(r, label, action, false);
     }
     pub fn preview(&mut self, name: &str, color: u32, opacity: f32) {
+        self.material_preview(name, Backdrop::Solid { color, opacity });
+    }
+    pub fn material_preview(&mut self, name: &str, material: Backdrop) {
         self.scene
             .cards
-            .push(Rect::from_xywh(self.x, self.y, self.width, 112.0));
+            .push(Rect::from_xywh(self.x, self.y, self.width, 152.0));
         self.scene.previews.push((
-            Rect::from_xywh(self.x + 16.0, self.y + 16.0, 144.0, 80.0),
-            color,
-            opacity,
+            Rect::from_xywh(self.x + 16.0, self.y + 16.0, 200.0, 120.0),
+            material,
         ));
         self.scene.text(
-            Rect::from_xywh(self.x + 176.0, self.y + 20.0, self.width - 192.0, 28.0),
+            Rect::from_xywh(self.x + 232.0, self.y + 16.0, self.width - 248.0, 28.0),
             name,
             1,
         );
+        let description = match material.base() {
+            Backdrop::Mica => "柔和的壁纸色调，保持内容清晰。",
+            Backdrop::MicaAlt => "更明显的壁纸色调与深一层的底色。",
+            Backdrop::Solid { .. } => "自定义颜色与不透明度。",
+            _ => "磨砂玻璃质感，透出背景层次。",
+        };
         self.scene.text(
-            Rect::from_xywh(self.x + 176.0, self.y + 52.0, self.width - 192.0, 44.0),
-            "示意预览；真实材质效果以桌面面板为准。",
+            Rect::from_xywh(self.x + 232.0, self.y + 48.0, self.width - 248.0, 40.0),
+            description,
             6,
         );
-        self.y += 120.0;
+        self.scene.text(
+            Rect::from_xywh(self.x + 232.0, self.y + 92.0, self.width - 248.0, 44.0),
+            "示意预览 · 实际效果随桌面背景变化",
+            6,
+        );
+        self.y += 160.0;
     }
 }
 
@@ -409,7 +434,7 @@ impl Scene {
         for r in self.cards.iter_mut().chain(self.separators.iter_mut()) {
             translate(r);
         }
-        for (r, _, _) in &mut self.previews {
+        for (r, _) in &mut self.previews {
             translate(r);
         }
         if let Some(r) = &mut self.app_icon {

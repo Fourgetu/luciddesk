@@ -200,16 +200,7 @@ impl Acrylic {
             material.base(),
             desktop_core::Backdrop::Mica | desktop_core::Backdrop::MicaAlt
         );
-        let (luminosity, tint) = if wallpaper {
-            effects::mica_palette(
-                dark,
-                matches!(material.base(), desktop_core::Backdrop::MicaAlt),
-            )
-        } else {
-            effects::acrylic_palette(dark)
-        };
-        let (luminosity, tint) =
-            effects::adjust_strength(luminosity, tint, material.strength().unwrap_or(50));
+        let (luminosity, tint) = material_colors(material, dark);
         let brush = (|| -> Result<windows::UI::Composition::CompositionBrush> {
             let mut cached = self.material_brush.borrow_mut();
             if let Some((old_wallpaper, brush)) = cached.as_ref() {
@@ -373,4 +364,17 @@ impl Acrylic {
     pub fn opacity_value(&self) -> Result<f32> {
         self.root.Opacity()
     }
+}
+
+/// Shared material recipe for the compositor and the illustrative settings preview.
+pub(super) fn material_colors(material: desktop_core::Backdrop, dark: bool) -> (Color, Color) {
+    let colors = if matches!(
+        material.base(),
+        desktop_core::Backdrop::Mica | desktop_core::Backdrop::MicaAlt
+    ) {
+        effects::mica_palette(dark, material.base() == desktop_core::Backdrop::MicaAlt)
+    } else {
+        effects::acrylic_palette(dark)
+    };
+    effects::adjust_strength(colors.0, colors.1, material.strength().unwrap_or(50))
 }

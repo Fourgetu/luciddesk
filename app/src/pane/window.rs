@@ -171,7 +171,12 @@ fn update_pointer(hwnd: HWND, model: &RefCell<GroupModel>, pointer: Option<POINT
     } else {
         (None, None)
     };
-    if (m.hovered_button, m.hovered_item, m.scrollbar.hovered) != (button, item, hovered) {
+    let tab = pointer.and_then(|p| {
+        let s = scale(hwnd);
+        super::tabs::hit(&m, client(hwnd).right as f32 / s, p.x as f32 / s, p.y as f32 / s)
+    });
+    if (m.hovered_button, m.hovered_item, m.scrollbar.hovered, m.hovered_tab) != (button, item, hovered, tab) {
+        m.hovered_tab = tab;
         m.hovered_button = button;
         m.hovered_item = item;
         m.scrollbar.hovered = hovered;

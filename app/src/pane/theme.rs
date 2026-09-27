@@ -6,20 +6,119 @@
 )]
 use super::assets::Pixels;
 
-/// A quiet neutral edge, independent of the user's text color override.
-pub fn panel_border(dark: bool, backdrop: desktop_core::Backdrop) -> windows_canvas::ColorF {
-    let opacity = match backdrop {
-        desktop_core::Backdrop::Solid { opacity, .. }
-        | desktop_core::Backdrop::Translucent { opacity } => opacity.clamp(0.0, 1.0),
-        // Keep the existing border at the default strength (50), fading to
-        // zero with the material and strengthening it toward the opaque end.
-        other => f32::from(other.strength().unwrap_or(50)) / 50.0,
+/// Local surfaces only: never fill the pane body with these colors.
+pub(super) struct MaterialChrome {
+    pub tab_active: windows_canvas::ColorF,
+    pub tab_hover: windows_canvas::ColorF,
+    pub tab_inactive: windows_canvas::ColorF,
+    pub tab_incoming: windows_canvas::ColorF,
+    pub border: windows_canvas::ColorF,
+    pub card: windows_canvas::ColorF,
+    pub card_border: windows_canvas::ColorF,
+}
+
+pub(super) fn material_chrome(backdrop: desktop_core::Backdrop, dark: bool) -> MaterialChrome {
+    use desktop_core::Backdrop;
+    use windows_canvas::ColorF;
+    let strength = f32::from(backdrop.strength().unwrap_or(50)) / 100.0;
+    // Retain a modest local surface at minimum strength for text and selection;
+    // borders may fade completely. At 50 the material's reference alpha is used.
+    let surface = |reference: f32| {
+        if strength <= 0.5 {
+            reference * (0.3 + 1.4 * strength)
+        } else {
+            reference + (1.0 - reference) * (strength - 0.5) * 0.5
+        }
     };
-    if dark {
-        windows_canvas::ColorF::new(0.6, 0.6, 0.6, 0.14 * opacity)
-    } else {
-        windows_canvas::ColorF::new(0.0, 0.0, 0.0, 0.16 * opacity)
+    let (active, card, edge) = match backdrop.base() {
+        Backdrop::Acrylic => (
+            if dark { 0.18 } else { 0.42 },
+            if dark { 0.22 } else { 0.44 },
+            if dark { 0.18 } else { 0.16 },
+        ),
+        Backdrop::Mica => (
+            if dark {
+                0x4c as f32 / 255.0
+            } else {
+                0x80 as f32 / 255.0
+            },
+            if dark { 0.30 } else { 0.50 },
+            if dark { 0.10 } else { 0.10 },
+        ),
+        Backdrop::MicaAlt => (
+            if dark {
+                0x73 as f32 / 255.0
+            } else {
+                0xb3 as f32 / 255.0
+            },
+            if dark { 0.45 } else { 0.70 },
+            if dark { 0.13 } else { 0.12 },
+        ),
+        _ => (
+            0.14,
+            if dark { 0.65 } else { 0.72 },
+            if dark { 0.14 } else { 0.16 },
+        ),
+    };
+    let channel = if dark { 58.0 / 255.0 } else { 1.0 };
+    let fill = |alpha| ColorF::new(channel, channel, channel, alpha);
+    let coverage = match backdrop {
+        Backdrop::Solid { opacity, .. } | Backdrop::Translucent { opacity } => {
+            opacity.clamp(0.0, 1.0)
+        }
+        _ => strength * 2.0,
+    };
+    let edge_channel = if dark { 0.6 } else { 0.0 };
+    MaterialChrome {
+        tab_active: fill(surface(active)),
+        tab_hover: fill(surface(active) * 0.5),
+        tab_inactive: fill(surface(active) * 0.18),
+        tab_incoming: fill(surface(active) * 0.65),
+        border: panel_border(dark, backdrop),
+        card: fill(surface(card)),
+        card_border: ColorF::new(
+            edge_channel,
+            edge_channel,
+            edge_channel,
+            edge * (0.35 + 0.65 * coverage),
+        ),
     }
+}
+
+/// WinUI 3 Common_themeresources_any.xaml semantic stroke resources.
+/// Self-drawn desktop panes use SurfaceStrokeColorDefault, not a second DWM frame.
+fn stroke_color(argb: u32, opacity: f32) -> windows_canvas::ColorF {
+    windows_canvas::ColorF::new(
+        ((argb >> 16) & 255) as f32 / 255.0,
+        ((argb >> 8) & 255) as f32 / 255.0,
+        (argb & 255) as f32 / 255.0,
+        ((argb >> 24) & 255) as f32 / 255.0 * opacity,
+    )
+}
+
+fn stroke_opacity(backdrop: desktop_core::Backdrop) -> f32 {
+    use desktop_core::Backdrop;
+    match backdrop {
+        Backdrop::Solid { opacity, .. } | Backdrop::Translucent { opacity } => {
+            opacity.clamp(0.0, 1.0)
+        }
+        _ => (f32::from(backdrop.strength().unwrap_or(50)) / 50.0).min(1.0),
+    }
+}
+
+pub fn panel_border(_dark: bool, backdrop: desktop_core::Backdrop) -> windows_canvas::ColorF {
+    // SurfaceStrokeColorDefault is identical in Light and Default (dark).
+    stroke_color(0x66757575, stroke_opacity(backdrop))
+}
+
+pub(super) fn panel_divider(
+    dark: bool,
+    backdrop: desktop_core::Backdrop,
+) -> windows_canvas::ColorF {
+    stroke_color(
+        if dark { 0x15ffffff } else { 0x0f000000 },
+        stroke_opacity(backdrop),
+    )
 }
 
 /// Content-only colors. Never changes the material's theme or samples the desktop.
@@ -189,6 +288,63 @@ mod tests {
     use super::*;
 
     #[test]
+    fn pane_strokes_use_winui_tokens_for_every_material() {
+        use desktop_core::Backdrop;
+        for dark in [false, true] {
+            for material in [
+                Backdrop::Acrylic,
+                Backdrop::Mica,
+                Backdrop::MicaAlt,
+                Backdrop::Solid {
+                    color: 0xff0000,
+                    opacity: 1.0,
+                },
+                Backdrop::Translucent { opacity: 1.0 },
+            ] {
+                let border = panel_border(dark, material);
+                assert_eq!(
+                    (border.r, border.g, border.b, border.a),
+                    (117.0 / 255.0, 117.0 / 255.0, 117.0 / 255.0, 102.0 / 255.0)
+                );
+                let divider = panel_divider(dark, material);
+                assert_eq!(divider.r, if dark { 1.0 } else { 0.0 });
+                assert_eq!(divider.a, if dark { 21.0 / 255.0 } else { 15.0 / 255.0 });
+                assert_eq!(panel_border(dark, material.with_strength(100)).a, border.a);
+            }
+        }
+    }
+
+    #[test]
+    fn chrome_keeps_selection_visible_and_adapts_to_material_strength() {
+        use desktop_core::Backdrop;
+        for dark in [false, true] {
+            let mica = material_chrome(Backdrop::Mica, dark);
+            let alt = material_chrome(Backdrop::MicaAlt, dark);
+            assert!(alt.tab_active.a > mica.tab_active.a);
+            assert!(alt.card.a > mica.card.a);
+            for material in [Backdrop::Acrylic, Backdrop::Mica] {
+                let mut previous = None;
+                for strength in 0..=100 {
+                    let chrome = material_chrome(material.with_strength(strength), dark);
+                    assert!(chrome.tab_active.a > chrome.tab_incoming.a);
+                    assert!(chrome.tab_incoming.a > chrome.tab_inactive.a);
+                    assert!(chrome.tab_active.a > chrome.tab_hover.a);
+                    assert!(chrome.tab_hover.a > chrome.tab_inactive.a);
+                    assert!(chrome.card_border.a > 0.0);
+                    let current = [chrome.tab_active.a, chrome.card.a, chrome.border.a];
+                    assert!(current.iter().all(|a| (0.0..=1.0).contains(a)));
+                    if let Some(previous) = previous {
+                        for (now, before) in current.into_iter().zip(previous) {
+                            assert!(now >= before);
+                        }
+                    }
+                    previous = Some(current);
+                }
+            }
+        }
+    }
+
+    #[test]
     fn border_follows_background_opacity_and_material_strength() {
         use desktop_core::Backdrop;
         for dark in [false, true] {
@@ -203,7 +359,7 @@ mod tests {
                 let border = panel_border(
                     dark,
                     Backdrop::Solid {
-                        color: 0xabcdef,
+                        color: 0x123456,
                         opacity,
                     },
                 );
@@ -216,8 +372,8 @@ mod tests {
                     .map(|strength| panel_border(dark, material.with_strength(strength)).a)
                     .collect();
                 assert_eq!(alphas[0], 0.0);
-                assert!(alphas.windows(2).all(|pair| pair[0] < pair[1]));
-                assert_eq!(alphas[2], full.a);
+                assert!(alphas.windows(2).all(|pair| pair[0] <= pair[1]));
+                assert_eq!(alphas[2], panel_border(dark, material).a);
             }
         }
     }
@@ -312,6 +468,26 @@ mod tests {
             );
             alphas.push(pixels.data[4 * (50 * 112 + 50) + 3]);
         }
-        assert!(alphas.windows(2).all(|pair| pair[0] < pair[1]));
+        assert!(alphas.windows(2).all(|pair| pair[0] <= pair[1]));
     }
+}
+
+pub(super) fn mica_fallback(
+    backdrop: desktop_core::Backdrop,
+    dark: bool,
+) -> Option<windows_canvas::ColorF> {
+    use desktop_core::Backdrop;
+    if !matches!(backdrop.base(), Backdrop::Mica | Backdrop::MicaAlt) {
+        return None;
+    }
+    // Runtime controller fallback values differ from the XAML BaseAlt resource.
+    let channel = if dark {
+        32
+    } else if backdrop.base() == Backdrop::MicaAlt {
+        232
+    } else {
+        243
+    };
+    let c = channel as f32 / 255.0;
+    Some(windows_canvas::ColorF::new(c, c, c, 1.0))
 }

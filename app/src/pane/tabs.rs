@@ -92,6 +92,7 @@ pub(super) fn select(
         next.merge_occluded = false;
         next.hovered_item = None;
         next.hovered_button = None;
+        next.hovered_tab = None;
         next.pressed_button = None;
         next.renaming = None;
         next.scrollbar = Default::default();

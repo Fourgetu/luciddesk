@@ -408,7 +408,9 @@ impl Renderer {
                 let base = contrast.base();
                 let ink = contrast.ink();
                 let background = canvas_result(
-                    target.create_solid_brush(ColorF::new(base, base, base, opacity)),
+                    target.create_solid_brush(
+                        if !model.native_material { super::theme::mica_fallback(model.backdrop, model.dark) } else { None }
+                            .unwrap_or(ColorF::new(base, base, base, opacity))),
                 )?;
                 let outline = canvas_result(
                     target
@@ -433,7 +435,15 @@ impl Renderer {
                 {
                     target.fill_rounded_rect(&rounded, &background);
                     if model.options.border {
-                        target.draw_rounded_rect(&rounded, &outline, 1.0);
+                        // One physical pixel, fully inside the client bounds at every DPI.
+                        let stroke = 1.0 / scale;
+                        let inset = stroke * 0.5;
+                        let radius = (model.options.corner_radius - inset).max(0.0);
+                        target.draw_rounded_rect(&RoundedRect {
+                            rect: Rect::from_xywh(inset, inset, w - stroke, h - stroke),
+                            radius_x: radius,
+                            radius_y: radius,
+                        }, &outline, stroke);
                     }
                     if show_icon && model.tabs.len() < 2 && model.merge_preview.is_empty() {
                         target.clipped_text(
@@ -519,22 +529,33 @@ impl Renderer {
                         }
                     }
                 }
+                let mut chrome = super::theme::material_chrome(model.backdrop, model.dark);
+                if !matches!(model.backdrop.base(), desktop_core::Backdrop::Acrylic | desktop_core::Backdrop::Mica | desktop_core::Backdrop::MicaAlt) {
+                    chrome.tab_active = ColorF::new(ink, ink, ink, 0.14);
+                    chrome.tab_inactive = ColorF::new(ink, ink, ink, 0.04);
+                    chrome.tab_hover = ColorF::new(ink, ink, ink, 0.09);
+                    chrome.tab_incoming = ColorF::new(ink, ink, ink, 0.09);
+                }
                 for (id, bounds) in super::tabs::strip(model, w).into_iter().filter(|_| model.merge_preview.is_empty()) {
                     let rect = Rect::from_xywh(bounds.x, bounds.y, bounds.width, bounds.height);
-                    let fill = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink,
-                        if id == model.active_tab { 0.14 } else { 0.04 })))?;
+                    let fill = canvas_result(target.create_solid_brush(
+                        if id == model.active_tab { chrome.tab_active } else if model.hovered_tab == Some(id) { chrome.tab_hover } else { chrome.tab_inactive }))?;
                     target.fill_rounded_rect(&RoundedRect { rect, radius_x: model.options.corner_radius, radius_y: model.options.corner_radius }, &fill);
+                    if id == model.active_tab || model.hovered_tab == Some(id) {
+                        let edge = canvas_result(target.create_solid_brush(chrome.card_border))?;
+                        target.draw_rounded_rect(&RoundedRect { rect, radius_x: model.options.corner_radius, radius_y: model.options.corner_radius }, &edge, 1.0);
+                    }
                     let text = model.tabs.iter().find(|(tab, _)| *tab == id).map_or("", |(_, title)| title.as_str());
                     target.clipped_text(text, &self.tab_title, &Rect::from_xywh(rect.left + 10.0, rect.top, (bounds.width - 20.0).max(1.0), bounds.height),
                         if id == model.active_tab { &white } else { &dim });
                 }
                 for (text, incoming, active, bounds) in super::tabs::merge_strip(model, w) {
                     let rect = Rect::from_xywh(bounds.x, bounds.y, bounds.width, bounds.height);
-                    let fill = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink,
-                        if incoming { 0.09 } else if active { 0.14 } else { 0.04 })))?;
+                    let fill = canvas_result(target.create_solid_brush(
+                        if incoming { chrome.tab_incoming } else if active { chrome.tab_active } else { chrome.tab_inactive }))?;
                     target.fill_rounded_rect(&RoundedRect { rect, radius_x: 5.0, radius_y: 5.0 }, &fill);
                     if incoming {
-                        let edge = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.42)))?;
+                        let edge = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.24 + chrome.border.a)))?;
                         // Short neutral dashes keep provisional tabs distinct without an accent color.
                         let mut x = rect.left + 5.0;
                         while x < rect.right - 5.0 {
@@ -555,10 +576,10 @@ impl Renderer {
                         (bounds.width - 20.0).max(1.0), bounds.height), if active || incoming { &white } else { &dim });
                 }
                 if super::header_divider::enabled() && !model.collapsed && h > model.content_header() + 1.0 {
-                    let divider = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.14)))?;
+                    let divider = canvas_result(target.create_solid_brush(super::theme::panel_divider(model.dark, model.backdrop)))?;
                     let inset = super::layout::HEADER_INSET;
-                    let divider_y = model.content_header() - inset + 4.0;
-                    target.fill_rect(&Rect::from_xywh(inset, divider_y, (w - inset * 2.0).max(0.0), 1.0), &divider);
+                    let divider_y = ((model.content_header() - inset + 4.0) * scale).round() / scale;
+                    target.fill_rect(&Rect::from_xywh(inset, divider_y, (w - inset * 2.0).max(0.0), 1.0 / scale), &divider);
                 }
                 if h > model.content_header() + 1.0 {
                     target.push_clip(&{
@@ -1193,6 +1214,14 @@ mod tests {
                     let h = (300.0 * scale) as u32;
                     let pixels = renderer.pixels(w, h, scale, &model).unwrap();
                     assert_eq!(pixels.len(), (w * h * 4) as usize);
+                    if let Some((id, _)) = super::super::tabs::strip(&model, width as f32).into_iter().find(|(id, _)| *id != model.active_tab) {
+                        let mut hovered = model.clone();
+                        hovered.hovered_tab = Some(id);
+                        let hover_pixels = renderer.pixels(w, h, scale, &hovered).unwrap();
+                        assert_ne!(pixels, hover_pixels);
+                        let body = ((HEADER * scale).ceil() as u32 * w * 4) as usize;
+                        assert_eq!(&pixels[body..], &hover_pixels[body..], "tab hover must not change the material or pane body");
+                    }
                     let mut title_changed = model.clone();
                     title_changed.title = "这个旧标题不应绘制".into();
                     assert_eq!(pixels, renderer.pixels(w, h, scale, &title_changed).unwrap());
@@ -1241,7 +1270,8 @@ mod tests {
             auto_hide: false,
             locked: false,
             reveal: 1.0,
-            hovered_button: None,
+            hovered_tab: None,
+        hovered_button: None,
             pressed_button: None,
             backdrop: desktop_core::Backdrop::Acrylic,
             native_material: true,

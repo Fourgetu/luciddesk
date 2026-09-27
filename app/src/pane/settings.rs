@@ -84,9 +84,11 @@ enum Action {
 }
 mod controls;
 mod components;
+mod preview;
 use components::{Tokens, SettingsForm, ContentClip};
 use controls::{Control, ControlKind, Slider, Style};
 struct Scene {
+    material: Backdrop,
     viewport: Option<Rect>,
     scroll_max: f32,
     scroll_offset: f32,
@@ -94,7 +96,7 @@ struct Scene {
     cards: Vec<Rect>,
     separators: Vec<Rect>,
     controls: Vec<Control>,
-    previews: Vec<(Rect, u32, f32)>,
+    previews: Vec<(Rect, Backdrop)>,
     app_icon: Option<Rect>,
 }
 
@@ -250,7 +252,7 @@ fn with_titlebar(mut scene: Scene, width: f32, maximized: bool) -> Scene {
         r.top += TITLE_HEIGHT;
         r.bottom += TITLE_HEIGHT;
     }
-    for (r, _, _) in &mut scene.previews {
+    for (r, _) in &mut scene.previews {
         r.top += TITLE_HEIGHT;
         r.bottom += TITLE_HEIGHT;
     }
@@ -1324,4 +1326,4 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
 }
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;

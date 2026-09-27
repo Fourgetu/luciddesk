@@ -106,14 +106,20 @@ pub(super) fn factory(compositor: &Compositor) -> Result<CompositionEffectFactor
     compositor.CreateEffectFactory(&tint)
 }
 pub(super) fn mica_palette(dark: bool, alt: bool) -> (Color, Color) {
-    // Base defaults from WinUI MicaController.h. Alt remains a stronger-wallpaper
-    // preset, not a claim to reproduce the Windows App SDK BaseAlt controller.
-    let channel = if dark { 32 } else { 243 };
+    // Verified against MicaController Base/BaseAlt on Windows App Runtime
+    // 1.6.618 (CBS 6000.900.156.100); see docs/development/mica-materials.md.
+    // Tint colors are not fallback colors. Dark BaseAlt deliberately has no tint.
+    let channel = match (dark, alt) {
+        (true, false) => 32,
+        (false, false) => 243,
+        (true, true) => 10,
+        (false, true) => 218,
+    };
     let opacity: f32 = match (dark, alt) {
         (true, false) => 0.8,
         (false, false) => 0.5,
-        (true, true) => 0.65,
-        (false, true) => 0.35,
+        (true, true) => 0.0,
+        (false, true) => 0.5,
     };
     let luminosity = Color {
         A: 255,
@@ -228,17 +234,21 @@ mod tests {
         // those caches remain reachable, just as the real app's UI loop does.
         static COM_RUNTIME: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
         COM_RUNTIME.get_or_init(|| unsafe {
-            windows::Win32::System::Com::CoIncrementMTAUsage().unwrap().0 as usize
+            windows::Win32::System::Com::CoIncrementMTAUsage()
+                .unwrap()
+                .0 as usize
         });
         let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
         for dark in [false, true] {
             let (base, tint) = mica_palette(dark, false);
-            let (_, alt) = mica_palette(dark, true);
+            let (alt_base, alt) = mica_palette(dark, true);
+            assert!(alt_base.R < base.R);
             assert_eq!(base.A, 255);
             assert_eq!(base.R, if dark { 32 } else { 243 });
             assert_eq!((base.R, base.G), (base.G, base.B));
             assert_eq!(tint.A, if dark { 204 } else { 128 });
-            assert!(alt.A < tint.A);
+            assert_eq!(alt.A, if dark { 0 } else { 128 });
+            assert_eq!(alt_base.R, if dark { 10 } else { 218 });
         }
         let (dark_luminosity, dark_tint) = acrylic_palette(true);
         let (light_luminosity, light_tint) = acrylic_palette(false);

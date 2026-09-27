@@ -13,22 +13,15 @@ pub(super) fn folder_defaults(
     );
     form.section("文件夹入口");
     form.choices(
-        "打开方式",
-        "立即应用于所有文件夹面板，并记住选择。",
+        "子文件夹打开方式",
+        "双击或按 Enter 时生效，应用于所有文件夹面板。",
         [
-            ("穿透模式", folder::EntryMode::Inline),
-            ("普通模式", folder::EntryMode::Explorer),
+            ("面板内打开", folder::EntryMode::Inline),
+            ("资源管理器", folder::EntryMode::Explorer),
         ]
         .into_iter()
         .map(|(label, choice)| (label, Action::FolderEntryMode(choice), mode == choice))
         .collect(),
-    );
-    form.info(
-        "当前打开行为",
-        match mode {
-            folder::EntryMode::Inline => "双击或按 Enter，在面板内进入子文件夹。",
-            folder::EntryMode::Explorer => "双击或按 Enter，在文件资源管理器中打开文件夹。",
-        },
     );
     form.section("新建面板默认值");
     form.choices(
@@ -85,6 +78,7 @@ pub(super) fn scene(
     options: desktop_core::PaneOptions,
 ) -> Scene {
     let mut s = Scene {
+        material: appearance.1,
         viewport: None,
         scroll_max: 0.0,
         scroll_offset: 0.0,
@@ -233,19 +227,13 @@ pub(super) fn scene(
             .collect(),
         );
         form.section("效果与预览");
-        let (color, opacity) = if let Backdrop::Solid { color, opacity } = appearance.1 {
-            (color, opacity)
-        } else {
-            (
-                if theme::is_dark(appearance.0) {
-                    0x242424
-                } else {
-                    0xf3f3f3
-                },
-                0.85,
-            )
+        let name = match appearance.1.base() {
+            Backdrop::Mica => "Mica · 柔和底色",
+            Backdrop::MicaAlt => "Mica Alt · 鲜明层次",
+            Backdrop::Solid { .. } => "纯色面板",
+            _ => "亚克力 · 磨砂玻璃",
         };
-        form.preview("面板背景", color, opacity);
+        form.material_preview(name, appearance.1);
         if let Backdrop::Solid { color, opacity } = appearance.1 {
             form.button(
                 "背景配色",
@@ -641,7 +629,7 @@ pub(super) fn backup_history(s: &mut Scene, width: f32, view: &recovery::View, o
 
 pub(super) fn fonts(s: &mut Scene, width: f32, choices: &[String], offset: usize) {
     let selected = super::super::fonts::family();
-    let mut form = SettingsForm::new(s, width, "本机可缩放字体，已检查常用中英文字符。");
+    let mut form = SettingsForm::new(s, width, "仅列出普通字重、非斜体且支持常用中英文的字体。");
     form.info("当前字体", &selected);
     form.section("可用字体");
     for name in choices.iter().skip(offset).take(7) {

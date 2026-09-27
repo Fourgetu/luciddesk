@@ -29,11 +29,18 @@ unsafe extern "system" fn collect(
             .position(|c| *c == 0)
             .unwrap_or(font.lfFaceName.len());
         let name = String::from_utf16_lossy(&font.lfFaceName[..len]);
-        if !name.starts_with('@') && !name.is_empty() && font.lfCharSet != SYMBOL_CHARSET {
+        if regular_face(font)
+            && !name.starts_with('@')
+            && !name.is_empty()
+            && font.lfCharSet != SYMBOL_CHARSET
+        {
             unsafe { &mut *(data as *mut Vec<String>) }.push(name);
         }
     }
     1
+}
+fn regular_face(font: &LOGFONTW) -> bool {
+    font.lfWeight == FW_NORMAL as i32 && font.lfItalic == 0
 }
 fn readable(name: &str) -> bool {
     if name.encode_utf16().count() >= 32 || name.contains('\0') {
@@ -46,6 +53,7 @@ fn readable(name: &str) -> bool {
         }
         let mut lf = LOGFONTW {
             lfHeight: -16,
+            lfWeight: FW_NORMAL as i32,
             ..Default::default()
         };
         for (out, unit) in lf.lfFaceName.iter_mut().zip(name.encode_utf16()) {
@@ -125,6 +133,19 @@ pub(super) fn save(store: &desktop_storage::WorkspaceStore, name: &str) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn regular_faces_exclude_weight_variants_and_italics() {
+        for weight in [100, 200, 300, 400, 500, 600, 700, 800, 900] {
+            for italic in [0, 1] {
+                let font = LOGFONTW {
+                    lfWeight: weight,
+                    lfItalic: italic,
+                    ..Default::default()
+                };
+                assert_eq!(regular_face(&font), weight == 400 && italic == 0);
+            }
+        }
+    }
     #[test]
     fn font_candidates_exclude_symbols_vertical_faces_and_missing_glyphs() {
         let names = installed();

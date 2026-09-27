@@ -50,15 +50,27 @@ impl Drawing {
         use crate::pane::native_graphics::canvas_result;
         let family = crate::pane::fonts::family();
         if family != self.family {
-            use windows_canvas::{TextFormat, ParagraphAlignment, WordWrapping};
-            let make = |size| TextFormat::new(&family, size).map(|format|
-                format.with_paragraph_alignment(ParagraphAlignment::Center).with_word_wrapping(WordWrapping::NoWrap)).map_err(|e| e.to_string());
+            use windows_canvas::{ParagraphAlignment, TextFormat, WordWrapping};
+            let make = |size| {
+                TextFormat::new(&family, size)
+                    .map(|format| {
+                        format
+                            .with_paragraph_alignment(ParagraphAlignment::Center)
+                            .with_word_wrapping(WordWrapping::NoWrap)
+                    })
+                    .map_err(|e| e.to_string())
+            };
             let name = make(13.0)?;
             let path = make(11.0)?;
             let placeholder = make(14.0)?;
-            crate::pane::canvas::ellipsis_delimiter(&name, '.' as u32).map_err(|e| e.to_string())?;
-            crate::pane::canvas::ellipsis_delimiter(&path, '\\' as u32).map_err(|e| e.to_string())?;
-            self.name = name; self.path = path; self.placeholder = placeholder; self.family = family;
+            crate::pane::canvas::ellipsis_delimiter(&name, '.' as u32)
+                .map_err(|e| e.to_string())?;
+            crate::pane::canvas::ellipsis_delimiter(&path, '\\' as u32)
+                .map_err(|e| e.to_string())?;
+            self.name = name;
+            self.path = path;
+            self.placeholder = placeholder;
+            self.family = family;
         }
 
         use windows_canvas::{ColorF, Rect, RoundedRect};
@@ -106,7 +118,9 @@ impl Drawing {
             )))?;
             let text = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 1.0)))?;
             let dim = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.66)))?;
-            let line = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.10)))?;
+            let line = canvas_result(target.create_solid_brush(
+                crate::pane::theme::panel_divider(model.dark, model.backdrop),
+            ))?;
             let outline =
                 canvas_result(target.create_solid_brush(crate::pane::theme::panel_border(
                     model.dark,
@@ -132,7 +146,18 @@ impl Drawing {
             };
             target.fill_rounded_rect(&shape, &background);
             if model.options.border {
-                target.draw_rounded_rect(&shape, &outline, 1.0);
+                let stroke = 1.0 / s;
+                let inset = stroke * 0.5;
+                let radius = (model.options.corner_radius - inset).max(0.0);
+                target.draw_rounded_rect(
+                    &RoundedRect {
+                        rect: Rect::from_xywh(inset, inset, w - stroke, h - stroke),
+                        radius_x: radius,
+                        radius_y: radius,
+                    },
+                    &outline,
+                    stroke,
+                );
             }
             target.clipped_text(
                 "\u{e721}",

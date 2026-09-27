@@ -594,6 +594,7 @@ fn snapped_content_bottom_and_scrollbar_use_the_same_row_metrics() {
         dark: true,
         hovered_item: None,
         scrollbar: Default::default(),
+        hovered_tab: None,
         hovered_button: None,
         pressed_button: None,
         focused: false,
@@ -714,6 +715,7 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
         dark: true,
         hovered_item: None,
         scrollbar: Default::default(),
+        hovered_tab: None,
         hovered_button: None,
         pressed_button: None,
         focused: false,
@@ -1196,6 +1198,7 @@ fn pane_layer_switch_and_wallpaper_material_initialize() {
         dark: true,
         hovered_item: None,
         scrollbar: Default::default(),
+        hovered_tab: None,
         hovered_button: None,
         pressed_button: None,
         focused: false,
@@ -1637,9 +1640,9 @@ fn corner_slider_drags_to_both_limits_and_saves() {
         let mut bounds = RECT::default();
         GetClientRect(hwnd, &raw mut bounds);
         let width = bounds.right as f32 / scale;
-        SendMessageW(hwnd, WM_LBUTTONDOWN, 0, point(width - 182.0, 153.0));
+        SendMessageW(hwnd, WM_LBUTTONDOWN, 0, point(width - 174.0, 228.0));
         assert_eq!(state.borrow().workspace.pane_options().corner_radius, 12.0);
-        SendMessageW(hwnd, WM_MOUSEMOVE, 1, point(width - 300.0, 153.0));
+        SendMessageW(hwnd, WM_MOUSEMOVE, 1, point(width - 300.0, 228.0));
         assert_eq!(state.borrow().workspace.pane_options().corner_radius, 0.0);
         assert_eq!(
             state
@@ -1652,8 +1655,8 @@ fn corner_slider_drags_to_both_limits_and_saves() {
             desktop_core::PaneOptions::DEFAULT.corner_radius,
             "drag preview must not write storage"
         );
-        SendMessageW(hwnd, WM_MOUSEMOVE, 1, point(width - 10.0, 153.0));
-        SendMessageW(hwnd, WM_LBUTTONUP, 0, point(width - 10.0, 153.0));
+        SendMessageW(hwnd, WM_MOUSEMOVE, 1, point(width - 10.0, 228.0));
+        SendMessageW(hwnd, WM_LBUTTONUP, 0, point(width - 10.0, 228.0));
         assert_eq!(
             state
                 .borrow()
@@ -1664,7 +1667,7 @@ fn corner_slider_drags_to_both_limits_and_saves() {
                 .corner_radius,
             24.0
         );
-        SendMessageW(hwnd, WM_LBUTTONDOWN, 0, point(width - 182.0, 153.0));
+        SendMessageW(hwnd, WM_LBUTTONDOWN, 0, point(width - 174.0, 228.0));
         SendMessageW(hwnd, WM_CAPTURECHANGED, 0, 0);
         assert_eq!(
             state
@@ -1681,161 +1684,6 @@ fn corner_slider_drags_to_both_limits_and_saves() {
     }
 }
 
-fn solid_settings_edit_preview_save_and_remember_style() {
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_RETURN;
-    use windows_sys::Win32::UI::WindowsAndMessaging::*;
-    let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
-    let state = Rc::new(RefCell::new(test_state()));
-    settings::show(&state, PanelId::new(1)).unwrap();
-    let hwnd = state.borrow().settings.as_ref().unwrap().hwnd().cast();
-    let scale = unsafe { GetDpiForWindow(hwnd) }.max(96) as f32 / 96.0;
-    let click = |x: f32, y: f32| unsafe {
-        let point = (((y * scale) as isize) << 16) | ((x * scale) as isize & 0xffff);
-        SendMessageW(hwnd, WM_PAINT, 0, 0);
-        SendMessageW(hwnd, WM_LBUTTONDOWN, 1, point);
-        SendMessageW(hwnd, WM_LBUTTONUP, 0, point);
-        SendMessageW(hwnd, WM_PAINT, 0, 0);
-    };
-    let enter = |text: &str| unsafe {
-        for c in text.chars() {
-            SendMessageW(hwnd, WM_CHAR, c as usize, 0);
-        }
-        SendMessageW(hwnd, WM_KEYDOWN, VK_RETURN as usize, 0);
-        SendMessageW(hwnd, WM_PAINT, 0, 0);
-    };
-    click(315.0, 315.0); // Acrylic strength, independently retained from Mica.
-    let before_strength = state.borrow().store.change_count();
-    let strength_point = ((414.0 * scale) as isize) << 16 | ((600.0 * scale) as isize & 0xffff);
-    unsafe {
-        SendMessageW(hwnd, WM_LBUTTONDOWN, 1, strength_point);
-    }
-    let adjusted = state.borrow().workspace.appearance().unwrap().1;
-    assert_ne!(adjusted.strength(), Some(50));
-    assert_eq!(state.borrow().store.change_count(), before_strength);
-    unsafe {
-        SendMessageW(hwnd, WM_LBUTTONUP, 0, strength_point);
-    }
-    assert_eq!(
-        state
-            .borrow()
-            .store
-            .load_workspace()
-            .unwrap()
-            .appearance()
-            .unwrap()
-            .1,
-        adjusted
-    );
-    click(455.0, 315.0); // Mica retains its own default.
-    assert_eq!(
-        state.borrow().workspace.appearance().unwrap().1.strength(),
-        Some(50)
-    );
-    click(315.0, 315.0);
-    assert_eq!(state.borrow().workspace.appearance().unwrap().1, adjusted);
-    click(815.0, 450.0); // Restore recommended strength.
-    assert_eq!(
-        state.borrow().workspace.appearance().unwrap().1,
-        desktop_core::Backdrop::Acrylic
-    );
-    click(600.0, 414.0);
-    unsafe {
-        SendMessageW(hwnd, WM_KEYDOWN, 0x24, 0);
-    } // Home
-    assert_eq!(
-        state.borrow().workspace.appearance().unwrap().1.strength(),
-        Some(0)
-    );
-    unsafe {
-        SendMessageW(hwnd, WM_KEYDOWN, 0x23, 0);
-    } // End
-    assert_eq!(
-        state.borrow().workspace.appearance().unwrap().1.strength(),
-        Some(100)
-    );
-    click(815.0, 450.0);
-    click(815.0, 315.0); // Fourth material card, including custom titlebar.
-    assert!(matches!(
-        state.borrow().workspace.appearance().unwrap().1,
-        desktop_core::Backdrop::Solid { .. }
-    ));
-    click(330.0, 414.0);
-    enter("#1234AB");
-    click(840.0, 450.0);
-    enter("50");
-    let solid = desktop_core::Backdrop::Solid {
-        color: 0x1234ab,
-        opacity: 0.5,
-    };
-    assert_eq!(
-        state
-            .borrow()
-            .store
-            .load_workspace()
-            .unwrap()
-            .appearance()
-            .unwrap()
-            .1,
-        solid
-    );
-    click(455.0, 315.0); // Mica
-    click(815.0, 315.0);
-    assert_eq!(state.borrow().workspace.appearance().unwrap().1, solid);
-    click(470.0, 414.0); // Open the in-app color page.
-    let before_color = state.borrow().store.change_count();
-    let rgb_point = ((300.0 * scale) as isize) << 16 | ((600.0 * scale) as isize & 0xffff);
-    unsafe {
-        SendMessageW(hwnd, WM_LBUTTONDOWN, 1, rgb_point);
-    }
-    assert_eq!(state.borrow().store.change_count(), before_color);
-    unsafe {
-        SendMessageW(hwnd, WM_LBUTTONUP, 0, rgb_point);
-    }
-    let changed = state
-        .borrow()
-        .store
-        .load_workspace()
-        .unwrap()
-        .appearance()
-        .unwrap()
-        .1;
-    let desktop_core::Backdrop::Solid { color, opacity } = changed else {
-        panic!("solid lost");
-    };
-    assert_eq!(opacity, 0.5);
-    assert_eq!(color & 0xffff, 0x34ab);
-    assert_ne!(color >> 16, 0x12);
-    unsafe {
-        SendMessageW(hwnd, WM_KEYDOWN, 0x1b, 0);
-        SendMessageW(hwnd, WM_PAINT, 0, 0);
-    }
-    assert!(
-        state.borrow().settings.is_some(),
-        "Escape should leave the picker, not close settings"
-    );
-    let before = state.borrow().store.change_count();
-    let point = ((450.0 * scale) as isize) << 16 | ((480.0 * scale) as isize & 0xffff);
-    unsafe {
-        SendMessageW(hwnd, WM_LBUTTONDOWN, 1, point);
-        SendMessageW(hwnd, WM_MOUSEMOVE, 1, point + (60.0 * scale) as isize);
-    }
-    assert_eq!(
-        state.borrow().store.change_count(),
-        before,
-        "drag must not write database"
-    );
-    unsafe {
-        SendMessageW(hwnd, WM_LBUTTONUP, 0, point);
-    }
-    assert!(state.borrow().store.change_count() > before);
-    assert_eq!(
-        state.borrow().store.load_workspace().unwrap().appearance(),
-        state.borrow().workspace.appearance()
-    );
-    unsafe {
-        SendMessageW(hwnd, WM_CLOSE, 0, 0);
-    }
-}
 
 #[test]
 fn settings_window_applies_clicks_and_closes_without_exiting() {
@@ -1955,7 +1803,7 @@ fn settings_window_applies_clicks_and_closes_without_exiting() {
         let mut bounds = RECT::default();
         GetClientRect(hwnd, &raw mut bounds);
         let x = bounds.right - (80.0 * scale) as i32;
-        let y = (172.0 * scale) as i32;
+        let y = (228.0 * scale) as i32;
         let point = ((y as isize) << 16) | (x as isize & 0xffff);
         SendMessageW(hwnd, WM_LBUTTONDOWN, 1, point);
         SendMessageW(hwnd, WM_LBUTTONUP, 0, point);
@@ -1998,7 +1846,7 @@ fn settings_window_applies_clicks_and_closes_without_exiting() {
         }
     }
     // Keep composition-window scenarios on the same STA and dispatcher lifetime.
-    solid_settings_edit_preview_save_and_remember_style();
+    settings::tests::solid_settings_edit_preview_save_and_remember_style();
 }
 
 #[test]
@@ -2045,6 +1893,7 @@ fn multiselection_preserves_anchor_toggle_and_file_identity_on_refresh() {
         dark: true,
         hovered_item: None,
         scrollbar: Default::default(),
+        hovered_tab: None,
         hovered_button: None,
         pressed_button: None,
         focused: false,

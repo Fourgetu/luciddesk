@@ -259,6 +259,7 @@ fn create_model(state: &PaneApp, id: PanelId) -> Result<GroupModel, String> {
         auto_hide: panel.auto_hide(),
         locked: panel.locked(),
         reveal: if panel.collapsed() { 0.0 } else { 1.0 },
+        hovered_tab: None,
         hovered_button: None,
         pressed_button: None,
         backdrop: panel.backdrop(),
