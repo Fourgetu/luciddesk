@@ -144,8 +144,8 @@ pub(super) fn add(
     let next = {
         let mut s = state.borrow_mut();
         let source = s.workspace.panel(id).ok_or("面板已关闭")?.clone();
-        if source.is_search() {
-            return Err("搜索面板不支持标签".into());
+        if !source.supports_tabs() || folder.is_some() {
+            return Err("仅普通面板支持标签".into());
         }
         if source.locked() {
             return Err("请先解锁面板".into());
@@ -194,39 +194,8 @@ pub(super) fn add(
     select(state, id, next)
 }
 
-pub(super) fn choose_folder(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> {
-    let owner = state
-        .borrow()
-        .views
-        .iter()
-        .find(|v| v.id == id)
-        .ok_or("面板已关闭")?
-        .window
-        .hwnd() as isize;
-    let weak = Rc::downgrade(state);
-    if !window::post_action(owner as _, move || {
-        let result = (|| {
-            let Some(path) = folder::choose(owner)? else {
-                return Ok(());
-            };
-            let Some(state) = weak.upgrade() else {
-                return Ok(());
-            };
-            // The source may have changed during the modal picker.
-            let active = state
-                .borrow()
-                .workspace
-                .tab_group(id)
-                .map_or(id, |g| g.active);
-            add(&state, active, Some(path))
-        })();
-        if let Err(error) = result {
-            window::error(&error);
-        }
-    }) {
-        return Err("无法打开文件夹选择器".into());
-    }
-    Ok(())
+pub(super) fn choose_folder(_state: &Rc<RefCell<PaneApp>>, _id: PanelId) -> Result<(), String> {
+    Err("文件夹面板不支持标签，请新建独立文件夹面板".into())
 }
 
 pub(super) fn close(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> {
@@ -395,6 +364,7 @@ pub(super) fn detach(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), St
         cached.renaming = None;
         cached.hovered_item = None;
         cached.hovered_button = None;
+        cached.hovered_tab = None;
         cached.pressed_button = None;
         *view.model.borrow_mut() = cached;
     }
@@ -420,7 +390,7 @@ fn merge(state: &Rc<RefCell<PaneApp>>, from: PanelId, to: PanelId) -> Result<(),
         let mut s = state.borrow_mut();
         for id in [from, to] {
             let panel = s.workspace.panel(id).ok_or("面板已关闭")?;
-            if panel.locked() || panel.is_search() {
+            if panel.locked() || !panel.supports_tabs() {
                 return Err("请选择未锁定的普通面板".into());
             }
             if !s.views.iter().any(|v| v.id == id) {
@@ -483,7 +453,7 @@ fn header_contains(bounds: RECT, dpi: u32, point: windows_sys::Win32::Foundation
 fn merge_target(s: &PaneApp, from: PanelId) -> Option<PanelId> {
     if s.workspace
         .panel(from)
-        .is_none_or(|p| p.locked() || p.is_search())
+        .is_none_or(|p| p.locked() || !p.supports_tabs())
     {
         return None;
     }
@@ -505,7 +475,7 @@ fn merge_target(s: &PaneApp, from: PanelId) -> Option<PanelId> {
         let margin = (6.0 * dpi as f32 / 96.0).round() as i32;
         if s.workspace
             .panel(view.id)
-            .is_some_and(|p| !p.locked() && !p.is_search())
+            .is_some_and(|p| !p.locked() && p.supports_tabs())
             && unsafe { IsWindowVisible(hwnd) != 0 && GetWindowRect(hwnd, &raw mut bounds) != 0 }
         {
             let bottom = bounds.top + (layout::HEADER * dpi as f32 / 96.0).round() as i32;
@@ -539,7 +509,7 @@ fn merge_target(s: &PaneApp, from: PanelId) -> Option<PanelId> {
                 return (s
                     .workspace
                     .panel(view.id)
-                    .is_some_and(|p| !p.locked() && !p.is_search())
+                    .is_some_and(|p| !p.locked() && p.supports_tabs())
                     && header_contains(bounds, unsafe { GetDpiForWindow(hwnd) }, pointer))
                 .then_some(view.id);
             }
@@ -883,7 +853,7 @@ mod tests {
         window::prepare_close(state.borrow().views[0].window.hwnd().cast());
         drop(state);
         // Exercise both sources in one UI apartment, as the application does.
-        folder_tabs_keep_navigation_and_do_not_cross_deliver_results();
+        folder_panels_reject_tab_creation_and_merging();
         merge_whole_groups_and_reject_locked_panes();
     }
 
@@ -970,66 +940,26 @@ mod tests {
         handle(&state, right.active, Event::ClosePane).unwrap();
     }
 
-    fn folder_tabs_keep_navigation_and_do_not_cross_deliver_results() {
-        let _apartment = ShellApartment::initialize_sta().unwrap();
+    fn folder_panels_reject_tab_creation_and_merging() {
         let root = tempfile::tempdir().unwrap();
-        std::fs::create_dir(root.path().join("child")).unwrap();
-        std::fs::write(root.path().join("child").join("inside.txt"), b"inside").unwrap();
         let state = Rc::new(RefCell::new(super::super::tests::test_state()));
-        state
-            .borrow_mut()
-            .workspace
-            .set_appearance(desktop_core::PanelTheme::Dark, desktop_core::Backdrop::Mica);
         let first = PanelId::new(1);
+        let folder = PanelId::new(90);
+        let mut panel = Panel::new(folder, "Folder", RectDip::default());
+        panel.set_folder(Some(root.path().to_path_buf()));
+        state.borrow_mut().workspace.add_panel(panel).unwrap();
+        state.borrow_mut().workspace.set_appearance(desktop_core::PanelTheme::Dark, desktop_core::Backdrop::Mica);
         create_view(&state, first).unwrap();
-        add(&state, first, Some(root.path().to_path_buf())).unwrap();
-        let folder = state.borrow().views[0].id;
-        folder::navigate(
-            &mut state.borrow_mut(),
-            folder,
-            Some(root.path().join("child")),
-        )
-        .unwrap();
-        select(&state, folder, first).unwrap();
-        let before = state.borrow().views[0]
-            .model
-            .borrow()
-            .items
-            .iter()
-            .map(|i| i.label.clone())
-            .collect::<Vec<_>>();
-        folder::poll(&mut state.borrow_mut());
-        assert_eq!(
-            state.borrow().views[0]
-                .model
-                .borrow()
-                .items
-                .iter()
-                .map(|i| i.label.clone())
-                .collect::<Vec<_>>(),
-            before
-        );
-        select(&state, first, folder).unwrap();
-        assert_eq!(
-            state.borrow().folders[&folder].path,
-            root.path().join("child")
-        );
-        assert!(state.borrow().folders[&folder].navigation()[0]);
-        detach(&state, folder).unwrap();
-        assert_eq!(
-            state.borrow().folders[&folder].path,
-            root.path().join("child")
-        );
-        merge(&state, folder, first).unwrap();
-        select(&state, first, folder).unwrap();
-        assert_eq!(
-            state.borrow().folders[&folder].path,
-            root.path().join("child")
-        );
+        create_view(&state, folder).unwrap();
+        let before = state.borrow().workspace.clone();
+        assert!(add(&state, first, Some(root.path().to_path_buf())).is_err());
+        assert!(add(&state, folder, None).is_err());
+        assert!(merge(&state, folder, first).is_err());
+        assert!(merge(&state, first, folder).is_err());
+        assert_eq!(merge_target(&state.borrow(), folder), None);
+        assert_eq!(state.borrow().workspace, before);
         handle(&state, folder, Event::ClosePane).unwrap();
-        assert!(state.borrow().views.is_empty());
-        assert!(state.borrow().folders.is_empty());
-        assert!(root.path().join("child").join("inside.txt").exists());
+        handle(&state, first, Event::ClosePane).unwrap();
     }
 
     #[test]

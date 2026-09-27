@@ -111,13 +111,13 @@ fn pane_entries(folder: (bool, bool), visible_columns: u8,
         entry(11, "关闭面板", "", ""),
         entry(4, "退出 LucidPane", "", ""),
     ]);
+    if folder.0 { rows.retain(|row| row.id != 39); }
     rows
 }
 
 pub(super) fn tab_entries() -> Vec<Entry> {
     vec![
         entry(40, "新建分组标签", "", ""),
-        entry(41, "新建文件夹标签…", "", ""),
         entry(0, "", "", ""),
         entry(46, "上一个标签", "", "Ctrl+Shift+Tab"),
         entry(47, "下一个标签", "", "Ctrl+Tab"),
@@ -527,6 +527,13 @@ fn show_level(
 mod tests {
     use super::*;
     use windows_sys::Win32::System::{ProcessStatus::*, Threading::*};
+
+    #[test]
+    fn folder_menus_exclude_tabs_and_ordinary_tabs_exclude_folders() {
+        assert!(!pane_entries((true, false), 7, false, false, false).iter().any(|r| r.id == 39));
+        assert!(pane_entries((false, false), 7, false, false, false).iter().any(|r| r.id == 39));
+        assert!(!tab_entries().iter().any(|r| r.id == 41));
+    }
 
     #[test]
     #[ignore = "Opens nested menus on the interactive desktop"]

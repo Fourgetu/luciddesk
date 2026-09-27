@@ -164,3 +164,18 @@ fn tab_groups_validate_members_and_preserve_content_on_activation_and_removal() 
     assert!(workspace.tab_visible(PanelId::new(1)));
     assert!(workspace.panel(PanelId::new(1)).is_some());
 }
+
+#[test]
+fn folder_panels_cannot_join_tab_groups() {
+    let mut workspace = Workspace::new();
+    for id in 1..=2 {
+        let mut panel = Panel::new(PanelId::new(id), "Panel", RectDip::default());
+        if id == 2 { panel.set_folder(Some("C:/folder".into())); }
+        workspace.add_panel(panel).unwrap();
+    }
+    let before = workspace.clone();
+    assert!(workspace.set_tab_groups(vec![PaneTabs {
+        members: vec![PanelId::new(1), PanelId::new(2)], active: PanelId::new(1),
+    }]).is_err());
+    assert_eq!(workspace, before);
+}

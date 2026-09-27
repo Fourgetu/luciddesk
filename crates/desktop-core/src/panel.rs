@@ -77,6 +77,12 @@ impl Panel {
         }
     }
 
+    /// Only ordinary desktop panels can share a tabbed window.
+    #[must_use]
+    pub const fn supports_tabs(&self) -> bool {
+        matches!(self.source, PanelSource::Desktop)
+    }
+
     #[must_use]
     pub const fn is_search(&self) -> bool {
         matches!(self.source, PanelSource::Search)

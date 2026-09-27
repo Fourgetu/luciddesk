@@ -708,7 +708,7 @@ where
                             let next = super::tabs::adjacent(&model.borrow(), step);
                             if let Some(next) = next { event(Event::SelectTab(next)); }
                         }
-                        0x54 => { let folder = model.borrow().folder.is_some(); event(Event::NewTab(folder)); }
+                        0x54 => { if model.borrow().folder.is_none() { event(Event::NewTab(false)); } }
                         _ => { event(Event::CloseTab); }
                     }
                     Some(0)

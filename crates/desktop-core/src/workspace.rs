@@ -164,13 +164,13 @@ impl Workspace {
 
     /// Replaces tab groups only after validating every content reference.
     /// # Errors
-    /// Rejects duplicate, missing, search, or inactive-member references.
+    /// Rejects duplicate, missing, non-desktop, or inactive-member references.
     pub fn set_tab_groups(&mut self, groups: Vec<PaneTabs>) -> Result<(), WorkspaceError> {
         let mut seen = HashSet::new();
         if groups.iter().any(|group| group.members.len() < 2
             || !group.members.contains(&group.active)
             || group.members.iter().any(|id| !seen.insert(*id)
-                || self.panel(*id).is_none_or(Panel::is_search))) {
+                || self.panel(*id).is_none_or(|panel| !panel.supports_tabs()))) {
             return Err(WorkspaceError::InvalidTabs);
         }
         self.tabs = groups;
