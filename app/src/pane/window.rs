@@ -84,11 +84,11 @@ pub fn set_layer(hwnd: HWND, always_on_top: bool) {
         // Let Windows change the actual topmost bit before applying desktop-band constraints.
         RemovePropW(hwnd, DESKTOP_LAYER);
         SetWindowPos(hwnd, if always_on_top { HWND_TOPMOST } else { HWND_NOTOPMOST },
-            0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
         if !always_on_top {
             SetPropW(hwnd, DESKTOP_LAYER, 1usize as _);
             SetWindowPos(hwnd, desktop_insert_after(hwnd), 0, 0, 0, 0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
         }
     }
 }
@@ -256,8 +256,11 @@ mod hit_tests {
             let first = make();
             let second = make();
             let app = make();
+            let owner = make();
+            ShowWindow(owner, SW_HIDE);
             for hwnd in [first, second] {
                 assert!(!hwnd.is_null());
+                SetWindowLongPtrW(hwnd, GWLP_HWNDPARENT, owner as isize);
                 assert_ne!(windows_sys::Win32::UI::Shell::SetWindowSubclass(hwnd, Some(borderless_proc), 1, 0), 0);
             }
             let above = |a, b| {
@@ -269,19 +272,29 @@ mod hit_tests {
                 false
             };
             set_layer(first, false);
-            SetWindowPos(app, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            SetWindowPos(app, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
             set_layer(second, false);
             assert!(above(second, first), "new pane must be above its peers");
             assert!(above(app, second), "desktop panes must remain below applications");
-            SetWindowPos(first, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            SetWindowPos(first, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
             assert!(above(first, second), "activation must raise the old pane");
             assert!(above(app, first));
+            for interaction in [WM_LBUTTONDOWN, WM_NCLBUTTONDOWN, WM_ENTERSIZEMOVE] {
+                // Simulate a peer covering an already-active pane: there is no
+                // WM_MOUSEACTIVATE before the next click or native move loop.
+                SetWindowPos(second, HWND_TOP, 0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+                assert!(above(second, first));
+                SendMessageW(first, interaction, 0, 0);
+                assert!(above(first, second), "interaction {interaction:#x} must raise the pane");
+                assert!(above(app, first), "interaction must preserve the application band");
+            }
             set_layer(first, true);
             assert_ne!(GetWindowLongW(first, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST, 0);
             set_layer(first, false);
             assert_eq!(GetWindowLongW(first, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST, 0);
             assert!(above(app, first));
-            for hwnd in [first, second, app] { DestroyWindow(hwnd); }
+            for hwnd in [first, second, app, owner] { DestroyWindow(hwnd); }
         }
     }
 
@@ -576,9 +589,21 @@ pub(super) unsafe extern "system" fn borderless_proc(
         return 0;
     }
     unsafe {
+        // An already-active pane can be covered by another pane without losing
+        // activation. Its next click/drag need not send WM_MOUSEACTIVATE.
+        // Handle interaction here, outside the model callback's borrow guards.
+        if matches!(message, WM_MOUSEACTIVATE | WM_LBUTTONDOWN | WM_NCLBUTTONDOWN | WM_ENTERSIZEMOVE)
+            && !GetPropW(hwnd, DESKTOP_LAYER).is_null()
+        {
+            SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+        }
         if message == WM_WINDOWPOSCHANGING && !GetPropW(hwnd, DESKTOP_LAYER).is_null() {
             let position = &mut *(lparam as *mut WINDOWPOS);
             if position.flags & SWP_NOZORDER == 0 {
+                // All desktop panes share a Shell owner. Raising a pane must
+                // not reorder that owner and indirectly raise its other panes.
+                position.flags |= SWP_NOOWNERZORDER;
                 position.hwndInsertAfter = desktop_insert_after(hwnd);
             }
         }
@@ -746,10 +771,6 @@ where
                     None
                 }
                 WM_MOUSEACTIVATE => {
-                    unsafe {
-                        SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0,
-                            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-                    }
                     Some(MA_ACTIVATE as isize)
                 }
                 WM_ACTIVATE => {
