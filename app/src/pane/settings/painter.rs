@@ -11,12 +11,12 @@ impl Painter {
         use windows_canvas::{FontWeight, ParagraphAlignment, TextFormat, WordWrapping};
         let family = super::super::fonts::family();
         let mut formats = vec![];
-        for (i, size) in [12.0, 14.0, 20.0, 28.0, Style::ICON, Style::NAV_ICON]
+        for (i, size) in [12.0, 14.0, 20.0, 28.0, Style::ICON, Style::NAV_ICON, 12.0]
             .iter()
             .enumerate()
         {
             let format = canvas_result(TextFormat::with_weight(
-                if i >= 4 {
+                if matches!(i, 4 | 5) {
                     "Segoe Fluent Icons"
                 } else {
                     &family
@@ -25,8 +25,12 @@ impl Painter {
                 FontWeight(if i == 2 || i == 3 { 600 } else { 400 }),
             ))?
             .with_paragraph_alignment(ParagraphAlignment::Center)
-            .with_word_wrapping(WordWrapping::NoWrap);
-            let format = if i >= 4 {
+            .with_word_wrapping(if i == 6 {
+                WordWrapping::Wrap
+            } else {
+                WordWrapping::NoWrap
+            });
+            let format = if matches!(i, 4 | 5) {
                 format.with_alignment(windows_canvas::TextAlignment::Center)
             } else {
                 format
@@ -82,35 +86,28 @@ impl Painter {
                     b: (v & 255) as f32 / 255.0,
                     a: 1.0,
                 };
-                let bg = color(if dark { 0x202020 } else { 0xf3f3f3 });
+                let palette = components::Palette::for_theme(dark);
+                let bg = color(palette.background);
                 let card = canvas_result(t.create_solid_brush(ColorF {
                     a: if native {
                         if dark { 0.65 } else { 0.72 }
                     } else {
                         1.0
                     },
-                    ..color(if dark { 0x2b2b2b } else { 0xffffff })
+                    ..color(palette.card)
                 }))?;
 
-                let ink = canvas_result(t.create_solid_brush(color(if dark {
-                    0xf5f5f5
-                } else {
-                    0x202020
-                })))?;
-                let muted = canvas_result(t.create_solid_brush(color(if dark {
-                    0xadadad
-                } else {
-                    0x666666
-                })))?;
+                let ink = canvas_result(t.create_solid_brush(color(palette.ink)))?;
+                let muted = canvas_result(t.create_solid_brush(color(palette.muted)))?;
+                let disabled = canvas_result(t.create_solid_brush(ColorF {
+                    a: 0.55,
+                    ..color(palette.muted)
+                }))?;
                 let border = canvas_result(t.create_solid_brush(ColorF {
                     a: if native { 0.45 } else { 1.0 },
-                    ..color(if dark { 0x424242 } else { 0xdfdfdf })
+                    ..color(palette.border)
                 }))?;
-                let accent = canvas_result(t.create_solid_brush(color(if dark {
-                    0x76b9ed
-                } else {
-                    0x0067c0
-                })))?;
+                let accent = canvas_result(t.create_solid_brush(color(palette.accent)))?;
                 let selected = canvas_result(t.create_solid_brush(color(if dark {
                     0x344656
                 } else {
@@ -148,25 +145,29 @@ impl Painter {
                     },
                     &page_background,
                 );
+                for r in &s.separators {
+                    let _clip = ContentClip::new(&t, s, r.left >= Tokens::CONTENT_X);
+                    t.fill_rect(r, &border);
+                }
+                for r in &s.cards {
+                    let _clip = ContentClip::new(&t, s, r.left >= Tokens::CONTENT_X);
+                    let rr = RoundedRect {
+                        rect: *r,
+                        radius_x: Tokens::CARD_RADIUS,
+                        radius_y: Tokens::CARD_RADIUS,
+                    };
+                    t.fill_rounded_rect(&rr, &card);
+                    t.draw_rounded_rect(&rr, &border, 1.0);
+                }
                 if let Some(bounds) = &s.app_icon {
+                    let _clip = ContentClip::new(&t, s, true);
                     let pixels = &self.app_icon;
                     let bitmap =
                         canvas_result(t.create_bitmap(&pixels.data, pixels.width, pixels.height))?;
                     t.draw_bitmap(&bitmap, bounds, 1.0);
                 }
-                for r in &s.separators {
-                    t.fill_rect(r, &border);
-                }
-                for r in &s.cards {
-                    let rr = RoundedRect {
-                        rect: *r,
-                        radius_x: 7.0,
-                        radius_y: 7.0,
-                    };
-                    t.fill_rounded_rect(&rr, &card);
-                    t.draw_rounded_rect(&rr, &border, 1.0);
-                }
                 for (r, rgb, opacity) in &s.previews {
+                    let _clip = ContentClip::new(&t, s, r.left >= Tokens::CONTENT_X);
                     let light = canvas_result(t.create_solid_brush(color(if dark {
                         0x41454b
                     } else {
@@ -234,6 +235,12 @@ impl Painter {
                     }
                 }
                 for (i, c) in s.controls.iter().enumerate() {
+                    let _clip = ContentClip::new(
+                        &t,
+                        s,
+                        c.bounds.left >= Tokens::CONTENT_X
+                            && !matches!(c.kind, ControlKind::Caption),
+                    );
                     if !c.enabled && c.is_toggle() {
                         let r = c.bounds;
                         t.draw_rounded_rect(
@@ -405,7 +412,8 @@ impl Painter {
                     let caption = matches!(c.kind, ControlKind::Caption);
                     let plain = c.kind.is_row();
 
-                    let material = matches!(c.action, Action::Change(Event::Material(_)));
+                    let material = matches!(c.action, Action::Change(Event::Material(_)))
+                        && c.bounds.bottom - c.bounds.top >= 80.0;
                     let rr = RoundedRect {
                         rect: c.bounds,
                         radius_x: if c.is_toggle() {
@@ -444,7 +452,7 @@ impl Painter {
                             &rr,
                             if c.selected {
                                 &selected
-                            } else if hover == Some(i) {
+                            } else if c.enabled && hover == Some(i) {
                                 &hovered
                             } else {
                                 &card
@@ -670,7 +678,7 @@ impl Painter {
                                         16.0,
                                         c.bounds.bottom - c.bounds.top,
                                     ),
-                                    &ink,
+                                    if c.enabled { &ink } else { &disabled },
                                 );
                                 if back {
                                     bounds.left = left + Style::ICON_SLOT + Style::ICON_GAP;
@@ -687,16 +695,27 @@ impl Painter {
                                 &self.button_format
                             },
                             &bounds,
-                            &ink,
+                            if c.enabled { &ink } else { &disabled },
                         );
                     }
                 }
                 for (r, text, size) in &s.text {
+                    let _clip = ContentClip::new(&t, s, r.left >= Tokens::CONTENT_X);
                     t.clipped_text(
                         text,
                         &self.formats[*size],
                         r,
-                        if *size == 0 { &muted } else { &ink },
+                        if matches!(*size, 0 | 6) { &muted } else { &ink },
+                    );
+                }
+                if let Some(thumb) = s.scroll_thumb() {
+                    t.fill_rounded_rect(
+                        &RoundedRect {
+                            rect: thumb,
+                            radius_x: 2.0,
+                            radius_y: 2.0,
+                        },
+                        &muted,
                     );
                 }
                 t.finish()

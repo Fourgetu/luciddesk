@@ -3,44 +3,111 @@ use super::*;
 #[test]
 fn backup_in_progress_preserves_policy_controls_and_prevents_duplicate_jobs() {
     for enabled in [false, true] {
-        let mut body=scene(800.0,MIN_HEIGHT-TITLE_HEIGHT,6,true,
-            (PanelTheme::System,Backdrop::Mica),desktop_core::PaneOptions::default());
+        let mut body = scene(
+            800.0,
+            MIN_HEIGHT - TITLE_HEIGHT,
+            6,
+            true,
+            (PanelTheme::System, Backdrop::Mica),
+            desktop_core::PaneOptions::default(),
+        );
 
-        let view=recovery::View {busy:true,..Default::default()};
-        layout::backup_page(&mut body,800.0,&view,recovery::Policy {enabled,..Default::default()},false);
-        let toggle=body.controls.iter().find(|c|matches!(c.action,Action::BackupPolicy(0))).unwrap();
+        let view = recovery::View {
+            busy: true,
+            ..Default::default()
+        };
+        layout::backup_page(
+            &mut body,
+            800.0,
+            &view,
+            recovery::Policy {
+                enabled,
+                ..Default::default()
+            },
+            false,
+        );
+        let toggle = body
+            .controls
+            .iter()
+            .find(|c| matches!(c.action, Action::BackupPolicy(0)))
+            .unwrap();
         assert!(toggle.enabled);
-        assert_eq!(toggle.selected,enabled);
-        assert!(body.controls.iter().filter(|c|matches!(c.action,Action::BackupPolicy(_))).all(|c|c.enabled));
-        assert!(!body.controls.iter().find(|c|matches!(c.action,Action::Change(Event::CreateBackup))).unwrap().enabled);
+        assert_eq!(toggle.selected, enabled);
+        assert!(
+            body.controls
+                .iter()
+                .filter(|c| matches!(c.action, Action::BackupPolicy(_)))
+                .all(|c| c.enabled)
+        );
+        assert!(
+            !body
+                .controls
+                .iter()
+                .find(|c| matches!(c.action, Action::Change(Event::CreateBackup)))
+                .unwrap()
+                .enabled
+        );
     }
 }
 
 #[test]
 fn folder_modes_fit_minimum_window_and_show_current_choice() {
     for mode in [folder::EntryMode::Inline, folder::EntryMode::Explorer] {
-        let mut body = scene(800.0, MIN_HEIGHT - TITLE_HEIGHT, 8, false,
-            (PanelTheme::System, Backdrop::Mica), desktop_core::PaneOptions::default());
+        let mut body = scene(
+            800.0,
+            MIN_HEIGHT - TITLE_HEIGHT,
+            8,
+            false,
+            (PanelTheme::System, Backdrop::Mica),
+            desktop_core::PaneOptions::default(),
+        );
         layout::folder_defaults(&mut body, 800.0, folder::Defaults::default(), mode);
         let s = with_titlebar(body, 800.0, false);
-        for bounds in s.text.iter().map(|(r,_,_)| r).chain(s.controls.iter().map(|c| &c.bounds)) {
-            assert!(bounds.right <= 800.0 && bounds.bottom <= MIN_HEIGHT);
+        for bounds in s
+            .text
+            .iter()
+            .map(|(r, _, _)| r)
+            .chain(s.controls.iter().map(|c| &c.bounds))
+        {
+            assert!(bounds.right <= 800.0);
         }
-        let choices: Vec<_> = s.controls.iter().filter(|c| matches!(c.action, Action::FolderEntryMode(_))).collect();
+        let choices: Vec<_> = s
+            .controls
+            .iter()
+            .filter(|c| matches!(c.action, Action::FolderEntryMode(_)))
+            .collect();
         assert_eq!(choices.len(), 2);
         assert_eq!(choices.iter().filter(|c| c.selected).count(), 1);
-        assert!(choices.iter().any(|c| c.selected && matches!(c.action, Action::FolderEntryMode(value) if value == mode)));
+        assert!(
+            choices.iter().any(|c| c.selected
+                && matches!(c.action, Action::FolderEntryMode(value) if value == mode))
+        );
     }
 }
 
 #[test]
 fn folder_defaults_are_saved_and_only_copied_into_new_panels() {
     let store = WorkspaceStore::open_in_memory().unwrap();
-    assert_eq!(folder::Defaults::load(&store).unwrap(), folder::Defaults::default());
-    let mut first = Panel::new(PanelId::new(10), "first", desktop_core::RectDip::new(0.0, 0.0, 480.0, 360.0));
+    assert_eq!(
+        folder::Defaults::load(&store).unwrap(),
+        folder::Defaults::default()
+    );
+    let mut first = Panel::new(
+        PanelId::new(10),
+        "first",
+        desktop_core::RectDip::new(0.0, 0.0, 480.0, 360.0),
+    );
     first.set_folder(Some(std::path::PathBuf::from(r"C:\first")));
-    folder::Defaults::load(&store).unwrap().apply(&store, &mut first).unwrap();
-    folder::Defaults { list: false, columns: 8 }.save(&store).unwrap();
+    folder::Defaults::load(&store)
+        .unwrap()
+        .apply(&store, &mut first)
+        .unwrap();
+    folder::Defaults {
+        list: false,
+        columns: 8,
+    }
+    .save(&store)
+    .unwrap();
     let saved = folder::Defaults::load(&store).unwrap();
     assert_eq!(saved.columns, 9);
     let mut second = Panel::new(PanelId::new(11), "second", first.rect());
@@ -62,7 +129,10 @@ fn grid_slider_centers_default_and_scales_in_both_directions() {
     assert_eq!(grid_slider_value(0.0), grid_range().0);
     assert_eq!(grid_slider_value(1.0), grid_range().1);
     for value in 50..=200 {
-        assert_eq!(grid_slider_value(grid_slider_position(value as f32)), value as f32);
+        assert_eq!(
+            grid_slider_value(grid_slider_position(value as f32)),
+            value as f32
+        );
     }
     assert!(grid_slider_value(0.25) < 100.0);
     assert!(grid_slider_value(0.75) > 100.0);
@@ -86,9 +156,7 @@ fn initial_library_show_remains_hidden_until_prepared() {
     let window = windows_window::Window::new("LucidPane initial visibility test")
         .style(WS_OVERLAPPEDWINDOW)
         .on_message(move |_, msg, _, lp| {
-            if unsafe { defer_show(msg, lp, callback_prepared.get()) }
-                || msg == WM_DESTROY
-            {
+            if unsafe { defer_show(msg, lp, callback_prepared.get()) } || msg == WM_DESTROY {
                 Some(0)
             } else {
                 None
@@ -149,12 +217,7 @@ fn settings_opacity_is_independent_and_rgb_preserves_other_channels() {
         800.0,
         false,
     );
-    assert!(
-        picker
-            .controls
-            .iter()
-            .all(|c| c.bounds.right <= 800.0 && c.bounds.bottom <= 480.0)
-    );
+    assert!(picker.controls.iter().all(|c| c.bounds.right <= 800.0));
     assert_eq!(
         picker
             .controls
@@ -187,7 +250,10 @@ fn solid_controls_fit_minimum_settings_size() {
         false,
     );
     for control in &s.controls {
-        assert!(control.bounds.right <= 800.0 && control.bounds.bottom <= 480.0);
+        assert!(control.bounds.right <= 800.0);
+        if matches!(control.kind, ControlKind::Caption | ControlKind::Navigation) {
+            assert!(control.bounds.bottom <= 480.0);
+        }
     }
     assert!(
         s.controls
@@ -212,12 +278,20 @@ fn panel_options_text_fits_default_and_minimum_window() {
             false,
         );
         for (bounds, text, _) in &s.text {
-            assert!(bounds.bottom <= height - 16.0, "Clipped text: {text}");
             assert!(bounds.right <= width, "Clipped text: {text}");
         }
-        for control in &s.controls {
-            assert!(control.bounds.bottom <= height - 16.0);
-        }
+        let last = s
+            .controls
+            .iter()
+            .position(|c| matches!(c.action, Action::Change(Event::ResetPaneOptions)))
+            .unwrap();
+        let mut scrolled = s;
+        let mut offset = f32::MAX;
+        scrolled.scroll_to(width, height, &mut offset);
+        assert!(offset > 0.0);
+        let r = scrolled.controls[last].bounds;
+        assert!(r.bottom <= height - 16.0);
+        assert!(scrolled.accepts_pointer(&scrolled.controls[last], r.left + 1.0, r.top + 1.0));
     }
 }
 
@@ -316,31 +390,63 @@ fn custom_frame_keeps_caption_buttons_and_resize_edges_separate() {
     );
 }
 #[test]
-fn about_page_fits_minimum_window() {
+fn about_page_stays_within_minimum_width() {
     let width = 800.0;
     let height = MIN_HEIGHT;
-    let mut body = scene(width, height - TITLE_HEIGHT, 5, true,
-        (PanelTheme::Dark, Backdrop::Mica), desktop_core::PaneOptions::default());
+    let mut body = scene(
+        width,
+        height - TITLE_HEIGHT,
+        5,
+        true,
+        (PanelTheme::Dark, Backdrop::Mica),
+        desktop_core::PaneOptions::default(),
+    );
     layout::about_status(&mut body, width, "桌面分组已连接", true);
     let s = with_titlebar(body, width, false);
-    for bounds in s.text.iter().map(|(bounds, _, _)| bounds).chain(s.app_icon.iter())
-        .chain(s.cards.iter()).chain(s.controls.iter().map(|c| &c.bounds)) {
-        assert!(bounds.left >= 0.0 && bounds.top >= 0.0
-            && bounds.right <= width && bounds.bottom <= height);
+    for bounds in s
+        .text
+        .iter()
+        .map(|(bounds, _, _)| bounds)
+        .chain(s.app_icon.iter())
+        .chain(s.cards.iter())
+        .chain(s.controls.iter().map(|c| &c.bounds))
+    {
+        assert!(bounds.left >= 0.0 && bounds.top >= 0.0 && bounds.right <= width);
     }
 }
 
 #[test]
-fn backup_config_controls_fit_minimum_window() {
-    let mut body=scene(800.0,MIN_HEIGHT-TITLE_HEIGHT,6,true,
-        (PanelTheme::System,Backdrop::Mica),desktop_core::PaneOptions::default());
+fn backup_config_controls_stay_within_minimum_width() {
+    let mut body = scene(
+        800.0,
+        MIN_HEIGHT - TITLE_HEIGHT,
+        6,
+        true,
+        (PanelTheme::System, Backdrop::Mica),
+        desktop_core::PaneOptions::default(),
+    );
 
-    layout::backup_page(&mut body,800.0,&recovery::View::default(),recovery::Policy::default(),true);
-    let s=with_titlebar(body,800.0,false);
-    for bounds in s.text.iter().map(|(r,_,_)|r).chain(s.controls.iter().map(|c|&c.bounds)) {
-        assert!(bounds.right<=800.0 && bounds.bottom<=MIN_HEIGHT);
+    layout::backup_page(
+        &mut body,
+        800.0,
+        &recovery::View::default(),
+        recovery::Policy::default(),
+        true,
+    );
+    let s = with_titlebar(body, 800.0, false);
+    for bounds in s
+        .text
+        .iter()
+        .map(|(r, _, _)| r)
+        .chain(s.controls.iter().map(|c| &c.bounds))
+    {
+        assert!(bounds.right <= 800.0);
     }
-    assert!(s.controls.iter().any(|c|matches!(c.action,Action::Change(Event::ReloadConfig))));
+    assert!(
+        s.controls
+            .iter()
+            .any(|c| matches!(c.action, Action::Change(Event::ReloadConfig)))
+    );
 }
 
 #[test]
@@ -350,144 +456,203 @@ fn settings_layout_and_rendering_at_multiple_scales() {
     let export_snapshots = std::env::var_os("LUCIDPANE_TEST_EXPORT_SNAPSHOTS").is_some();
     {
         let device = windows_canvas::GpuDevice::new_warp().unwrap();
-        for scale in [1.0, 1.5, 2.0] {
-            for page in [0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11] {
-                for dark in [false, true] {
-                    let mut body = scene(
-                            940.0,
-                            620.0 - TITLE_HEIGHT,
-                            page,
-                            true,
-                            (
-                                PanelTheme::System,
-                                if page == 0 {
-                                    Backdrop::Acrylic.with_strength(65)
-                                } else if page == 7 {
-                                    Backdrop::Solid {
-                                        color: 0x24364b,
-                                        opacity: 0.85,
-                                    }
-                                } else {
-                                    Backdrop::Mica
-                                },
-                            ),
-                            desktop_core::PaneOptions::default(),
-                        );
-                    if matches!(page,6|9|10) {
-
-                        let view=recovery::View {status:"手动备份成功 · 上次备份：今天 14:32".into(),records:(0..5).map(|i|recovery::Record {
-                            path:std::path::PathBuf::from(format!("backup-{i}.db")),date:"2026/09/14 14:32".into(),kind:if i==0{"手动"}else{"自动"},bytes:131072,
-                        }).collect(),..Default::default()};
-                        if page==9 {layout::backup_history(&mut body,940.0,&view,0);}else{layout::backup_page(&mut body,940.0,&view,recovery::Policy::default(),page==10);}
-                    }
-                    if page == 11 { layout::fonts(&mut body, 940.0, &fonts::installed(), 0); }
-                    if page == 8 { layout::folder_defaults(&mut body, 940.0, folder::Defaults::default(), if dark { folder::EntryMode::Explorer } else { folder::EntryMode::Inline }); }
-                    if page == 5 {
-                        layout::about_status(&mut body, 940.0, "桌面分组已连接", false);
-                    }
-                    let s = with_titlebar(body, 940.0, false);
-                    for c in &s.controls {
-                        assert!(
-                            c.bounds.left >= 0.0
-                                && c.bounds.top >= 0.0
-                                && c.bounds.right <= 940.0
-                                && c.bounds.bottom <= 620.0
-                        );
-                        assert!(contains(
-                            &c.bounds,
-                            (c.bounds.left + c.bounds.right) / 2.0,
-                            (c.bounds.top + c.bounds.bottom) / 2.0
-                        ));
-                    }
-                    let width = (940.0 * scale) as u32;
-                    let height = (620.0 * scale) as u32;
-                    let bitmap =
-                        super::super::canvas::Offscreen::new(&device, width, height).unwrap();
-                    let target = bitmap.target.clone();
-                    painter
-                        .paint(
-                            &target,
-                            &s,
-                            940.0,
-                            620.0,
-                            scale,
-                            dark,
-                            false,
-                            None,
-                            None,
-                            &std::collections::HashMap::new(),
-                        )
-                        .unwrap();
-                    let pixels = bitmap.pixels().unwrap();
-                    assert!(pixels.chunks_exact(4).all(|p| p[3] == 255));
-                    assert_eq!(pixels[0] < 128, dark);
-                    if export_snapshots && scale == 1.0 {
-                        // Standalone raster for visual review, independent of the live desktop.
-                        let mut bmp = vec![0u8; 54];
-                        bmp[0..2].copy_from_slice(b"BM");
-                        bmp[2..6].copy_from_slice(&(54 + pixels.len() as u32).to_le_bytes());
-                        bmp[10..14].copy_from_slice(&54u32.to_le_bytes());
-                        bmp[14..18].copy_from_slice(&40u32.to_le_bytes());
-                        bmp[18..22].copy_from_slice(&(width as i32).to_le_bytes());
-                        bmp[22..26].copy_from_slice(&(-(height as i32)).to_le_bytes());
-                        bmp[26..28].copy_from_slice(&1u16.to_le_bytes());
-                        bmp[28..30].copy_from_slice(&32u16.to_le_bytes());
-                        bmp.extend(pixels);
-                        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                            .join("../target")
-                            .join(match (page, dark) {
-                                (11, true) => "settings-fonts-dark.bmp",
-                                (11, false) => "settings-fonts-light.bmp",
-                                (8, true) => "settings-folder-dark.bmp",
-                                (8, false) => "settings-folder-light.bmp",
-                                (3, true) => "settings-peek-dark.bmp",
-                                (3, false) => "settings-peek-light.bmp",
-                                (4, true) => "settings-search-dark.bmp",
-                                (4, false) => "settings-search-light.bmp",
-                                (9, true) => "settings-backup-history-dark.bmp",
-                                (9, false) => "settings-backup-history-light.bmp",
-                                (10, true) => "settings-backup-advanced-dark.bmp",
-                                (10, false) => "settings-backup-advanced-light.bmp",
-                                (6, true) => "settings-backup-dark.bmp",
-                                (6, false) => "settings-backup-light.bmp",
-                                (7, true) => "settings-colors-dark.bmp",
-                                (7, false) => "settings-colors-light.bmp",
-                                (5, true) => "settings-about-dark.bmp",
-                                (5, false) => "settings-about-light.bmp",
-                                (1, true) => "settings-pane-dark.bmp",
-                                (1, false) => "settings-pane-light.bmp",
-                                (_, true) => "settings-dark.bmp",
-                                (_, false) => "settings-light.bmp",
-                            });
-                        std::fs::write(path, bmp).unwrap();
-                    }
-                    if page == 0 {
-                        painter
-                            .paint(
-                                &target,
-                                &s,
-                                940.0,
-                                620.0,
-                                scale,
-                                dark,
+        for (viewport_width, viewport_height) in [(800.0, 560.0), (940.0, 620.0)] {
+            for at_bottom in [false, true] {
+                for scale in [1.0, 1.5, 2.0] {
+                    for page in [0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11] {
+                        for dark in [false, true] {
+                            let mut body = scene(
+                                viewport_width,
+                                viewport_height - TITLE_HEIGHT,
+                                page,
                                 true,
-                                None,
-                                None,
-                                &std::collections::HashMap::new(),
-                            )
-                            .unwrap();
-                        let overlay = bitmap.pixels().unwrap();
-                        assert_eq!(
-                            overlay[3], 0,
-                            "the native material must remain visible beneath the sidebar"
-                        );
-                        let card_at = (((190.0 * scale) as u32 * width
-                            + (270.0 * scale) as u32)
-                            * 4) as usize;
-                        assert!(
-                            overlay[card_at + 3] > 0 && overlay[card_at + 3] < 255,
-                            "settings content must retain material transparency"
-                        );
+                                (
+                                    PanelTheme::System,
+                                    if page == 0 {
+                                        Backdrop::Acrylic.with_strength(65)
+                                    } else if page == 7 {
+                                        Backdrop::Solid {
+                                            color: 0x24364b,
+                                            opacity: 0.85,
+                                        }
+                                    } else {
+                                        Backdrop::Mica
+                                    },
+                                ),
+                                desktop_core::PaneOptions::default(),
+                            );
+                            if matches!(page, 6 | 9 | 10) {
+                                let view = recovery::View {
+                                    status: "手动备份成功 · 上次备份：今天 14:32".into(),
+                                    records: (0..5)
+                                        .map(|i| recovery::Record {
+                                            path: std::path::PathBuf::from(format!(
+                                                "backup-{i}.db"
+                                            )),
+                                            date: "2026/09/14 14:32".into(),
+                                            kind: if i == 0 { "手动" } else { "自动" },
+                                            bytes: 131072,
+                                        })
+                                        .collect(),
+                                    ..Default::default()
+                                };
+                                if page == 9 {
+                                    layout::backup_history(&mut body, viewport_width, &view, 0);
+                                } else {
+                                    layout::backup_page(
+                                        &mut body,
+                                        viewport_width,
+                                        &view,
+                                        recovery::Policy::default(),
+                                        page == 10,
+                                    );
+                                }
+                            }
+                            if page == 11 {
+                                layout::fonts(&mut body, viewport_width, &fonts::installed(), 0);
+                            }
+                            if page == 8 {
+                                layout::folder_defaults(
+                                    &mut body,
+                                    viewport_width,
+                                    folder::Defaults::default(),
+                                    if dark {
+                                        folder::EntryMode::Explorer
+                                    } else {
+                                        folder::EntryMode::Inline
+                                    },
+                                );
+                            }
+                            if page == 5 {
+                                layout::about_status(
+                                    &mut body,
+                                    viewport_width,
+                                    "桌面分组已连接",
+                                    false,
+                                );
+                            }
+                            let mut s = with_titlebar(body, viewport_width, false);
+                            s.scroll_to(
+                                viewport_width,
+                                viewport_height,
+                                &mut if at_bottom { f32::MAX } else { 0.0 },
+                            );
+                            for c in &s.controls {
+                                assert!(
+                                    c.bounds.left >= 0.0
+                                        && c.bounds.top >= -s.scroll_max
+                                        && c.bounds.right <= viewport_width
+                                        && c.bounds.bottom <= viewport_height + s.scroll_max
+                                );
+                                assert!(contains(
+                                    &c.bounds,
+                                    (c.bounds.left + c.bounds.right) / 2.0,
+                                    (c.bounds.top + c.bounds.bottom) / 2.0
+                                ));
+                            }
+                            let width = (viewport_width * scale) as u32;
+                            let height = (viewport_height * scale) as u32;
+                            let bitmap =
+                                super::super::canvas::Offscreen::new(&device, width, height)
+                                    .unwrap();
+                            let target = bitmap.target.clone();
+                            painter
+                                .paint(
+                                    &target,
+                                    &s,
+                                    viewport_width,
+                                    viewport_height,
+                                    scale,
+                                    dark,
+                                    false,
+                                    None,
+                                    None,
+                                    &std::collections::HashMap::new(),
+                                )
+                                .unwrap();
+                            let pixels = bitmap.pixels().unwrap();
+                            assert!(pixels.chunks_exact(4).all(|p| p[3] == 255));
+                            assert_eq!(pixels[0] < 128, dark);
+                            if export_snapshots && scale == 1.0 {
+                                // Standalone raster for visual review, independent of the live desktop.
+                                let mut bmp = vec![0u8; 54];
+                                bmp[0..2].copy_from_slice(b"BM");
+                                bmp[2..6]
+                                    .copy_from_slice(&(54 + pixels.len() as u32).to_le_bytes());
+                                bmp[10..14].copy_from_slice(&54u32.to_le_bytes());
+                                bmp[14..18].copy_from_slice(&40u32.to_le_bytes());
+                                bmp[18..22].copy_from_slice(&(width as i32).to_le_bytes());
+                                bmp[22..26].copy_from_slice(&(-(height as i32)).to_le_bytes());
+                                bmp[26..28].copy_from_slice(&1u16.to_le_bytes());
+                                bmp[28..30].copy_from_slice(&32u16.to_le_bytes());
+                                bmp.extend(pixels);
+                                let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                                    .join("../target")
+                                    .join(match (page, dark) {
+                                        (11, true) => "settings-fonts-dark.bmp",
+                                        (11, false) => "settings-fonts-light.bmp",
+                                        (8, true) => "settings-folder-dark.bmp",
+                                        (8, false) => "settings-folder-light.bmp",
+                                        (3, true) => "settings-peek-dark.bmp",
+                                        (3, false) => "settings-peek-light.bmp",
+                                        (4, true) => "settings-search-dark.bmp",
+                                        (4, false) => "settings-search-light.bmp",
+                                        (9, true) => "settings-backup-history-dark.bmp",
+                                        (9, false) => "settings-backup-history-light.bmp",
+                                        (10, true) => "settings-backup-advanced-dark.bmp",
+                                        (10, false) => "settings-backup-advanced-light.bmp",
+                                        (6, true) => "settings-backup-dark.bmp",
+                                        (6, false) => "settings-backup-light.bmp",
+                                        (7, true) => "settings-colors-dark.bmp",
+                                        (7, false) => "settings-colors-light.bmp",
+                                        (5, true) => "settings-about-dark.bmp",
+                                        (5, false) => "settings-about-light.bmp",
+                                        (1, true) => "settings-pane-dark.bmp",
+                                        (1, false) => "settings-pane-light.bmp",
+                                        (_, true) => "settings-dark.bmp",
+                                        (_, false) => "settings-light.bmp",
+                                    });
+                                let path = if viewport_width == 800.0 || at_bottom {
+                                    path.with_file_name(format!(
+                                        "{}-{}{}.bmp",
+                                        path.file_stem().unwrap().to_string_lossy(),
+                                        viewport_width as u32,
+                                        if at_bottom { "-bottom" } else { "" }
+                                    ))
+                                } else {
+                                    path
+                                };
+                                std::fs::write(path, bmp).unwrap();
+                            }
+                            if page == 0 && !at_bottom {
+                                painter
+                                    .paint(
+                                        &target,
+                                        &s,
+                                        viewport_width,
+                                        viewport_height,
+                                        scale,
+                                        dark,
+                                        true,
+                                        None,
+                                        None,
+                                        &std::collections::HashMap::new(),
+                                    )
+                                    .unwrap();
+                                let overlay = bitmap.pixels().unwrap();
+                                assert_eq!(
+                                    overlay[3], 0,
+                                    "the native material must remain visible beneath the sidebar"
+                                );
+                                let card_at = (((190.0 * scale) as u32 * width
+                                    + (270.0 * scale) as u32)
+                                    * 4) as usize;
+                                assert!(
+                                    overlay[card_at + 3] > 0 && overlay[card_at + 3] < 255,
+                                    "settings content must retain material transparency"
+                                );
+                            }
+                        }
                     }
                 }
             }
@@ -499,14 +664,287 @@ fn settings_layout_and_rendering_at_multiple_scales() {
 fn font_picker_fits_minimum_window_and_exposes_paging_and_reset() {
     let names: Vec<_> = (0..19).map(|i| format!("Font {i}")).collect();
     for offset in [0, 7, 14] {
-        let mut body = scene(800.0, MIN_HEIGHT - TITLE_HEIGHT, 11, false,
-            (PanelTheme::Dark, Backdrop::Mica), desktop_core::PaneOptions::default());
+        let mut body = scene(
+            800.0,
+            MIN_HEIGHT - TITLE_HEIGHT,
+            11,
+            false,
+            (PanelTheme::Dark, Backdrop::Mica),
+            desktop_core::PaneOptions::default(),
+        );
         layout::fonts(&mut body, 800.0, &names, offset);
         let s = with_titlebar(body, 800.0, false);
-        for r in s.text.iter().map(|(r,_,_)| r).chain(s.controls.iter().map(|c| &c.bounds)) {
-            assert!(r.right <= 800.0 && r.bottom <= MIN_HEIGHT);
+        for r in s
+            .text
+            .iter()
+            .map(|(r, _, _)| r)
+            .chain(s.controls.iter().map(|c| &c.bounds))
+        {
+            assert!(r.right <= 800.0);
         }
-        assert_eq!(s.controls.iter().filter(|c| matches!(&c.action, Action::Font(name) if name.starts_with("Font "))).count(), (names.len() - offset).min(7));
-        assert!(s.controls.iter().any(|c| matches!(&c.action, Action::Font(name) if name == assets::UI_FONT)));
+        assert_eq!(
+            s.controls
+                .iter()
+                .filter(|c| matches!(&c.action, Action::Font(name) if name.starts_with("Font ")))
+                .count(),
+            (names.len() - offset).min(7)
+        );
+        assert!(
+            s.controls
+                .iter()
+                .any(|c| matches!(&c.action, Action::Font(name) if name == assets::UI_FONT))
+        );
+    }
+}
+
+#[test]
+fn setting_cards_scroll_without_moving_navigation_or_hitting_caption() {
+    for page in [0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11] {
+        for width in [800.0, 940.0, 1440.0] {
+            let build = || {
+                let mut body = scene(
+                    width,
+                    520.0,
+                    page,
+                    false,
+                    (
+                        PanelTheme::Dark,
+                        Backdrop::Solid {
+                            color: 0x24364b,
+                            opacity: 0.85,
+                        },
+                    ),
+                    Default::default(),
+                );
+                let view = recovery::View {
+                    records: (0..8)
+                        .map(|i| recovery::Record {
+                            path: std::path::PathBuf::from(format!("backup-{i}.db")),
+                            date: "2026/09/27 14:32".into(),
+                            kind: "手动",
+                            bytes: 131072,
+                        })
+                        .collect(),
+                    undo: Some("undo.db".into()),
+                    ..Default::default()
+                };
+                match page {
+                    5 => layout::about_status(&mut body, width, "桌面分组已连接", false),
+                    6 | 10 => layout::backup_page(
+                        &mut body,
+                        width,
+                        &view,
+                        recovery::Policy::default(),
+                        page == 10,
+                    ),
+                    8 => layout::folder_defaults(
+                        &mut body,
+                        width,
+                        folder::Defaults::default(),
+                        folder::EntryMode::Inline,
+                    ),
+                    9 => layout::backup_history(&mut body, width, &view, 0),
+                    11 => layout::fonts(
+                        &mut body,
+                        width,
+                        &(0..19).map(|i| format!("Font {i}")).collect::<Vec<_>>(),
+                        0,
+                    ),
+                    _ => {}
+                }
+                with_titlebar(body, width, false)
+            };
+            let original = build();
+            for pair in original.cards.windows(2) {
+                assert!(pair[0].bottom <= pair[1].top);
+            }
+            for index in 0..original.controls.len() {
+                let control = &original.controls[index];
+                if control.bounds.left < Tokens::CONTENT_X
+                    || matches!(control.kind, ControlKind::Caption)
+                {
+                    continue;
+                }
+                let mut body = build();
+                let mut offset = (control.bounds.top - TITLE_HEIGHT - 16.0).max(0.0);
+                body.scroll_to(width, 560.0, &mut offset);
+                assert_eq!(body.controls[0].bounds.top, original.controls[0].bounds.top);
+                let c = &body.controls[index];
+                assert!(body.accepts_pointer(c, c.bounds.left + 1.0, c.bounds.top + 1.0));
+                assert!(!body.accepts_pointer(c, c.bounds.left + 1.0, TITLE_HEIGHT - 1.0));
+            }
+        }
+    }
+}
+
+#[test]
+fn settings_cards_align_and_long_paths_do_not_overlap_actions() {
+    for width in [800.0, 940.0, 1440.0] {
+        let mut s = scene(
+            width,
+            520.0,
+            8,
+            false,
+            (PanelTheme::Dark, Backdrop::Mica),
+            Default::default(),
+        );
+        let path = format!(
+            r"C:\Users\测试用户\{}\Everything.exe",
+            "很长的文件夹名称".repeat(20)
+        );
+        let mut form = SettingsForm::new(&mut s, width, "布局测试");
+        form.toggle("开关", "说明", true, Action::PeekEnable);
+        form.slider(
+            "滑块",
+            "说明",
+            Slider::linear(50.0, 100.0),
+            "50%",
+            Action::Opacity(50),
+        );
+        form.button("按钮", "说明", "浏览", Action::PeekBrowse);
+        form.combo("下拉", "说明", "5 分钟", Action::BackupPolicy(1));
+        form.path(
+            "程序路径",
+            &path,
+            vec![
+                ("浏览", Action::PeekBrowse),
+                ("自动检测", Action::PeekDetect),
+            ],
+        );
+        form.shortcut(
+            "全局快捷键",
+            "说明",
+            "Ctrl + Shift + Space",
+            Action::SearchShortcut,
+            Action::SearchReset,
+        );
+        let right =
+            Tokens::CONTENT_X + (width - Tokens::CONTENT_X - Tokens::MARGIN).min(Tokens::MAX_WIDTH);
+        for card in &s.cards {
+            assert_eq!(card.left, Tokens::CONTENT_X);
+            assert_eq!(card.right, right);
+            for control in s.controls.iter().filter(|c| {
+                c.bounds.top >= card.top
+                    && c.bounds.bottom <= card.bottom
+                    && c.bounds.left >= card.left
+            }) {
+                assert!(control.bounds.left >= card.left + Tokens::INSET);
+                assert!(control.bounds.right <= card.right - Tokens::INSET);
+                for (text, _, _) in s
+                    .text
+                    .iter()
+                    .filter(|(r, _, _)| r.top >= card.top && r.bottom <= card.bottom)
+                {
+                    assert!(
+                        text.right <= control.bounds.left
+                            || text.left >= control.bounds.right
+                            || text.bottom <= control.bounds.top
+                            || text.top >= control.bounds.bottom,
+                        "text and control overlap"
+                    );
+                }
+            }
+        }
+        let path_bounds = s.text.iter().find(|(_, text, _)| text == &path).unwrap().0;
+        let path_card = s
+            .cards
+            .iter()
+            .find(|r| path_bounds.top >= r.top && path_bounds.bottom <= r.bottom)
+            .unwrap();
+        assert!(
+            s.controls
+                .iter()
+                .filter(|c| c.bounds.top >= path_card.top && c.bounds.bottom <= path_card.bottom)
+                .all(|c| c.bounds.top >= path_bounds.bottom + 12.0)
+        );
+        let shortcut = s
+            .controls
+            .iter()
+            .find(|c| matches!(c.action, Action::SearchShortcut))
+            .unwrap();
+        assert_eq!(shortcut.bounds.right - shortcut.bounds.left, 232.0);
+    }
+}
+
+#[test]
+fn pagination_disables_unavailable_directions_and_short_pages_do_not_scroll() {
+    for offset in [0, 7, 14] {
+        let mut s = scene(
+            800.0,
+            520.0,
+            11,
+            false,
+            (PanelTheme::Dark, Backdrop::Mica),
+            Default::default(),
+        );
+        layout::fonts(
+            &mut s,
+            800.0,
+            &(0..19).map(|i| format!("Font {i}")).collect::<Vec<_>>(),
+            offset,
+        );
+        for c in &s.controls {
+            if let Action::FontPage(step) = c.action {
+                assert_eq!(
+                    c.enabled,
+                    if step < 0 {
+                        offset > 0
+                    } else {
+                        offset + 7 < 19
+                    }
+                );
+            }
+        }
+    }
+    let mut s = with_titlebar(
+        scene(
+            940.0,
+            968.0,
+            8,
+            false,
+            (PanelTheme::Dark, Backdrop::Mica),
+            Default::default(),
+        ),
+        940.0,
+        false,
+    );
+    let mut form = SettingsForm::new(&mut s, 940.0, "短页面");
+    form.info("状态", "无需滚动");
+    s.scroll_to(940.0, 1000.0, &mut 100.0);
+    assert_eq!(s.scroll_max, 0.0);
+    assert_eq!(s.scroll_offset, 0.0);
+    assert!(s.scroll_thumb().is_none());
+}
+
+#[test]
+fn color_channel_titles_align_with_slider_centers() {
+    for width in [800.0, 940.0, 1440.0] {
+        let s = scene(
+            width,
+            520.0,
+            7,
+            false,
+            (
+                PanelTheme::Dark,
+                Backdrop::Solid {
+                    color: 0x24364b,
+                    opacity: 0.85,
+                },
+            ),
+            Default::default(),
+        );
+        for (i, title) in ["红 R", "绿 G", "蓝 B"].iter().enumerate() {
+            let label = s.text.iter().find(|(_, text, _)| text == title).unwrap().0;
+            let control = s
+                .controls
+                .iter()
+                .find(|c| matches!(c.action, Action::Channel(channel, _) if channel as usize == i))
+                .unwrap()
+                .bounds;
+            assert_eq!(
+                (label.top + label.bottom) / 2.0,
+                (control.top + control.bottom) / 2.0
+            );
+        }
     }
 }

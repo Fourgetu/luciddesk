@@ -83,8 +83,13 @@ enum Action {
     EverythingLaunch,
 }
 mod controls;
+mod components;
+use components::{Tokens, SettingsForm, ContentClip};
 use controls::{Control, ControlKind, Slider, Style};
 struct Scene {
+    viewport: Option<Rect>,
+    scroll_max: f32,
+    scroll_offset: f32,
     text: Vec<(Rect, String, usize)>,
     cards: Vec<Rect>,
     separators: Vec<Rect>,
@@ -376,6 +381,9 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
     let mut style_input: Option<(bool, String)> = None;
     let mut cached_scene = None;
     let mut scene_key = None;
+    let mut scroll_offset = 0.0f32;
+    let mut scroll_drag = None;
+    let mut scroll_page = page;
     let mut desktop_status = String::new();
     let mut diagnostics_copied = false;
     let mut backup_view = recovery::View::default();
@@ -591,6 +599,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     | WM_ERASEBKGND
                     | WM_SIZE
                     | WM_ACTIVATE
+                    | WM_MOUSEWHEEL
                     | WM_MOUSEMOVE
                     | WM_MOUSELEAVE
                     | WM_NCMOUSEMOVE
@@ -665,6 +674,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 search_visible,
                 (desktop_status.clone(), header_divider::enabled()),
             );
+            if scroll_page != page { scroll_offset = 0.0; scroll_page = page; }
             let scene_changed = snapshot_changed || scene_key.as_ref() != Some(&key);
             if scene_changed {
                 let mut body = scene(
@@ -683,7 +693,9 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 if page == 5 {
                     layout::about_status(&mut body, w, &desktop_status, diagnostics_copied);
                 }
-                cached_scene = Some(with_titlebar(body, w, key.9));
+                let mut full = with_titlebar(body, w, key.9);
+                full.scroll_to(w, h, &mut scroll_offset);
+                cached_scene = Some(full);
                 scene_key = Some(key);
             }
             if recording_peek || recording_search {
@@ -705,6 +717,16 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
             let mut strength_change = None;
             let mut channel_change = None;
             match msg {
+                WM_MOUSEWHEEL if scene.viewport.is_some() => {
+                    let mut pointer = windows_sys::Win32::Foundation::POINT { x: lp as u16 as i16 as i32, y: (lp >> 16) as u16 as i16 as i32 };
+                    unsafe { ScreenToClient(hwnd, &raw mut pointer); }
+                    if pointer.x as f32 / scale < Tokens::CONTENT_X { return Some(0); }
+                    let delta = ((wp >> 16) as u16 as i16) as f32 / 120.0;
+                    scroll_offset = (scroll_offset - delta * 64.0).clamp(0.0, scene.scroll_max);
+                    scene_key = None; hover = None; pressed = None;
+                    unsafe { InvalidateRect(hwnd, std::ptr::null(), 0); }
+                    return Some(0);
+                }
                 WM_PAINT => {
                     let now = std::time::Instant::now();
                     let mut enabled = 1i32;
@@ -803,10 +825,25 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     }
                     let x = (lp as u16 as i16) as f32 / scale;
                     let y = ((lp >> 16) as u16 as i16) as f32 / scale;
+                    if let Some(thumb) = scene.scroll_thumb() {
+                        let viewport = scene.viewport.unwrap();
+                        if msg == WM_LBUTTONDOWN && x >= viewport.right - 16.0 && y >= viewport.top && y <= viewport.bottom {
+                            scroll_drag = Some(if y >= thumb.top && y <= thumb.bottom { y - thumb.top } else { (thumb.bottom - thumb.top) / 2.0 });
+                            unsafe { SetCapture(hwnd); }
+                        }
+                        if let Some(grab) = scroll_drag {
+                            let travel = viewport.bottom - viewport.top - 16.0 - (thumb.bottom - thumb.top);
+                            scroll_offset = ((y - grab - viewport.top - 8.0) / travel.max(1.0) * scene.scroll_max).clamp(0.0, scene.scroll_max);
+                            if msg == WM_LBUTTONUP { scroll_drag = None; unsafe { ReleaseCapture(); } }
+                            scene_key = None; hover = None; pressed = None;
+                            unsafe { InvalidateRect(hwnd, std::ptr::null(), 0); }
+                            return Some(0);
+                        }
+                    }
                     let hit = scene
                         .controls
                         .iter()
-                        .position(|c| c.enabled && contains(&c.bounds, x, y));
+                        .position(|c| c.enabled && scene.accepts_pointer(c, x, y));
                     hover = hit;
                     if msg == WM_LBUTTONDOWN {
                         pressed = hit;
@@ -846,6 +883,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     }
                 }
                 WM_CAPTURECHANGED | WM_CANCELMODE => {
+                    scroll_drag = None;
                     pressed = None;
                 }
                 WM_KEYDOWN | WM_SYSKEYDOWN => {
@@ -927,7 +965,12 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                             };
                         }
                     }
-                    if wp == VK_TAB as usize || wp == VK_DOWN as usize || wp == VK_UP as usize {
+                    if scene.viewport.is_some() && (wp == VK_NEXT as usize || wp == VK_PRIOR as usize) {
+                        let step = scene.viewport.unwrap().bottom - TITLE_HEIGHT - 32.0;
+                        scroll_offset = (scroll_offset + if wp == VK_NEXT as usize { step } else { -step }).clamp(0.0, scene.scroll_max);
+                        scene_key = None;
+                        unsafe { InvalidateRect(hwnd, std::ptr::null(), 0); }
+                    } else if wp == VK_TAB as usize || wp == VK_DOWN as usize || wp == VK_UP as usize {
                         keyboard_focus = true;
                         let n = scene.controls.len();
                         let backwards = wp == VK_UP as usize
@@ -948,6 +991,14 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                             if scene.controls[focus.unwrap()].enabled { break; }
                             let i = focus.unwrap();
                             focus = Some(if backwards { (i + n - 1) % n } else { (i + 1) % n });
+                        }
+                        if let (Some(index), Some(viewport)) = (focus, scene.viewport) {
+                            let c = &scene.controls[index];
+                            if !matches!(c.kind, ControlKind::Caption) && c.bounds.left >= Tokens::CONTENT_X {
+                                let delta = if c.bounds.top < viewport.top + 8.0 { c.bounds.top - viewport.top - 8.0 }
+                                    else if c.bounds.bottom > viewport.bottom - 8.0 { c.bounds.bottom - viewport.bottom + 8.0 } else { 0.0 };
+                                if delta != 0.0 { scroll_offset = (scroll_offset + delta).clamp(0.0, scene.scroll_max); scene_key = None; }
+                            }
                         }
                     } else if wp == VK_SPACE as usize || wp == VK_RETURN as usize {
                         activate = focus;
@@ -1032,7 +1083,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     Action::BackupAdvanced => {page=10;scene_key=None;focus=None;}
                     Action::BackupPage(direction) => {
                         let count=6;
-                        backup_offset=if *direction<0{backup_offset.saturating_sub(count)}else{backup_offset+count};scene_key=None;
+                        backup_offset=if *direction<0{backup_offset.saturating_sub(count)}else{backup_offset+count};scene_key=None;scroll_offset=0.0;focus=None;
                     }
                     Action::BackupPolicy(kind) => {
                         let state=Rc::clone(&state);let kind=*kind;
@@ -1179,6 +1230,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     }
                     Action::FontPage(step) => {
                         font_offset = font_offset.saturating_add_signed(*step * 7).min(font_choices.len().saturating_sub(1) / 7 * 7);
+                        scroll_offset = 0.0; focus = None;
                         scene_key = None;
                     }
                     Action::Page(value) => {

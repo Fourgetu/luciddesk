@@ -1,64 +1,66 @@
 use super::*;
 
-pub(super) fn folder_defaults(s: &mut Scene, width: f32, value: folder::Defaults, mode: folder::EntryMode) {
-    let x = 248.0;
-    let w = width - x - 24.0;
-    s.text(Rect::from_xywh(x, 80.0, w - 220.0, 34.0), "文件夹入口模式", 1);
-    for (i, (label, choice)) in [("穿透模式", folder::EntryMode::Inline), ("普通模式", folder::EntryMode::Explorer)].into_iter().enumerate() {
-        s.button(
-            Rect::from_xywh(x + w - 208.0 + i as f32 * 108.0, 80.0, 100.0, 34.0),
-            label,
-            Action::FolderEntryMode(choice),
-            mode == choice,
-        );
-    }
-    s.text(Rect::from_xywh(x, 120.0, w, 24.0), match mode {
-        folder::EntryMode::Inline => "双击或按 Enter，在面板内进入子文件夹。",
-        folder::EntryMode::Explorer => "双击或按 Enter，在文件资源管理器中打开文件夹。",
-    }, 0);
-    s.text(Rect::from_xywh(x, 148.0, w, 24.0), "立即应用于所有文件夹面板，并记住选择。", 0);
-    s.separators.push(Rect::from_xywh(x, 184.0, w, 1.0));
-    s.text(
-        Rect::from_xywh(x, 198.0, w, 28.0),
-        "仅用于新建文件夹面板，已有面板保持原样。",
-        0,
+pub(super) fn folder_defaults(
+    s: &mut Scene,
+    width: f32,
+    value: folder::Defaults,
+    mode: folder::EntryMode,
+) {
+    let mut form = SettingsForm::new(
+        s,
+        width,
+        "设置文件夹的打开方式，以及新建文件夹面板的默认视图。",
     );
-    s.text(Rect::from_xywh(x, 236.0, w - 200.0, 34.0), "默认视图", 1);
-    for (i, (label, list)) in [("图标", false), ("列表", true)].into_iter().enumerate() {
-        s.button(
-            Rect::from_xywh(x + w - 184.0 + i as f32 * 96.0, 236.0, 88.0, 34.0),
-            label,
-            Action::FolderDefaults(folder::Defaults { list, ..value }),
-            value.list == list,
-        );
-    }
-    s.text(Rect::from_xywh(x, 282.0, w, 28.0), "列表默认显示列", 1);
-    s.text(
-        Rect::from_xywh(x, 312.0, w, 24.0),
-        "名称始终显示；切换到列表视图时生效。",
-        0,
-    );
-    for (i, (label, column)) in [("类型", 1), ("修改时间", 2), ("大小", 3)]
+    form.section("文件夹入口");
+    form.choices(
+        "打开方式",
+        "立即应用于所有文件夹面板，并记住选择。",
+        [
+            ("穿透模式", folder::EntryMode::Inline),
+            ("普通模式", folder::EntryMode::Explorer),
+        ]
         .into_iter()
-        .enumerate()
-    {
-        let y = 344.0 + i as f32 * 42.0;
-        s.text(Rect::from_xywh(x, y, w - 70.0, 28.0), label, 1);
-        s.toggle(
-            Rect::from_xywh(x + w - 46.0, y + 2.0, 46.0, 24.0),
+        .map(|(label, choice)| (label, Action::FolderEntryMode(choice), mode == choice))
+        .collect(),
+    );
+    form.info(
+        "当前打开行为",
+        match mode {
+            folder::EntryMode::Inline => "双击或按 Enter，在面板内进入子文件夹。",
+            folder::EntryMode::Explorer => "双击或按 Enter，在文件资源管理器中打开文件夹。",
+        },
+    );
+    form.section("新建面板默认值");
+    form.choices(
+        "默认视图",
+        "仅用于新建面板，已有面板保持原样。",
+        [("图标", false), ("列表", true)]
+            .into_iter()
+            .map(|(label, list)| {
+                (
+                    label,
+                    Action::FolderDefaults(folder::Defaults { list, ..value }),
+                    value.list == list,
+                )
+            })
+            .collect(),
+    );
+    for (label, column) in [("类型", 1), ("修改时间", 2), ("大小", 3)] {
+        form.toggle(
+            label,
+            "列表视图中显示此列；名称始终显示。",
+            value.columns & (1 << column) != 0,
             Action::FolderDefaults(folder::Defaults {
                 columns: value.columns ^ (1 << column),
                 ..value
             }),
-            value.columns & (1 << column) != 0,
-            true,
         );
     }
-    s.button(
-        Rect::from_xywh(x, 472.0, 144.0, 34.0),
+    form.button(
         "恢复视图默认值",
+        "还原新建面板的视图和显示列。",
+        "恢复默认",
         Action::FolderDefaults(folder::Defaults::default()),
-        false,
     );
 }
 
@@ -83,6 +85,9 @@ pub(super) fn scene(
     options: desktop_core::PaneOptions,
 ) -> Scene {
     let mut s = Scene {
+        viewport: None,
+        scroll_max: 0.0,
+        scroll_offset: 0.0,
         text: vec![],
         cards: vec![],
         separators: vec![],
@@ -109,7 +114,7 @@ pub(super) fn scene(
         s.text(Rect::from_xywh(30.0, y, 22.0, 38.0), icon, 5);
     }
     let x = 248.0;
-    let w = width - x - 24.0;
+    let w = (width - x - Tokens::MARGIN).min(Tokens::MAX_WIDTH);
     s.text(
         Rect::from_xywh(x, 28.0, w, 44.0),
         PAGES.iter().find(|(id, _, _)| *id == page).map_or(
@@ -133,112 +138,69 @@ pub(super) fn scene(
             Action::Page(0),
             false,
         );
-        let pw = 184.0;
-        s.cards.push(Rect::from_xywh(x, 116.0, pw, 120.0));
-        s.previews.push((
-            Rect::from_xywh(x + 12.0, 128.0, pw - 24.0, 72.0),
+        let mut form =
+            SettingsForm::new(&mut s, width, "选择预设颜色或精确调整 RGB，修改即时生效。");
+        form.preview(
+            &format!("面板预览 · {}%", (opacity * 100.0).round() as u8),
             color,
             opacity,
-        ));
-        s.text(
-            Rect::from_xywh(x + 14.0, 206.0, pw - 28.0, 22.0),
-            format!("面板预览 · {}%", (opacity * 100.0).round() as u8),
-            0,
         );
-        s.separators.push(Rect::from_xywh(x, 244.0, w, 1.0));
-        let px = x + pw + 20.0;
-        let palette_width = w - pw - 20.0;
-        s.text(
-            Rect::from_xywh(px, 116.0, palette_width, 24.0),
-            "预设配色",
-            1,
-        );
-        for (i, value) in [
-            0x181b20, 0xf5f6f8, 0x24364b, 0x32463d, 0x51405c, 0x5b3838, 0x745839, 0x416c78,
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let cw = (palette_width - 24.0) / 4.0;
-            s.button(
-                Rect::from_xywh(
-                    px + (i % 4) as f32 * (cw + 8.0),
-                    148.0 + (i / 4) as f32 * 46.0,
-                    cw,
-                    36.0,
-                ),
-                "",
-                Action::ColorPreset(value),
-                color == value,
-            );
-        }
+        form.colors(color);
+        form.section("自定义颜色");
         for (channel, name) in ["红 R", "绿 G", "蓝 B"].into_iter().enumerate() {
             let value = ((color >> ((2 - channel) * 8)) & 255) as u8;
-            let y = 258.0 + channel as f32 * 40.0;
-            s.text(Rect::from_xywh(x + 16.0, y, 48.0, 30.0), name, 0);
-            s.slider(
-                Rect::from_xywh(x + 74.0, y, w - 150.0, 30.0),
+            form.slider(
+                name,
+                "",
                 Slider {
                     value: f32::from(value),
                     max: 255.0,
                     centered: false,
                     channel: Some(channel as u8),
                 },
+                &value.to_string(),
                 Action::Channel(channel as u8, value),
             );
-            s.text(
-                Rect::from_xywh(x + w - 52.0, y, 40.0, 30.0),
-                value.to_string(),
-                0,
-            );
         }
-        s.text(Rect::from_xywh(x, 396.0, 52.0, 32.0), "HEX", 0);
-        s.button(
-            Rect::from_xywh(x + 54.0, 396.0, 126.0, 32.0),
+        form.button(
+            "HEX 色值",
+            "输入六位十六进制颜色，按 Enter 确认。",
             &format!("#{color:06X}"),
             Action::StyleInput(false),
-            false,
         );
-        s.text(
-            Rect::from_xywh(x + 192.0, 396.0, w - 304.0, 32.0),
-            "Enter 确认",
-            0,
-        );
-        s.button(
-            Rect::from_xywh(x + w - 104.0, 396.0, 104.0, 32.0),
+        form.button(
+            "恢复纯色设置",
+            "恢复默认颜色和不透明度。",
             "恢复默认",
             Action::SolidReset,
-            false,
         );
         return s;
     }
     if page == 0 {
-        let stacked = w < 470.0;
-        let extra = if stacked { 44.0 } else { 0.0 };
-        s.text(Rect::from_xywh(x + 16.0, 124.0, 28.0, 32.0), "\u{e793}", 4);
-        s.text(Rect::from_xywh(x + 54.0, 124.0, 120.0, 32.0), "应用主题", 1);
-        let bw = 86.0;
-        for (j, (name, value)) in [
-            ("跟随系统", PanelTheme::System),
-            ("浅色", PanelTheme::Light),
-            ("深色", PanelTheme::Dark),
-        ]
-        .iter()
-        .enumerate()
-        {
-            s.button(
-                Rect::from_xywh(
-                    if stacked { x + 16.0 } else { x + w - 282.0 } + j as f32 * 90.0,
-                    if stacked { 164.0 } else { 123.0 },
-                    bw,
-                    34.0,
-                ),
-                name,
-                Action::Change(Event::Theme(*value)),
-                appearance.0 == *value,
-            );
-        }
-        s.text(Rect::from_xywh(x, 192.0 + extra, w, 28.0), "窗口材质", 1);
+        let mut form = SettingsForm::new(
+            &mut s,
+            width,
+            "调整面板的主题、背景材质和通透效果，修改即时生效。",
+        );
+        form.section("外观");
+        form.choices(
+            "应用主题",
+            "选择浅色、深色或跟随系统。",
+            [
+                ("跟随系统", PanelTheme::System),
+                ("浅色", PanelTheme::Light),
+                ("深色", PanelTheme::Dark),
+            ]
+            .into_iter()
+            .map(|(name, value)| {
+                (
+                    name,
+                    Action::Change(Event::Theme(value)),
+                    appearance.0 == value,
+                )
+            })
+            .collect(),
+        );
         let solid = if matches!(appearance.1, Backdrop::Solid { .. }) {
             appearance.1
         } else {
@@ -251,410 +213,283 @@ pub(super) fn scene(
                 opacity: 0.85,
             }
         };
-        let bw = (w - 36.0) / 4.0;
-        for (j, (name, value)) in [
-            ("亚克力", Backdrop::Acrylic),
-            ("Mica", Backdrop::Mica),
-            ("Mica Alt", Backdrop::MicaAlt),
-            ("纯色", solid),
-        ]
-        .iter()
-        .enumerate()
-        {
-            s.button(
-                Rect::from_xywh(x + j as f32 * (bw + 12.0), 228.0 + extra, bw, 108.0),
-                name,
-                Action::Change(Event::Material(*value)),
-                appearance.1.kind() == value.kind(),
-            );
-        }
+        form.choices(
+            "窗口材质",
+            "选择面板背景的质感。",
+            [
+                ("亚克力", Backdrop::Acrylic),
+                ("Mica", Backdrop::Mica),
+                ("Mica Alt", Backdrop::MicaAlt),
+                ("纯色", solid),
+            ]
+            .into_iter()
+            .map(|(name, value)| {
+                (
+                    name,
+                    Action::Change(Event::Material(value)),
+                    appearance.1.kind() == value.kind(),
+                )
+            })
+            .collect(),
+        );
+        form.section("效果与预览");
+        let (color, opacity) = if let Backdrop::Solid { color, opacity } = appearance.1 {
+            (color, opacity)
+        } else {
+            (
+                if theme::is_dark(appearance.0) {
+                    0x242424
+                } else {
+                    0xf3f3f3
+                },
+                0.85,
+            )
+        };
+        form.preview("面板背景", color, opacity);
         if let Backdrop::Solid { color, opacity } = appearance.1 {
-            let y = 364.0 + extra;
-            s.previews
-                .push((Rect::from_xywh(x + 14.0, y, 30.0, 30.0), color, opacity));
-            s.button(
-                Rect::from_xywh(x + 54.0, y, 112.0, 30.0),
-                &format!("#{color:06X}"),
-                Action::StyleInput(false),
-                false,
-            );
-            s.button(
-                Rect::from_xywh(x + 178.0, y, 100.0, 30.0),
+            form.button(
+                "背景配色",
+                &format!("当前颜色 #{color:06X}"),
                 "编辑配色",
                 Action::SolidColor,
-                false,
-            );
-            s.button(
-                Rect::from_xywh(x + w - 114.0, y, 100.0, 30.0),
-                "恢复默认",
-                Action::SolidReset,
-                false,
             );
             let value = (opacity * 100.0).round() as u8;
-            s.text(
-                Rect::from_xywh(x + 14.0, y + 42.0, 100.0, 30.0),
+            form.slider(
                 "面板不透明度",
-                0,
-            );
-            s.slider(
-                Rect::from_xywh(x + 124.0, y + 42.0, w - 224.0, 30.0),
+                "数值越低，背景越通透。",
                 Slider::linear(f32::from(value), 100.0),
+                &format!("{value}%"),
                 Action::Opacity(value),
             );
-            s.button(
-                Rect::from_xywh(x + w - 86.0, y + 42.0, 72.0, 30.0),
-                &format!("{value}%"),
-                Action::StyleInput(true),
-                false,
+            form.button(
+                "恢复纯色设置",
+                "恢复默认颜色和不透明度。",
+                "恢复默认",
+                Action::SolidReset,
             );
         }
         if let Some(value) = appearance.1.strength() {
-            let y = 364.0 + extra;
-            s.text(Rect::from_xywh(x + 14.0, y, 100.0, 30.0), "效果强度", 0);
-            s.slider(
-                Rect::from_xywh(x + 124.0, y, w - 224.0, 30.0),
+            form.slider(
+                "效果强度",
+                "从通透到厚实，居中为默认。",
                 Slider::centered(f32::from(value), 100.0),
-                Action::Strength(value),
-            );
-            s.text(
-                Rect::from_xywh(x + w - 72.0, y, 58.0, 30.0),
-                if value == 50 {
-                    "默认".to_string()
+                &if value == 50 {
+                    "默认".into()
                 } else {
                     format!("{:+}", i16::from(value) - 50)
                 },
-                1,
+                Action::Strength(value),
             );
-            s.text(
-                Rect::from_xywh(x + 14.0, y + 42.0, w - 142.0, 30.0),
-                "通透 ↔ 厚实",
-                0,
-            );
-            s.button(
-                Rect::from_xywh(x + w - 114.0, y + 42.0, 100.0, 30.0),
+            form.button(
+                "恢复材质效果",
+                "将效果强度还原到默认值。",
                 "恢复默认",
                 Action::StrengthReset,
-                false,
             );
         }
     } else if page == 1 {
-        s.button(
-            Rect::from_xywh(x + w - 110.0, 34.0, 110.0, 32.0),
+        let mut form = SettingsForm::new(
+            &mut s,
+            width,
+            "调整面板外形、文字和图标布局，修改即时生效。",
+        );
+        form.section("面板外形");
+        form.slider(
+            "圆角大小",
+            "调整面板和标签的边角弧度。",
+            Slider::linear(
+                options.corner_radius,
+                desktop_core::PaneOptions::MAX_CORNER_RADIUS,
+            ),
+            &format!("{:.1}", options.corner_radius),
+            Action::Radius(options.corner_radius),
+        );
+        for (title, description, value, event) in [
+            (
+                "显示边框",
+                "用细边框区分面板和桌面背景。",
+                options.border,
+                Event::ToggleBorder,
+            ),
+            (
+                "边缘吸附",
+                "移动面板时对齐邻近面板和屏幕边缘。",
+                options.snap,
+                Event::ToggleSnap,
+            ),
+            (
+                "标题分隔线",
+                "在标题栏和内容之间显示细分隔线。",
+                header_divider::enabled(),
+                Event::ToggleHeaderDivider,
+            ),
+        ] {
+            form.toggle(title, description, value, Action::Change(event));
+        }
+        form.section("文字与图标");
+        form.choices(
+            "面板文字",
+            "自动模式根据面板背景选择明暗。",
+            [
+                ("自动", desktop_core::PanelText::Auto),
+                ("浅色文字", desktop_core::PanelText::Light),
+                ("深色文字", desktop_core::PanelText::Dark),
+            ]
+            .into_iter()
+            .map(|(label, value)| {
+                (
+                    label,
+                    Action::Change(Event::SetPanelText(value)),
+                    options.text == value,
+                )
+            })
+            .collect(),
+        );
+        form.toggle(
+            "明暗底色保护",
+            "提高文字可读性；关闭后保留原始通透效果。",
+            options.text_protection,
+            Action::Change(Event::ToggleTextProtection),
+        );
+        form.slider(
+            "图标网格缩放",
+            "同时调整图标大小和排列间距。",
+            Slider::centered(grid_slider_position(options.grid_scale), 1.0),
+            &format!("{:.0}%", options.grid_scale),
+            Action::GridSize(options.grid_scale),
+        );
+        form.button(
+            "恢复面板布局",
+            "将本页设置还原到默认值。",
             "恢复默认",
             Action::Change(Event::ResetPaneOptions),
-            false,
-        );
-        s.text(
-            Rect::from_xywh(x + 18.0, 104.0, w - 258.0, 34.0),
-            "圆角大小",
-            1,
-        );
-        let radius = options.corner_radius;
-        s.slider(
-            Rect::from_xywh(x + w - 248.0, 104.0, 180.0, 34.0),
-            Slider::linear(radius, desktop_core::PaneOptions::MAX_CORNER_RADIUS),
-            Action::Radius(radius),
-        );
-        s.text(
-            Rect::from_xywh(x + w - 58.0, 104.0, 46.0, 34.0),
-            format!("{radius:.1}"),
-            1,
-        );
-        for (i, (title, enabled, event)) in [
-            ("显示边框", options.border, Event::ToggleBorder),
-            ("边缘吸附", options.snap, Event::ToggleSnap),
-            ("标题分隔线", super::super::header_divider::enabled(), Event::ToggleHeaderDivider),
-        ]
-        .iter()
-        .enumerate()
-        {
-            let y = 148.0 + i as f32 * 40.0;
-            s.separators
-                .push(Rect::from_xywh(x + 18.0, y - 6.0, w - 36.0, 1.0));
-            s.text(
-                Rect::from_xywh(x + 18.0, y + 8.0, w - 100.0, 32.0),
-                *title,
-                1,
-            );
-            s.toggle(
-                Rect::from_xywh(x + w - 70.0, y + 12.0, 46.0, 24.0),
-                Action::Change(event.clone()),
-                *enabled,
-                true,
-            );
-        }
-        s.separators
-            .push(Rect::from_xywh(x + 18.0, 270.0, w - 36.0, 1.0));
-        s.text(
-            Rect::from_xywh(x + 18.0, 286.0, w - 36.0, 28.0),
-            "面板文字",
-            1,
-        );
-        let choice_width = (w - 52.0) / 3.0;
-        for (i, (label, value)) in [
-            ("自动", desktop_core::PanelText::Auto),
-            ("浅色文字", desktop_core::PanelText::Light),
-            ("深色文字", desktop_core::PanelText::Dark),
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            s.button(
-                Rect::from_xywh(
-                    x + 18.0 + i as f32 * (choice_width + 8.0),
-                    322.0,
-                    choice_width,
-                    34.0,
-                ),
-                label,
-                Action::Change(Event::SetPanelText(value)),
-                options.text == value,
-            );
-        }
-        s.text(
-            Rect::from_xywh(x + 18.0, 372.0, w - 100.0, 28.0),
-            "明暗底色保护",
-            1,
-        );
-        s.toggle(
-            Rect::from_xywh(x + w - 70.0, 374.0, 46.0, 24.0),
-            Action::Change(Event::ToggleTextProtection),
-            options.text_protection,
-            true,
-        );
-        s.text(
-            Rect::from_xywh(x + 18.0, 410.0, w - 36.0, 26.0),
-            "关闭后保留原始通透效果，文字颜色仍按上方选择。",
-            0,
-        );
-        let value = options.grid_scale;
-        s.text(
-            Rect::from_xywh(x + 18.0, 446.0, w - 258.0, 34.0),
-            "图标网格缩放",
-            1,
-        );
-        s.slider(
-            Rect::from_xywh(x + w - 248.0, 446.0, 168.0, 34.0),
-            Slider::centered(grid_slider_position(value), 1.0),
-            Action::GridSize(value),
-        );
-        s.text(
-            Rect::from_xywh(x + w - 74.0, 446.0, 66.0, 34.0),
-            format!("{value:.0}%"),
-            0,
         );
     } else if page == 3 {
-        for y in [198.0, 348.0] {
-            s.separators
-                .push(Rect::from_xywh(x + 18.0, y, w - 36.0, 1.0));
-        }
         let value = peek::settings();
-        s.text(
-            Rect::from_xywh(x + 18.0, 104.0, w - 110.0, 32.0),
+        let resolved = peek::resolved(&value);
+        let mut form =
+            SettingsForm::new(&mut s, width, "连接预览程序，在面板内使用快捷键预览文件。");
+        form.section("预览服务");
+        form.toggle_enabled(
             "启用文件预览",
-            1,
-        );
-        s.toggle(
-            Rect::from_xywh(x + w - 70.0, 108.0, 46.0, 24.0),
+            "找到可用程序后即可开启。",
+            value.enabled && resolved.is_some(),
+            resolved.is_some(),
             Action::PeekEnable,
-            value.enabled && peek::resolved(&value).is_some(),
-            peek::resolved(&value).is_some(),
         );
-        s.text(
-            Rect::from_xywh(x + 18.0, 214.0, w - 36.0, 26.0),
+        form.choices(
+            "预览程序",
+            "选择用于打开文件预览的程序。",
+            [peek::Provider::Peek, peek::Provider::QuickLook]
+                .into_iter()
+                .map(|provider| {
+                    (
+                        provider.name(),
+                        Action::PreviewProvider(provider),
+                        value.provider == provider,
+                    )
+                })
+                .collect(),
+        );
+        let path = resolved
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|| format!("未找到 {}，请选择程序", value.provider.name()));
+        form.path(
             if value.active_path().is_empty() {
                 "程序路径 · 自动"
             } else {
                 "程序路径"
             },
-            1,
+            &path,
+            vec![
+                ("浏览…", Action::PeekBrowse),
+                ("自动检测", Action::PeekDetect),
+            ],
         );
-        for (i, provider) in [peek::Provider::Peek, peek::Provider::QuickLook]
-            .into_iter()
-            .enumerate()
-        {
-            s.button(
-                Rect::from_xywh(x + 18.0 + i as f32 * 130.0, 154.0, 120.0, 32.0),
-                provider.name(),
-                Action::PreviewProvider(provider),
-                value.provider == provider,
-            );
-        }
-        let path = peek::resolved(&value)
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_else(|| format!("未找到 {}，请选择程序", value.provider.name()));
-        s.text(Rect::from_xywh(x + 18.0, 248.0, w - 36.0, 36.0), path, 0);
-        s.button(
-            Rect::from_xywh(x + 18.0, 294.0, 110.0, 34.0),
-            "浏览…",
-            Action::PeekBrowse,
-            false,
-        );
-        s.button(
-            Rect::from_xywh(x + 140.0, 294.0, 110.0, 34.0),
-            "自动检测",
-            Action::PeekDetect,
-            false,
-        );
-        s.text(Rect::from_xywh(x + 18.0, 362.0, 90.0, 26.0), "快捷键", 1);
-        s.button(
-            Rect::from_xywh(x + 114.0, 364.0, w - 250.0, 34.0),
+        form.section("快捷键");
+        form.shortcut(
+            "预览快捷键",
+            "仅在面板内生效。",
             &peek::shortcut_label(&value),
             Action::PeekShortcut,
-            false,
-        );
-        s.button(
-            Rect::from_xywh(x + w - 124.0, 364.0, 106.0, 34.0),
-            "恢复默认",
             Action::PeekReset,
-            false,
-        );
-        s.text(
-            Rect::from_xywh(x + 18.0, 410.0, w - 36.0, 24.0),
-            "仅在面板内生效",
-            0,
         );
     } else if page == 4 {
-        for y in [248.0] {
-            s.separators
-                .push(Rect::from_xywh(x + 18.0, y, w - 36.0, 1.0));
-        }
         let value = everything_settings::settings();
-        s.text(
-            Rect::from_xywh(x + 18.0, 104.0, w - 110.0, 32.0),
+        let resolved = everything_settings::resolved(&value);
+        let mut form = SettingsForm::new(&mut s, width, "连接 Everything，快速搜索本机文件。");
+        form.section("搜索服务");
+        form.toggle_enabled(
             "启用搜索面板",
-            1,
-        );
-        s.toggle(
-            Rect::from_xywh(x + w - 70.0, 108.0, 46.0, 24.0),
+            "找到 Everything 程序后即可开启。",
+            search_enabled && resolved.is_some(),
+            resolved.is_some(),
             Action::Change(Event::ToggleSearch),
-            search_enabled && everything_settings::resolved(&value).is_some(),
-            everything_settings::resolved(&value).is_some(),
         );
-        s.text(
-            Rect::from_xywh(x + 18.0, 174.0, 90.0, 30.0),
-            "全局快捷键",
-            1,
-        );
-        s.button(
-            Rect::from_xywh(x + 114.0, 172.0, w - 250.0, 34.0),
-            &search_hotkey::label(search_hotkey::settings()),
-            Action::SearchShortcut,
-            false,
-        );
-        s.button(
-            Rect::from_xywh(x + w - 124.0, 172.0, 106.0, 34.0),
-            "恢复默认",
-            Action::SearchReset,
-            false,
-        );
-        s.text(
-            Rect::from_xywh(x + 18.0, 210.0, w - 36.0, 24.0),
-            search_hotkey::status(),
-            0,
-        );
-        s.text(
-            Rect::from_xywh(x + 18.0, 264.0, w - 36.0, 26.0),
+        let path = resolved
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "未找到 Everything，请选择程序".into());
+        form.path(
             if value.path.is_empty() {
                 "程序路径 · 自动"
             } else {
                 "程序路径"
             },
-            1,
+            &path,
+            vec![
+                ("浏览…", Action::EverythingBrowse),
+                ("自动检测", Action::EverythingDetect),
+                ("启动", Action::EverythingLaunch),
+            ],
         );
-        let path = everything_settings::resolved(&value)
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "未找到 Everything，请选择程序".into());
-        s.text(Rect::from_xywh(x + 18.0, 294.0, w - 36.0, 24.0), path, 0);
-        s.button(
-            Rect::from_xywh(x + 18.0, 322.0, 110.0, 34.0),
-            "浏览…",
-            Action::EverythingBrowse,
-            false,
+        form.section("快捷键");
+        let status = search_hotkey::status();
+        form.shortcut(
+            "全局快捷键",
+            if status.is_empty() {
+                "在任意应用中唤起搜索面板。"
+            } else {
+                &status
+            },
+            &search_hotkey::label(search_hotkey::settings()),
+            Action::SearchShortcut,
+            Action::SearchReset,
         );
-        s.button(
-            Rect::from_xywh(x + 140.0, 322.0, 110.0, 34.0),
-            "自动检测",
-            Action::EverythingDetect,
-            false,
-        );
-        s.button(
-            Rect::from_xywh(x + w - 128.0, 322.0, 110.0, 34.0),
-            "启动",
-            Action::EverythingLaunch,
-            false,
-        );
-    } else if page == 5 {
-        s.app_icon = Some(Rect::from_xywh(x, 106.0, 64.0, 64.0));
-        s.text(
-            Rect::from_xywh(x + 84.0, 102.0, w - 84.0, 42.0),
-            "LucidPane",
-            3,
-        );
-        s.text(
-            Rect::from_xywh(x + 84.0, 148.0, w - 84.0, 26.0),
-            concat!("v", env!("CARGO_PKG_VERSION"), " · 预览版"),
-            0,
-        );
-        s.text(
-            Rect::from_xywh(x, 190.0, w, 28.0),
-            "让桌面井然有序，让文件触手可及。",
-            1,
-        );
-        s.text(
-            Rect::from_xywh(x + 132.0, 230.0, w - 132.0, 34.0),
-            "MIT / Apache-2.0",
-            0,
-        );
-        s.button(
-            Rect::from_xywh(x, 230.0, 116.0, 34.0),
-            "项目主页",
-            Action::ProjectHome,
-            false,
-        );
-
-        s.separators.push(Rect::from_xywh(x, 286.0, w, 1.0));
-        let revision = env!("LUCIDPANE_BUILD_REVISION");
-        let build = if revision == "unknown" {
-            "本地构建".to_owned()
-        } else {
-            format!("构建 {revision}")
-        };
-        s.text(Rect::from_xywh(x, 302.0, 76.0, 28.0), "版本信息", 0);
-        s.text(
-            Rect::from_xywh(x + 96.0, 302.0, w - 96.0, 28.0),
-            format!("{} · {build}", std::env::consts::ARCH),
-            1,
-        );
-        s.text(Rect::from_xywh(x, 340.0, 76.0, 28.0), "操作系统", 0);
-        s.text(
-            Rect::from_xywh(x + 96.0, 340.0, w - 96.0, 28.0),
-            crate::diagnostics::system().summary(),
-            1,
-        );
-
-        s.separators.push(Rect::from_xywh(x, 388.0, w, 1.0));
-        s.text(Rect::from_xywh(x, 404.0, 76.0, 32.0), "桌面连接", 0);
     }
+
     s
 }
 
 // Shared by the live page and raster tests so status and actions use the same layout.
 pub(super) fn about_status(s: &mut Scene, width: f32, status: &str, copied: bool) {
-    let x = 248.0;
-    let w = width - x - 24.0;
-    s.text(Rect::from_xywh(x + 96.0, 404.0, w - 96.0, 32.0), status, 1);
-    s.button(
-        Rect::from_xywh(x, 454.0, 144.0, 34.0),
-        "重新连接桌面",
-        Action::Change(Event::RetryDesktop),
-        false,
+    let mut form = SettingsForm::new(s, width, "让桌面井然有序，让文件触手可及。");
+    form.brand();
+    form.button(
+        "开源项目",
+        "MIT / Apache-2.0",
+        "项目主页",
+        Action::ProjectHome,
     );
-    s.button(
-        Rect::from_xywh(x + 156.0, 454.0, 116.0, 34.0),
-        if copied { "已复制" } else { "复制诊断" },
-        Action::CopyDiagnostics,
-        false,
+    form.section("版本与系统");
+    let revision = env!("LUCIDPANE_BUILD_REVISION");
+    let build = if revision == "unknown" {
+        "本地构建".to_owned()
+    } else {
+        format!("构建 {revision}")
+    };
+    form.info("版本信息", &format!("{} · {build}", std::env::consts::ARCH));
+    form.info("操作系统", &crate::diagnostics::system().summary());
+    form.section("桌面连接");
+    form.actions(
+        "连接状态",
+        status,
+        vec![
+            ("重新连接", Action::Change(Event::RetryDesktop)),
+            (
+                if copied { "已复制" } else { "复制诊断" },
+                Action::CopyDiagnostics,
+            ),
+        ],
     );
 }
 
@@ -666,92 +501,84 @@ pub(super) fn backup_page(
     advanced: bool,
 ) {
     let first_control = s.controls.len();
-    let x = 248.0;
-    let w = width - x - 24.0;
+    let mut form = SettingsForm::new(s, width, "备份仅保存配置和布局，不包含实际文件。");
     if advanced {
-        s.back_row(x, 80.0, w, "返回备份与恢复", Action::Page(6));
-        for (i, (label, event)) in [
-            ("打开配置目录", Event::OpenConfigDirectory),
-            ("重新加载配置", Event::ReloadConfig),
-            ("导出当前配置…", Event::ExportBackup),
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            s.row(x, 140.0 + i as f32 * 46.0, w, label, Action::Change(event));
-        }
+        form.back("返回备份与恢复", Action::Page(6));
+        form.section("配置维护");
+        form.button(
+            "配置目录",
+            "打开本地配置文件所在位置。",
+            "打开目录",
+            Action::Change(Event::OpenConfigDirectory),
+        );
+        form.button(
+            "重新加载配置",
+            "读取磁盘上的配置并应用到当前工作区。",
+            "重新加载",
+            Action::Change(Event::ReloadConfig),
+        );
+        form.button(
+            "导出当前配置",
+            "选择位置保存一份配置副本。",
+            "导出…",
+            Action::Change(Event::ExportBackup),
+        );
     } else {
         let status = if view.status.is_empty() {
             "尚无备份"
         } else {
             &view.status
         };
-        s.text(Rect::from_xywh(x + 10.0, 80.0, w - 20.0, 30.0), status, 0);
         if view.status.contains("失败") {
-            s.row(x, 80.0, w, "", Action::BackupStatus);
+            form.button("备份状态", status, "查看详情", Action::BackupStatus);
+        } else {
+            form.info("备份状态", status);
         }
-        s.text(
-            Rect::from_xywh(x + 10.0, 126.0, w - 80.0, 32.0),
+        form.section("自动备份");
+        form.toggle(
             "自动备份",
-            1,
-        );
-        s.toggle(
-            Rect::from_xywh(x + w - 56.0, 130.0, 46.0, 24.0),
-            Action::BackupPolicy(0),
+            "按设定间隔保存配置和布局。",
             policy.enabled,
-            true,
+            Action::BackupPolicy(0),
         );
-        s.text(
-            Rect::from_xywh(x + 10.0, 166.0, w - 246.0, 38.0),
+        form.combo(
             "备份间隔",
-            1,
-        );
-        s.control(
-            ControlKind::Combo,
-            Rect::from_xywh(x + w - 226.0, 169.0, 216.0, Style::COMBO_HEIGHT),
+            "自动备份的执行频率。",
             &format!("{} 分钟", policy.minutes),
             Action::BackupPolicy(1),
-            false,
         );
-        s.text(
-            Rect::from_xywh(x + 10.0, 208.0, w - 246.0, 38.0),
+        form.combo(
             "保留自动备份",
-            1,
-        );
-        s.control(
-            ControlKind::Combo,
-            Rect::from_xywh(x + w - 226.0, 211.0, 216.0, Style::COMBO_HEIGHT),
+            "超出数量的旧自动备份会被清理。",
             &format!("最近 {} 份", policy.keep),
             Action::BackupPolicy(2),
-            false,
         );
-        s.separators.push(Rect::from_xywh(x, 258.0, w, 1.0));
-        s.row(x, 274.0, w, "立即备份", Action::Change(Event::CreateBackup));
-        s.row(
-            x,
-            316.0,
-            w,
-            "从文件恢复…",
-            Action::Change(Event::RestoreBackup),
+        form.section("备份与恢复");
+        form.actions(
+            "手动操作",
+            "立即创建备份，或从已有备份文件恢复。",
+            vec![
+                ("立即备份", Action::Change(Event::CreateBackup)),
+                ("从文件恢复…", Action::Change(Event::RestoreBackup)),
+            ],
         );
-        s.forward_row(x, 358.0, w, "管理备份", Action::Page(9));
-        let next = if let Some(path) = &view.undo {
-            s.row(
-                x,
-                400.0,
-                w,
-                "撤销本次恢复…",
+        form.link(
+            "管理备份",
+            "查看、恢复、导出或删除已有备份。",
+            Action::Page(9),
+        );
+        if let Some(path) = &view.undo {
+            form.button(
+                "撤销本次恢复",
+                "恢复到本次还原操作之前的配置。",
+                "撤销恢复…",
                 Action::Change(Event::RestoreBackupPath(path.clone())),
             );
-            442.0
-        } else {
-            400.0
-        };
-        s.forward_row(x, next, w, "高级选项", Action::BackupAdvanced);
-        s.text(
-            Rect::from_xywh(x + 10.0, next + 48.0, w - 20.0, 28.0),
-            "仅保存配置和布局，不包含实际文件。",
-            0,
+        }
+        form.link(
+            "高级选项",
+            "管理配置目录、重新加载或导出配置。",
+            Action::BackupAdvanced,
         );
     }
     if view.busy {
@@ -769,55 +596,40 @@ pub(super) fn backup_page(
     }
 }
 pub(super) fn backup_history(s: &mut Scene, width: f32, view: &recovery::View, offset: usize) {
-    let x = 248.0;
-    let w = width - x - 24.0;
-    s.back_row(x, 80.0, w / 2.0, "返回备份与恢复", Action::Page(6));
-    s.row(
-        x + w / 2.0,
-        80.0,
-        w / 2.0,
-        "打开备份文件夹",
+    let mut form = SettingsForm::new(s, width, "最新备份在前；手动备份不会自动清理。");
+    form.back("返回备份与恢复", Action::Page(6));
+    form.button(
+        "备份文件夹",
+        "在文件资源管理器中查看本地备份。",
+        "打开目录",
         Action::Change(Event::OpenBackups),
     );
-    s.text(
-        Rect::from_xywh(x + 10.0, 124.0, w - 20.0, 26.0),
-        "最新在前 · 点击记录可恢复、导出或删除",
-        0,
-    );
-    for (i, record) in view.records.iter().skip(offset).take(6).enumerate() {
-        let y = 160.0 + i as f32 * 44.0;
-        s.row(
-            x,
-            y,
-            w,
+    form.section("备份记录");
+    for record in view.records.iter().skip(offset).take(6) {
+        form.button(
             &record.date,
+            &format!(
+                "{} · {}",
+                record.kind,
+                folder::size_text(Some(record.bytes), false)
+            ),
+            "管理…",
             Action::BackupRecord(record.path.clone()),
-        );
-        s.text(Rect::from_xywh(x + 180.0, y, 100.0, 38.0), record.kind, 0);
-        s.text(
-            Rect::from_xywh(x + w - 128.0, y, 118.0, 38.0),
-            folder::size_text(Some(record.bytes), false),
-            0,
         );
     }
     if view.records.is_empty() {
-        s.text(
-            Rect::from_xywh(x + 10.0, 172.0, w - 20.0, 32.0),
-            "暂无备份",
-            0,
-        );
+        form.info("暂无备份", "创建第一份备份后，记录会显示在这里。");
     }
-    s.text(
-        Rect::from_xywh(x + 10.0, 446.0, w - 190.0, 32.0),
-        format!("共 {} 份 · 手动备份不自动清理", view.records.len()),
-        0,
+    form.pager(
+        &format!(
+            "{} / {} · 共 {} 份",
+            offset / 6 + 1,
+            view.records.len().div_ceil(6).max(1),
+            view.records.len()
+        ),
+        (Action::BackupPage(-1), offset > 0),
+        (Action::BackupPage(1), offset + 6 < view.records.len()),
     );
-    if offset > 0 {
-        s.row(x + w - 180.0, 446.0, 86.0, "上一页", Action::BackupPage(-1));
-    }
-    if offset + 6 < view.records.len() {
-        s.row(x + w - 90.0, 446.0, 90.0, "下一页", Action::BackupPage(1));
-    }
     if view.busy {
         for c in &mut s.controls {
             if matches!(c.action, Action::BackupRecord(_)) {
@@ -827,18 +639,31 @@ pub(super) fn backup_history(s: &mut Scene, width: f32, view: &recovery::View, o
     }
 }
 
-
 pub(super) fn fonts(s: &mut Scene, width: f32, choices: &[String], offset: usize) {
-    let x = 248.0;
-    let w = width - x - 24.0;
     let selected = super::super::fonts::family();
-    s.text(Rect::from_xywh(x, 80.0, w, 28.0), format!("当前字体：{selected}"), 1);
-    s.text(Rect::from_xywh(x, 111.0, w, 24.0), "本机可缩放字体，已检查常用中英文字符。", 0);
-    for (at, name) in choices.iter().skip(offset).take(7).enumerate() {
-        s.button(Rect::from_xywh(x, 145.0 + at as f32 * 38.0, w, 32.0), name, Action::Font(name.clone()), name == &selected);
+    let mut form = SettingsForm::new(s, width, "本机可缩放字体，已检查常用中英文字符。");
+    form.info("当前字体", &selected);
+    form.section("可用字体");
+    for name in choices.iter().skip(offset).take(7) {
+        form.option(name, Action::Font(name.clone()), name == &selected);
     }
-    s.button(Rect::from_xywh(x, 420.0, 88.0, 32.0), "上一页", Action::FontPage(-1), false);
-    s.text(Rect::from_xywh(x + 100.0, 420.0, w - 200.0, 32.0), format!("{} / {} · {} 种字体", offset / 7 + 1, choices.len().div_ceil(7).max(1), choices.len()), 0);
-    s.button(Rect::from_xywh(x + w - 88.0, 420.0, 88.0, 32.0), "下一页", Action::FontPage(1), false);
-    s.button(Rect::from_xywh(x, 464.0, 144.0, 32.0), "恢复默认字体", Action::Font(super::super::assets::UI_FONT.into()), false);
+    if choices.is_empty() {
+        form.info("暂无可用字体", "可恢复默认字体继续使用。");
+    }
+    form.pager(
+        &format!(
+            "{} / {} · {} 种字体",
+            offset / 7 + 1,
+            choices.len().div_ceil(7).max(1),
+            choices.len()
+        ),
+        (Action::FontPage(-1), offset > 0),
+        (Action::FontPage(1), offset + 7 < choices.len()),
+    );
+    form.button(
+        "恢复默认字体",
+        "使用应用内置的默认字体。",
+        "恢复默认",
+        Action::Font(super::super::assets::UI_FONT.into()),
+    );
 }

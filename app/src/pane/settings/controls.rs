@@ -8,7 +8,7 @@ impl Style {
     pub const ICON_SLOT: f32 = 16.0;
     pub const ICON_GAP: f32 = 8.0;
     pub const NAV_TEXT_INSET: f32 = 48.0;
-    pub const ROW_INSET: f32 = 10.0;
+    pub const ROW_INSET: f32 = 16.0;
     pub const ROW_HEIGHT: f32 = 38.0;
     pub const COMBO_HEIGHT: f32 = 32.0;
     pub const RADIUS: f32 = 5.0;
