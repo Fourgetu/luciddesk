@@ -133,8 +133,9 @@ impl NativePresenter {
     pub fn service(&self) -> IServiceProvider {
         self.site.to_interface()
     }
-    pub fn set_keyboard_invocation(&self, keyboard: bool, hwnd: isize) {
-        input::trace_host(hwnd);
+    pub fn set_keyboard_invocation(&self, keyboard: bool, _hwnd: isize) {
+        #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
+        input::trace_host(_hwnd);
         self.site.keyboard.set(keyboard);
     }
     pub fn close(&self) -> Result<()> {

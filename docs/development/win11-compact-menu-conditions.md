@@ -66,7 +66,7 @@
 ## 复现
 
 ```powershell
-cargo build -p desktop-shell --example desktop_filter_probe --example desktop_filter_probe_hook
+cargo build -p desktop-shell --features desktop-menu-diagnostics --example desktop_filter_probe --example desktop_filter_probe_hook
 target/debug/examples/desktop_filter_probe.exe --in-process --visible-shell
 ```
 

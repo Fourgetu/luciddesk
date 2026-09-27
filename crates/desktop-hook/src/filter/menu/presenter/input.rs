@@ -19,8 +19,11 @@ const TIP_TEST: GUID = GUID::from_u128(0x5a8e3042_b975_46b6_b839_50baafe40541);
 // CDefView sets this flag for a mouse WM_CONTEXTMENU. Without an input flag,
 // the native flyout enters access-key display mode when it finishes loading.
 const MOUSE: u32 = 8;
+#[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
 thread_local! { static TRACE_HOST: Cell<isize> = const { Cell::new(0) }; }
+#[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
 pub(super) fn trace_host(hwnd: isize) { TRACE_HOST.set(hwnd); }
+#[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
 fn trace(name: windows_sys::core::PCWSTR, value: usize) {
     let hwnd = TRACE_HOST.get();
     if hwnd != 0 { unsafe { windows_sys::Win32::UI::WindowsAndMessaging::SetPropW(hwnd as _, name, value as _); } }
@@ -205,7 +208,9 @@ unsafe extern "system" fn prepare(this: *mut c_void, location: u32, site: *mut c
     unsafe {
         let value = &*(this as *const Adapter);
         let result = (value.native().prepare)(value.inner.as_raw(), location, site, point, menu, first, last, count, verbs, test, item);
+        #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
         trace(windows_sys::w!("LucidPane.Menu.PrepareCalled"), 1);
+        #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
         trace(windows_sys::w!("LucidPane.Menu.PrepareResult"), result.0 as u32 as usize);
         result
     }
@@ -217,7 +222,9 @@ unsafe extern "system" fn is_ready(this: *mut c_void, test: GUID, point: POINT) 
     unsafe {
         let value = &*(this as *const Adapter);
         let result = (value.native().is_ready)(value.inner.as_raw(), test, point);
+        #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
         trace(windows_sys::w!("LucidPane.Menu.ReadyCalled"), 1);
+        #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
         trace(windows_sys::w!("LucidPane.Menu.ReadyResult"), result as u32 as usize);
         result
     }
@@ -229,6 +236,7 @@ unsafe extern "system" fn show(this: *mut c_void, menu: HMENU, flags: u32, test:
         if (value.cancelled)() {
             return;
         }
+        #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
         trace(windows_sys::w!("LucidPane.Menu.ShowCalled"), 1);
         (value.native().show)(value.inner.as_raw(), menu, value.flags(flags), test);
     }
@@ -247,6 +255,7 @@ unsafe extern "system" fn show_tip(
             return;
         }
         let native = &**(value.inner.as_raw() as *const *const TipVtable);
+        #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
         trace(windows_sys::w!("LucidPane.Menu.ShowCalled"), 2);
         (native.show)(
             value.inner.as_raw(),

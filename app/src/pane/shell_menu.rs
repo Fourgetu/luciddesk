@@ -37,6 +37,7 @@ pub fn show_many(
                 },
             )
             .map_err(|error| format!("无法打开 Explorer 图标菜单：{error}"));
+            #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
             record_presenter(host);
             result
         });
@@ -50,6 +51,7 @@ pub fn show_many(
     shown.and(finished)
 }
 
+#[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
 fn record_presenter(host: isize) {
     use std::io::Write;
     use windows_sys::Win32::UI::WindowsAndMessaging::GetPropW;

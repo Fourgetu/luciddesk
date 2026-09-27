@@ -35,5 +35,10 @@ workspace = true
 
 [[example]]
 name = "desktop_filter_probe_hook"
+required-features = ["desktop-menu-diagnostics"]
 path = "examples/support/desktop_filter_probe_hook.rs"
 crate-type = ["cdylib"]
+
+[[example]]
+name = "desktop_filter_probe"
+required-features = ["desktop-menu-diagnostics"]

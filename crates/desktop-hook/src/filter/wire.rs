@@ -35,6 +35,14 @@ pub struct Request {
     pub names: Vec<String>,
     pub menu: Option<MenuContext>,
 }
+fn valid_header(op: u32, sequence: u32, count: usize) -> bool {
+    (SET..=MENU_CANCEL).contains(&op)
+        && sequence != 0
+        && count <= MAX_ITEMS
+        && (matches!(op, SET | MENU_PREPARE | REPLACE_IDENTITY) || count == 0)
+        && (op != MENU_PREPARE || count != 0)
+        && (op != REPLACE_IDENTITY || count == 2)
+}
 pub fn encode(op: u32, sequence: u32, names: &[String]) -> Result<Vec<u8>, String> {
     encode_request(op, sequence, names, None)
 }
@@ -47,8 +55,11 @@ fn encode_request(
     names: &[String],
     menu: Option<MenuContext>,
 ) -> Result<Vec<u8>, String> {
-    if names.len() > MAX_ITEMS {
-        return Err("桌面分组项目超过过滤上限".into());
+    if !valid_header(op, sequence, names.len())
+        || (op == MENU_PREPARE) != menu.is_some()
+        || menu.is_some_and(|context| context.owner == 0)
+    {
+        return Err("桌面过滤请求无效".into());
     }
     let mut bytes = Vec::new();
     for value in [op, sequence, names.len() as u32] {
@@ -64,6 +75,9 @@ fn encode_request(
             return Err("桌面项目标识无效".into());
         }
         let data: Vec<u16> = name.encode_utf16().collect();
+        if data.len() > 32767 {
+            return Err("桌面项目标识过长".into());
+        }
         bytes.extend((data.len() as u32).to_le_bytes());
         for word in data {
             bytes.extend(word.to_le_bytes());
@@ -72,7 +86,6 @@ fn encode_request(
             return Err("桌面过滤请求过大".into());
         }
     }
-    decode(&bytes).ok_or("桌面过滤请求无效")?;
     Ok(bytes)
 }
 pub fn decode(bytes: &[u8]) -> Option<Request> {
@@ -88,13 +101,7 @@ pub fn decode(bytes: &[u8]) -> Option<Request> {
     let op = word()?;
     let sequence = word()?;
     let count = word()? as usize;
-    if !(SET..=MENU_CANCEL).contains(&op)
-        || sequence == 0
-        || count > MAX_ITEMS
-        || (!matches!(op, SET | MENU_PREPARE | REPLACE_IDENTITY) && count != 0)
-        || (op == MENU_PREPARE && count == 0)
-        || (op == REPLACE_IDENTITY && count != 2)
-    {
+    if !valid_header(op, sequence, count) {
         return None;
     }
     let menu = if op == MENU_PREPARE {
@@ -160,6 +167,11 @@ mod tests {
         assert!(encode(SET, 0, &names).is_err());
         assert!(encode(PAUSE, 1, &names).is_err());
         assert!(encode(SET, 1, &["bad\0name".into()]).is_err());
+        // Length is measured in UTF-16 units, including surrogate pairs.
+        assert!(encode(SET, 1, &["a".repeat(32767)]).is_ok());
+        assert!(encode(SET, 1, &["😀".repeat(16384)]).is_err());
+        assert!(encode(SET, 1, &vec!["x".into(); MAX_ITEMS + 1]).is_err());
+        assert!(encode(SET, 1, &vec!["x".repeat(32767); 17]).is_err());
         assert!(encode(UPDATE_BEGIN, 1, &names).is_err());
         assert!(encode(UPDATE_END, 1, &[]).is_ok());
         assert!(encode(REPLACE_IDENTITY, 1, &names[..1]).is_err());

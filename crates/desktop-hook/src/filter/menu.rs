@@ -15,7 +15,6 @@ use std::{
     ptr::null_mut,
     rc::Rc,
     sync::{Arc, atomic::AtomicBool},
-    time::Instant,
 };
 use windows::{
     Win32::{
@@ -179,7 +178,7 @@ impl MenuHost {
             let view: IShellView = folder.cast()?;
             let first = Rc::new(Cell::new(None));
             let invocation = lifecycle::Invocation::new(cancelled);
-            let mut presenter_error = 0i32;
+
             let presenter = if compact_available {
                 presenter::NativePresenter::create(
                     &view,
@@ -193,7 +192,12 @@ impl MenuHost {
                     site.SetSite(&presenter.service())?;
                     Ok(presenter)
                 })
-                .inspect_err(|error| presenter_error = error.code().0)
+                .inspect_err(|_error| {
+                    #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
+                    if let Ok(hwnd) = view.GetWindow() {
+                        SetPropW(hwnd.0, windows_sys::w!("LucidPane.Menu.PresenterError"), _error.code().0 as u32 as usize as _);
+                    }
+                })
                 .ok()
             } else {
                 None
@@ -202,12 +206,9 @@ impl MenuHost {
             // The validated Shell selection still supplies a public classic menu.
             host.presenter = presenter.clone();
             let view_hwnd = view.GetWindow()?.0;
+            #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
             SetPropW(view_hwnd, windows_sys::w!("LucidPane.Menu.Presenter"),
                 if presenter.is_some() { 1usize } else { 2usize } as _);
-            if presenter_error != 0 {
-                SetPropW(view_hwnd, windows_sys::w!("LucidPane.Menu.PresenterError"),
-                    presenter_error as u32 as usize as _);
-            }
             let callbacks = Rc::new(MenuCallbacks {
                 first,
                 busy: Cell::new(false),
@@ -414,7 +415,7 @@ unsafe extern "system" fn menu_messages(
                 return 0;
             }
             #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
-            let started = Instant::now();
+            let started = std::time::Instant::now();
             let result = (|| -> Result<()> {
                 let context = callbacks.context.get();
                 let root = GetAncestor(hwnd, GA_ROOT);
@@ -429,6 +430,7 @@ unsafe extern "system" fn menu_messages(
                 {
                     if let Some(presenter) = &callbacks.presenter {
                         presenter.set_keyboard_invocation(wp != 0, hwnd as isize);
+                        #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
                         for name in [windows_sys::w!("LucidPane.Menu.PrepareCalled"), windows_sys::w!("LucidPane.Menu.PrepareResult"), windows_sys::w!("LucidPane.Menu.ReadyCalled"), windows_sys::w!("LucidPane.Menu.ReadyResult"), windows_sys::w!("LucidPane.Menu.ShowCalled")] { RemovePropW(hwnd, name); }
                     }
                     callbacks.first.set(None);
