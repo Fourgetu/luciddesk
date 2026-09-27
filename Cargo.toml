@@ -41,7 +41,6 @@ windows-sys = { version = "0.61.2", features = [
 windows = { version = "0.62.2", features = [
     "Win32_Storage_FileSystem",
     "Foundation",
-    "Foundation_Numerics",
     "System",
     "UI",
     "UI_Composition",
@@ -50,7 +49,6 @@ windows = { version = "0.62.2", features = [
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Direct3D",
     "Win32_Graphics_Direct3D11",
-    "Win32_Graphics_DirectComposition",
     "Win32_Graphics_Dxgi",
     "Win32_Graphics_Direct2D",
     "Win32_Graphics_Direct2D_Common",

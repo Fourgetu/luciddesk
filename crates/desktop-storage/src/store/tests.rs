@@ -1,4 +1,24 @@
 #[test]
+fn bundled_sqlite_omits_unused_extensions_but_keeps_core_safety() {
+    let db = rusqlite::Connection::open_in_memory().unwrap();
+    for (option, expected) in [
+        ("ENABLE_FTS3", false),
+        ("ENABLE_FTS5", false),
+        ("ENABLE_RTREE", false),
+        ("ENABLE_DBSTAT_VTAB", false),
+        ("OMIT_LOAD_EXTENSION", true),
+        ("ENABLE_API_ARMOR", true),
+        ("THREADSAFE=1", true),
+        ("DEFAULT_FOREIGN_KEYS", true),
+    ] {
+        let enabled: bool = db
+            .query_row("SELECT sqlite_compileoption_used(?1)", [option], |row| row.get(0))
+            .unwrap();
+        assert_eq!(enabled, expected, "unexpected SQLite build option: {option}");
+    }
+}
+
+#[test]
 fn unchanged_preferences_do_not_count_as_database_changes() {
     let store = WorkspaceStore::open_in_memory().unwrap();
     store.save_preference("test", "first").unwrap();
