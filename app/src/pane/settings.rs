@@ -388,7 +388,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
     let window = windows_window::Window::new("LucidPane 设置")
         .size(900, DEFAULT_HEIGHT)
         .style(WS_OVERLAPPEDWINDOW)
-        .ex_style(WS_EX_APPWINDOW | WS_EX_NOREDIRECTIONBITMAP)
+        .ex_style(WS_EX_TOOLWINDOW | WS_EX_NOREDIRECTIONBITMAP)
         .on_message(move |raw, msg, wp, lp| {
             let hwnd = raw.cast();
             if unsafe { defer_show(msg, lp, show_prepared.get()) } {

@@ -44,36 +44,37 @@ pub(super) fn prepare_close(hwnd: HWND) {
     }
 }
 
+/// Raise within the desktop-pane band, without jumping above ordinary application windows.
+fn desktop_insert_after(hwnd: HWND) -> HWND {
+    unsafe {
+        let mut peer = GetTopWindow(std::ptr::null_mut());
+        while !peer.is_null() {
+            if peer != hwnd && !GetPropW(peer, DESKTOP_LAYER).is_null()
+                && GetPropW(peer, CLOSING_PANE).is_null() && IsWindowVisible(peer) != 0 {
+                let mut previous = GetWindow(peer, GW_HWNDPREV);
+                if previous == hwnd { previous = GetWindow(hwnd, GW_HWNDPREV); }
+                // HWND_TOP preserves the non-topmost band; inserting after a topmost HWND would not.
+                if previous.is_null() || GetWindowLongW(previous, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST != 0 {
+                    return HWND_TOP;
+                }
+                return previous;
+            }
+            peer = GetWindow(peer, GW_HWNDNEXT);
+        }
+        HWND_BOTTOM
+    }
+}
+
 pub fn set_layer(hwnd: HWND, always_on_top: bool) {
     unsafe {
-        if always_on_top {
-            RemovePropW(hwnd, DESKTOP_LAYER);
-        } else {
-            SetPropW(hwnd, DESKTOP_LAYER, 1usize as _);
-        }
-        SetWindowPos(
-            hwnd,
-            if always_on_top {
-                HWND_TOPMOST
-            } else {
-                HWND_NOTOPMOST
-            },
-            0,
-            0,
-            0,
-            0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
-        );
+        // Let Windows change the actual topmost bit before applying desktop-band constraints.
+        RemovePropW(hwnd, DESKTOP_LAYER);
+        SetWindowPos(hwnd, if always_on_top { HWND_TOPMOST } else { HWND_NOTOPMOST },
+            0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         if !always_on_top {
-            SetWindowPos(
-                hwnd,
-                HWND_BOTTOM,
-                0,
-                0,
-                0,
-                0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
-            );
+            SetPropW(hwnd, DESKTOP_LAYER, 1usize as _);
+            SetWindowPos(hwnd, desktop_insert_after(hwnd), 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         }
     }
 }
@@ -226,6 +227,45 @@ fn frame_hit(r: RECT, p: POINT, scale: f32, collapsed: bool, locked: bool) -> u3
 #[cfg(test)]
 mod hit_tests {
     use super::*;
+
+    #[test]
+    fn desktop_panes_raise_among_peers_without_covering_apps() {
+        unsafe {
+            let make = || CreateWindowExW(WS_EX_TOOLWINDOW, windows_sys::w!("STATIC"), std::ptr::null(),
+                WS_POPUP | WS_VISIBLE, 20, 20, 240, 120, std::ptr::null_mut(), std::ptr::null_mut(),
+                std::ptr::null_mut(), std::ptr::null());
+            let first = make();
+            let second = make();
+            let app = make();
+            for hwnd in [first, second] {
+                assert!(!hwnd.is_null());
+                assert_ne!(windows_sys::Win32::UI::Shell::SetWindowSubclass(hwnd, Some(borderless_proc), 1, 0), 0);
+            }
+            let above = |a, b| {
+                let mut current = GetWindow(b, GW_HWNDPREV);
+                while !current.is_null() {
+                    if current == a { return true; }
+                    current = GetWindow(current, GW_HWNDPREV);
+                }
+                false
+            };
+            set_layer(first, false);
+            SetWindowPos(app, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            set_layer(second, false);
+            assert!(above(second, first), "new pane must be above its peers");
+            assert!(above(app, second), "desktop panes must remain below applications");
+            SetWindowPos(first, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            assert!(above(first, second), "activation must raise the old pane");
+            assert!(above(app, first));
+            set_layer(first, true);
+            assert_ne!(GetWindowLongW(first, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST, 0);
+            set_layer(first, false);
+            assert_eq!(GetWindowLongW(first, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST, 0);
+            assert!(above(app, first));
+            for hwnd in [first, second, app] { DestroyWindow(hwnd); }
+        }
+    }
+
 
     #[test]
     fn tab_click_jitter_does_not_start_a_pane_drag() {
@@ -494,7 +534,7 @@ pub(super) unsafe extern "system" fn borderless_proc(
         if message == WM_WINDOWPOSCHANGING && !GetPropW(hwnd, DESKTOP_LAYER).is_null() {
             let position = &mut *(lparam as *mut WINDOWPOS);
             if position.flags & SWP_NOZORDER == 0 {
-                position.hwndInsertAfter = HWND_BOTTOM;
+                position.hwndInsertAfter = desktop_insert_after(hwnd);
             }
         }
         if message == WM_NCDESTROY {
@@ -540,14 +580,7 @@ where
     let window = Window::new(&window_title)
         .size(bounds.width as i32, bounds.height as i32)
         .style(WS_POPUP | WS_THICKFRAME | WS_SYSMENU)
-        .ex_style(
-            WS_EX_NOREDIRECTIONBITMAP
-                | if !inspect {
-                    WS_EX_TOOLWINDOW
-                } else {
-                    WS_EX_APPWINDOW
-                },
-        )
+        .ex_style(WS_EX_NOREDIRECTIONBITMAP | WS_EX_TOOLWINDOW)
         .on_message(move |raw, message, wparam, lparam| {
             if unsafe { crate::window_visibility::defer_show(message, lparam, show_prepared.get()) } {
                 return Some(0);
@@ -664,6 +697,13 @@ where
                     // here or in WM_MOUSELEAVE, which would flood the queue.
                     update_pointer(hwnd, &model, None);
                     None
+                }
+                WM_MOUSEACTIVATE => {
+                    unsafe {
+                        SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0,
+                            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                    }
+                    Some(MA_ACTIVATE as isize)
                 }
                 WM_ACTIVATE => {
                     unsafe {
