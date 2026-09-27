@@ -24,6 +24,7 @@ use windows_sys::Win32::{
 };
 
 const TIMER: usize = MAGIC;
+const RECOVERY_TIMER: usize = MAGIC + 1;
 thread_local! { static STATE: RefCell<Option<State>> = const { RefCell::new(None) }; }
 // COM calls can synchronously re-enter the subclass while STATE is borrowed.
 // Keep the redraw gate separate so Explorer cannot unfreeze the restored items.
@@ -32,9 +33,10 @@ struct State {
     hwnd: HWND,
     owner: HWND,
     process: HANDLE,
+    owner_watch: Option<owner::OwnerWatch>,
     view: IShellView,
     folder: IFolderView2,
-    legacy: IShellFolderView,
+    object_view: IShellFolderView,
     membership: items::Membership,
     menu_host: Option<menu::worker::Worker>,
     menu_prepared: bool,
@@ -51,6 +53,7 @@ struct State {
 }
 impl Drop for State {
     fn drop(&mut self) {
+        self.owner_watch.take();
         unsafe {
             CloseHandle(self.process);
         }
@@ -95,8 +98,8 @@ fn attach_inner(hwnd: HWND, owner: HWND) -> Result<()> {
             ));
         }
         let folder: IFolderView2 = view.cast()?;
-        let legacy: IShellFolderView = view.cast()?;
-        if legacy.GetObjectCount()? as i32 != folder.ItemCount(SVGIO_ALLVIEW)? {
+        let object_view: IShellFolderView = view.cast()?;
+        if object_view.GetObjectCount()? as i32 != folder.ItemCount(SVGIO_ALLVIEW)? {
             return Err(windows::core::Error::from_hresult(
                 windows::Win32::Foundation::E_FAIL,
             ));
@@ -117,13 +120,14 @@ fn attach_inner(hwnd: HWND, owner: HWND) -> Result<()> {
             CloseHandle(process);
             return Err(windows::core::Error::from_thread());
         }
-        let state = State {
+        let mut state = State {
             hwnd,
             owner,
             process,
+            owner_watch: None,
             view,
             folder,
-            legacy,
+            object_view,
             membership: Default::default(),
             menu_host: None,
             menu_prepared: false,
@@ -138,6 +142,12 @@ fn attach_inner(hwnd: HWND, owner: HWND) -> Result<()> {
             drag_start: None,
             user_menu: false,
         };
+        state.owner_watch = Some(owner::OwnerWatch::new(process, owner, hwnd)?);
+        // The caller may abandon a stale view while Shell COM initialization
+        // is running. Never publish a late attachment to its destroyed owner.
+        if IsWindow(owner) == 0 {
+            return Err(windows::core::Error::from_hresult(windows::Win32::Foundation::E_ABORT));
+        }
         if SetWindowSubclass(hwnd, Some(subclass), MAGIC, 0) == 0 {
             return Err(windows::core::Error::from_thread());
         }
@@ -145,7 +155,8 @@ fn attach_inner(hwnd: HWND, owner: HWND) -> Result<()> {
             RemoveWindowSubclass(hwnd, Some(subclass), MAGIC);
             return Err(windows::core::Error::from_thread());
         }
-        if SetTimer(hwnd, TIMER, 1000, None) == 0 {
+        // Last-resort lifecycle check if a wakeup is lost; never scans items.
+        if SetTimer(hwnd, TIMER, 60_000, None) == 0 {
             RemoveWindowSubclass(GetParent(hwnd), Some(subclass), MAGIC);
             RemoveWindowSubclass(hwnd, Some(subclass), MAGIC);
             return Err(windows::core::Error::from_thread());
@@ -159,16 +170,30 @@ fn attach_inner(hwnd: HWND, owner: HWND) -> Result<()> {
 }
 
 impl State {
+    fn arm_recovery(&self) {
+        unsafe {
+            KillTimer(self.hwnd, RECOVERY_TIMER);
+            if let Some(delay) = schedule::recovery_delay(
+                if self.failed { None } else { self.read_retry.deadline() },
+                self.updating, self.queued, std::time::Instant::now(),
+            ) {
+                SetTimer(self.hwnd, RECOVERY_TIMER, delay, None);
+            }
+        }
+    }
     fn queue(&mut self) {
         if !self.queued {
-            self.queued = unsafe { PostMessageW(self.hwnd, work_message(), 0, 0) != 0 };
+            self.queued = true;
+            if unsafe { PostMessageW(self.hwnd, work_message(), 0, 0) } == 0 {
+                self.arm_recovery();
+            }
         }
     }
     fn redraw(&mut self, enabled: bool) {
         set_redraw(self.hwnd, &mut self.redraw_paused, enabled);
     }
     fn restore(&mut self) {
-        if self.membership.restore(&self.folder, &self.legacy).is_err() {
+        if self.membership.restore(&self.folder, &self.object_view).is_err() {
             // A refresh asks the real data source to rebuild membership. It does
             // not invent missing filesystem items or depend on our cached PIDLs.
             let _ = unsafe { self.view.Refresh() };
@@ -214,7 +239,7 @@ impl State {
                 self.updating = false;
                 let result = self
                     .membership
-                    .apply(&self.folder, &self.legacy, self.paused);
+                    .apply(&self.folder, &self.object_view, self.paused);
                 self.redraw(true);
                 unsafe {
                     SetPropW(
@@ -307,7 +332,7 @@ impl State {
         }
         let result = self
             .membership
-            .apply(&self.folder, &self.legacy, self.paused);
+            .apply(&self.folder, &self.object_view, self.paused);
         if !self.paused && !self.updating {
             self.redraw(true);
         }
@@ -317,7 +342,7 @@ impl State {
         &mut self,
         result: std::result::Result<(), items::ApplyError>,
     ) -> Option<items::ApplyError> {
-        match result {
+        let error = match result {
             Ok(()) => {
                 self.read_retry.recovered();
                 None
@@ -335,7 +360,9 @@ impl State {
                 }
                 Some(error)
             }
-        }
+        };
+        self.arm_recovery();
+        error
     }
     fn cleanup(&mut self) {
         self.menu_host.take();
@@ -345,8 +372,10 @@ impl State {
 }
 
 fn remove_registration(hwnd: HWND) {
+    diagnostics::clear(hwnd);
     unsafe {
         KillTimer(hwnd, TIMER);
+        KillTimer(hwnd, RECOVERY_TIMER);
         RemoveWindowSubclass(GetParent(hwnd), Some(subclass), MAGIC);
         RemoveWindowSubclass(hwnd, Some(subclass), MAGIC);
         for property in [
@@ -477,7 +506,7 @@ unsafe extern "system" fn subclass(
                 let paused = &mut state.redraw_paused;
                 let result = state.membership.apply_before_write(
                     &state.folder,
-                    &state.legacy,
+                    &state.object_view,
                     false,
                     || set_redraw(hwnd, paused, false),
                 );
@@ -511,7 +540,11 @@ unsafe extern "system" fn subclass(
                 state.queue();
                 return Some(MAGIC as isize);
             }
-            if msg == work_message() || (msg == WM_TIMER && wp == TIMER) {
+            if msg == work_message() || (msg == WM_TIMER && matches!(wp, TIMER | RECOVERY_TIMER)) {
+                let urgent = msg == work_message()
+                    || state.queued
+                    || state.pending.is_some()
+                    || (!state.failed && state.read_retry.pending());
                 state.queued = false;
                 if unsafe {
                     IsWindow(state.owner) == 0 || WaitForSingleObject(state.process, 0) == 0
@@ -527,12 +560,16 @@ unsafe extern "system" fn subclass(
                     // Do not restore all members on a cleanup/read error. Normal
                     // filtering will retry; presentation must always be released.
                     state.updating = false;
-                    let result = state.membership.apply(&state.folder, &state.legacy, false);
+                    let result = state.membership.apply(&state.folder, &state.object_view, false);
                     state.apply_result(result);
                     state.redraw(true);
                     unsafe {
                         SetPropW(hwnd, UPDATE_RELEASED, state.update_sequence as usize as _);
                     }
+                }
+                // Lifecycle/release timers do not enumerate unchanged membership.
+                if !urgent {
+                    return Some(0);
                 }
                 let request = state.pending.take();
                 if request.is_some() {
@@ -574,7 +611,8 @@ unsafe extern "system" fn subclass(
                     } else if state.paused {
                         Ok(())
                     } else {
-                        state.membership.apply(&state.folder, &state.legacy, false)
+                        let _sample = diagnostics::Sample::start(state.hwnd);
+                        state.membership.apply(&state.folder, &state.object_view, false)
                     };
                     if let Some(error) = state.apply_result(result) {
                         if request.is_some() {
@@ -648,6 +686,13 @@ unsafe extern "system" fn subclass(
     })
     .ok()
     .flatten();
+    if msg == work_message() || (msg == WM_TIMER && matches!(wp, TIMER | RECOVERY_TIMER)) {
+        STATE.with(|slot| {
+            if let Ok(slot) = slot.try_borrow() {
+                if let Some(state) = slot.as_ref() { state.arm_recovery(); }
+            }
+        });
+    }
     handled.unwrap_or_else(|| unsafe { DefSubclassProc(hwnd, msg, wp, lp) })
 }
 

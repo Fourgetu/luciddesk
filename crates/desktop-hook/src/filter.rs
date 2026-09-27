@@ -1,9 +1,13 @@
 //! Explorer view membership filtering; no private function addresses or detours.
 mod client;
+mod diagnostics;
 mod engine;
+mod explorer;
 mod items;
 mod menu;
+mod owner;
 mod retry;
+mod schedule;
 mod wire;
 pub use client::FilterSession;
 

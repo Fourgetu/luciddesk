@@ -10,7 +10,7 @@ use super::assets::RECYCLE_BIN_PARSING_NAME;
 use super::search::{everything_settings, hotkey as search_hotkey};
 use super::*;
 use audit::DesktopAudit;
-use desktop_hook::{filter::FilterSession, notifications::DESKTOP_INPUT_MESSAGE};
+use desktop_hook::{filter::FilterSession, notifications::{DESKTOP_INPUT_MESSAGE, DESKTOP_EXIT_MESSAGE}};
 pub(super) use icons::refresh_icons;
 use icons::{queue_pane_icons, retain_pane_images};
 use inventory::Inventory;
@@ -251,6 +251,9 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), S
             if message == WM_DESTROY {
                 // Releasing a failed/stale connection must not quit independent panes.
                 Some(0)
+            } else if message == DESKTOP_EXIT_MESSAGE {
+                work_ready.notify();
+                Some(0)
             } else if message == ICON_CHANGE_MESSAGE {
                 notify.set(true);
                 work_ready.notify();
@@ -287,11 +290,7 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), S
         })
         .create()
         .map_err(|e| e.to_string())?;
-    let hook = FilterSession::connect(
-        view,
-        controller.hwnd() as isize,
-        &crate::hook_runtime::runtime_dll(path)?,
-    )?;
+    // Subscribe before reading so changes during initialization are not lost.
     let icon_subscription = desktop_shell::DesktopChangeSubscription::register(
         controller.hwnd() as isize,
         ICON_CHANGE_MESSAGE,
@@ -302,7 +301,19 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), S
         RECYCLE_CHANGE_MESSAGE,
     )
     .map_err(|error| error.to_string())?;
+    // Warm and validate the Shell view from the client before injecting work
+    // into Explorer's STA. During startup, the HWND can exist before ShellWindows
+    // is ready; asking Explorer to initialize it from its own callback can stall.
+    // Reuse this snapshot below instead of performing a second enumeration.
     let snapshot = inventory::capture(&managed_identities(&state.borrow()))?;
+    if desktop_hook::desktop_view()? != view {
+        return Err("读取清单期间桌面视图已替换，将重新定位".into());
+    }
+    let hook = FilterSession::connect(
+        view,
+        controller.hwnd() as isize,
+        &crate::hook_runtime::runtime_dll(path)?,
+    )?;
     let (sender, receiver) = mpsc::channel();
     let session = Session {
         wake: state.borrow().wake.clone(),
@@ -339,7 +350,9 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), S
     let mut s = state.borrow_mut();
     s.receiver = receiver;
     s.session = Some(session);
-    if let Err(error) = reconcile_inventory(&mut s) {
+    // A fresh hook has no desired membership. Cached pane images may produce
+    // no loading-completion event, so publish now rather than waiting for one.
+    if let Err(error) = reconcile_inventory(&mut s).and_then(|()| sync(&mut s)) {
         s.session.take();
         return Err(error);
     }
@@ -750,6 +763,11 @@ fn poll_inventory(s: &mut PaneApp, urgent: bool) -> Result<bool, String> {
         .as_ref()
         .is_some_and(|next| !inventory::same(&h.snapshot, next));
     h.audit.complete(changed);
+    // One scheduler owns fallback audits and hook repair. Changed inventories
+    // publish membership through sync(); unchanged ones still repair missed events.
+    if !changed {
+        h.hook.repair()?;
+    }
     if let Some(snapshot) = snapshot.filter(|_| changed) {
         h.snapshot = snapshot;
         reconcile_inventory(s)?;
@@ -837,6 +855,28 @@ pub(super) fn release(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reconnect_membership_uses_cached_images_and_waits_only_for_missing_ones() {
+        let mut s = crate::pane::tests::test_state();
+        s.images.clear();
+        assert!(hidden_names(&s).is_empty());
+        let identities: Vec<_> = s.workspace.desktop_items().iter()
+            .filter(|item| matches!(item.placement(), DesktopPlacement::Pane { .. }))
+            .map(|item| item.identity().clone()).collect();
+        assert!(identities.len() > 1);
+        let image = Arc::new(assets::Pixels { width: 1, height: 1, data: vec![0; 4] });
+        s.images.insert(identities[0].persistent_key(), image.clone());
+        assert_eq!(hidden_names(&s), vec![identities[0].activation_name().to_string_lossy().into_owned()]);
+        for identity in &identities {
+            s.images.insert(identity.persistent_key(), image.clone());
+        }
+        assert_eq!(hidden_names(&s).len(), identities.len());
+        s.workspace.desktop_item_mut(&identities[0]).unwrap()
+            .set_placement(DesktopPlacement::default());
+        assert_eq!(hidden_names(&s).len(), identities.len() - 1,
+            "cached pixels must not cause an item released to Explorer to be hidden");
+    }
 
     #[test]
     fn failed_inventory_save_remains_pending_until_persisted_and_presented() {

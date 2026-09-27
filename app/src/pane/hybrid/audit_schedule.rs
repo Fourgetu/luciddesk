@@ -2,7 +2,7 @@
 use std::time::Duration;
 
 const MIN_INTERVAL: Duration = Duration::from_secs(2);
-const MAX_INTERVAL: Duration = Duration::from_secs(8);
+const MAX_INTERVAL: Duration = Duration::from_secs(30);
 
 pub(super) struct AuditSchedule {
     interval: Duration,
@@ -53,7 +53,7 @@ mod tests {
     #[test]
     fn idle_checks_back_off_but_notifications_and_changes_reset_them() {
         let mut schedule = AuditSchedule::default();
-        for seconds in [2, 4, 8, 8, 8] {
+        for seconds in [2, 4, 8, 16, 30, 30] {
             let interval = Duration::from_secs(seconds);
             assert_eq!(schedule.remaining(Duration::ZERO), interval);
             assert_eq!(schedule.remaining(interval), Duration::ZERO);
@@ -98,7 +98,7 @@ mod tests {
                 checks += 1;
             }
         }
-        assert_eq!(checks, 8); // Previously 30 fixed two-second checks.
-        assert!(60 - last < 8);
+        assert_eq!(checks, 5);
+        assert!(60 - last < 30);
     }
 }

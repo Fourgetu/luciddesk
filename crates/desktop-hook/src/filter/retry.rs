@@ -20,6 +20,9 @@ impl ReadRetry {
     pub fn pending(&self) -> bool {
         self.due.is_some()
     }
+    pub fn deadline(&self) -> Option<Instant> {
+        self.due
+    }
     pub fn recovered(&mut self) {
         *self = Self::default();
     }

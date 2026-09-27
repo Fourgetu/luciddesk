@@ -11,6 +11,8 @@ pub(super) struct State {
     pub path: PathBuf,
     pub desktop_error: Option<String>,
     last_attempt: Instant,
+    reconnect_failures: u8,
+    reconnecting: bool,
     last_maintenance: Instant,
     pub layouts: display_layout::Layouts,
     pub backup: recovery::Manager,
@@ -22,6 +24,8 @@ impl State {
             path,
             desktop_error: None,
             last_attempt: Instant::now(),
+            reconnect_failures: 0,
+            reconnecting: false,
             last_maintenance: Instant::now(),
             layouts: Default::default(),
             backup: recovery::Manager::default(),
@@ -48,12 +52,19 @@ pub(super) fn reconnect(state: &Rc<RefCell<PaneApp>>) {
         let Some(runtime) = &mut s.runtime else {
             return;
         };
+        if runtime.reconnecting { return; }
+        runtime.reconnecting = true;
         runtime.last_attempt = Instant::now();
         runtime.path.clone()
     };
     let error = hybrid::connect(state, &path).err();
     let mut s = state.borrow_mut();
     if let Some(runtime) = &mut s.runtime {
+        runtime.reconnecting = false;
+        runtime.last_attempt = Instant::now();
+        runtime.reconnect_failures = if error.is_some() {
+            runtime.reconnect_failures.saturating_add(1)
+        } else { 0 };
         if runtime.desktop_error != error {
             if let Some(error) = &error {
                 eprintln!("Desktop integration unavailable: {error}");
@@ -74,6 +85,8 @@ fn suspend(state: &Rc<RefCell<PaneApp>>) {
         s.session.take();
         if let Some(runtime) = &mut s.runtime {
             runtime.desktop_error = Some("Explorer 连接已断开，正在等待恢复".into());
+            runtime.reconnect_failures = 0;
+            runtime.last_attempt = Instant::now() - reconnect_delay(0);
         }
         let mut removed = Vec::new();
         let mut at = 0;
@@ -112,7 +125,7 @@ pub(super) fn maintain(state: &Rc<RefCell<PaneApp>>, force: bool) -> Result<(), 
         .borrow()
         .runtime
         .as_ref()
-        .is_some_and(|r| r.last_attempt.elapsed() >= Duration::from_secs(10));
+        .is_some_and(|r| !r.reconnecting && r.last_attempt.elapsed() >= reconnect_delay(r.reconnect_failures));
     if force || due {
         reconnect(state);
     }
@@ -161,14 +174,18 @@ pub(super) fn maintain(state: &Rc<RefCell<PaneApp>>, force: bool) -> Result<(), 
     Ok(())
 }
 
+fn reconnect_delay(failures: u8) -> Duration {
+    Duration::from_millis((250u64 << failures.saturating_sub(1).min(6)).min(10_000))
+}
+
 fn next_work(s: &PaneApp, hotkey: &search_hotkey::Registration) -> Option<u32> {
     let now = Instant::now();
     let runtime = s.runtime.as_ref();
     // Slow safety check for missed window lifecycle notifications or a failed
     // view creation; ordinary work is driven by notifications and deadlines.
     let maintenance = runtime.map(|r| r.last_maintenance + Duration::from_secs(30));
-    let reconnect = runtime.filter(|_| s.session.is_none())
-        .map(|r| r.last_attempt + Duration::from_secs(10));
+    let reconnect = runtime.filter(|r| s.session.is_none() && !r.reconnecting)
+        .map(|r| r.last_attempt + reconnect_delay(r.reconnect_failures));
     hybrid::next_work(s).map(u64::from).map(Duration::from_millis)
         .map(|delay| now + delay).into_iter()
         .chain(maintenance)
@@ -310,7 +327,8 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
                                 runtime.layouts.invalidate();
                             }
                             if std::mem::take(&mut reconnect_hint) {
-                                runtime.last_attempt = Instant::now() - Duration::from_secs(10);
+                                runtime.reconnect_failures = 0;
+                                runtime.last_attempt = Instant::now() - reconnect_delay(0);
                             }
                         }
                         folder::poll(&mut s);
@@ -369,6 +387,32 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reconnect_retries_start_fast_and_remain_bounded() {
+        let delays: Vec<_> = (1..=9).map(|n| reconnect_delay(n).as_millis()).collect();
+        assert_eq!(delays, [250, 500, 1000, 2000, 4000, 8000, 10000, 10000, 10000]);
+        assert_eq!(reconnect_delay(u8::MAX), Duration::from_secs(10));
+        assert_eq!(reconnect_delay(0), Duration::from_millis(250));
+    }
+
+    #[test]
+    fn nested_reconnect_does_not_start_another_shell_connection() {
+        let mut app = super::super::tests::test_state();
+        let mut runtime = State::new(std::path::PathBuf::from("unused-reconnect-test.db"));
+        runtime.reconnecting = true;
+        runtime.reconnect_failures = 3;
+        let attempt = runtime.last_attempt;
+        app.runtime = Some(runtime);
+        let state = Rc::new(RefCell::new(app));
+        reconnect(&state);
+        let s = state.borrow();
+        let runtime = s.runtime.as_ref().unwrap();
+        assert!(runtime.reconnecting);
+        assert_eq!(runtime.last_attempt, attempt);
+        assert_eq!(runtime.reconnect_failures, 3);
+        assert!(s.session.is_none());
+    }
 
     #[test]
     fn store_changes_wake_runtime_without_a_fixed_heartbeat() {

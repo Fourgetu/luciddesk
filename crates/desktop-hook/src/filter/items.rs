@@ -209,15 +209,15 @@ impl Membership {
     pub fn apply(
         &mut self,
         folder: &IFolderView2,
-        legacy: &IShellFolderView,
+        object_view: &IShellFolderView,
         paused: bool,
     ) -> std::result::Result<(), ApplyError> {
-        self.apply_before_write(folder, legacy, paused, || {})
+        self.apply_before_write(folder, object_view, paused, || {})
     }
     pub fn apply_before_write(
         &mut self,
         folder: &IFolderView2,
-        legacy: &IShellFolderView,
+        object_view: &IShellFolderView,
         paused: bool,
         mut before_write: impl FnMut(),
     ) -> std::result::Result<(), ApplyError> {
@@ -249,7 +249,7 @@ impl Membership {
             if !current.iter().any(|item| item.name == name) && exists(&row.name) {
                 before_write();
                 unsafe {
-                    legacy.AddObject(row.pidl)?;
+                    object_view.AddObject(row.pidl)?;
                 }
                 added = true;
             }
@@ -301,7 +301,7 @@ impl Membership {
             {
                 before_write();
                 unsafe {
-                    legacy.RemoveObject(Some(row.pidl))?;
+                    object_view.RemoveObject(Some(row.pidl))?;
                 }
                 self.hidden.entry(row.name.clone()).or_insert(row);
             }
@@ -313,9 +313,9 @@ impl Membership {
         }
         Ok(())
     }
-    pub fn restore(&mut self, folder: &IFolderView2, legacy: &IShellFolderView) -> Result<()> {
+    pub fn restore(&mut self, folder: &IFolderView2, object_view: &IShellFolderView) -> Result<()> {
         self.desired.clear();
-        self.apply(folder, legacy, false).map_err(|e| e.error)
+        self.apply(folder, object_view, false).map_err(|e| e.error)
     }
     pub fn user_changed_layout(&mut self) {
         self.user_layout_changed = true;
