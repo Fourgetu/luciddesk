@@ -132,6 +132,9 @@ enum Event {
     MoveTab(i8),
     MoveTabId(PanelId, i8),
     RenameTab(PanelId),
+    DetachTab(PanelId),
+    FinishPaneMove(bool),
+    PreviewPaneMove,
     ToggleHeaderDivider,
     PaneItemFocus,
     BeginItemMenu(Rc<RefCell<Option<Result<Rc<desktop_hook::filter::FilterSession>, String>>>>),
@@ -235,6 +238,8 @@ fn create_model(state: &PaneApp, id: PanelId) -> Result<GroupModel, String> {
     let panel = state.workspace.panel(id).ok_or("标签已关闭")?;
     let items = items_for(state, id);
     Ok(GroupModel {
+        merge_preview: Vec::new(),
+        merge_occluded: false,
         tabs: Vec::new(),
         active_tab: id,
         folder_sort: (0, false),

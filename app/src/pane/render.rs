@@ -435,7 +435,7 @@ impl Renderer {
                     if model.options.border {
                         target.draw_rounded_rect(&rounded, &outline, 1.0);
                     }
-                    if show_icon && model.tabs.len() < 2 {
+                    if show_icon && model.tabs.len() < 2 && model.merge_preview.is_empty() {
                         target.clipped_text(
                             "\u{e8b7}",
                             &self.icons,
@@ -443,10 +443,10 @@ impl Renderer {
                             &white,
                         );
                     }
-                    if model.tabs.len() < 2 {
+                    if model.tabs.len() < 2 && model.merge_preview.is_empty() {
                         target.clipped_layout(&title, group_left + icon_width, canvas::text_ink_center_offset(&title)?, &white);
                     }
-                    for button in 0..if model.folder.is_some() { 4 } else { 2 } {
+                    for button in 0..if !model.merge_preview.is_empty() { 0 } else if model.folder.is_some() { 4 } else { 2 } {
                         let top = super::layout::HEADER_INSET;
                         let button_height = HEADER - top * 2.0;
                         let center_y = HEADER / 2.0;
@@ -519,7 +519,7 @@ impl Renderer {
                         }
                     }
                 }
-                for (id, bounds) in super::tabs::strip(model, w) {
+                for (id, bounds) in super::tabs::strip(model, w).into_iter().filter(|_| model.merge_preview.is_empty()) {
                     let rect = Rect::from_xywh(bounds.x, bounds.y, bounds.width, bounds.height);
                     let fill = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink,
                         if id == model.active_tab { 0.14 } else { 0.04 })))?;
@@ -527,6 +527,32 @@ impl Renderer {
                     let text = model.tabs.iter().find(|(tab, _)| *tab == id).map_or("", |(_, title)| title.as_str());
                     target.clipped_text(text, &self.tab_title, &Rect::from_xywh(rect.left + 10.0, rect.top, (bounds.width - 20.0).max(1.0), bounds.height),
                         if id == model.active_tab { &white } else { &dim });
+                }
+                for (text, incoming, active, bounds) in super::tabs::merge_strip(model, w) {
+                    let rect = Rect::from_xywh(bounds.x, bounds.y, bounds.width, bounds.height);
+                    let fill = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink,
+                        if incoming { 0.09 } else if active { 0.14 } else { 0.04 })))?;
+                    target.fill_rounded_rect(&RoundedRect { rect, radius_x: 5.0, radius_y: 5.0 }, &fill);
+                    if incoming {
+                        let edge = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.42)))?;
+                        // Short neutral dashes keep provisional tabs distinct without an accent color.
+                        let mut x = rect.left + 5.0;
+                        while x < rect.right - 5.0 {
+                            for y in [rect.top + 0.5, rect.bottom - 0.5] {
+                                target.draw_line(Vector2::new(x, y), Vector2::new((x + 4.0).min(rect.right - 5.0), y), &edge, 1.0);
+                            }
+                            x += 7.0;
+                        }
+                        let mut y = rect.top + 5.0;
+                        while y < rect.bottom - 5.0 {
+                            for x in [rect.left + 0.5, rect.right - 0.5] {
+                                target.draw_line(Vector2::new(x, y), Vector2::new(x, (y + 4.0).min(rect.bottom - 5.0)), &edge, 1.0);
+                            }
+                            y += 7.0;
+                        }
+                    }
+                    target.clipped_text(&text, &self.tab_title, &Rect::from_xywh(rect.left + 10.0, rect.top,
+                        (bounds.width - 20.0).max(1.0), bounds.height), if active || incoming { &white } else { &dim });
                 }
                 if super::header_divider::enabled() && !model.collapsed && h > model.content_header() + 1.0 {
                     let divider = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.14)))?;
@@ -1194,6 +1220,8 @@ mod tests {
 
     fn sample_model() -> GroupModel {
         GroupModel {
+            merge_preview: Vec::new(),
+        merge_occluded: false,
             tabs: Vec::new(),
             active_tab: desktop_core::PanelId::new(0),
             folder_sort: (0, false),

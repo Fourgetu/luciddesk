@@ -4,6 +4,8 @@ use super::*;
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Clone)]
 pub struct GroupModel {
+    pub merge_preview: Vec<(PanelId, String)>,
+    pub merge_occluded: bool,
     pub tabs: Vec<(PanelId, String)>,
     pub active_tab: PanelId,
     pub list_view: bool,

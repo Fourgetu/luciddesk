@@ -124,6 +124,7 @@ pub(super) fn tab_entries() -> Vec<Entry> {
         entry(43, "重命名标签", "", ""),
         entry(44, "向左移动", "", ""),
         entry(45, "向右移动", "", ""),
+        entry(49, "分离为独立面板", "", ""),
         entry(0, "", "", ""),
         entry(42, "关闭标签", "", "Ctrl+W"),
     ]
@@ -136,7 +137,7 @@ pub(super) fn tab_context_entries(model: &super::GroupModel, topmost: bool) -> V
     for row in &mut entries {
         if row.id == 48 { row.label = if model.collapsed { "展开面板" } else { "收起面板" }; }
     }
-    entries.splice(0..0, [entry(43, "重命名标签", "", ""), entry(42, "关闭标签", "", "Ctrl+W"), entry(0, "", "", "")]);
+    entries.splice(0..0, [entry(49, "分离为独立面板", "", ""), entry(43, "重命名标签", "", ""), entry(42, "关闭标签", "", "Ctrl+W"), entry(0, "", "", "")]);
     entries
 }
 

@@ -35,8 +35,22 @@ pub(super) fn update_auto_hide(hwnd: HWND, enabled: bool) {
 pub(super) const SYNC_POINTER: u32 = WM_APP + 11;
 pub(super) const RUN_POSTED_ACTION: u32 = WM_APP + 12;
 pub(super) const TAB_CHANGED: u32 = WM_APP + 13;
+pub(super) const RESTORE_MERGE: u32 = WM_APP + 14;
 const DESKTOP_LAYER: windows_sys::core::PCWSTR = windows_sys::w!("LucidPane.DesktopLayer");
 const CLOSING_PANE: windows_sys::core::PCWSTR = windows_sys::w!("LucidPane.ClosingPane");
+
+fn clip_drag(hwnd: HWND, hidden: bool, clipped: &mut bool) {
+    if *clipped == hidden { return; }
+    unsafe {
+        let region = if hidden { windows_sys::Win32::Graphics::Gdi::CreateRectRgn(0, 0, 0, 0) } else { std::ptr::null_mut() };
+        if hidden && region.is_null() { return; }
+        if windows_sys::Win32::Graphics::Gdi::SetWindowRgn(hwnd, region, 1) != 0 {
+            *clipped = hidden;
+        } else if !region.is_null() {
+            windows_sys::Win32::Graphics::Gdi::DeleteObject(region);
+        }
+    }
+}
 
 pub(super) fn prepare_close(hwnd: HWND) {
     unsafe {
@@ -266,6 +280,32 @@ mod hit_tests {
         }
     }
 
+    #[test]
+    fn preview_clip_preserves_window_capture_and_restores_region() {
+        use windows_sys::Win32::Graphics::Gdi::*;
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::GetCapture;
+        unsafe {
+            let hwnd = CreateWindowExW(WS_EX_TOOLWINDOW, windows_sys::w!("STATIC"), std::ptr::null(),
+                WS_POPUP | WS_VISIBLE, 20, 20, 240, 120, std::ptr::null_mut(), std::ptr::null_mut(),
+                std::ptr::null_mut(), std::ptr::null());
+            assert!(!hwnd.is_null());
+            SetCapture(hwnd);
+            let mut clipped = false;
+            clip_drag(hwnd, true, &mut clipped);
+            assert!(clipped);
+            assert_ne!(IsWindowVisible(hwnd), 0);
+            assert_eq!(GetCapture(), hwnd);
+            let region = CreateRectRgn(0, 0, 0, 0);
+            assert_eq!(GetWindowRgn(hwnd, region), NULLREGION);
+            clip_drag(hwnd, false, &mut clipped);
+            assert!(!clipped);
+            assert_eq!(GetWindowRgn(hwnd, region), 0);
+            assert_eq!(GetCapture(), hwnd);
+            DeleteObject(region);
+            ReleaseCapture();
+            DestroyWindow(hwnd);
+        }
+    }
 
     #[test]
     fn tab_click_jitter_does_not_start_a_pane_drag() {
@@ -567,6 +607,8 @@ where
     let mut drag_identity = None;
     let mut drag_image: Option<super::drag_drop::image::DragImage> = None;
     let mut fold: Option<super::animation::Fold> = None;
+    let mut pane_moved = false;
+    let mut drag_clipped = false;
     let mut move_origin: Option<super::snap::DragOrigin> = None;
     let mut auto_hide = super::auto_hide::AutoHide::default();
     let mut tab_press: Option<(desktop_core::PanelId, POINT)> = None;
@@ -798,6 +840,9 @@ where
                     Some(0)
                 }
                 WM_MOVING => {
+                    pane_moved |= unsafe {
+                        windows_sys::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState(0x01)
+                    } < 0;
                     if let Some(origin) = &move_origin {
                         let mut pointer = POINT::default();
                         if unsafe { GetCursorPos(&raw mut pointer) } != 0 {
@@ -807,7 +852,25 @@ where
                         }
                     }
                     event(Event::Moving(lparam as *mut RECT));
+                    if pane_moved {
+                        unsafe { SetTimer(hwnd, 5, 40, None); }
+                        let hidden = model.borrow().merge_occluded;
+                        clip_drag(hwnd, hidden, &mut drag_clipped);
+                    }
                     Some(1)
+                }
+                RESTORE_MERGE => {
+                    model.borrow_mut().merge_occluded = false;
+                    clip_drag(hwnd, false, &mut drag_clipped);
+                    Some(0)
+                }
+                WM_TIMER if wparam == 5 => {
+                    if pane_moved {
+                        event(Event::PreviewPaneMove);
+                        let hidden = model.borrow().merge_occluded;
+                        clip_drag(hwnd, hidden, &mut drag_clipped);
+                    }
+                    Some(0)
                 }
                 WM_TIMER if wparam == 4 => {
                     update_scrollbar_animation(
@@ -881,6 +944,8 @@ where
                     Some(0)
                 }
                 WM_DESTROY => {
+                    unsafe { KillTimer(hwnd, 5); }
+                    if pane_moved { event(Event::FinishPaneMove(false)); }
                     // The supervisor can recreate a surface destroyed with Explorer.
                     Some(0)
                 }
@@ -1050,6 +1115,16 @@ where
                     Some(0)
                 }
                 WM_EXITSIZEMOVE => {
+                    unsafe { KillTimer(hwnd, 5); }
+                    if pane_moved {
+                        let commit = unsafe {
+                            windows_sys::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState(0x1b)
+                        } >= 0;
+                        event(Event::FinishPaneMove(commit));
+                    }
+                    let hidden = model.borrow().merge_occluded;
+                    clip_drag(hwnd, hidden, &mut drag_clipped);
+                    pane_moved = false;
                     move_origin = None;
                     let mut r = RECT::default();
                     unsafe {
@@ -1065,6 +1140,7 @@ where
                     Some(0)
                 }
                 WM_ENTERSIZEMOVE => {
+                    pane_moved = false;
                     // Finish the fold before manual geometry changes so an intermediate height
                     // cannot replace the persisted expanded size.
                     if let Some(animation) = fold.take() {
@@ -1468,6 +1544,12 @@ where
                     }
                     model.borrow_mut().pressed_button = None;
                     if message == WM_CANCELMODE {
+                        unsafe { KillTimer(hwnd, 5); }
+                    clip_drag(hwnd, false, &mut drag_clipped);
+                        if pane_moved {
+                            event(Event::FinishPaneMove(false));
+                            pane_moved = false;
+                        }
                         unsafe {
                             ReleaseCapture();
                         }
@@ -1824,6 +1906,7 @@ where
                         update_pointer(hwnd, &model, None);
                         invalidate(hwnd);
                         match command {
+                            49 => { let id = tab_context.unwrap_or(model.borrow().active_tab); event(Event::DetachTab(id)); }
                             48 => { event(Event::Collapse); }
                             40 => { event(Event::NewTab(false)); }
                             41 => { event(Event::NewTab(true)); }

@@ -578,6 +578,8 @@ fn activation_releases_state_and_model_before_shell_reentry() {
 #[test]
 fn snapped_content_bottom_and_scrollbar_use_the_same_row_metrics() {
     let mut model = GroupModel {
+        merge_preview: Vec::new(),
+        merge_occluded: false,
         tabs: Vec::new(),
         active_tab: desktop_core::PanelId::new(0),
         folder_sort: (0, false),
@@ -696,6 +698,8 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
     };
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
     let model = Rc::new(RefCell::new(GroupModel {
+        merge_preview: Vec::new(),
+        merge_occluded: false,
         tabs: Vec::new(),
         active_tab: desktop_core::PanelId::new(0),
         folder_sort: (0, false),
@@ -1176,6 +1180,8 @@ fn pane_layer_switch_and_wallpaper_material_initialize() {
     use windows_sys::Win32::UI::WindowsAndMessaging::{GWL_EXSTYLE, GetWindowLongW, WS_EX_TOPMOST};
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
     let model = Rc::new(RefCell::new(GroupModel {
+        merge_preview: Vec::new(),
+        merge_occluded: false,
         tabs: Vec::new(),
         active_tab: desktop_core::PanelId::new(0),
         folder_sort: (0, false),
@@ -2023,6 +2029,8 @@ fn reconciliation_preserves_groups_and_appends_new_items_after_existing_order() 
 #[test]
 fn multiselection_preserves_anchor_toggle_and_file_identity_on_refresh() {
     let mut model = GroupModel {
+        merge_preview: Vec::new(),
+        merge_occluded: false,
         tabs: Vec::new(),
         active_tab: desktop_core::PanelId::new(0),
         folder_sort: (0, false),

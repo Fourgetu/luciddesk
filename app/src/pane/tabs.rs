@@ -88,6 +88,8 @@ pub(super) fn select(
         next.auto_hide = panel.auto_hide();
         next.list_view = panel.list_view();
         next.reveal = if next.collapsed { 0.0 } else { 1.0 };
+        next.merge_preview.clear();
+        next.merge_occluded = false;
         next.hovered_item = None;
         next.hovered_button = None;
         next.pressed_button = None;
@@ -307,6 +309,425 @@ pub(super) fn reorder(
     Ok(())
 }
 
+/// Split one content ID out without changing its desktop membership or folder source.
+pub(super) fn detach(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> {
+    let group = {
+        let s = state.borrow();
+        if s.workspace.panel(id).is_none_or(Panel::locked) {
+            return Err("请先解锁面板".into());
+        }
+        s.workspace.tab_group(id).cloned()
+    };
+    let Some(group) = group else {
+        return Ok(());
+    };
+    if group.active == id {
+        let next = *group.members.iter().find(|member| **member != id).unwrap();
+        select(state, id, next)?;
+    }
+    let previous = state.borrow().workspace.clone();
+    {
+        let mut s = state.borrow_mut();
+        s.workspace.sync_tab_windows();
+        let groups = s
+            .workspace
+            .tab_groups()
+            .iter()
+            .cloned()
+            .filter_map(|mut g| {
+                g.members.retain(|member| *member != id);
+                (g.members.len() > 1).then_some(g)
+            })
+            .collect();
+        s.workspace
+            .set_tab_groups(groups)
+            .map_err(|e| e.to_string())?;
+        let panel = s.workspace.panel_mut(id).unwrap();
+        let mut rect = panel.rect();
+        rect.x += 32.0;
+        rect.y += 32.0;
+        panel.set_rect(rect);
+    }
+    let previous_position = state
+        .borrow_mut()
+        .runtime
+        .as_mut()
+        .and_then(|runtime| runtime.layouts.positions.remove(&id));
+    let result = create_view(state, id).and_then(|()| {
+        let mut s = state.borrow_mut();
+        let workspace = s.workspace.clone();
+        s.store
+            .save_workspace(&workspace)
+            .map_err(|e| e.to_string())
+    });
+    if let Err(error) = result {
+        let view = {
+            let mut s = state.borrow_mut();
+            s.workspace = previous;
+            if let (Some(runtime), Some(position)) = (&mut s.runtime, previous_position) {
+                runtime.layouts.positions.insert(id, position);
+            }
+            if let Some(source) = s.folders.get(&id) {
+                source.set_active(false);
+            }
+            take_view(&mut s, id)
+        };
+        drop(view);
+        return Err(error);
+    }
+    let mut s = state.borrow_mut();
+    if let Some(mut cached) = s.tab_models.remove(&id) {
+        let view = s.views.iter().find(|v| v.id == id).unwrap();
+        let fresh = view.model.borrow();
+        cached.theme = fresh.theme;
+        cached.dark = fresh.dark;
+        cached.backdrop = fresh.backdrop;
+        cached.collapsed = fresh.collapsed;
+        cached.locked = fresh.locked;
+        cached.auto_hide = fresh.auto_hide;
+        cached.reveal = fresh.reveal;
+        cached.options = fresh.options;
+        cached.native_material = fresh.native_material;
+        drop(fresh);
+        cached.focused = view.model.borrow().focused;
+        cached.merge_preview.clear();
+        cached.merge_occluded = false;
+        cached.renaming = None;
+        cached.hovered_item = None;
+        cached.hovered_button = None;
+        cached.pressed_button = None;
+        *view.model.borrow_mut() = cached;
+    }
+    if let Some(source) = s.folders.get(&id) {
+        source.set_active(true);
+    }
+    refresh_changed_views(&mut s, true);
+    s.wake.notify();
+    Ok(())
+}
+
+fn take_view(s: &mut PaneApp, id: PanelId) -> Option<View> {
+    let at = s.views.iter().position(|v| v.id == id)?;
+    let view = s.views.remove(at);
+    let hwnd = view.window.hwnd().cast();
+    window::prepare_close(hwnd);
+    hybrid::unregister_drop(s, hwnd);
+    Some(view)
+}
+
+fn merge(state: &Rc<RefCell<PaneApp>>, from: PanelId, to: PanelId) -> Result<(), String> {
+    let view = {
+        let mut s = state.borrow_mut();
+        for id in [from, to] {
+            let panel = s.workspace.panel(id).ok_or("面板已关闭")?;
+            if panel.locked() || panel.is_search() {
+                return Err("请选择未锁定的普通面板".into());
+            }
+            if !s.views.iter().any(|v| v.id == id) {
+                return Err("面板已关闭或活动标签已改变".into());
+            }
+        }
+        if from == to {
+            return Ok(());
+        }
+        let previous = s.workspace.clone();
+        let source = s
+            .workspace
+            .tab_group(from)
+            .map_or_else(|| vec![from], |g| g.members.clone());
+        let mut members = s
+            .workspace
+            .tab_group(to)
+            .map_or_else(|| vec![to], |g| g.members.clone());
+        if members.contains(&from) {
+            return Ok(());
+        }
+        members.extend(source.iter().copied());
+        let mut groups = s.workspace.tab_groups().to_vec();
+        groups.retain(|g| !g.members.contains(&from) && !g.members.contains(&to));
+        groups.push(PaneTabs {
+            members,
+            active: to,
+        });
+        s.workspace
+            .set_tab_groups(groups)
+            .map_err(|e| e.to_string())?;
+        let workspace = s.workspace.clone();
+        if let Err(error) = s.store.save_workspace(&workspace) {
+            s.workspace = previous;
+            return Err(error.to_string());
+        }
+        let view = take_view(&mut s, from).unwrap();
+        s.tab_models.insert(from, view.model.borrow().clone());
+        for id in source {
+            if let Some(source) = s.folders.get(&id) {
+                source.set_active(false);
+            }
+        }
+        refresh_changed_views(&mut s, true);
+        s.wake.notify();
+        view
+    };
+    drop(view);
+    Ok(())
+}
+
+fn header_contains(bounds: RECT, dpi: u32, point: windows_sys::Win32::Foundation::POINT) -> bool {
+    let height = (layout::HEADER * dpi.max(96) as f32 / 96.0).round() as i32;
+    point.x >= bounds.left
+        && point.x < bounds.right
+        && point.y >= bounds.top
+        && point.y < (bounds.top + height).min(bounds.bottom)
+}
+
+fn merge_target(s: &PaneApp, from: PanelId) -> Option<PanelId> {
+    if s.workspace
+        .panel(from)
+        .is_none_or(|p| p.locked() || p.is_search())
+    {
+        return None;
+    }
+    let mut pointer = windows_sys::Win32::Foundation::POINT::default();
+    if unsafe { GetCursorPos(&raw mut pointer) } == 0 {
+        return None;
+    }
+    let retained = MERGE_HOVER.with(|hover| {
+        let hover = hover.borrow();
+        hover
+            .candidate
+            .filter(|(source, _, _)| *source == from && hover.ready)
+            .map(|(_, to, _)| to)
+    });
+    if let Some(view) = s.views.iter().find(|v| Some(v.id) == retained) {
+        let hwnd = view.window.hwnd().cast();
+        let mut bounds = RECT::default();
+        let dpi = unsafe { GetDpiForWindow(hwnd) }.max(96);
+        let margin = (6.0 * dpi as f32 / 96.0).round() as i32;
+        if s.workspace
+            .panel(view.id)
+            .is_some_and(|p| !p.locked() && !p.is_search())
+            && unsafe { IsWindowVisible(hwnd) != 0 && GetWindowRect(hwnd, &raw mut bounds) != 0 }
+        {
+            let bottom = bounds.top + (layout::HEADER * dpi as f32 / 96.0).round() as i32;
+            if pointer.x >= bounds.left - margin
+                && pointer.x < bounds.right + margin
+                && pointer.y >= bounds.top - margin
+                && pointer.y < bottom + margin
+            {
+                return Some(view.id);
+            }
+        }
+    }
+    // Follow native stacking order, ignoring only the pane being dragged.
+    let mut hwnd = unsafe { GetTopWindow(std::ptr::null_mut()) };
+    while !hwnd.is_null() {
+        if let Some(view) = s
+            .views
+            .iter()
+            .find(|v| v.id != from && v.window.hwnd().cast() == hwnd)
+        {
+            let mut bounds = RECT::default();
+            if unsafe {
+                IsWindowVisible(hwnd) != 0
+                    && IsIconic(hwnd) == 0
+                    && GetWindowRect(hwnd, &raw mut bounds) != 0
+            } && pointer.x >= bounds.left
+                && pointer.x < bounds.right
+                && pointer.y >= bounds.top
+                && pointer.y < bounds.bottom
+            {
+                return (s
+                    .workspace
+                    .panel(view.id)
+                    .is_some_and(|p| !p.locked() && !p.is_search())
+                    && header_contains(bounds, unsafe { GetDpiForWindow(hwnd) }, pointer))
+                .then_some(view.id);
+            }
+        }
+        hwnd = unsafe { GetWindow(hwnd, GW_HWNDNEXT) };
+    }
+    None
+}
+
+#[derive(Default)]
+struct MergeHover {
+    candidate: Option<(PanelId, PanelId, std::time::Instant)>,
+    ready: bool,
+}
+impl MergeHover {
+    fn update(
+        &mut self,
+        from: PanelId,
+        target: Option<PanelId>,
+        now: std::time::Instant,
+    ) -> Option<PanelId> {
+        if self.candidate.map(|(source, to, _)| (source, to)) != target.map(|to| (from, to)) {
+            self.candidate = target.map(|to| (from, to, now));
+            self.ready = false;
+        }
+        if let Some((_, to, since)) = self.candidate {
+            self.ready |= now.duration_since(since) >= std::time::Duration::from_millis(150);
+            return self.ready.then_some(to);
+        }
+        None
+    }
+}
+thread_local! { static MERGE_HOVER: RefCell<MergeHover> = RefCell::new(MergeHover::default()); }
+
+fn highlight_merge(s: &PaneApp, source: PanelId, target: Option<PanelId>) {
+    let incoming: Vec<_> = s
+        .workspace
+        .tab_group(source)
+        .map_or_else(|| vec![source], |g| g.members.clone())
+        .into_iter()
+        .filter_map(|id| s.workspace.panel(id).map(|p| (id, p.title().to_owned())))
+        .collect();
+    for view in &s.views {
+        let preview = if target == Some(view.id) {
+            incoming.clone()
+        } else {
+            Vec::new()
+        };
+        let mut model = view.model.borrow_mut();
+        model.merge_occluded = target.is_some() && view.id == source;
+        if model.merge_preview != preview {
+            model.merge_preview = preview;
+            unsafe {
+                InvalidateRect(view.window.hwnd().cast(), std::ptr::null(), 0);
+            }
+        }
+    }
+}
+
+pub(super) fn preview_merge(s: &PaneApp, from: PanelId) -> bool {
+    // Mouse-up is committed by WM_EXITSIZEMOVE; a timer between the two must not erase the preview.
+    if unsafe { windows_sys::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState(0x01) } >= 0 {
+        return MERGE_HOVER.with(|hover| hover.borrow().ready);
+    }
+    let candidate = merge_target(s, from);
+    let target = MERGE_HOVER.with(|hover| {
+        hover
+            .borrow_mut()
+            .update(from, candidate, std::time::Instant::now())
+    });
+    highlight_merge(s, from, target);
+    candidate.is_some()
+}
+
+pub(super) fn finish_move(
+    state: &Rc<RefCell<PaneApp>>,
+    from: PanelId,
+    commit: bool,
+) -> Result<(), String> {
+    let (owner, target) = {
+        let s = state.borrow();
+        let hit = merge_target(&s, from);
+        let target = MERGE_HOVER.with(|hover| {
+            let mut hover = hover.borrow_mut();
+            let target = hover
+                .candidate
+                .filter(|(source, _, _)| *source == from && hover.ready)
+                .map(|(_, target, _)| target)
+                .filter(|target| commit && hit == Some(*target));
+            *hover = MergeHover::default();
+            target
+        });
+        highlight_merge(&s, from, None);
+        if target.is_some() {
+            if let Some(view) = s.views.iter().find(|v| v.id == from) {
+                view.model.borrow_mut().merge_occluded = true;
+            }
+        }
+        let owner = s
+            .views
+            .iter()
+            .find(|v| v.id == from)
+            .ok_or("面板已关闭")?
+            .window
+            .hwnd() as isize;
+        (owner, target)
+    };
+    let Some(to) = target else {
+        return Ok(());
+    };
+    let weak = Rc::downgrade(state);
+    // Close the source only after the native move callback and geometry save return.
+    if !window::post_action(owner as _, move || {
+        if let Some(state) = weak.upgrade() {
+            if let Err(error) = merge(&state, from, to) {
+                unsafe {
+                    PostMessageW(owner as _, window::RESTORE_MERGE, 0, 0);
+                }
+                window::error(&error);
+            }
+        }
+    }) {
+        unsafe {
+            PostMessageW(owner as _, window::RESTORE_MERGE, 0, 0);
+        }
+        return Err("无法完成面板合并".into());
+    }
+    Ok(())
+}
+
+/// Drawing-only projection: never alters the real tabs, hit targets or active content.
+pub(super) fn merge_strip(model: &GroupModel, width: f32) -> Vec<(String, bool, bool, RectDip)> {
+    if model.merge_preview.is_empty() {
+        return Vec::new();
+    }
+    let existing = if model.tabs.is_empty() {
+        vec![(model.active_tab, model.title.clone())]
+    } else {
+        model.tabs.clone()
+    };
+    let inset = layout::HEADER_INSET;
+    let available = (width - 2.0 * inset).max(1.0);
+    let capacity = ((available / 72.0).floor() as usize).max(2);
+    let incoming_count = model.merge_preview.len().min(capacity - existing.len().min((capacity / 2).max(1)));
+    let existing_count = existing.len().min(capacity - incoming_count);
+    let active = existing
+        .iter()
+        .position(|(id, _)| *id == model.active_tab)
+        .unwrap_or(0);
+    let start = active
+        .saturating_sub(existing_count / 2)
+        .min(existing.len() - existing_count);
+    let mut labels: Vec<_> = existing
+        .iter()
+        .skip(start)
+        .take(existing_count)
+        .map(|(id, title)| (title.clone(), false, *id == model.active_tab))
+        .collect();
+    for (index, (_, title)) in model.merge_preview.iter().take(incoming_count).enumerate() {
+        let remaining = model.merge_preview.len() - index;
+        let text = if index + 1 == incoming_count && remaining > 1 {
+            format!("＋ {remaining} 个标签")
+        } else {
+            format!("＋ {title}")
+        };
+        labels.push((text, true, false));
+    }
+    let gap = 6.0;
+    let size = ((available - gap * (labels.len() - 1) as f32) / labels.len() as f32).max(1.0);
+    labels
+        .into_iter()
+        .enumerate()
+        .map(|(index, (title, incoming, active))| {
+            (
+                title,
+                incoming,
+                active,
+                RectDip {
+                    x: inset + index as f32 * (size + gap),
+                    y: inset,
+                    width: size,
+                    height: layout::HEADER - 2.0 * inset,
+                },
+            )
+        })
+        .collect()
+}
+
 /// Shared geometry for painting and pointer input; keep the active tab visible.
 pub(super) fn strip(model: &GroupModel, width: f32) -> Vec<(PanelId, RectDip)> {
     if model.tabs.len() < 2 {
@@ -408,6 +829,48 @@ mod tests {
             state.borrow().workspace.tab_group(first).unwrap().members[0],
             second
         );
+        detach(&state, second).unwrap();
+        assert_eq!(state.borrow().views.len(), 2);
+        let detached = state.borrow().views.iter().find(|v| v.id == second).unwrap().window.hwnd().cast();
+        let above = |a, b| unsafe {
+            let mut current = GetWindow(b, GW_HWNDPREV);
+            while !current.is_null() {
+                if current == a { return true; }
+                current = GetWindow(current, GW_HWNDPREV);
+            }
+            false
+        };
+        assert!(above(detached, hwnd.cast()));
+        unsafe { SendMessageW(hwnd.cast(), WM_MOUSEACTIVATE, 0, HTCLIENT as isize); }
+        assert!(above(hwnd.cast(), detached));
+        unsafe { SendMessageW(detached, WM_MOUSEACTIVATE, 0, HTCLIENT as isize); }
+        assert!(above(detached, hwnd.cast()));
+        assert!(state.borrow().workspace.tab_groups().is_empty());
+        assert_eq!(state.borrow().workspace.desktop_items(), original);
+        merge(&state, second, first).unwrap();
+        assert_eq!(state.borrow().views.len(), 1);
+        assert_eq!(state.borrow().views[0].window.hwnd(), hwnd);
+        assert_eq!(state.borrow().views[0].model.borrow().selected, Some(1));
+        detach(&state, first).unwrap();
+        assert_eq!(state.borrow().views.len(), 2);
+        assert_eq!(
+            state
+                .borrow()
+                .views
+                .iter()
+                .find(|v| v.id == first)
+                .unwrap()
+                .model
+                .borrow()
+                .selected,
+            Some(1)
+        );
+        merge(&state, first, second).unwrap();
+        select(&state, second, first).unwrap();
+        assert_eq!(
+            state.borrow().store.load_workspace().unwrap(),
+            state.borrow().workspace
+        );
         close(&state, first).unwrap();
         assert_eq!(state.borrow().views.len(), 1);
         assert_eq!(state.borrow().views[0].id, second);
@@ -417,10 +880,94 @@ mod tests {
             state.borrow().store.load_workspace().unwrap(),
             state.borrow().workspace
         );
-        window::prepare_close(hwnd.cast());
+        window::prepare_close(state.borrow().views[0].window.hwnd().cast());
         drop(state);
         // Exercise both sources in one UI apartment, as the application does.
         folder_tabs_keep_navigation_and_do_not_cross_deliver_results();
+        merge_whole_groups_and_reject_locked_panes();
+    }
+
+    fn merge_whole_groups_and_reject_locked_panes() {
+        let state = Rc::new(RefCell::new(super::super::tests::test_state()));
+        state
+            .borrow_mut()
+            .workspace
+            .set_appearance(desktop_core::PanelTheme::Dark, desktop_core::Backdrop::Mica);
+        let first = PanelId::new(1);
+        create_view(&state, first).unwrap();
+        add(&state, first, None).unwrap();
+        let second = state.borrow().views[0].id;
+        detach(&state, second).unwrap();
+        add(&state, first, None).unwrap();
+        let left = state.borrow().workspace.tab_group(first).unwrap().clone();
+        add(&state, second, None).unwrap();
+        let right = state.borrow().workspace.tab_group(second).unwrap().clone();
+        state
+            .borrow_mut()
+            .workspace
+            .panel_mut(right.active)
+            .unwrap()
+            .set_locked(true);
+        let before = state.borrow().workspace.clone();
+        highlight_merge(&state.borrow(), left.active, Some(right.active));
+        assert!(
+            state
+                .borrow()
+                .views
+                .iter()
+                .find(|v| v.id == right.active)
+                .unwrap()
+                .model
+                .borrow()
+                .merge_preview
+                .is_empty()
+                == false
+        );
+        finish_move(&state, left.active, false).unwrap();
+        assert!(
+            state
+                .borrow()
+                .views
+                .iter()
+                .all(|v| v.model.borrow().merge_preview.is_empty())
+        );
+        assert!(merge(&state, left.active, right.active).is_err());
+        assert!(detach(&state, right.active).is_err());
+        assert_eq!(state.borrow().workspace, before);
+        assert_eq!(state.borrow().views.len(), 2);
+        state
+            .borrow_mut()
+            .workspace
+            .panel_mut(right.active)
+            .unwrap()
+            .set_locked(false);
+        merge(&state, left.active, right.active).unwrap();
+        let mut expected = right.members;
+        expected.extend(left.members);
+        assert_eq!(
+            state.borrow().workspace.tab_group(first).unwrap().members,
+            expected
+        );
+        assert_eq!(state.borrow().views.len(), 1);
+        assert_eq!(state.borrow().views[0].id, right.active);
+        detach(&state, first).unwrap();
+        assert_eq!(
+            state
+                .borrow()
+                .workspace
+                .tab_group(second)
+                .unwrap()
+                .members
+                .len(),
+            3
+        );
+        assert_eq!(state.borrow().views.len(), 2);
+        assert_eq!(
+            state.borrow().store.load_workspace().unwrap(),
+            state.borrow().workspace
+        );
+        handle(&state, first, Event::ClosePane).unwrap();
+        handle(&state, right.active, Event::ClosePane).unwrap();
     }
 
     fn folder_tabs_keep_navigation_and_do_not_cross_deliver_results() {
@@ -468,10 +1015,109 @@ mod tests {
             root.path().join("child")
         );
         assert!(state.borrow().folders[&folder].navigation()[0]);
+        detach(&state, folder).unwrap();
+        assert_eq!(
+            state.borrow().folders[&folder].path,
+            root.path().join("child")
+        );
+        merge(&state, folder, first).unwrap();
+        select(&state, first, folder).unwrap();
+        assert_eq!(
+            state.borrow().folders[&folder].path,
+            root.path().join("child")
+        );
         handle(&state, folder, Event::ClosePane).unwrap();
         assert!(state.borrow().views.is_empty());
         assert!(state.borrow().folders.is_empty());
         assert!(root.path().join("child").join("inside.txt").exists());
+    }
+
+    #[test]
+    fn merge_preview_waits_and_resets_without_mutating_real_tabs() {
+        let now = std::time::Instant::now();
+        let from = PanelId::new(1);
+        let to = PanelId::new(2);
+        let mut hover = MergeHover::default();
+        assert_eq!(hover.update(from, Some(to), now), None);
+        assert_eq!(
+            hover.update(from, Some(to), now + std::time::Duration::from_millis(149)),
+            None
+        );
+        assert_eq!(
+            hover.update(from, Some(to), now + std::time::Duration::from_millis(150)),
+            Some(to)
+        );
+        assert_eq!(
+            hover.update(from, None, now + std::time::Duration::from_millis(200)),
+            None
+        );
+        assert!(!hover.ready);
+        assert_eq!(
+            hover.update(from, Some(to), now + std::time::Duration::from_millis(201)),
+            None
+        );
+        let state = super::super::tests::test_state();
+        let mut model = create_model(&state, from).unwrap();
+        model.tabs = vec![(from, "当前".into()), (to, "另一个".into())];
+        model.active_tab = to;
+        model.merge_preview = (3..=12)
+            .map(|id| (PanelId::new(id), format!("加入 {id}")))
+            .collect();
+        let original = model.tabs.clone();
+        for width in [260.0, 420.0, 1200.0] {
+            let strip = merge_strip(&model, width);
+            assert!(
+                strip
+                    .iter()
+                    .any(|(_, incoming, active, _)| !incoming && *active)
+            );
+            assert!(
+                strip
+                    .iter()
+                    .any(|(text, incoming, _, _)| *incoming && text.starts_with('＋'))
+            );
+            let mut previous_right = 0.0;
+            for (_, _, _, rect) in strip {
+                assert!(rect.x >= previous_right && rect.x + rect.width <= width);
+                previous_right = rect.x + rect.width;
+            }
+        }
+        assert_eq!(model.tabs, original);
+        assert_eq!(model.active_tab, to);
+        model.merge_preview.clear();
+        assert!(merge_strip(&model, 420.0).is_empty());
+    }
+
+    #[test]
+    fn merge_header_hit_respects_dpi_and_excludes_content() {
+        use windows_sys::Win32::Foundation::POINT;
+        for dpi in [96, 144, 192] {
+            let bounds = RECT {
+                left: -500,
+                top: 100,
+                right: -100,
+                bottom: 600,
+            };
+            let bottom = 100 + (layout::HEADER * dpi as f32 / 96.0).round() as i32;
+            assert!(header_contains(bounds, dpi, POINT { x: -500, y: 100 }));
+            assert!(header_contains(
+                bounds,
+                dpi,
+                POINT {
+                    x: -101,
+                    y: bottom - 1
+                }
+            ));
+            for point in [
+                POINT { x: -501, y: 110 },
+                POINT { x: -100, y: 110 },
+                POINT { x: -300, y: 99 },
+                POINT { x: -300, y: bottom },
+                POINT { x: -300, y: 500 },
+            ] {
+                assert!(!header_contains(bounds, dpi, point));
+            }
+        }
     }
 
     #[test]

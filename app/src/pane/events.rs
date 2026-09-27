@@ -113,6 +113,9 @@ pub(super) fn handle(
         if matches!(event, Event::ToggleHeaderDivider) { return Ok(false); }
     }
     match event {
+        Event::DetachTab(target) => { tabs::detach(state, target)?; return Ok(false); }
+        Event::PreviewPaneMove => { tabs::preview_merge(&state.borrow(), id); return Ok(false); }
+        Event::FinishPaneMove(commit) => { tabs::finish_move(state, id, commit)?; return Ok(false); }
         Event::RenameTab(target) => {
             let (owner, model) = {
                 let s = state.borrow();
@@ -722,7 +725,7 @@ pub(super) fn handle(
     }
     let mut s = state.borrow_mut();
     match event {
-        Event::RenameTab(_) | Event::MoveTabId(..) | Event::ToggleHeaderDivider
+        Event::DetachTab(_) | Event::PreviewPaneMove | Event::FinishPaneMove(_) | Event::RenameTab(_) | Event::MoveTabId(..) | Event::ToggleHeaderDivider
         | Event::NewTab(_) | Event::SelectTab(_) | Event::CloseTab | Event::CloseTabId(_)
         | Event::MoveTab(_) => unreachable!("Tabs handled before borrowing PaneApp"),
         Event::SortFolder(_)
@@ -823,6 +826,9 @@ pub(super) fn handle(
             }
         }
         Event::Moving(rect) | Event::Sizing(rect, _, _) => {
+            if matches!(event, Event::Moving(_)) && tabs::preview_merge(&s, id) {
+                return Ok(false);
+            }
             if !s.workspace.pane_options().snap {
                 return Ok(false);
             }
