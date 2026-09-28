@@ -239,7 +239,7 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), S
     let pending_desktop_input = Rc::new(Cell::new(None));
     let pending_input = Rc::clone(&pending_desktop_input);
     let work_ready = state.borrow().wake.clone();
-    let controller = windows_window::Window::new("LucidPane Hybrid Controller")
+    let controller = windows_window::Window::new("LucidDesk Hybrid Controller")
         .size(1, 1)
         .style(WS_POPUP)
         .ex_style(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)

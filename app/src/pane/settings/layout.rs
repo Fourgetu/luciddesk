@@ -89,7 +89,7 @@ pub(super) fn scene(
         previews: vec![],
         app_icon: None,
     };
-    s.text(Rect::from_xywh(28.0, 26.0, 172.0, 32.0), "LucidPane", 2);
+    s.text(Rect::from_xywh(28.0, 26.0, 172.0, 32.0), "LucidDesk", 2);
     for (position, &(id, name, icon)) in PAGES.iter().enumerate() {
         // Keep spacing tied to semantic groups, not insertion positions.
         let gap = match id {
@@ -450,26 +450,18 @@ pub(super) fn scene(
 
 // Shared by the live page and raster tests so status and actions use the same layout.
 pub(super) fn about_status(s: &mut Scene, width: f32, status: &str, copied: bool) {
-    let mut form = SettingsForm::new(s, width, "让桌面井然有序，让文件触手可及。");
+    let mut form = SettingsForm::new(s, width, "把 Windows 桌面整理成顺手的工作区。");
     form.brand();
     form.button(
-        "开源项目",
-        "MIT / Apache-2.0",
+        "开发者与开源许可",
+        concat!(env!("CARGO_PKG_AUTHORS"), " · MIT / Apache-2.0"),
         "项目主页",
         Action::ProjectHome,
     );
-    form.section("版本与系统");
-    let revision = env!("LUCIDPANE_BUILD_REVISION");
-    let build = if revision == "unknown" {
-        "本地构建".to_owned()
-    } else {
-        format!("构建 {revision}")
-    };
-    form.info("版本信息", &format!("{} · {build}", std::env::consts::ARCH));
-    form.info("操作系统", &crate::diagnostics::system().summary());
-    form.section("桌面连接");
+    form.section("运行状态");
+    form.info("操作系统", &format!("{} · {}", crate::diagnostics::system().summary(), std::env::consts::ARCH));
     form.actions(
-        "连接状态",
+        "桌面连接",
         status,
         vec![
             ("重新连接", Action::Change(Event::RetryDesktop)),

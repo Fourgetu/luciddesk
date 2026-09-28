@@ -40,7 +40,7 @@ mod tests {
     fn builder_auto_show_never_makes_background_window_visible() {
         let attempted = std::rc::Rc::new(std::cell::Cell::new(false));
         let observed = attempted.clone();
-        let window = windows_window::Window::new("LucidPane visibility test")
+        let window = windows_window::Window::new("LucidDesk visibility test")
             .size(1, 1)
             .style(WS_POPUP)
             .ex_style(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)

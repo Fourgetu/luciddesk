@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([switch]$Offline)
+param([switch]$Offline, [switch]$Portable)
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $previousRevision = $env:LUCIDPANE_BUILD_REVISION
@@ -16,30 +16,37 @@ try {
     }
     # Keep release artifacts separate from explicitly enabled diagnostic backends.
     $productionTarget = Join-Path $repoRoot 'target\production'
-    $buildArgs = @('build', '--release', '--locked', '--no-default-features', '--target-dir', $productionTarget, '-p', 'lucidpane', '-p', 'desktop-hook')
+    $buildArgs = @('build', '--release', '--locked', '--no-default-features', '--target-dir', $productionTarget, '-p', 'luciddesk', '-p', 'desktop-hook')
     if ($Offline) { $buildArgs += '--offline' }
     & cargo @buildArgs
     if ($LASTEXITCODE -ne 0) { throw 'Release build failed.' }
     $metadata = & cargo metadata --no-deps --format-version 1 --offline --locked | ConvertFrom-Json
     if ($LASTEXITCODE -ne 0) { throw 'Could not read package metadata.' }
-    $version = ($metadata.packages | Where-Object name -eq 'lucidpane').version
+    $version = ($metadata.packages | Where-Object name -eq 'luciddesk').version
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
-    $name = "LucidPane-$version-preview-$revisionLabel-windows-x64-$stamp"
-    $outRoot = Join-Path $repoRoot 'target\preview'
+    $name = "LucidDesk-$version-preview-$revisionLabel-windows-x64-$stamp"
+    if ($Portable) { $name = "LucidDesk-$version-windows-x64-portable" }
+    $outRoot = Join-Path $repoRoot $(if ($Portable) { "target\portable\$stamp" } else { 'target\preview' })
     $stage = Join-Path $outRoot $name
     New-Item -ItemType Directory -Path $stage | Out-Null
-    foreach ($file in @('lucidpane.exe', 'desktop_hook.dll')) {
+    foreach ($file in @('luciddesk.exe', 'desktop_hook.dll')) {
         Copy-Item -LiteralPath (Join-Path $productionTarget "release\$file") -Destination $stage
     }
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\preview.md') -Destination (Join-Path $stage 'README.md')
+    $readme = if ($Portable) { 'docs\portable.md' } else { 'docs\preview.md' }
+    Copy-Item -LiteralPath (Join-Path $repoRoot $readme) -Destination (Join-Path $stage 'README.md')
+    if ($Portable) {
+        'LucidDesk portable mode: store configuration in ./data.' | Set-Content -LiteralPath (Join-Path $stage 'portable.marker') -Encoding ASCII
+    }
     Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\usage.md') -Destination (Join-Path $stage 'usage.md')
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\brand.md') -Destination (Join-Path $stage 'brand.md')
     Copy-Item -LiteralPath (Join-Path $repoRoot 'CHANGELOG.md') -Destination (Join-Path $stage 'CHANGELOG.md')
-    $files = @('lucidpane.exe', 'desktop_hook.dll') | ForEach-Object {
+    $files = @('luciddesk.exe', 'desktop_hook.dll') | ForEach-Object {
         $fileHash = Get-FileHash -LiteralPath (Join-Path $stage $_) -Algorithm SHA256
         [ordered]@{ file = $_; sha256 = $fileHash.Hash.ToLowerInvariant() }
     }
     [ordered]@{
         version = $version; channel = 'preview'; revision = $revision; uncommittedChanges = $dirty
+        portable = [bool]$Portable
         builtAt = (Get-Date).ToUniversalTime().ToString('o'); architecture = 'windows-x64'
         files = $files
     } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $stage 'build.json') -Encoding UTF8

@@ -139,7 +139,7 @@ fn recycle_state_icon(full: bool, size: i32) -> windows::core::Result<Pixels> {
 }
 
 // Request the shortcut's own base icon, without an overlay. This preserves custom
-// shortcut icons while hiding the arrow in LucidPane only.
+// shortcut icons while hiding the arrow in LucidDesk only.
 #[allow(clippy::wildcard_imports)]
 fn link_icon(item: &IShellItem, size: i32) -> windows::core::Result<Pixels> {
     if let Ok(pixels) = extract_link_icon(item, size) {

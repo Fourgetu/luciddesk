@@ -18,7 +18,7 @@ pub(super) const KEYS: &[&str] = &[
     "search_hotkey",
     "peek",
 ];
-const DEFAULTS: &str = r##"# LucidPane global settings. Reload from Settings after editing.
+const DEFAULTS: &str = r##"# LucidDesk global settings. Reload from Settings after editing.
 config_version = 1
 
 [appearance]

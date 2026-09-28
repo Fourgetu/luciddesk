@@ -461,14 +461,14 @@ fn choose(owner: isize, export: bool) -> Result<Option<PathBuf>, String> {
             .map_err(|e| e.to_string())?;
         dialog
             .SetTitle(if export {
-                windows::core::w!("导出 LucidPane 配置")
+                windows::core::w!("导出 LucidDesk 配置")
             } else {
-                windows::core::w!("恢复 LucidPane 配置")
+                windows::core::w!("恢复 LucidDesk 配置")
             })
             .map_err(|e| e.to_string())?;
         dialog
             .SetFileTypes(&[Common::COMDLG_FILTERSPEC {
-                pszName: windows::core::w!("LucidPane 配置 (*.db)"),
+                pszName: windows::core::w!("LucidDesk 配置 (*.db)"),
                 pszSpec: windows::core::w!("*.db"),
             }])
             .map_err(|e| e.to_string())?;
@@ -477,7 +477,7 @@ fn choose(owner: isize, export: bool) -> Result<Option<PathBuf>, String> {
             .map_err(|e| e.to_string())?;
         if export {
             dialog
-                .SetFileName(&windows::core::HSTRING::from(name("LucidPane")))
+                .SetFileName(&windows::core::HSTRING::from(name("LucidDesk")))
                 .map_err(|e| e.to_string())?;
         }
         if let Err(e) = dialog.Show(Some(windows::Win32::Foundation::HWND(owner as _))) {

@@ -101,7 +101,7 @@ impl WorkspaceStore {
         Ok(())
     }
 
-    /// Opens or creates a `LucidPane` workspace database.
+    /// Opens or creates a `LucidDesk` workspace database.
     ///
     /// # Errors
     ///

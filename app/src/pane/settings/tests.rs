@@ -153,7 +153,7 @@ fn radius_drag_preserves_fractional_values() {
 fn initial_library_show_remains_hidden_until_prepared() {
     let prepared = Rc::new(std::cell::Cell::new(false));
     let callback_prepared = Rc::clone(&prepared);
-    let window = windows_window::Window::new("LucidPane initial visibility test")
+    let window = windows_window::Window::new("LucidDesk initial visibility test")
         .style(WS_OVERLAPPEDWINDOW)
         .on_message(move |_, msg, _, lp| {
             if unsafe { defer_show(msg, lp, callback_prepared.get()) } || msg == WM_DESTROY {

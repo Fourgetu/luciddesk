@@ -72,17 +72,34 @@ fn main() {
         })
         .unwrap_or_else(|| "unknown".into());
     println!("cargo:rustc-env=LUCIDPANE_BUILD_REVISION={revision}");
-    embed_resource::compile("assets/app.rc", embed_resource::NONE)
+    let version = std::env::var("CARGO_PKG_VERSION").unwrap();
+    let numeric_version = ["MAJOR", "MINOR", "PATCH"]
+        .map(|part| {
+            std::env::var(format!("CARGO_PKG_VERSION_{part}"))
+                .unwrap()
+                .parse::<u16>()
+                .expect("Windows version components must fit in 16 bits")
+                .to_string()
+        })
+        .join(",");
+    let resource = std::fs::read_to_string("assets/app.rc")
+        .expect("failed to read application resource template")
+        .replace("@VERSION_NUMERIC@", &format!("{numeric_version},0"))
+        .replace("@VERSION_STRING@", &version);
+    let resource_path = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap())
+        .join("app.rc");
+    std::fs::write(&resource_path, resource).expect("failed to write application resources");
+    embed_resource::compile(&resource_path, embed_resource::NONE)
         .manifest_required()
-        .expect("failed to embed the LucidPane application icon");
+        .expect("failed to embed the LucidDesk application resources");
     // Native search controls and the backdrop fixture use Explorer's v6 controls.
     if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
         let manifest = std::path::PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap())
             .join("../crates/desktop-hook/native-controls.manifest");
         println!("cargo:rerun-if-changed={}", manifest.display());
-        println!("cargo:rustc-link-arg-bin=lucidpane=/MANIFEST:EMBED");
+        println!("cargo:rustc-link-arg-bin=luciddesk=/MANIFEST:EMBED");
         println!(
-            "cargo:rustc-link-arg-bin=lucidpane=/MANIFESTINPUT:{}",
+            "cargo:rustc-link-arg-bin=luciddesk=/MANIFESTINPUT:{}",
             manifest.display()
         );
         println!("cargo:rustc-link-arg-examples=/MANIFEST:EMBED");

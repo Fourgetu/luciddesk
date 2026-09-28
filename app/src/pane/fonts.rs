@@ -160,7 +160,7 @@ mod tests {
                 .all(|name| !name.starts_with('@') && readable(name))
         );
         let store = desktop_storage::WorkspaceStore::open_in_memory().unwrap();
-        assert!(save(&store, "LucidPane nonexistent font 82947").is_err());
+        assert!(save(&store, "LucidDesk nonexistent font 82947").is_err());
         assert!(store.preference(KEY).unwrap().is_none());
     }
     #[test]

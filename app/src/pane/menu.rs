@@ -109,7 +109,7 @@ fn pane_entries(folder: (bool, bool), visible_columns: u8,
         entry(0, "", "", ""),
         entry(18, "设置…", "", ""),
         entry(11, "关闭面板", "", ""),
-        entry(4, "退出 LucidPane", "", ""),
+        entry(4, "退出 LucidDesk", "", ""),
     ]);
     if folder.0 { rows.retain(|row| row.id != 39); }
     rows

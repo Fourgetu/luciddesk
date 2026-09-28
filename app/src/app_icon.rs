@@ -76,7 +76,7 @@ mod tests {
 
     #[test]
     fn window_icons_are_attached_and_reused() {
-        let window = windows_window::Window::new("LucidPane icon test")
+        let window = windows_window::Window::new("LucidDesk icon test")
             .create()
             .unwrap();
         let hwnd = window.hwnd().cast();

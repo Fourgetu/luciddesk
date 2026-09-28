@@ -21,7 +21,7 @@ fn multi_window_render_latency() {
         })
         .collect();
     for i in 0..4 {
-        let window = windows_window::Window::new("LucidPane GPU benchmark")
+        let window = windows_window::Window::new("LucidDesk GPU benchmark")
             .size(320, 340)
             .style(WS_POPUP)
             .ex_style(WS_EX_TOOLWINDOW | WS_EX_NOREDIRECTIONBITMAP)

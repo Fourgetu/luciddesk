@@ -518,7 +518,7 @@ unsafe fn finish(edit: HWND, pointer: *mut Editor, commit: bool) {
                 MessageBoxW(
                     owner,
                     wide(&format!("重命名失败：{error}")).as_ptr(),
-                    windows_sys::w!("LucidPane"),
+                    windows_sys::w!("LucidDesk"),
                     MB_OK | MB_ICONERROR,
                 );
             }

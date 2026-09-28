@@ -657,7 +657,7 @@ where
     let mut paint_error = false;
     let model_init = Rc::clone(&model);
     let inspect = std::env::var_os("LUCIDPANE_INSPECT").is_some();
-    let window_title = format!("LucidPane — {}", model.borrow().title);
+    let window_title = format!("LucidDesk — {}", model.borrow().title);
     let prepared = Rc::new(std::cell::Cell::new(false));
     let show_prepared = Rc::clone(&prepared);
     let window = Window::new(&window_title)
@@ -2112,7 +2112,7 @@ pub fn error(message: &str) {
         MessageBoxW(
             std::ptr::null_mut(),
             wide(message).as_ptr(),
-            wide("LucidPane").as_ptr(),
+            wide("LucidDesk").as_ptr(),
             MB_OK | MB_ICONWARNING,
         );
     }

@@ -266,7 +266,7 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
     let taskbar_created = unsafe { RegisterWindowMessageW(windows_sys::w!("TaskbarCreated")) };
     let mut layout_dirty = false;
     let mut reconnect_hint = false;
-    let window = windows_window::Window::new("LucidPane Runtime")
+    let window = windows_window::Window::new("LucidDesk Runtime")
         .size(1, 1)
         .style(WS_POPUP)
         .ex_style(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)

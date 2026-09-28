@@ -29,7 +29,7 @@ try {
     Invoke-CargoCheck 'workspace-tests' @('test', '--workspace', '--lib', '--bins', '--tests', '--locked', '--offline', '--', '--test-threads=1')
     Invoke-CargoCheck 'doc-tests' @('test', '--workspace', '--doc', '--locked', '--offline')
     for ($round = 1; $round -le $Repeat; $round++) {
-        Invoke-CargoCheck "folder-watch-$round" @('test', '-p', 'lucidpane', '--bin', 'lucidpane', '--locked', '--offline', 'pane::folder::tests::folder_watch_tracks_children_and_recovers_after_missing_directory', '--', '--exact', '--test-threads=1')
+        Invoke-CargoCheck "folder-watch-$round" @('test', '-p', 'luciddesk', '--bin', 'luciddesk', '--locked', '--offline', 'pane::folder::tests::folder_watch_tracks_children_and_recovers_after_missing_directory', '--', '--exact', '--test-threads=1')
     }
     if ($LiveDesktop) {
         # Read-only Explorer probe. Do not enable all ignored tests: some open

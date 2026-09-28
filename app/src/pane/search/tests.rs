@@ -419,14 +419,14 @@ fn compact_render_keeps_rows_and_border_inside_the_pane() {
     model.dark = true;
     model.backdrop = desktop_core::Backdrop::Translucent { opacity: 1.0 };
     let mut state = Search::new();
-    state.change("LucidPane".into());
+    state.change("LucidDesk".into());
     state.entries = vec![
         Entry {
-            path: r"E:\Project\LucidPane\README.md".into(),
+            path: r"E:\Project\LucidDesk\README.md".into(),
             folder: false,
         },
         Entry {
-            path: r"E:\Project\LucidPane\docs".into(),
+            path: r"E:\Project\LucidDesk\docs".into(),
             folder: true,
         },
     ];
@@ -437,7 +437,7 @@ fn compact_render_keeps_rows_and_border_inside_the_pane() {
     let mut editor = Editor::new(hwnd).unwrap();
     editor.appearance(hwnd, true);
     unsafe {
-        SetWindowTextW(editor.hwnd, wide("LucidPane").as_ptr());
+        SetWindowTextW(editor.hwnd, wide("LucidDesk").as_ptr());
     }
     resize(hwnd, &mut state);
     let mut drawing = Drawing::new(hwnd).unwrap();

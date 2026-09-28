@@ -61,7 +61,7 @@ fn record_presenter(host: isize) {
     };
     let Ok(base) = desktop_shell::local_app_data_path() else { return; };
     if let Ok(mut log) = std::fs::OpenOptions::new().create(true).append(true)
-        .open(base.join("LucidPane").join("menu-presenter.log")) {
+        .open(base.join("LucidDesk").join("menu-presenter.log")) {
         let values = unsafe { ["PrepareCalled", "PrepareResult", "ReadyCalled", "ReadyResult", "ShowCalled"].map(|name| {
             let key: Vec<u16> = format!("LucidPane.Menu.{name}").encode_utf16().chain(Some(0)).collect();
             GetPropW(host as _, key.as_ptr()) as usize as u32

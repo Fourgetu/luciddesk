@@ -1,4 +1,4 @@
-//! Platform-independent domain model for `LucidPane`.
+//! Platform-independent domain model for `LucidDesk`.
 //!
 //! A [`Workspace`] owns panels and desktop membership; Windows integration and
 //! persistence are handled by separate crates.

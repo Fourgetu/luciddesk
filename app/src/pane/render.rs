@@ -1610,7 +1610,7 @@ mod tests {
         let model = sample_model();
         // Exercise the actual swap-chain path, including buffer rotation and resize.
         // The test window stays hidden and never takes over Explorer.
-        let window = windows_window::Window::new("LucidPane GPU regression")
+        let window = windows_window::Window::new("LucidDesk GPU regression")
             .size(400, 240)
             .style(windows_sys::Win32::UI::WindowsAndMessaging::WS_POPUP)
             .ex_style(windows_sys::Win32::UI::WindowsAndMessaging::WS_EX_NOREDIRECTIONBITMAP)

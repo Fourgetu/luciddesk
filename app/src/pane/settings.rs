@@ -262,7 +262,7 @@ fn with_titlebar(mut scene: Scene, width: f32, maximized: bool) -> Scene {
     }
     scene.text(
         Rect::from_xywh(16.0, 0.0, 220.0, TITLE_HEIGHT),
-        "LucidPane 设置",
+        "LucidDesk 设置",
         0,
     );
     for (i, (glyph, command)) in [
@@ -395,7 +395,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
     let mut toggle_motion = std::collections::HashMap::<usize, ToggleMotion>::new();
     let prepared = Rc::new(std::cell::Cell::new(false));
     let show_prepared = Rc::clone(&prepared);
-    let window = windows_window::Window::new("LucidPane 设置")
+    let window = windows_window::Window::new("LucidDesk 设置")
         .size(900, DEFAULT_HEIGHT)
         .style(WS_OVERLAPPEDWINDOW)
         .ex_style(WS_EX_TOOLWINDOW | WS_EX_NOREDIRECTIONBITMAP)
@@ -1163,7 +1163,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     }
                     Action::ProjectHome => {
                         if let Err(error) = desktop_shell::open_shell_identity(hwnd as isize, &desktop_core::ShellIdentity::Namespace {
-                            parsing_name: "https://git.bbkingdom.fun:30443/yuchen95/LucidPane".into(),
+                            parsing_name: "https://git.bbkingdom.fun:30443/yuchen95/LucidDesk".into(),
                         }) { window::error(&error.to_string()); }
                     }
                     Action::EverythingBrowse | Action::EverythingDetect | Action::EverythingLaunch => {

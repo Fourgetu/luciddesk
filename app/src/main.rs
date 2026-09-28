@@ -91,17 +91,54 @@ fn parse_options(arguments: impl IntoIterator<Item = OsString>) -> Result<Option
 }
 
 fn database_path() -> Result<PathBuf, String> {
-    if let Some(root) = std::env::var_os("LUCIDPANE_DATA_DIR") {
+    if let Some(root) = std::env::var_os("LUCIDDESK_DATA_DIR")
+        .or_else(|| std::env::var_os("LUCIDPANE_DATA_DIR"))
+    {
         return Ok(PathBuf::from(root).join("workspace.db"));
+    }
+    let executable = std::env::current_exe().map_err(|error| error.to_string())?;
+    if let Some(directory) = executable.parent().and_then(portable_data_directory) {
+        return Ok(directory.join("workspace.db"));
     }
     let root = local_app_data_path()
         .map_err(|error| format!("failed to resolve LocalAppData: {error}"))?;
-    Ok(root.join("LucidPane").join("workspace.db"))
+    Ok(default_data_directory(&root).join("workspace.db"))
+}
+
+fn default_data_directory(root: &std::path::Path) -> PathBuf {
+    let current = root.join("LucidDesk");
+    let legacy = root.join("LucidPane");
+    // Reuse legacy data in place; never move a live database or split its backups.
+    if !current.exists() && legacy.exists() { legacy } else { current }
+}
+
+fn portable_data_directory(executable_directory: &std::path::Path) -> Option<PathBuf> {
+    executable_directory.join("portable.marker").is_file()
+        .then(|| executable_directory.join("data"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn portable_data_stays_beside_executable_only_when_enabled() {
+        let root = tempfile::tempdir().unwrap();
+        assert_eq!(portable_data_directory(root.path()), None);
+        std::fs::write(root.path().join("portable.marker"), "").unwrap();
+        assert_eq!(portable_data_directory(root.path()), Some(root.path().join("data")));
+        assert!(!root.path().join("data").exists());
+    }
+    #[test]
+    fn brand_change_preserves_existing_data_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let current = root.path().join("LucidDesk");
+        let legacy = root.path().join("LucidPane");
+        assert_eq!(default_data_directory(root.path()), current);
+        std::fs::create_dir(&legacy).unwrap();
+        assert_eq!(default_data_directory(root.path()), legacy);
+        std::fs::create_dir(&current).unwrap();
+        assert_eq!(default_data_directory(root.path()), current);
+    }
     #[test]
     fn accepts_optional_title_and_rejects_invalid_arguments() {
         assert_eq!(parse_options([]).unwrap(), None);

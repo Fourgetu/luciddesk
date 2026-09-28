@@ -35,7 +35,7 @@ impl SystemInfo {
     }
     fn report(&self) -> String {
         format!(
-            "LucidPane {}\r\nBuild: {}\r\nProcess architecture: {}\r\n{}\r\nService pack: {}\r\n",
+            "LucidDesk {}\r\nBuild: {}\r\nProcess architecture: {}\r\n{}\r\nService pack: {}\r\n",
             env!("CARGO_PKG_VERSION"),
             env!("LUCIDPANE_BUILD_REVISION"),
             std::env::consts::ARCH,

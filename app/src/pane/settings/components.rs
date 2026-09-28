@@ -266,19 +266,24 @@ impl<'a> SettingsForm<'a> {
     pub fn brand(&mut self) {
         self.scene
             .cards
-            .push(Rect::from_xywh(self.x, self.y, self.width, 112.0));
-        self.scene.app_icon = Some(Rect::from_xywh(self.x + 16.0, self.y + 24.0, 64.0, 64.0));
+            .push(Rect::from_xywh(self.x, self.y, self.width, 136.0));
+        self.scene.app_icon = Some(Rect::from_xywh(self.x + 16.0, self.y + 36.0, 64.0, 64.0));
         self.scene.text(
             Rect::from_xywh(self.x + 96.0, self.y + 24.0, self.width - 112.0, 32.0),
-            "LucidPane",
+            "LucidDesk",
             2,
         );
         self.scene.text(
             Rect::from_xywh(self.x + 96.0, self.y + 60.0, self.width - 112.0, 28.0),
+            "桌面分组与文件整理",
+            6,
+        );
+        self.scene.text(
+            Rect::from_xywh(self.x + 96.0, self.y + 92.0, self.width - 112.0, 24.0),
             concat!("v", env!("CARGO_PKG_VERSION"), " · 预览版"),
             6,
         );
-        self.y += 120.0;
+        self.y += 144.0;
     }
     pub fn colors(&mut self, color: u32) {
         let r = self.card("预设配色", "选择颜色后即时预览。", 352.0);

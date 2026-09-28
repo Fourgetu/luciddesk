@@ -38,7 +38,7 @@ impl Tray {
             return Err("无法注册托盘恢复消息".into());
         }
         let mut pending = None;
-        let window = Window::new("LucidPane Tray")
+        let window = Window::new("LucidDesk Tray")
             .size(1, 1)
             .style(WS_POPUP)
             .ex_style(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)
@@ -118,7 +118,7 @@ fn data(hwnd: HWND, icon: HICON) -> NOTIFYICONDATAW {
     for (slot, ch) in data
         .szTip
         .iter_mut()
-        .zip("LucidPane · 桌面分组".encode_utf16())
+        .zip("LucidDesk · 桌面分组与文件整理".encode_utf16())
     {
         *slot = ch;
     }
@@ -129,7 +129,7 @@ fn add(hwnd: HWND, icon: HICON) -> Result<(), String> {
     let data = data(hwnd, icon);
     unsafe {
         if Shell_NotifyIconW(NIM_ADD, &data) == 0 {
-            return Err("无法添加 LucidPane 托盘图标".into());
+            return Err("无法添加 LucidDesk 托盘图标".into());
         }
         if Shell_NotifyIconW(NIM_SETVERSION, &data) == 0 {
             Shell_NotifyIconW(NIM_DELETE, &data);
@@ -182,7 +182,7 @@ fn menu(
             entry(5, "新建文件夹面板…", "\u{e8b7}", ""),
             entry(0, "", "", ""),
             entry(4, "设置", "\u{e713}", ""),
-            entry(3, "退出 LucidPane", "\u{e7e8}", ""),
+            entry(3, "退出 LucidDesk", "\u{e7e8}", ""),
         ],
     );
     unsafe {

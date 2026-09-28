@@ -8,7 +8,7 @@ pub fn show_error(error: &str) {
         windows_sys::Win32::UI::WindowsAndMessaging::MessageBoxW(
             std::ptr::null_mut(),
             text.as_ptr(),
-            windows_sys::w!("LucidPane"),
+            windows_sys::w!("LucidDesk"),
             windows_sys::Win32::UI::WindowsAndMessaging::MB_ICONWARNING,
         );
     }
