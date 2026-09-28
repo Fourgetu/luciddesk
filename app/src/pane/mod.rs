@@ -10,6 +10,7 @@ mod acrylic;
 mod animation;
 mod visibility;
 mod assets;
+mod image_pool;
 mod canvas;
 mod columns;
 mod composition;

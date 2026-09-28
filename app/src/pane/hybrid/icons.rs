@@ -63,7 +63,7 @@ fn apply_pane_images(
             );
         }
         if differs {
-            images.insert(key, Arc::new(image));
+            images.insert(key, crate::pane::image_pool::intern(Arc::new(image)));
             changed = true;
         }
     }

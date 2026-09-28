@@ -127,6 +127,24 @@ fn pixels() -> assets::Pixels {
 }
 
 #[test]
+fn desktop_icons_share_pixels_with_other_sources_and_refresh_independently() {
+    let mut s = crate::pane::tests::test_state();
+    let shared = crate::pane::image_pool::intern(Arc::new(pixels()));
+    let keys: Vec<_> = s.workspace.desktop_items().iter()
+        .map(|item| item.identity().persistent_key()).collect();
+    assert!(apply_pane_images(&s.workspace, &mut s.images,
+        keys.iter().map(|key| (key.clone(), pixels())).collect()));
+    assert!(s.images.values().all(|image| Arc::ptr_eq(image, &shared)));
+    let mut changed = pixels();
+    changed.data[0] = 0;
+    assert!(apply_pane_images(&s.workspace, &mut s.images,
+        vec![(keys[0].clone(), changed)]));
+    assert!(!Arc::ptr_eq(&s.images[&keys[0]], &shared));
+    assert!(Arc::ptr_eq(&s.images[&keys[1]], &shared));
+    assert_eq!(shared.data[0], 255);
+}
+
+#[test]
 fn released_images_are_freed_and_late_results_cannot_restore_them() {
     let mut s = crate::pane::tests::test_state();
     let mut retention = image_retention::ImageRetention::default();
@@ -140,7 +158,12 @@ fn released_images_are_freed_and_late_results_cannot_restore_them() {
     assert!(apply_pane_images(
         &s.workspace,
         &mut s.images,
-        keys.iter().map(|key| (key.clone(), pixels())).collect()
+        keys.iter().enumerate().map(|(index, key)| {
+            let mut image = pixels();
+            // Distinct content isolates eviction from live-image sharing.
+            image.data[0] = index as u8;
+            (key.clone(), image)
+        }).collect()
     ));
     let released = Arc::downgrade(&s.images[&keys[0]]);
     let kept = s.images[&keys[1]].clone();
@@ -159,7 +182,7 @@ fn released_images_are_freed_and_late_results_cannot_restore_them() {
     assert!(!apply_pane_images(
         &s.workspace,
         &mut s.images,
-        vec![(keys[0].clone(), pixels()), (keys[1].clone(), pixels())]
+        vec![(keys[0].clone(), pixels()), (keys[1].clone(), (*kept).clone())]
     ));
     assert!(!s.images.contains_key(&keys[0]));
     assert!(
