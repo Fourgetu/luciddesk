@@ -69,7 +69,7 @@ pub fn show(
     folder: (bool, bool),
     visible_columns: u8,
 ) -> i32 {
-    let topmost = unsafe { GetWindowLongW(owner, GWL_EXSTYLE) } as u32 & WS_EX_TOPMOST != 0;
+    let topmost = super::quick_reveal::permanent_topmost(owner);
     show_entries(owner, anchor, anchored, theme, backdrop,
         pane_entries(folder, visible_columns, auto_hide, locked, topmost))
 }

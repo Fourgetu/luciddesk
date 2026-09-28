@@ -195,9 +195,7 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
                         .map(|v| v.window.hwnd())
                         .collect();
                     for &hwnd in &windows {
-                        unsafe {
-                            ShowWindow(hwnd.cast(), SW_SHOWNOACTIVATE);
-                        }
+                        quick_reveal::show(hwnd.cast());
                     }
                     if let Some(&hwnd) = windows.first() {
                         unsafe {

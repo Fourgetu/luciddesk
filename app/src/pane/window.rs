@@ -79,6 +79,17 @@ fn desktop_insert_after(hwnd: HWND) -> HWND {
     }
 }
 
+/// Raise once while preserving the topmost bit and subsequent desktop behavior.
+pub(super) fn raise_once(hwnd: HWND) {
+    unsafe {
+        let desktop = RemovePropW(hwnd, DESKTOP_LAYER);
+        ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+        SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+        if !desktop.is_null() { SetPropW(hwnd, DESKTOP_LAYER, desktop); }
+    }
+}
+
 pub fn set_layer(hwnd: HWND, always_on_top: bool) {
     unsafe {
         // Let Windows change the actual topmost bit before applying desktop-band constraints.
@@ -1917,7 +1928,7 @@ where
                         };
                         let visible_columns = model.borrow().folder_visible_columns;
                         let command = if tab_context.is_some() {
-                            let entries = super::menu::tab_context_entries(&model.borrow(), unsafe { GetWindowLongW(hwnd, GWL_EXSTYLE) } as u32 & WS_EX_TOPMOST != 0);
+                            let entries = super::menu::tab_context_entries(&model.borrow(), super::quick_reveal::permanent_topmost(hwnd));
                             super::menu::show_entries(hwnd, anchor, false, theme, backdrop, entries)
                         } else { menu(
                             hwnd,

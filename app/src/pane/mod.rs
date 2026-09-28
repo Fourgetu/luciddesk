@@ -31,6 +31,7 @@ mod render;
 #[cfg(test)]
 mod render_bench;
 mod runtime;
+mod quick_reveal;
 mod auto_hide;
 mod tabs;
 mod scaled_icons;
