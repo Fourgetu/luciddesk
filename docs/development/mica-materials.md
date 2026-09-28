@@ -41,7 +41,23 @@ for local UI surfaces such as selected tabs:
 
 Local overlays remain separate from the backdrop strength.
 The settings preview also omits full-body Mica overlays. Acrylic and solid backgrounds retain their
-existing rendering. Native-material failure uses the measured opaque fallback.
+existing rendering. Missing wallpaper material first tries the acrylic recipe,
+preserving the requested strength. If the host backdrop or effect is also
+unavailable, rendering uses the opaque theme fallback. Stored material preferences
+remain unchanged.
+
+Host-backdrop setup is deferred until an acrylic brush is needed. The public
+`DWMWA_USE_HOSTBACKDROPBRUSH` attribute is tried first. An unsupported-attribute
+error (`E_INVALIDARG` / `E_NOTIMPL`) enables the isolated downlevel accent path:
+`SetWindowCompositionAttribute`, `WCA_ACCENT_POLICY`, `ACCENT_ENABLE_HOSTBACKDROP`.
+The export is resolved dynamically; absent or rejected capabilities fall back
+to color. Hiding or replacing the material releases the legacy accent policy.
+This compatibility ABI needs Windows 10 validation; the native entry and forced
+material-failure tests on Windows 11 do not establish Windows 10 visual behavior.
+
+API references: [host-backdrop attribute](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwmwindowattribute),
+[host brush](https://learn.microsoft.com/en-us/uwp/api/windows.ui.composition.compositor.createhostbackdropbrush),
+[dynamic attribute entry](https://learn.microsoft.com/en-us/windows/win32/dwm/setwindowcompositionattribute).
 
 ## Sources
 

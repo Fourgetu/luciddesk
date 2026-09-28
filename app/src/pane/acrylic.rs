@@ -2,6 +2,8 @@
 //! backdrop transparency through accessibility settings and power policy.
 #[path = "acrylic/effects.rs"]
 mod effects;
+#[path = "acrylic/host.rs"]
+mod host;
 
 use super::native_graphics::{DWMWA_USE_HOSTBACKDROPBRUSH, set_attribute};
 use std::{cell::RefCell, rc::Rc};
@@ -37,8 +39,12 @@ thread_local! {
 }
 
 pub struct Acrylic {
+    hwnd: HWND,
     material_brush: RefCell<Option<(bool, windows::UI::Composition::CompositionBrush)>>,
-    _runtime: Rc<Runtime>,
+    host_backdrop: RefCell<Option<host::HostBackdrop>>,
+    #[cfg(test)]
+    unavailable_backdrops: std::cell::Cell<(bool, bool)>,
+    runtime: Rc<Runtime>,
     _target: DesktopWindowTarget,
     root: ContainerVisual,
     backdrop: windows::UI::Composition::SpriteVisual,
@@ -90,10 +96,6 @@ impl Acrylic {
             *slot = Some(Rc::clone(&runtime));
             Ok(runtime)
         })?;
-        let enabled = 1i32;
-        unsafe {
-            set_attribute(hwnd, DWMWA_USE_HOSTBACKDROPBRUSH, &enabled)?;
-        }
         let compositor = &runtime.compositor;
         let interop: ICompositorDesktopInterop = compositor.cast()?;
         // A standalone material uses the bottom target; a combined content tree
@@ -117,8 +119,12 @@ impl Acrylic {
         root.Children()?.InsertAtTop(&tint)?;
         target.SetRoot(&root)?;
         Ok(Self {
+            hwnd,
             material_brush: RefCell::new(None),
-            _runtime: runtime,
+            host_backdrop: RefCell::new(None),
+            #[cfg(test)]
+            unavailable_backdrops: std::cell::Cell::new((false, false)),
+            runtime: runtime,
             _target: target,
             root,
             backdrop,
@@ -140,7 +146,7 @@ impl Acrylic {
         let geometry = if let Some((geometry, _)) = &self.rounded_clip {
             geometry.clone()
         } else {
-            self._runtime.compositor.CreateRoundedRectangleGeometry()?
+            self.runtime.compositor.CreateRoundedRectangleGeometry()?
         };
         geometry.SetSize(Vector2 {
             X: width as f32,
@@ -152,7 +158,7 @@ impl Acrylic {
         })?;
         if self.rounded_clip.is_none() {
             let clip = self
-                ._runtime
+                .runtime
                 .compositor
                 .CreateGeometricClipWithGeometry(&geometry)?;
             self.root.SetClip(&clip)?;
@@ -162,9 +168,10 @@ impl Acrylic {
     }
 
     pub fn material(&self, material: desktop_core::Backdrop, dark: bool) -> Result<()> {
-        let compositor = &self._runtime.compositor;
+        let compositor = &self.runtime.compositor;
         if let desktop_core::Backdrop::Solid { color, opacity } = material {
             self.material_brush.borrow_mut().take();
+            self.host_backdrop.borrow_mut().take();
             let set_color =
                 |visual: &windows::UI::Composition::SpriteVisual, color: Color| -> Result<()> {
                     if let Ok(brush) = visual
@@ -200,42 +207,30 @@ impl Acrylic {
             material.base(),
             desktop_core::Backdrop::Mica | desktop_core::Backdrop::MicaAlt
         );
-        let (luminosity, tint) = material_colors(material, dark);
-        let brush = (|| -> Result<windows::UI::Composition::CompositionBrush> {
-            let mut cached = self.material_brush.borrow_mut();
-            if let Some((old_wallpaper, brush)) = cached.as_ref() {
-                if *old_wallpaper == wallpaper {
-                    effects::update_colors(brush, luminosity, tint)?;
-                    return Ok(brush.clone());
+        let brush = self
+            .effect_brush(material, dark, wallpaper)
+            .or_else(|error| {
+                if wallpaper {
+                    // Use the acrylic recipe and retain the requested strength without
+                    // changing the persisted Mica/Mica Alt preference.
+                    self.effect_brush(
+                        desktop_core::Backdrop::Acrylic
+                            .with_strength(material.strength().unwrap_or(50)),
+                        dark,
+                        false,
+                    )
+                } else {
+                    Err(error)
                 }
-            }
-            let mut factory = self._runtime.material_factory.borrow_mut();
-            if factory.is_none() {
-                *factory = Some(effects::factory(compositor)?);
-            }
-            let backdrop: windows::UI::Composition::CompositionBrush = if wallpaper {
+            })
+            .or_else(|_| -> Result<windows::UI::Composition::CompositionBrush> {
+                // An unavailable backdrop/effect must remain opaque and legible.
+                self.material_brush.borrow_mut().take();
+                self.host_backdrop.borrow_mut().take();
                 compositor
-                    .TryCreateBlurredWallpaperBackdropBrush()?
-                    .cast()?
-            } else {
-                compositor.CreateHostBackdropBrush()?.cast()?
-            };
-            let brush = effects::brush(
-                compositor,
-                factory.as_ref().unwrap(),
-                &backdrop,
-                luminosity,
-                tint,
-            )?;
-            *cached = Some((wallpaper, brush.clone()));
-            Ok(brush)
-        })()
-        .or_else(|_| -> Result<windows::UI::Composition::CompositionBrush> {
-            // An unavailable backdrop/effect must remain opaque and legible.
-            compositor
-                .CreateColorBrushWithColor(effects::mica_palette(dark, false).0)?
-                .cast()
-        })?;
+                    .CreateColorBrushWithColor(effects::mica_palette(dark, false).0)?
+                    .cast()
+            })?;
         self.backdrop.SetBrush(&brush)?;
         let clear_tint: windows::UI::Composition::CompositionColorBrush =
             self.tint.Brush()?.cast()?;
@@ -248,11 +243,66 @@ impl Acrylic {
         self.visible(true)
     }
 
+    fn effect_brush(
+        &self,
+        material: desktop_core::Backdrop,
+        dark: bool,
+        wallpaper: bool,
+    ) -> Result<windows::UI::Composition::CompositionBrush> {
+        #[cfg(test)]
+        if if wallpaper {
+            self.unavailable_backdrops.get().0
+        } else {
+            self.unavailable_backdrops.get().1
+        } {
+            return Err(windows::Win32::Foundation::E_NOTIMPL.into());
+        }
+        let compositor = &self.runtime.compositor;
+        let (luminosity, tint) = material_colors(material, dark);
+        if !wallpaper && self.host_backdrop.borrow().is_none() {
+            *self.host_backdrop.borrow_mut() = Some(host::HostBackdrop::enable(self.hwnd)?);
+        }
+        let mut cached = self.material_brush.borrow_mut();
+        if let Some((old_wallpaper, brush)) = cached.as_ref()
+            && *old_wallpaper == wallpaper
+        {
+            effects::update_colors(brush, luminosity, tint)?;
+            return Ok(brush.clone());
+        }
+        let mut factory = self.runtime.material_factory.borrow_mut();
+        if factory.is_none() {
+            *factory = Some(effects::factory(compositor)?);
+        }
+        let backdrop: windows::UI::Composition::CompositionBrush = if wallpaper {
+            // Downlevel systems reject this attribute; wallpaper availability is
+            // decided by the brush API, independently of composition setup.
+            let _ = unsafe { set_attribute(self.hwnd, DWMWA_USE_HOSTBACKDROPBRUSH, &1i32) };
+            compositor
+                .TryCreateBlurredWallpaperBackdropBrush()?
+                .cast()?
+        } else {
+            compositor.CreateHostBackdropBrush()?.cast()?
+        };
+        let brush = effects::brush(
+            compositor,
+            factory.as_ref().unwrap(),
+            &backdrop,
+            luminosity,
+            tint,
+        )?;
+        *cached = Some((wallpaper, brush.clone()));
+        Ok(brush)
+    }
+
     pub fn visible(&self, visible: bool) -> Result<()> {
         // Content can share this tree; switching to a plain background must
         // hide only the material, never the application's content visual.
         self.backdrop.SetIsVisible(visible)?;
-        self.tint.SetIsVisible(visible)
+        self.tint.SetIsVisible(visible)?;
+        if !visible {
+            self.host_backdrop.borrow_mut().take();
+        }
+        Ok(())
     }
 
     fn attach_content(
@@ -260,7 +310,7 @@ impl Acrylic {
         swap: &windows::Win32::Graphics::Dxgi::IDXGISwapChain1,
     ) -> Result<()> {
         use windows::Win32::System::WinRT::Composition::ICompositorInterop;
-        let compositor = &self._runtime.compositor;
+        let compositor = &self.runtime.compositor;
         let interop: ICompositorInterop = compositor.cast()?;
         let surface = unsafe { interop.CreateCompositionSurfaceForSwapChain(swap)? };
         let brush = compositor.CreateSurfaceBrushWithSurface(&surface)?;
@@ -273,7 +323,7 @@ impl Acrylic {
     }
 
     pub fn commit_ready(&self) -> Result<Box<dyn Fn() -> bool>> {
-        let commit = self._runtime.compositor.RequestCommitAsync()?;
+        let commit = self.runtime.compositor.RequestCommitAsync()?;
         Ok(Box::new(move || {
             commit.Status().map_or(true, |status| status.0 != 0)
         }))
@@ -284,7 +334,7 @@ impl Acrylic {
     }
 
     pub fn fade_in(&self) -> Result<()> {
-        let animation = self._runtime.compositor.CreateScalarKeyFrameAnimation()?;
+        let animation = self.runtime.compositor.CreateScalarKeyFrameAnimation()?;
         animation.InsertKeyFrame(0.0, 0.0)?;
         animation.InsertKeyFrame(1.0, 1.0)?;
         animation.SetDuration(windows::Foundation::TimeSpan {
@@ -377,4 +427,74 @@ pub(super) fn material_colors(material: desktop_core::Backdrop, dark: bool) -> (
         effects::acrylic_palette(dark)
     };
     effects::adjust_strength(colors.0, colors.1, material.strength().unwrap_or(50))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use desktop_core::Backdrop;
+
+    #[test]
+    fn missing_wallpaper_uses_acrylic_then_opaque_color_without_hiding_content() {
+        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let window = windows_window::Window::new("Material fallback regression")
+            .size(96, 64)
+            .style(windows_sys::Win32::UI::WindowsAndMessaging::WS_POPUP)
+            .ex_style(windows_sys::Win32::UI::WindowsAndMessaging::WS_EX_NOREDIRECTIONBITMAP)
+            .create()
+            .unwrap();
+        let device = super::super::native_graphics::gpu_device().unwrap();
+        let swap = device.create_swap_chain(96, 64).unwrap();
+        let native_swap =
+            super::super::native_graphics::native_interface(swap.raw_swap_chain()).unwrap();
+        let acrylic =
+            Acrylic::new_with_content(HWND(window.hwnd().cast()), 1.0, &native_swap).unwrap();
+        acrylic.unavailable_backdrops.set((true, false));
+        for dark in [false, true] {
+            for requested in [Backdrop::Mica, Backdrop::MicaAlt] {
+                for strength in [0, 25, 50, 75, 100] {
+                    let requested = requested.with_strength(strength);
+                    acrylic.material(requested, dark).unwrap();
+                    assert!(!acrylic.material_brush.borrow().as_ref().unwrap().0);
+                    acrylic.assert_material_effect();
+                    acrylic.assert_material_colors(
+                        Backdrop::Acrylic.with_strength(requested.strength().unwrap_or(50)),
+                        dark,
+                    );
+                    acrylic.assert_content_visible();
+                }
+            }
+            // Fault injection must also bypass a previously cached acrylic brush.
+            acrylic.unavailable_backdrops.set((true, true));
+            acrylic.material(Backdrop::Mica, dark).unwrap();
+            acrylic.assert_solid_color(if dark { 0x0020_2020 } else { 0x00f3_f3f3 }, 1.0);
+            assert!(acrylic.material_brush.borrow().is_none());
+            assert!(acrylic.host_backdrop.borrow().is_none());
+            acrylic.assert_content_visible();
+            acrylic.unavailable_backdrops.set((true, false));
+        }
+        acrylic.material(Backdrop::Mica, true).unwrap();
+        let cached = acrylic.material_brush.borrow().as_ref().unwrap().1.clone();
+        acrylic.visible(false).unwrap();
+        assert!(acrylic.host_backdrop.borrow().is_none());
+        acrylic.material(Backdrop::Mica, true).unwrap();
+        assert_eq!(acrylic.material_brush.borrow().as_ref().unwrap().1, cached);
+        assert!(acrylic.host_backdrop.borrow().is_some());
+        acrylic
+            .material(
+                Backdrop::Solid {
+                    color: 0x0012_3456,
+                    opacity: 0.5,
+                },
+                true,
+            )
+            .unwrap();
+        assert!(acrylic.host_backdrop.borrow().is_none());
+        acrylic.assert_solid_color(0x0012_3456, 0.5);
+        acrylic.unavailable_backdrops.set((false, false));
+        acrylic.material(Backdrop::Acrylic, true).unwrap();
+        acrylic.assert_material_effect();
+        acrylic.assert_material_colors(Backdrop::Acrylic, true);
+        acrylic.assert_content_visible();
+    }
 }
