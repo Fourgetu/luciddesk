@@ -22,6 +22,7 @@
 | [选择与刷新时序](selection-latency.md) | 选择互斥、后台清单读取和过滤发布 |
 | [运行时托盘](tray.md) | 托盘消息、资源释放和验证入口 |
 | [验证记录](validation.md) | 最近一次检查结果与未覆盖范围 |
+| [依赖更新（2026-09-29）](dependency-update-20260929.md) | SQLite、TOML 与间接依赖更新及兼容验证 |
 | [消融实验后的优化方案](ablation-optimization-plan.md) | 存储、Hook 与绘图的改进顺序及验收标准 |
 | [消融实验当前基线](ablation-baseline.md) | 0.9.1 的测量结果、源码快照与历史对照 |
 

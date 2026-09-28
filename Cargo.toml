@@ -21,7 +21,8 @@ desktop-shell = { path = "crates/desktop-shell" }
 desktop-storage = { path = "crates/desktop-storage" }
 desktop-window = { path = "crates/desktop-window" }
 desktop-hook = { path = "crates/desktop-hook" }
-rusqlite = { version = "0.37.0", features = ["bundled", "backup"] }
+# Panel IDs use u64; preserve checked INTEGER conversions in rusqlite 0.40.
+rusqlite = { version = "0.40.2", features = ["bundled", "backup", "fallible_uint"] }
 windows-window = "0.100.0"
 windows-numerics = "0.3.1"
 windows-sys = { version = "0.61.2", features = [
