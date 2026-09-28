@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1200" height="680" viewBox="0 0 1200 680" role="img" aria-labelledby="title desc">
-  <title id="title">LucidPane：把桌面整理成工作区</title>
+  <title id="title">LucidDesk：把桌面整理成工作区</title>
   <desc id="desc">左侧桌面文件拖入中间的工作分组，右侧文件夹面板显示目录内容，下方 Everything 搜索框查找文件。桌面分组只保存引用，文件留在原处。这是功能示意，非实际界面截图。</desc>
   <defs>
     <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#101c30"/><stop offset="1" stop-color="#153b4b"/></linearGradient>

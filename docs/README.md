@@ -1,8 +1,8 @@
 # 文档导航
 
-LucidPane 为 Windows 桌面提供分组、文件夹和 Everything 搜索面板。功能示意与快速开始见[项目首页](../README.md)。
+LucidDesk 为 Windows 桌面提供分组、文件夹和 Everything 搜索面板。功能示意与快速开始见[项目首页](../README.md)。
 
-## 使用 LucidPane
+## 使用 LucidDesk
 
 | 任务 | 阅读入口 |
 | --- | --- |

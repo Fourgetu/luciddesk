@@ -13,9 +13,9 @@
 ## 构建与启动
 
 ```powershell
-cargo build -p lucidpane -p desktop-hook --locked --offline
-$env:LUCIDPANE_DATA_DIR = Join-Path $PWD 'target\dev-data'
-& .\target\debug\lucidpane.exe
+cargo build -p luciddesk -p desktop-hook --locked --offline
+$env:LUCIDDESK_DATA_DIR = Join-Path $PWD 'target\dev-data'
+& .\target\debug\luciddesk.exe
 ```
 
 主程序与 Hook DLL 必须来自同次构建，位于同一目录。当前应用使用视图过滤协议 v1，数据库为 `workspace.db`，全局设置为 `config.toml`。不使用旧运行模式参数，也不提供旧数据库迁移。
@@ -36,23 +36,23 @@ $env:LUCIDPANE_DATA_DIR = Join-Path $PWD 'target\dev-data'
 cargo build -p desktop-shell --example desktop_menu_service_probe --features desktop-menu-diagnostics --target-dir target\desktop-menu-diagnostics --locked --offline
 
 # 同时启用主程序、Hook 和 Shell 的 Release 菜单计时
-cargo build -p lucidpane -p desktop-hook --release --features lucidpane/menu-diagnostics --target-dir target\menu-diagnostics --locked --offline
+cargo build -p luciddesk -p desktop-hook --release --features luciddesk/menu-diagnostics --target-dir target\menu-diagnostics --locked --offline
 ```
 
 `tools/package-preview.ps1` 在 `target\production` 构建并取件，显式禁用默认 feature；不要用 `--all-features` 生成发布包，以免启用诊断入口和计时。
 
-`LUCIDPANE_DATA_DIR` 仅影响该环境下启动的程序。无需自定义目录时，在启动前移除该环境变量，程序会使用 LocalAppData。
+`LUCIDDESK_DATA_DIR` 仅影响该环境下启动的程序。无需自定义目录时，在启动前移除该环境变量，程序会使用 LocalAppData。
 
 可选标题参数示例（会设置首个面板的标题，包括已有工作区中的首个面板）：
 
 ```powershell
-& .\target\debug\lucidpane.exe --title '工作'
+& .\target\debug\luciddesk.exe --title '工作'
 ```
 
 如果正在运行的程序占用了原构建产物，可以先编译到独立目录：
 
 ```powershell
-cargo build -p lucidpane -p desktop-hook --locked --offline --target-dir target\convergence-check
+cargo build -p luciddesk -p desktop-hook --locked --offline --target-dir target\convergence-check
 ```
 
 退出旧实例后，再从 `target\convergence-check\debug` 启动新程序。不要同时运行新旧实例以测试桌面 Hook。
@@ -70,8 +70,8 @@ cargo build -p lucidpane -p desktop-hook --locked --offline --target-dir target\
 ```powershell
 cargo check --workspace --all-targets --offline
 cargo test -p desktop-core -p desktop-storage -p desktop-hook -p desktop-shell --lib --offline -- --test-threads=1
-cargo test -p lucidpane --bin lucidpane --offline -- --test-threads=1
-cargo test -p lucidpane --test canvas_compat --offline
+cargo test -p luciddesk --bin luciddesk --offline -- --test-threads=1
+cargo test -p luciddesk --test canvas_compat --offline
 ```
 
 UI 测试按单线程执行，降低原生窗口与 COM 消息的相互干扰。部分 Shell 测试需要实际桌面权限；受限会话中的失败应与代码回归区分，并记录具体错误。
@@ -83,7 +83,7 @@ Canvas 集成测试可能连带构建主程序；若可执行文件正被占用�
 托盘交互测试默认跳过，需要在实际 Windows 通知区域中单独执行：
 
 ```powershell
-cargo test -p lucidpane tray::tests --bin lucidpane --offline -- --ignored --test-threads=1
+cargo test -p luciddesk tray::tests --bin luciddesk --offline -- --ignored --test-threads=1
 ```
 
 ## 生成绑定
@@ -105,7 +105,7 @@ cargo run --locked --offline --manifest-path tools/windows-bindings/Cargo.toml -
 
 ## 视图过滤后端回归
 
-退出 LucidPane 后运行。探针会临时移除两个原生桌面项目，验证刷新、菜单暂停/恢复、坐标恢复和测试控制进程退出后的恢复，不修改磁盘文件。
+退出 LucidDesk 后运行。探针会临时移除两个原生桌面项目，验证刷新、菜单暂停/恢复、坐标恢复和测试控制进程退出后的恢复，不修改磁盘文件。
 
 ```powershell
 cargo build -p desktop-hook
@@ -114,3 +114,7 @@ cargo build -p desktop-shell --example filter_backend_probe
 ```
 
 结果及兼容边界见[视图过滤验证](../desktop-view-filter-verification.md)。
+
+品牌更名兼容：若新的数据目录不存在且旧目录 `%LOCALAPPDATA%\LucidPane` 已存在，继续使用旧目录。`LUCIDDESK_DATA_DIR` 优先，旧变量 `LUCIDPANE_DATA_DIR` 仍受支持；详见[品牌规范](../brand.md)。
+
+便携包构建：运行 `./tools/package-preview.ps1 -Portable`（可加 `-Offline`）。产物写入 `target/portable/时间戳/`，包含 `portable.marker`，不包含个人数据。
