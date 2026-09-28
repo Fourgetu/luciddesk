@@ -12,13 +12,13 @@ static SETTINGS: LazyLock<RwLock<Settings>> = LazyLock::new(|| RwLock::new(Setti
 pub(in crate::pane) fn settings() -> Settings {
     SETTINGS.read().unwrap().clone()
 }
-// Older workspaces used the presence of a search panel as the enabled state.
+// Missing preferences leave search disabled until the user enables it.
 pub(in crate::pane) fn enabled(store: &WorkspaceStore) -> Result<bool, String> {
     Ok(store
         .preference("search_enabled")
         .map_err(|e| e.to_string())?
         .as_deref()
-        != Some("0")
+        == Some("1")
         && resolved(&settings()).is_some())
 }
 pub(in crate::pane) fn set_enabled(store: &WorkspaceStore, enabled: bool) -> Result<(), String> {

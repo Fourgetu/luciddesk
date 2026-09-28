@@ -28,12 +28,12 @@ text = "auto"
 text_protection = false
 
 [search]
-enabled = true
+enabled = false
 shortcut = "Ctrl+Shift+Space"
 everything_path = ""
 
 [preview]
-enabled = true
+enabled = false
 provider = "peek"
 shortcut = "Space"
 peek_path = ""

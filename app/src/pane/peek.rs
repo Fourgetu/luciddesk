@@ -37,7 +37,7 @@ pub(super) struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            enabled: true,
+            enabled: false,
             provider: Provider::Peek,
             quicklook_path: String::new(),
             path: String::new(),
@@ -521,6 +521,7 @@ mod tests {
         save(
             &store,
             Settings {
+                enabled: true,
                 provider: Provider::QuickLook,
                 ..Default::default()
             },
@@ -577,7 +578,14 @@ mod tests {
         assert!(!valid_shortcut(0x43, 1));
         assert!(!valid_shortcut(VK_F4, 4));
         assert!(decode("broken").is_none());
-        save(&store, Settings::default()).unwrap();
+        save(
+            &store,
+            Settings {
+                enabled: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert!(matches(VK_SPACE, &Modifiers::default(), false));
         assert!(!matches(VK_SPACE, &Modifiers::default(), true));
     }

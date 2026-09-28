@@ -42,6 +42,7 @@ fn new_files_ignore_legacy_database_and_keep_preferences_out_of_sqlite() {
 #[test]
 fn external_edits_require_reload_preserve_comments_and_reject_invalid_values() {
     let (_dir, store) = open();
+    store.save_preference("search_enabled", "1").unwrap();
     let path = store.config_path().unwrap();
     let original = std::fs::read_to_string(&path).unwrap();
     let edited = original.replace(
