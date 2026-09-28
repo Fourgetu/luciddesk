@@ -96,11 +96,12 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
             .save_workspace(&workspace)
             .map_err(|e| e.to_string())?;
     }
+    let monitors = desktop_window::enumerate_monitors();
     if workspace.panels().is_empty() && first_run {
         let mut pane = Panel::new(
             PanelId::new(1),
             title.clone().unwrap_or_else(|| "新建分组".into()),
-            RectDip::new(650.0, 100.0, 440.0, 380.0),
+            display_layout::first_pane(&monitors, workspace.pane_options().grid_scale),
         );
         pane.set_backdrop(desktop_core::Backdrop::Acrylic);
         workspace.add_panel(pane).map_err(|e| e.to_string())?;
@@ -125,7 +126,7 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
     }));
     display_layout::initialize(
         &mut state.borrow_mut(),
-        desktop_window::enumerate_monitors(),
+        monitors,
     )?;
     {
         let mut s = state.borrow_mut();

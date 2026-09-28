@@ -165,7 +165,7 @@ pub(super) fn add(
             .as_ref()
             .and_then(|p| p.file_name())
             .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "新标签".into());
+            .unwrap_or_else(|| "新建分组".into());
         let mut panel = Panel::new(next, title, source.rect());
         panel.set_folder(folder);
         if panel.folder().is_some() {

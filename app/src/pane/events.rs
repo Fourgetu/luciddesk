@@ -689,7 +689,7 @@ pub(super) fn handle(
                             .to_string_lossy()
                             .into_owned()
                     })
-                    .unwrap_or_else(|| format!("分组 {}", next.get())),
+                    .unwrap_or_else(|| "新建分组".into()),
                 RectDip::new(240.0, 240.0, 480.0, 360.0),
             );
             panel.set_folder(path.clone());

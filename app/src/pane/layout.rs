@@ -36,6 +36,19 @@ pub const LABEL_OFFSET: f32 = 6.0;
 pub const PADDING: f32 = 12.0;
 pub const HEADER_BUTTONS_WIDTH: f32 = 70.0;
 
+/// Shared grid metrics for rendering and the first desktop pane.
+pub fn desktop_grid(width: f32, height: f32, icon_size: f32, grid_scale: f32) -> Grid {
+    let factor = grid_scale / 100.0;
+    let mut grid = Grid::system(width, height, icon_size, (88.0, 96.0));
+    grid.cell_width *= factor;
+    grid.cell_height *= factor;
+    grid.icon_size *= factor;
+    grid.text_scale = factor;
+    grid.columns = ((width - PADDING * 2.0) / grid.cell_width).floor().max(1.0) as usize;
+    grid.visible_rows = ((height - grid.content_top - PADDING) / grid.cell_height).floor().max(1.0) as usize;
+    grid
+}
+
 pub fn title_area(width: f32) -> (f32, f32) {
     // Relax the left margin gradually on narrow panes. Switching between two
     // layouts at a fixed width makes the title grow while the pane shrinks.

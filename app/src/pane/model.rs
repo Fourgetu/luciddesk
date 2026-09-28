@@ -155,15 +155,7 @@ impl GroupModel {
     }
 
     fn icon_grid(&self, width: f32, height: f32) -> layout::Grid {
-        let factor = self.options.grid_scale / 100.0;
-        let mut grid = layout::Grid::system(width, height, self.icon_size, (88.0, 96.0));
-        grid.cell_width *= factor;
-        grid.cell_height *= factor;
-        grid.icon_size *= factor;
-        grid.text_scale = factor;
-        grid.columns = ((width - layout::PADDING * 2.0) / grid.cell_width).floor().max(1.0) as usize;
-        grid.visible_rows = ((height - grid.content_top - layout::PADDING) / grid.cell_height).floor().max(1.0) as usize;
-        grid
+        layout::desktop_grid(width, height, self.icon_size, self.options.grid_scale)
     }
     pub(super) fn resize_cell(&self) -> (f32, f32) {
         if self.is_list() {
