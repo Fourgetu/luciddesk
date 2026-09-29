@@ -9,7 +9,7 @@
 Desktop panels · Folder panels · Everything search · Spacebar preview
 
 [![Build CI](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml/badge.svg)](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml)
-[![Version](https://img.shields.io/badge/version-0.11.1-087EA4?style=flat-square)](CHANGELOG.en.md)
+[![Version](https://img.shields.io/badge/version-0.11.2-087EA4?style=flat-square)](CHANGELOG.en.md)
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square)](#compatibility)
 
 [![Architecture](https://img.shields.io/badge/arch-x64-475569?style=flat-square)](docs/portable.md)
@@ -26,6 +26,8 @@ Desktop panels · Folder panels · Everything search · Spacebar preview
 LucidDesk is a Windows desktop organizer written in Rust. Organize desktop icons into panels, keep frequently used folders within reach, and find local files with Everything.
 
 While icons load, panels show scalable file or folder outlines suited to light and dark themes, then replace them with the actual icons.
+
+Folder panels support natural name sorting, with newest-first dates and largest-first sizes. Search refreshes restore selections within the previously loaded result range.
 
 ## Features
 

@@ -2,9 +2,16 @@
 
 [简体中文](CHANGELOG.md) · English
 
-User-facing changes in each release. The current version is **0.11.1**. Windows 11 x64 is the primary validation platform.
+User-facing changes in each release. The current version is **0.11.2**. Windows 11 x64 is the primary validation platform.
 
 Exit the app before upgrading a portable installation and preserve its `data` folder. See the [portable guide](docs/portable.md) (Chinese).
+
+## 0.11.2 · 2026-09-30
+
+- Simplify the Change folder menu wording and save the updated panel title when switching folders; reselecting the mapped root now leaves the current subfolder.
+- Refine folder column sorting: modification time defaults to newest first and size to largest first, with name ordering for ties and unknown values last within their group.
+- Reduce path allocations, unnecessary type sorting and temporary sort memory during folder icon updates, and improve selection matching when refreshing large selections.
+- Reload previously loaded search pages before replacing results, restoring selection, focus and the range-selection anchor by path; prevent false double-clicks when results change.
 
 ## 0.11.1 · 2026-09-30
 
