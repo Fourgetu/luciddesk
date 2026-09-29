@@ -8,6 +8,7 @@
 
 Desktop panels · Folder panels · Everything search · Spacebar preview
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Build CI](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml/badge.svg)](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml)
 [![Version](https://img.shields.io/badge/version-0.12.0-087EA4?style=flat-square)](CHANGELOG.en.md)
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square)](#compatibility)
@@ -123,3 +124,7 @@ Include reproduction steps, Windows version, and the information from **Settings
 For translations, see the [localization guide](docs/development/localization.md). Other documentation is currently maintained in Chinese: [user guide](docs/usage.md), [portable package](docs/portable.md), and [architecture](docs/development/architecture.md).
 
 Author: **Yuchen95**.
+
+## License
+
+LucidDesk is licensed under the [MIT License](LICENSE). Third-party dependencies remain under their respective licenses.

@@ -8,6 +8,7 @@
 
 桌面面板 · 文件夹面板 · Everything 搜索 · 空格预览
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Build CI](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml/badge.svg)](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml)
 [![版本](https://img.shields.io/badge/version-0.12.0-087EA4?style=flat-square)](CHANGELOG.md)
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square)](#系统与兼容性)
@@ -151,3 +152,7 @@ cargo build -p luciddesk -p desktop-hook --locked
 - [更新记录](CHANGELOG.md)：各版本的新功能与修复。
 - [便携版说明](docs/portable.md)：启动、升级与配置携带。
 - [开发文档](docs/development/README.md)：架构、绘图、存储与验证。
+
+## 许可证
+
+LucidDesk 使用 [MIT 许可证](LICENSE)。第三方依赖仍遵循各自的许可证。

@@ -505,7 +505,7 @@ pub(super) fn about_status(s: &mut Scene, width: f32, status: &str, copied: bool
     form.brand();
     form.button(
         crate::i18n::text("ui-developer-license"),
-        concat!(env!("CARGO_PKG_AUTHORS"), " · MIT / Apache-2.0"),
+        concat!(env!("CARGO_PKG_AUTHORS"), " · ", env!("CARGO_PKG_LICENSE")),
         crate::i18n::text("ui-project-website"),
         Action::ProjectLink("https://github.com/Yuch3nE/luciddesk"),
     );
