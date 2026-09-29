@@ -2034,7 +2034,7 @@ where
                             let hook = reply
                                 .borrow_mut()
                                 .take()
-                                .unwrap_or_else(|| Err("菜单准备未完成".into()));
+                                .unwrap_or_else(|| Err(crate::i18n::text("ui-menu-is-not-ready").into()));
                             let hook = match hook {
                                 Ok(hook) => hook,
                                 Err(message) => {
@@ -2179,7 +2179,7 @@ where
         }
         if windows_sys::Win32::UI::Shell::SetWindowSubclass(hwnd, Some(borderless_proc), 1, 0) == 0
         {
-            return Err("无法初始化无边框分组窗口".into());
+            return Err(crate::i18n::text("ui-could-not-initialize-borderless-group-window").into());
         }
         let class_style = GetClassLongPtrW(hwnd, GCL_STYLE);
         SetClassLongPtrW(

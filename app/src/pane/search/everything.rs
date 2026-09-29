@@ -25,8 +25,8 @@ pub(super) struct Page {
 
 fn word(bytes: &[u8], offset: usize) -> Result<u32, String> {
     let data = bytes
-        .get(offset..offset.checked_add(4).ok_or("数据溢出")?)
-        .ok_or("Everything 返回的数据不完整")?;
+        .get(offset..offset.checked_add(4).ok_or(crate::i18n::text("ui-data-overflow"))?)
+        .ok_or(crate::i18n::text("ui-incomplete-data-from-everything"))?;
     Ok(u32::from_le_bytes(data.try_into().unwrap()))
 }
 
@@ -38,18 +38,18 @@ fn parse(bytes: &[u8]) -> Result<Page, String> {
         || count > PAGE_SIZE
         || (count > 0 && offset.saturating_add(count) > total)
     {
-        return Err("Everything 返回的结果格式不受支持".into());
+        return Err(crate::i18n::text("ui-unsupported-everything-result-format").into());
     }
     let data_start = 20 + count as usize * 8;
     if bytes.len() < data_start {
-        return Err("Everything 返回的数据不完整".into());
+        return Err(crate::i18n::text("ui-incomplete-data-from-everything").into());
     }
     let mut entries = Vec::with_capacity(count as usize);
     for i in 0..count as usize {
         let flags = word(bytes, 20 + i * 8)?;
         let start = word(bytes, 24 + i * 8)? as usize;
         if start < data_start {
-            return Err("Everything 返回的偏移无效".into());
+            return Err(crate::i18n::text("ui-invalid-offset-from-everything").into());
         }
         let length = word(bytes, start)? as usize;
         let end = start
@@ -60,24 +60,24 @@ fn parse(bytes: &[u8]) -> Result<Page, String> {
                     .and_then(|l| l.checked_mul(2))
                     .and_then(|l| v.checked_add(l))
             })
-            .ok_or("Everything 返回的路径过长")?;
+            .ok_or(crate::i18n::text("ui-path-from-everything-is-too-long"))?;
         let text = bytes
             .get(start + 4..end)
-            .ok_or("Everything 返回的路径不完整")?;
+            .ok_or(crate::i18n::text("ui-incomplete-path-from-everything"))?;
         if text.len() < 2 || text[text.len() - 2..] != [0, 0] {
-            return Err("Everything 返回的路径无效".into());
+            return Err(crate::i18n::text("ui-invalid-path-from-everything").into());
         }
         let wide: Vec<u16> = text[..text.len() - 2]
             .chunks_exact(2)
             .map(|c| u16::from_le_bytes([c[0], c[1]]))
             .collect();
         if wide.contains(&0) {
-            return Err("Everything 返回的路径无效".into());
+            return Err(crate::i18n::text("ui-invalid-path-from-everything").into());
         }
         use std::os::windows::ffi::OsStringExt;
         let path = PathBuf::from(std::ffi::OsString::from_wide(&wide));
         if !path.is_absolute() {
-            return Err("Everything 返回的路径不是绝对路径".into());
+            return Err(crate::i18n::text("ui-everything-returned-a-relative-path").into());
         }
         entries.push(Entry {
             path,
@@ -144,11 +144,11 @@ fn instance() -> HWND {
 
 pub(super) fn query(search: &str, offset: u32) -> Result<Page, String> {
     if search.encode_utf16().count() > 16_384 || search.contains('\0') {
-        return Err("搜索内容过长或无效".into());
+        return Err(crate::i18n::text("ui-search-query-is-too-long-or-invalid").into());
     }
     let target = instance();
     if target.is_null() {
-        return Err("未连接 Everything，请启动 Everything 并启用 IPC，然后刷新。".into());
+        return Err(crate::i18n::text("ui-start-everything-enable-ipc-then-refresh").into());
     }
     let mut reply: Option<Vec<u8>> = None;
     let hwnd = unsafe {
@@ -225,7 +225,7 @@ pub(super) fn query(search: &str, offset: u32) -> Result<Page, String> {
     };
     if sent == 0 || accepted == 0 {
         return Err(
-            "Everything 未响应搜索请求，请确认 IPC 已启用（需要 Everything 1.4 或更新版本）。"
+            crate::i18n::text("ui-everything-did-not-respond-enable-ipc-in-everything-1-4-or-newer")
                 .into(),
         );
     }
@@ -235,7 +235,7 @@ pub(super) fn query(search: &str, offset: u32) -> Result<Page, String> {
             return parse(&bytes);
         }
         if Instant::now() >= deadline {
-            return Err("Everything 搜索超时，请稍后刷新。".into());
+            return Err(crate::i18n::text("ui-everything-search-timed-out-refresh-shortly").into());
         }
         let mut message = MSG::default();
         unsafe {

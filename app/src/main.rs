@@ -2,6 +2,7 @@
 
 mod app_icon;
 mod diagnostics;
+mod i18n;
 mod hook_runtime;
 mod pane;
 mod tray;

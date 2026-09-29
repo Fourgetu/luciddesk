@@ -76,6 +76,7 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
     let _graphics = super::native_graphics::GraphicsLifetime;
     let first_run = !path.exists();
     let mut store = WorkspaceStore::open(path).map_err(|e| e.to_string())?;
+    crate::i18n::initialize(&store)?;
     super::peek::load(&store)?;
     fonts::load(&store)?;
     header_divider::load(&store)?;
@@ -102,7 +103,7 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
     if workspace.panels().is_empty() && first_run {
         let mut pane = Panel::new(
             PanelId::new(1),
-            title.clone().unwrap_or_else(|| "新建分组".into()),
+            title.clone().unwrap_or_else(|| crate::i18n::text("ui-new-group").into()),
             display_layout::first_pane(&monitors, workspace.pane_options().grid_scale),
         );
         pane.set_backdrop(desktop_core::Backdrop::Acrylic);
@@ -233,10 +234,10 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
 
 pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), String> {
     if desktop_hook::conflicting_desktop_extension() {
-        return Err("请先退出其他桌面整理软件".into());
+        return Err(crate::i18n::text("ui-close-other-desktop-organizers-first").into());
     }
     if desktop_shell::desktop_icons_hidden() {
-        return Err("请先退出旧的全桌面接管版本，恢复桌面图标显示".into());
+        return Err(crate::i18n::text("ui-exit-the-legacy-desktop-replacement-to-restore-desktop-icons").into());
     }
     let view = desktop_hook::desktop_view()?;
     let dirty = Rc::new(Cell::new(false));
@@ -314,7 +315,7 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), S
     // Reuse this snapshot below instead of performing a second enumeration.
     let snapshot = inventory::capture(&managed_identities(&state.borrow()))?;
     if desktop_hook::desktop_view()? != view {
-        return Err("读取清单期间桌面视图已替换，将重新定位".into());
+        return Err(crate::i18n::text("ui-desktop-view-changed-while-reading-reconnecting").into());
     }
     let hook = FilterSession::connect(
         view,
@@ -601,7 +602,7 @@ pub(super) fn sync(s: &mut PaneApp) -> Result<(), String> {
         return Ok(());
     }
     if !h.hook.is_alive() {
-        return Err("Explorer 视图过滤连接已断开".into());
+        return Err(crate::i18n::text("ui-explorer-view-filter-disconnected").into());
     }
     let h = s.session.as_mut().unwrap();
     if let Some(started) = h.membership_pending {
@@ -711,12 +712,12 @@ pub(super) fn pause_for_preview(s: &PaneApp, allow: bool) -> Result<(), String> 
 }
 
 pub(super) fn begin_item_menu(s: &PaneApp) -> Result<Rc<FilterSession>, String> {
-    let h = s.session.as_ref().ok_or("桌面过滤连接尚未就绪")?;
+    let h = s.session.as_ref().ok_or(crate::i18n::text("ui-desktop-filter-is-not-ready"))?;
     if h.membership_pending.is_some() {
-        return Err("桌面分组正在同步，请稍后重试".into());
+        return Err(crate::i18n::text("ui-desktop-groups-are-syncing-try-again-shortly").into());
     }
     if h.menu_active.replace(true) {
-        return Err("已有活动菜单或预览".into());
+        return Err(crate::i18n::text("ui-a-menu-or-preview-is-already-active").into());
     }
     h.last_pane_input
         .set(Some(unsafe { GetMessageTime() } as u32));

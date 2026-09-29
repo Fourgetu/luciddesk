@@ -31,10 +31,7 @@ pub(crate) fn load(width: i32, height: i32) -> Result<Icon, String> {
         )
     };
     if icon.is_null() {
-        Err(format!(
-            "无法加载应用图标：{}",
-            std::io::Error::last_os_error()
-        ))
+        Err(crate::i18n::format("ui-could-not-load-app-icon", &[("arg0", format!("{}", std::io::Error::last_os_error()))]))
     } else {
         Ok(Icon(icon))
     }

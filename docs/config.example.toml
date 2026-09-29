@@ -1,5 +1,7 @@
 # LucidDesk global settings. Reload from Settings after editing.
 config_version = 1
+# system, zh-CN, zh-TW, en-US, ja-JP, ko-KR, de-DE, ru-RU; restart to apply.
+language = "system"
 
 [appearance]
 theme = "system"

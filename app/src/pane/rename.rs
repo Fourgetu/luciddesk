@@ -138,7 +138,7 @@ fn show_editor(
             dpi,
         ) == 0
         {
-            return Err("无法读取桌面字体".into());
+            return Err(crate::i18n::text("ui-could-not-read-desktop-font").into());
         }
         super::assets::use_ui_font(&mut logical_font);
         let title = title_commit.is_some();
@@ -155,7 +155,7 @@ fn show_editor(
         }
         let font = CreateFontIndirectW(&raw const logical_font);
         if font.is_null() {
-            return Err("无法创建重命名字体".into());
+            return Err(crate::i18n::text("ui-could-not-create-rename-font").into());
         }
         let name = Name::new(identity, label);
         let text = wide(&name.text);
@@ -186,7 +186,7 @@ fn show_editor(
         );
         if edit.is_null() {
             DeleteObject(font);
-            return Err("无法创建图标名称编辑框".into());
+            return Err(crate::i18n::text("ui-could-not-create-icon-name-editor").into());
         }
         let editor = Box::new(Editor {
             owner,
@@ -216,13 +216,13 @@ fn show_editor(
             drop(Box::from_raw(pointer));
             DestroyWindow(edit);
             DeleteObject(font);
-            return Err("无法连接名称编辑框".into());
+            return Err(crate::i18n::text("ui-could-not-attach-name-editor").into());
         }
         if SetPropW(owner, PROPERTY, edit) == 0
             || SetWindowSubclass(owner, Some(owner_proc), SUBCLASS, pointer as usize) == 0
         {
             DestroyWindow(edit);
-            return Err("无法连接分组编辑状态".into());
+            return Err(crate::i18n::text("ui-could-not-attach-group-editing-state").into());
         }
         if !title {
             model.borrow_mut().renaming = Some(identity.clone());
@@ -475,7 +475,7 @@ unsafe fn finish(edit: HWND, pointer: *mut Editor, commit: bool) {
                 MessageBoxW(
                     edit,
                     wide(&error).as_ptr(),
-                    windows_sys::w!("重命名失败"),
+                    crate::i18n::wide("ui-rename-failed"),
                     MB_OK | MB_ICONERROR,
                 );
                 SetFocus(edit);
@@ -517,7 +517,7 @@ unsafe fn finish(edit: HWND, pointer: *mut Editor, commit: bool) {
             if let Err(error) = outcome {
                 MessageBoxW(
                     owner,
-                    wide(&format!("重命名失败：{error}")).as_ptr(),
+                    wide(&crate::i18n::format("ui-rename-failed-9e1f", &[("error", format!("{}", error))])).as_ptr(),
                     windows_sys::w!("LucidDesk"),
                     MB_OK | MB_ICONERROR,
                 );

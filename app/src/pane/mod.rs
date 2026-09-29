@@ -237,7 +237,7 @@ fn items_for(state: &PaneApp, id: PanelId) -> Vec<Item> {
 }
 
 fn create_model(state: &PaneApp, id: PanelId) -> Result<GroupModel, String> {
-    let panel = state.workspace.panel(id).ok_or("标签已关闭")?;
+    let panel = state.workspace.panel(id).ok_or(crate::i18n::text("ui-tab-closed"))?;
     let items = items_for(state, id);
     Ok(GroupModel {
         merge_preview: Vec::new(),
@@ -422,7 +422,7 @@ fn save(state: &mut PaneApp) -> Result<(), String> {
     state
         .store
         .save_workspace(&state.workspace)
-        .map_err(|e| format!("保存分组失败：{e}"))
+        .map_err(|e| crate::i18n::format("ui-could-not-save-group", &[("e", format!("{}", e))]))
 }
 
 fn remove_panel(workspace: &mut Workspace, id: PanelId) {
@@ -484,12 +484,12 @@ fn transfer_many(
     at: usize,
 ) -> Result<(), String> {
     if state.workspace.panel(target).is_none() {
-        return Err("目标面板不可用".into());
+        return Err(crate::i18n::text("ui-target-panel-unavailable").into());
     }
     let items = items_for(state, source);
     let selected: std::collections::BTreeSet<_> = indices.iter().copied().collect();
     if selected.is_empty() || selected.iter().any(|i| *i >= items.len()) {
-        return Err("选中项目已变化，请重新拖动".into());
+        return Err(crate::i18n::text("ui-selection-changed-drag-again").into());
     }
     let old = state.workspace.clone();
     let moving: Vec<_> = items

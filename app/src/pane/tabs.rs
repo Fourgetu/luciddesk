@@ -41,11 +41,11 @@ pub(super) fn select(
     }
     let (hwnd, previous) = {
         let s = state.borrow();
-        let group = s.workspace.tab_group(from).ok_or("标签组已关闭")?;
+        let group = s.workspace.tab_group(from).ok_or(crate::i18n::text("ui-tab-group-closed"))?;
         if !group.members.contains(&to) {
-            return Err("目标标签不属于此面板".into());
+            return Err(crate::i18n::text("ui-target-tab-does-not-belong-to-this-panel").into());
         }
-        let view = s.views.iter().find(|v| v.id == from).ok_or("面板已关闭")?;
+        let view = s.views.iter().find(|v| v.id == from).ok_or(crate::i18n::text("ui-panel-closed"))?;
         (view.window.hwnd().cast(), s.workspace.clone())
     };
     rename::cancel(hwnd);
@@ -144,12 +144,12 @@ pub(super) fn add(
 ) -> Result<(), String> {
     let next = {
         let mut s = state.borrow_mut();
-        let source = s.workspace.panel(id).ok_or("面板已关闭")?.clone();
+        let source = s.workspace.panel(id).ok_or(crate::i18n::text("ui-panel-closed"))?.clone();
         if !source.supports_tabs() || folder.is_some() {
-            return Err("仅普通面板支持标签".into());
+            return Err(crate::i18n::text("ui-only-group-panels-support-tabs").into());
         }
         if source.locked() {
-            return Err("请先解锁面板".into());
+            return Err(crate::i18n::text("ui-unlock-the-panel-first").into());
         }
         let next = PanelId::new(
             s.workspace
@@ -159,13 +159,13 @@ pub(super) fn add(
                 .max()
                 .unwrap_or(0)
                 .checked_add(1)
-                .ok_or("标签数量超出限制")?,
+                .ok_or(crate::i18n::text("ui-tab-limit-exceeded"))?,
         );
         let title = folder
             .as_ref()
             .and_then(|p| p.file_name())
             .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "新建分组".into());
+            .unwrap_or_else(|| crate::i18n::text("ui-new-group").into());
         let mut panel = Panel::new(next, title, source.rect());
         panel.set_folder(folder);
         if panel.folder().is_some() {
@@ -196,7 +196,7 @@ pub(super) fn add(
 }
 
 pub(super) fn choose_folder(_state: &Rc<RefCell<PaneApp>>, _id: PanelId) -> Result<(), String> {
-    Err("文件夹面板不支持标签，请新建独立文件夹面板".into())
+    Err(crate::i18n::text("ui-folder-panels-do-not-support-tabs-create-a-separate-panel").into())
 }
 
 pub(super) fn close(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> {
@@ -211,7 +211,7 @@ pub(super) fn close(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Str
         .panel(id)
         .is_some_and(Panel::locked)
     {
-        return Err("请先解锁面板".into());
+        return Err(crate::i18n::text("ui-unlock-the-panel-first").into());
     }
     if group.active == id {
         let at = group
@@ -248,24 +248,24 @@ pub(super) fn reorder(
 ) -> Result<(), String> {
     let mut s = state.borrow_mut();
     if s.workspace.panel(id).is_some_and(Panel::locked) {
-        return Err("请先解锁面板".into());
+        return Err(crate::i18n::text("ui-unlock-the-panel-first").into());
     }
     let previous = s.workspace.clone();
     let mut groups = s.workspace.tab_groups().to_vec();
     let group = groups
         .iter_mut()
         .find(|g| g.members.contains(&id))
-        .ok_or("标签组已关闭")?;
+        .ok_or(crate::i18n::text("ui-tab-group-closed"))?;
     let from = group
         .members
         .iter()
         .position(|member| *member == moved)
-        .ok_or("标签已关闭")?;
+        .ok_or(crate::i18n::text("ui-tab-closed"))?;
     let to = group
         .members
         .iter()
         .position(|member| *member == before)
-        .ok_or("标签已关闭")?;
+        .ok_or(crate::i18n::text("ui-tab-closed"))?;
     group.members.remove(from);
     group.members.insert(to, moved);
     s.workspace
@@ -284,7 +284,7 @@ pub(super) fn detach(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), St
     let group = {
         let s = state.borrow();
         if s.workspace.panel(id).is_none_or(Panel::locked) {
-            return Err("请先解锁面板".into());
+            return Err(crate::i18n::text("ui-unlock-the-panel-first").into());
         }
         s.workspace.tab_group(id).cloned()
     };
@@ -390,12 +390,12 @@ fn merge(state: &Rc<RefCell<PaneApp>>, from: PanelId, to: PanelId) -> Result<(),
     let view = {
         let mut s = state.borrow_mut();
         for id in [from, to] {
-            let panel = s.workspace.panel(id).ok_or("面板已关闭")?;
+            let panel = s.workspace.panel(id).ok_or(crate::i18n::text("ui-panel-closed"))?;
             if panel.locked() || !panel.supports_tabs() {
-                return Err("请选择未锁定的普通面板".into());
+                return Err(crate::i18n::text("ui-select-an-unlocked-group-panel").into());
             }
             if !s.views.iter().any(|v| v.id == id) {
-                return Err("面板已关闭或活动标签已改变".into());
+                return Err(crate::i18n::text("ui-panel-closed-or-active-tab-changed").into());
             }
         }
         if from == to {
@@ -613,7 +613,7 @@ pub(super) fn finish_move(
             .views
             .iter()
             .find(|v| v.id == from)
-            .ok_or("面板已关闭")?
+            .ok_or(crate::i18n::text("ui-panel-closed"))?
             .window
             .hwnd() as isize;
         (owner, target)
@@ -636,7 +636,7 @@ pub(super) fn finish_move(
         unsafe {
             PostMessageW(owner as _, window::RESTORE_MERGE, 0, 0);
         }
-        return Err("无法完成面板合并".into());
+        return Err(crate::i18n::text("ui-could-not-merge-panels").into());
     }
     Ok(())
 }
@@ -672,7 +672,7 @@ pub(super) fn merge_strip(model: &GroupModel, width: f32) -> Vec<(String, bool, 
     for (index, (_, title)) in model.merge_preview.iter().take(incoming_count).enumerate() {
         let remaining = model.merge_preview.len() - index;
         let text = if index + 1 == incoming_count && remaining > 1 {
-            format!("＋ {remaining} 个标签")
+            crate::i18n::format("ui-tabs-a81a", &[("remaining", format!("{}", remaining))])
         } else {
             format!("＋ {title}")
         };

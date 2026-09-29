@@ -18,6 +18,7 @@
 | [原生桌面与成员过滤](hybrid-desktop.md) | 身份、收纳、过滤名单发布与恢复 |
 | [绘图与绑定](rendering.md) | Canvas、DComp、WinRT、动画与生成绑定 |
 | [背景材质与主题](mica-materials.md) | 四种材质、局部配色、系统策略与回退 |
+| [多语言](localization.md) | Fluent 资源、语言选择、字体与验证 |
 | [设置组件](settings-components.md) | 设置页布局与共用交互组件 |
 | [图标内存管理](memory-optimization.md) | 像素去重、缓存预算与验证边界 |
 | [Rust API 与资源约定](rust-api-review.md) | 接口边界、COM 线程与资源生命周期 |

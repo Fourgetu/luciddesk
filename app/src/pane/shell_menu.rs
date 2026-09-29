@@ -36,7 +36,7 @@ pub fn show_many(
                     desktop_shell::MenuInvocation::Mouse
                 },
             )
-            .map_err(|error| format!("无法打开 Explorer 图标菜单：{error}"));
+            .map_err(|error| crate::i18n::format("ui-could-not-open-explorer-icon-menu", &[("error", format!("{}", error))]));
             #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
             record_presenter(host);
             result

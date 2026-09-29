@@ -148,7 +148,7 @@ impl DesktopAudit {
         self.discard_pending = false;
         self.restart_needed = true;
         self.schedule.invalidate();
-        "桌面检查线程已退出，将重建检查线程".into()
+        crate::i18n::text("ui-desktop-audit-thread-stopped-restarting").into()
     }
 
     pub(super) fn complete(&mut self, changed: bool) {

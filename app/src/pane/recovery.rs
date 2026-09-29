@@ -116,7 +116,7 @@ pub(super) fn directory(s: &PaneApp) -> Result<PathBuf, String> {
         .as_ref()
         .and_then(|r| r.path.parent())
         .map(|p| p.join("backups"))
-        .ok_or_else(|| "配置目录不可用".into())
+        .ok_or_else(|| crate::i18n::text("ui-configuration-folder-unavailable").into())
 }
 fn name(label: &str) -> String {
     let mut time = windows_sys::Win32::Foundation::SYSTEMTIME::default();
@@ -150,11 +150,11 @@ fn records(directory: &Path) -> Vec<Record> {
             }
             let name = entry.file_name().to_string_lossy().into_owned();
             let kind = if name.starts_with("auto-") {
-                "自动"
+                crate::i18n::text("ui-automatic")
             } else if name.starts_with("before-restore-") {
-                "恢复前"
+                crate::i18n::text("ui-before-restore")
             } else {
-                "手动"
+                crate::i18n::text("ui-manual")
             };
             Some((
                 metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH),
@@ -171,18 +171,18 @@ fn records(directory: &Path) -> Vec<Record> {
     result.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| b.1.path.cmp(&a.1.path)));
     result.into_iter().map(|(_, r)| r).collect()
 }
-fn cleanup(directory: &Path, kind: &str, keep: usize) -> Option<String> {
+fn cleanup(directory: &Path, prefix: &str, keep: usize) -> Option<String> {
     let mut failed = 0;
     for record in records(directory)
         .into_iter()
-        .filter(|r| r.kind == kind)
+        .filter(|r| r.path.file_name().is_some_and(|name| name.to_string_lossy().starts_with(prefix)))
         .skip(keep)
     {
         if std::fs::remove_file(record.path).is_err() {
             failed += 1;
         }
     }
-    (failed > 0).then(|| format!("；{failed} 份旧备份清理失败"))
+    (failed > 0).then(|| crate::i18n::format("ui-old-backups-not-removed", &[("failed", format!("{}", failed))]))
 }
 fn save_snapshot(
     store: &WorkspaceStore,
@@ -207,8 +207,8 @@ fn save_snapshot(
         .map_err(|e| e.to_string())?;
     store.export_backup(&path).map_err(|e| e.to_string())?;
     let warning = match label {
-        "auto" => cleanup(directory, "自动", keep),
-        "before-restore" => cleanup(directory, "恢复前", 5),
+        "auto" => cleanup(directory, "auto-", keep),
+        "before-restore" => cleanup(directory, "before-restore-", 5),
         _ => None,
     }
     .unwrap_or_default();
@@ -222,9 +222,9 @@ fn begin(
     let mut s = state.borrow_mut();
     let directory = directory(&s)?;
     let wake = s.wake.clone();
-    let manager = &mut s.runtime.as_mut().ok_or("运行时不可用")?.backup;
+    let manager = &mut s.runtime.as_mut().ok_or(crate::i18n::text("ui-runtime-unavailable"))?.backup;
     if manager.view.busy {
-        return Err("备份任务正在进行，请稍候。".into());
+        return Err(crate::i18n::text("ui-a-backup-task-is-running-please-wait").into());
     }
     let (tx, rx) = mpsc::channel();
     std::thread::Builder::new()
@@ -272,7 +272,7 @@ pub(super) fn maintain(state: &Rc<RefCell<PaneApp>>) {
             .and_then(|rx| match rx.try_recv() {
                 Ok(v) => Some(v),
                 Err(mpsc::TryRecvError::Disconnected) => Some(Completed {
-                    result: Err("备份任务意外结束，请重试。".into()),
+                    result: Err(crate::i18n::text("ui-backup-task-ended-unexpectedly-try-again").into()),
                     records: runtime.backup.view.records.clone(),
                 }),
                 _ => None,
@@ -295,7 +295,7 @@ pub(super) fn maintain(state: &Rc<RefCell<PaneApp>>) {
         }
         match completed.result {
             Ok(Outcome::Saved(message)) => set_status(state, &message),
-            Ok(Outcome::Unchanged) => set_status(state, "配置暂无变化，无需重复备份"),
+            Ok(Outcome::Unchanged) => set_status(state, crate::i18n::text("ui-configuration-unchanged-no-new-backup-needed")),
             Ok(Outcome::Inspect(input)) => {
                 state
                     .borrow_mut()
@@ -328,7 +328,7 @@ pub(super) fn maintain(state: &Rc<RefCell<PaneApp>>) {
                     }
                 });
             }
-            Err(error) => set_status(state, &format!("操作失败：{error}")),
+            Err(error) => set_status(state, &crate::i18n::format("ui-operation-failed", &[("error", format!("{}", error))])),
         }
         return;
     }
@@ -349,10 +349,10 @@ pub(super) fn maintain(state: &Rc<RefCell<PaneApp>>) {
         } else if !m.initialized {
             m.initialized = true;
             drop(s);
-            let _ = begin(state, "读取备份记录…", |directory| {
+            let _ = begin(state, crate::i18n::text("ui-loading-backup-history"), |directory| {
                 Ok(Outcome::Saved(records(&directory).first().map_or_else(
-                    || "尚无备份记录".into(),
-                    |r| format!("上次备份：{}", r.date),
+                    || crate::i18n::text("ui-no-backup-history").into(),
+                    |r| crate::i18n::format("ui-last-backup", &[("arg0", format!("{}", r.date))]),
                 )))
             });
             return;
@@ -367,7 +367,7 @@ pub(super) fn maintain(state: &Rc<RefCell<PaneApp>>) {
             r.backup.attempted = Instant::now();
         }
         if let Err(error) = create(state, true) {
-            set_status(state, &format!("自动备份失败：{error}"));
+            set_status(state, &crate::i18n::format("ui-automatic-backup-failed", &[("error", format!("{}", error))]));
         }
     }
 }
@@ -402,7 +402,7 @@ fn set_status(state: &Rc<RefCell<PaneApp>>, message: &str) {
 }
 pub(super) fn create(state: &Rc<RefCell<PaneApp>>, automatic: bool) -> Result<(), String> {
     if view(&state.borrow()).busy {
-        return Err("备份任务正在进行，请稍候。".into());
+        return Err(crate::i18n::text("ui-a-backup-task-is-running-please-wait").into());
     }
     let (snapshot, policy) = {
         let s = state.borrow();
@@ -411,7 +411,7 @@ pub(super) fn create(state: &Rc<RefCell<PaneApp>>, automatic: bool) -> Result<()
             Policy::load(&s.store),
         )
     };
-    begin(state, "正在创建备份…", move |directory| {
+    begin(state, crate::i18n::text("ui-creating-backup"), move |directory| {
         if automatic {
             if let Some(previous) = records(&directory).first() {
                 if WorkspaceStore::backup_file_content(&previous.path)
@@ -429,10 +429,7 @@ pub(super) fn create(state: &Rc<RefCell<PaneApp>>, automatic: bool) -> Result<()
             if automatic { "auto" } else { "manual" },
             policy.keep,
         )?;
-        Ok(Outcome::Saved(format!(
-            "{}备份成功{warning}",
-            if automatic { "自动" } else { "手动" }
-        )))
+        Ok(Outcome::Saved(crate::i18n::format("ui-backup-completed", &[("arg0", format!("{}", if automatic { crate::i18n::text("ui-automatic") } else { crate::i18n::text("ui-manual") })), ("warning", format!("{}", warning))])))
     })
 }
 fn choose(owner: isize, export: bool) -> Result<Option<PathBuf>, String> {
@@ -461,14 +458,14 @@ fn choose(owner: isize, export: bool) -> Result<Option<PathBuf>, String> {
             .map_err(|e| e.to_string())?;
         dialog
             .SetTitle(if export {
-                windows::core::w!("导出 LucidDesk 配置")
+                windows::core::PCWSTR(crate::i18n::wide("ui-export-luciddesk-configuration"))
             } else {
-                windows::core::w!("恢复 LucidDesk 配置")
+                windows::core::PCWSTR(crate::i18n::wide("ui-restore-luciddesk-configuration"))
             })
             .map_err(|e| e.to_string())?;
         dialog
             .SetFileTypes(&[Common::COMDLG_FILTERSPEC {
-                pszName: windows::core::w!("LucidDesk 配置 (*.db)"),
+                pszName: windows::core::PCWSTR(crate::i18n::wide("ui-luciddesk-configuration-db")),
                 pszSpec: windows::core::w!("*.db"),
             }])
             .map_err(|e| e.to_string())?;
@@ -506,24 +503,16 @@ fn confirm_restore(state: &Rc<RefCell<PaneApp>>, input: RestoreInput) {
     let missing = if input.missing.is_empty() {
         String::new()
     } else {
-        format!(
-            "\n以下映射目录当前不可访问，恢复后会保留映射：\n{}\n",
-            input.missing.join("\n")
-        )
+        crate::i18n::format("ui-nthese-folders-are-currently-unavailable-their-mappings-will-be-kept", &[("arg0", format!("{}", input.missing.join("\n")))])
     };
-    let text = format!(
-        "已通过完整性与兼容性检查。\n包含 {} 个面板 · 应用版本 {}。\n\n恢复将替换当前设置、布局和映射，不改动实际文件。\n当前状态将先备份，可在恢复后撤销。\n\n{}\n\n{missing}\n是否恢复？",
-        input.count,
-        input.version,
-        input.original.display()
-    );
+    let text = crate::i18n::format("ui-integrity-and-compatibility-checks-passed-npanels-app-version-n-nres", &[("arg0", format!("{}", input.count)), ("arg1", format!("{}", input.version)), ("arg2", format!("{}", input.original.display())), ("missing", format!("{}", missing))]);
     let wide: Vec<u16> = text.encode_utf16().chain(Some(0)).collect();
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
     if unsafe {
         MessageBoxW(
             owner as _,
             wide.as_ptr(),
-            windows_sys::w!("恢复备份"),
+            crate::i18n::wide("ui-restore-backup"),
             MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2,
         )
     } != IDYES
@@ -536,7 +525,7 @@ fn confirm_restore(state: &Rc<RefCell<PaneApp>>, input: RestoreInput) {
             .backup
             .view
             .busy = false;
-        set_status(state, "已取消恢复");
+        set_status(state, crate::i18n::text("ui-restore-canceled"));
         return;
     }
     state
@@ -553,13 +542,13 @@ fn confirm_restore(state: &Rc<RefCell<PaneApp>>, input: RestoreInput) {
             .store
             .backup_snapshot()
             .map_err(|e| e.to_string())?;
-        begin(state, "正在保存恢复前备份…", move |directory| {
+        begin(state, crate::i18n::text("ui-backing-up-current-state"), move |directory| {
             let (rollback, _) = save_snapshot(&snapshot, &directory, "before-restore", 5)?;
             Ok(Outcome::ReadyRestore(input, rollback))
         })
     })();
     if let Err(e) = result {
-        set_status(state, &format!("恢复未执行：{e}"));
+        set_status(state, &crate::i18n::format("ui-restore-not-performed", &[("e", format!("{}", e))]));
     }
 }
 fn apply_restore(state: &Rc<RefCell<PaneApp>>, input: RestoreInput, rollback: PathBuf) {
@@ -595,7 +584,7 @@ fn apply_restore_with(
                 .backup
                 .view
                 .undo = Some(rollback);
-            set_status(state, "恢复成功，可撤销本次恢复");
+            set_status(state, crate::i18n::text("ui-restored-you-can-undo-this-restore"));
         }
         Err(error) => {
             let rollback_result = state
@@ -607,11 +596,8 @@ fn apply_restore_with(
             set_status(
                 state,
                 &match rollback_result {
-                    Ok(()) => format!("恢复失败，已回退：{error}"),
-                    Err(e) => format!(
-                        "恢复失败：{error}；回退失败：{e}。恢复前备份：{}",
-                        rollback.display()
-                    ),
+                    Ok(()) => crate::i18n::format("ui-restore-failed-rolled-back", &[("error", format!("{}", error))]),
+                    Err(e) => crate::i18n::format("ui-restore-failed-rollback-failed-previous-backup", &[("error", format!("{}", error)), ("e", format!("{}", e)), ("arg0", format!("{}", rollback.display()))]),
                 },
             );
         }
@@ -623,7 +609,7 @@ pub(super) fn request(state: &Rc<RefCell<PaneApp>>, event: &Event) {
     window::defer_action(move || {
         if let Some(state) = weak.upgrade() {
             if let Err(e) = execute(&state, &event) {
-                set_status(&state, &format!("操作失败：{e}"));
+                set_status(&state, &crate::i18n::format("ui-operation-failed-0ea2", &[("e", format!("{}", e))]));
                 window::error(&e);
             }
         }
@@ -631,7 +617,7 @@ pub(super) fn request(state: &Rc<RefCell<PaneApp>>, event: &Event) {
 }
 fn execute(state: &Rc<RefCell<PaneApp>>, event: &Event) -> Result<(), String> {
     if view(&state.borrow()).busy {
-        return Err("备份任务正在进行，请稍候。".into());
+        return Err(crate::i18n::text("ui-a-backup-task-is-running-please-wait").into());
     }
     let owner = state
         .borrow()
@@ -655,7 +641,7 @@ fn execute(state: &Rc<RefCell<PaneApp>>, event: &Event) -> Result<(), String> {
                 .store
                 .config_path()
                 .and_then(|p| p.parent().map(Path::to_path_buf))
-                .ok_or("配置目录不可用")?
+                .ok_or(crate::i18n::text("ui-configuration-folder-unavailable"))?
         };
         std::fs::create_dir_all(&path).map_err(|e| e.to_string())?;
         return open_shell_identity(owner, &folder::identity(path)).map_err(|e| e.to_string());
@@ -671,7 +657,7 @@ fn execute(state: &Rc<RefCell<PaneApp>>, event: &Event) -> Result<(), String> {
                 };
                 path
             };
-            begin(state, "正在校验备份…", move |_| {
+            begin(state, crate::i18n::text("ui-validating-backup"), move |_| {
                 let temporary = tempfile::tempdir().map_err(|e| e.to_string())?;
                 let staged = temporary.path().join("restore.db");
                 std::fs::copy(&path, &staged).map_err(|e| e.to_string())?;
@@ -680,7 +666,7 @@ fn execute(state: &Rc<RefCell<PaneApp>>, event: &Event) -> Result<(), String> {
                     .map_err(|e| e.to_string())?
                     .preference("backup_manifest_version")
                     .map_err(|e| e.to_string())?
-                    .unwrap_or_else(|| "旧版备份".into());
+                    .unwrap_or_else(|| crate::i18n::text("ui-legacy-backup").into());
                 let workspace = WorkspaceStore::read_backup(&staged)
                     .map_err(|e| e.to_string())?
                     .load_workspace()
@@ -708,23 +694,23 @@ fn execute(state: &Rc<RefCell<PaneApp>>, event: &Event) -> Result<(), String> {
                 .map_err(|e| e.to_string())?;
             let path = path.canonicalize().map_err(|e| e.to_string())?;
             if path.parent() != Some(root.as_path()) || path.extension().is_none_or(|e| e != "db") {
-                return Err("只能删除备份目录中的记录".into());
+                return Err(crate::i18n::text("ui-only-records-in-the-backup-folder-can-be-deleted").into());
             }
             use windows_sys::Win32::UI::WindowsAndMessaging::*;
             if unsafe {
                 MessageBoxW(
                     owner as _,
-                    windows_sys::w!("删除这份备份？此操作不会更改当前配置。"),
-                    windows_sys::w!("删除备份"),
+                    crate::i18n::wide("ui-delete-this-backup-your-current-configuration-will-not-change"),
+                    crate::i18n::wide("ui-delete-backup"),
                     MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2,
                 )
             } != IDYES
             {
                 return Ok(());
             }
-            begin(state, "正在删除…", move |_| {
+            begin(state, crate::i18n::text("ui-deleting"), move |_| {
                 std::fs::remove_file(path).map_err(|e| e.to_string())?;
-                Ok(Outcome::Saved("备份已删除".into()))
+                Ok(Outcome::Saved(crate::i18n::text("ui-backup-deleted").into()))
             })
         }
         Event::ExportBackup | Event::ExportBackupPath(_) => {
@@ -737,7 +723,7 @@ fn execute(state: &Rc<RefCell<PaneApp>>, event: &Event) -> Result<(), String> {
                     .file_name()
                     .is_some_and(|p| p == "workspace.db" || p == "config.toml")
             {
-                return Err("不能覆盖正在使用的配置文件".into());
+                return Err(crate::i18n::text("ui-cannot-overwrite-the-active-configuration").into());
             }
             let snapshot = if let Event::ExportBackupPath(source) = event {
                 WorkspaceStore::read_backup(source).map_err(|e| e.to_string())?
@@ -745,11 +731,11 @@ fn execute(state: &Rc<RefCell<PaneApp>>, event: &Event) -> Result<(), String> {
                 s.store.backup_snapshot().map_err(|e| e.to_string())?
             };
             drop(s);
-            begin(state, "正在导出…", move |_| {
+            begin(state, crate::i18n::text("ui-exporting"), move |_| {
                 snapshot
                     .export_backup_replace(&path)
                     .map_err(|e| e.to_string())?;
-                Ok(Outcome::Saved(format!("已导出：{}", path.display())))
+                Ok(Outcome::Saved(crate::i18n::format("ui-exported", &[("arg0", format!("{}", path.display()))])))
             })
         }
         _ => Ok(()),
@@ -875,7 +861,7 @@ mod tests {
             .open(&path)
             .unwrap();
         assert!(
-            cleanup(root.path(), "自动", 0)
+            cleanup(root.path(), "auto-", 0)
                 .unwrap()
                 .contains("清理失败")
         );

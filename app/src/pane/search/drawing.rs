@@ -167,7 +167,7 @@ impl Drawing {
             );
             if unsafe { GetWindowTextLengthW(edit(hwnd)) } == 0 {
                 target.clipped_text(
-                    "搜索本机文件…",
+                    crate::i18n::text("ui-search-local-files"),
                     &self.placeholder,
                     &Rect::from_xywh(44.0, 0.0, (w - 90.0).max(0.0), TOP),
                     &dim,
@@ -185,18 +185,18 @@ impl Drawing {
                 target.fill_rect(&Rect::from_xywh(12.0, TOP, w - 24.0, 1.0), &line);
                 if state.entries.is_empty() {
                     let title = if state.failed {
-                        "搜索暂不可用"
+                        crate::i18n::text("ui-search-unavailable")
                     } else if state.busy {
-                        "正在搜索…"
+                        crate::i18n::text("ui-searching")
                     } else {
-                        "未找到匹配文件"
+                        crate::i18n::text("ui-no-matching-files")
                     };
                     let detail = if state.failed {
-                        state.status.as_deref().unwrap_or("请重试")
+                        state.status.as_deref().unwrap_or(crate::i18n::text("ui-please-try-again"))
                     } else if state.busy {
-                        "正在查询本机文件索引"
+                        crate::i18n::text("ui-searching-the-local-file-index")
                     } else {
-                        "试试更短的关键词，或检查搜索条件。"
+                        crate::i18n::text("ui-try-shorter-keywords-or-check-your-filters")
                     };
                     target.clipped_text(
                         title,
@@ -212,8 +212,8 @@ impl Drawing {
                     );
                     if state.failed {
                         for (x, width, label) in [
-                            (18.0, 84.0_f32.min((w - 36.0).max(0.0)), "重试 · F5"),
-                            ((w - 146.0).max(112.0), 128.0, "启动 Everything"),
+                            (18.0, 84.0_f32.min((w - 36.0).max(0.0)), crate::i18n::text("ui-retry-f5")),
+                            ((w - 146.0).max(112.0), 128.0, crate::i18n::text("ui-start-everything")),
                         ] {
                             if x + width > w - 12.0 {
                                 continue;

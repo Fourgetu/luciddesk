@@ -3,7 +3,10 @@ use super::*;
 
 pub(super) struct Tokens;
 impl Tokens {
-    pub const CONTENT_X: f32 = 248.0;
+    pub fn content_x() -> f32 {
+        super::layout::pages().iter().map(|(_, label, _)| text_width(label, 14.0) + 108.0)
+            .fold(248.0_f32, f32::max).min(344.0)
+    }
     pub const MARGIN: f32 = 24.0;
     pub const GAP: f32 = 8.0;
     pub const INSET: f32 = 16.0;
@@ -80,15 +83,15 @@ pub(super) fn navigation_colors(material: Backdrop, dark: bool) -> [ColorF; 3] {
 }
 impl<'a> SettingsForm<'a> {
     pub fn new(scene: &'a mut Scene, width: f32, description: &str) -> Self {
-        let width = (width - Tokens::CONTENT_X - Tokens::MARGIN).min(Tokens::MAX_WIDTH);
+        let width = (width - Tokens::content_x() - Tokens::MARGIN).min(Tokens::MAX_WIDTH);
         scene.text(
-            Rect::from_xywh(Tokens::CONTENT_X, 76.0, width, 36.0),
+            Rect::from_xywh(Tokens::content_x(), 76.0, width, 36.0),
             description,
             6,
         );
         Self {
             scene,
-            x: Tokens::CONTENT_X,
+            x: Tokens::content_x(),
             width,
             y: 120.0,
         }
@@ -120,17 +123,13 @@ impl<'a> SettingsForm<'a> {
         } else {
             self.width - column - 3.0 * Tokens::INSET
         };
-        // Reserve conservative line space for mixed Chinese text and Windows paths.
-        let units: f32 = description
-            .chars()
-            .map(|c| if c.is_ascii() { 7.0 } else { 13.0 })
-            .sum();
+        let title_height = text_height(title, 14.0, text_width).max(24.0);
         let description_height = if description.is_empty() {
             0.0
         } else {
-            (units / text_width.max(1.0)).ceil().max(1.0) * 20.0
+            text_height(description, 12.0, text_width).max(20.0)
         };
-        let text_height = 24.0
+        let text_height = title_height
             + if description.is_empty() {
                 0.0
             } else {
@@ -152,12 +151,12 @@ impl<'a> SettingsForm<'a> {
                 self.x + Tokens::INSET,
                 self.y
                     + if description.is_empty() && !stacked {
-                        (height - 24.0) / 2.0
+                        (height - title_height) / 2.0
                     } else {
                         Tokens::INSET
                     },
                 text_width,
-                24.0,
+                title_height,
             ),
             title,
             1,
@@ -166,7 +165,7 @@ impl<'a> SettingsForm<'a> {
             self.scene.text(
                 Rect::from_xywh(
                     self.x + Tokens::INSET,
-                    self.y + Tokens::INSET + 28.0,
+                    self.y + Tokens::INSET + title_height + 4.0,
                     text_width,
                     description_height,
                 ),
@@ -215,7 +214,13 @@ impl<'a> SettingsForm<'a> {
         actions: Vec<(&str, Action)>,
         stacked: bool,
     ) {
-        let width = (actions.len() as f32 * 120.0 - Tokens::GAP).min(self.width - 32.0);
+        let cell = actions.iter().map(|(label, _)| text_width(label, 14.0) + 32.0).fold(112.0_f32, f32::max);
+        let width = (cell + Tokens::GAP) * actions.len() as f32 - Tokens::GAP;
+        if width > self.width - 32.0 {
+            self.info(title, description);
+            for (label, action) in actions { self.option(label, action, false); }
+            return;
+        }
         let r = self.card_layout(title, description, width, stacked);
         let count = actions.len();
         let cell = (width - Tokens::GAP * (count - 1) as f32) / count as f32;
@@ -250,7 +255,7 @@ impl<'a> SettingsForm<'a> {
         );
         self.scene.button(
             Rect::from_xywh(r.left + 240.0, r.top, 112.0, 32.0),
-            "恢复默认",
+            crate::i18n::text("ui-reset"),
             reset,
             false,
         );
@@ -258,7 +263,7 @@ impl<'a> SettingsForm<'a> {
     pub fn link(&mut self, title: &str, description: &str, action: Action) {
         let r = self.card(title, description, 112.0);
         self.scene
-            .forward_row(r.left, r.top, r.right - r.left, "打开", action);
+            .forward_row(r.left, r.top, r.right - r.left, crate::i18n::text("ui-open"), action);
         self.scene.controls.last_mut().unwrap().bounds = r;
     }
     pub fn combo(&mut self, title: &str, description: &str, label: &str, action: Action) {
@@ -279,8 +284,8 @@ impl<'a> SettingsForm<'a> {
         self.y += 48.0;
     }
     pub fn pager(&mut self, label: &str, previous: (Action, bool), next: (Action, bool)) {
-        let r = self.card("分页", label, 232.0);
-        for (i, (label, (action, enabled))) in [("上一页", previous), ("下一页", next)]
+        let r = self.card(crate::i18n::text("ui-pages"), label, 232.0);
+        for (i, (label, (action, enabled))) in [(crate::i18n::text("ui-previous"), previous), (crate::i18n::text("ui-next"), next)]
             .into_iter()
             .enumerate()
         {
@@ -305,7 +310,7 @@ impl<'a> SettingsForm<'a> {
         );
         self.scene.text(
             Rect::from_xywh(self.x + 96.0, self.y + 60.0, self.width - 112.0, 28.0),
-            "桌面分组与文件整理",
+            crate::i18n::text("ui-desktop-groups-and-file-organization"),
             6,
         );
         self.scene.text(
@@ -316,7 +321,7 @@ impl<'a> SettingsForm<'a> {
         self.y += 144.0;
     }
     pub fn colors(&mut self, color: u32) {
-        let r = self.card("预设配色", "选择颜色后即时预览。", 352.0);
+        let r = self.card(crate::i18n::text("ui-color-presets"), crate::i18n::text("ui-preview-colors-as-you-select-them"), 352.0);
         for (i, value) in [
             0x181b20, 0xf5f6f8, 0x24364b, 0x32463d, 0x51405c, 0x5b3838, 0x745839, 0x416c78,
         ]
@@ -341,11 +346,14 @@ impl<'a> SettingsForm<'a> {
         );
     }
     pub fn choices(&mut self, title: &str, description: &str, choices: Vec<(&str, Action, bool)>) {
-        let r = self.card(
-            title,
-            description,
-            (choices.len() as f32 * 88.0).min(self.width - 32.0),
-        );
+        let cell = choices.iter().map(|(label, _, _)| text_width(label, 14.0) + 32.0).fold(80.0_f32, f32::max);
+        let needed = (cell + Tokens::GAP) * choices.len() as f32 - Tokens::GAP;
+        if needed > self.width - 32.0 {
+            self.info(title, description);
+            for (label, action, selected) in choices { self.option(label, action, selected); }
+            return;
+        }
+        let r = self.card(title, description, needed);
         let width =
             (r.right - r.left - Tokens::GAP * (choices.len() - 1) as f32) / choices.len() as f32;
         for (index, (label, action, selected)) in choices.into_iter().enumerate() {
@@ -391,7 +399,7 @@ impl<'a> SettingsForm<'a> {
         );
     }
     pub fn button(&mut self, title: &str, description: &str, label: &str, action: Action) {
-        let r = self.card(title, description, 112.0);
+        let r = self.card(title, description, (text_width(label, 14.0) + 32.0).max(112.0).min(self.width - 32.0));
         self.scene.button(r, label, action, false);
     }
     pub fn preview(&mut self, name: &str, color: u32, opacity: f32) {
@@ -411,10 +419,10 @@ impl<'a> SettingsForm<'a> {
             1,
         );
         let description = match material.base() {
-            Backdrop::Mica => "柔和的壁纸色调，保持内容清晰。",
-            Backdrop::MicaAlt => "更明显的壁纸色调与深一层的底色。",
-            Backdrop::Solid { .. } => "自定义颜色与不透明度。",
-            _ => "磨砂玻璃质感，透出背景层次。",
+            Backdrop::Mica => crate::i18n::text("ui-soft-wallpaper-tones-keep-content-clear"),
+            Backdrop::MicaAlt => crate::i18n::text("ui-stronger-wallpaper-tones-with-a-deeper-base"),
+            Backdrop::Solid { .. } => crate::i18n::text("ui-choose-a-color-and-opacity"),
+            _ => crate::i18n::text("ui-frosted-glass-reveals-depth-in-the-background"),
         };
         self.scene.text(
             Rect::from_xywh(self.x + 232.0, self.y + 48.0, self.width - 248.0, 40.0),
@@ -423,7 +431,7 @@ impl<'a> SettingsForm<'a> {
         );
         self.scene.text(
             Rect::from_xywh(self.x + 232.0, self.y + 92.0, self.width - 248.0, 44.0),
-            "示意预览 · 实际效果随桌面背景变化",
+            crate::i18n::text("ui-illustration-actual-appearance-depends-on-your-wallpaper"),
             6,
         );
         self.y += 160.0;
@@ -433,9 +441,9 @@ impl<'a> SettingsForm<'a> {
 impl Scene {
     pub fn scroll_to(&mut self, width: f32, height: f32, offset: &mut f32) {
         let viewport = Rect::from_xywh(
-            Tokens::CONTENT_X,
+            Tokens::content_x(),
             TITLE_HEIGHT,
-            width - Tokens::CONTENT_X,
+            width - Tokens::content_x(),
             height - TITLE_HEIGHT,
         );
         let bottom = self
@@ -449,7 +457,7 @@ impl Scene {
                     .filter(|c| !matches!(c.kind, ControlKind::Caption))
                     .map(|c| &c.bounds),
             )
-            .filter(|r| r.left >= Tokens::CONTENT_X)
+            .filter(|r| r.left >= Tokens::content_x())
             .map(|r| r.bottom)
             .chain(self.app_icon.iter().map(|r| r.bottom))
             .fold(viewport.top, f32::max);
@@ -458,7 +466,7 @@ impl Scene {
         self.scroll_offset = *offset;
         self.viewport = Some(viewport);
         let translate = |r: &mut Rect| {
-            if r.left >= Tokens::CONTENT_X {
+            if r.left >= Tokens::content_x() {
                 r.top -= *offset;
                 r.bottom -= *offset;
             }
@@ -494,7 +502,7 @@ impl Scene {
     pub fn accepts_pointer(&self, c: &Control, x: f32, y: f32) -> bool {
         contains(&c.bounds, x, y)
             && (matches!(c.kind, ControlKind::Caption)
-                || c.bounds.left < Tokens::CONTENT_X
+                || c.bounds.left < Tokens::content_x()
                 || self.viewport.is_none_or(|v| contains(&v, x, y)))
     }
 }
@@ -518,4 +526,34 @@ impl Drop for ContentClip<'_, '_> {
             self.pass.pop_clip();
         }
     }
+}
+
+
+fn text_width(text: &str, size: f32) -> f32 {
+    measured_text(text, size, 10000.0).0
+}
+fn text_height(text: &str, size: f32, width: f32) -> f32 {
+    measured_text(text, size, width).1.ceil()
+}
+fn measured_text(text: &str, size: f32, width: f32) -> (f32, f32) {
+    type Key = (String, String, u32, u32);
+    thread_local! { static METRICS: std::cell::RefCell<std::collections::HashMap<Key, (f32, f32)>> = std::cell::RefCell::new(std::collections::HashMap::new()); }
+    let family = super::super::fonts::family();
+    let key = (family.clone(), text.to_owned(), size.to_bits(), width.to_bits());
+    if let Some(metrics) = METRICS.with(|cache| cache.borrow().get(&key).copied()) { return metrics; }
+    let Ok(format) = windows_canvas::TextFormat::new(&family, size) else {
+        return (text.chars().count() as f32 * size, size * 2.0);
+    };
+    let format = format.with_word_wrapping(windows_canvas::WordWrapping::Wrap);
+    let Ok(layout) = windows_canvas::TextLayout::new(text, &format, width.max(1.0), 10000.0) else {
+        return (text.chars().count() as f32 * size, size * 2.0);
+    };
+    let metrics = layout.metrics();
+    let metrics = (metrics.width, metrics.height);
+    METRICS.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if cache.len() >= 2048 { cache.clear(); }
+        cache.insert(key, metrics);
+    });
+    metrics
 }

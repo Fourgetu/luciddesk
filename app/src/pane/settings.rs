@@ -59,6 +59,7 @@ enum Action {
     CopyDiagnostics,
     Window(u32),
     Page(usize),
+    Language(&'static str),
     Change(Event),
     Radius(f32),
     GridSize(f32),
@@ -262,16 +263,16 @@ fn with_titlebar(mut scene: Scene, width: f32, maximized: bool) -> Scene {
     }
     scene.text(
         Rect::from_xywh(16.0, 0.0, 220.0, TITLE_HEIGHT),
-        "LucidDesk 设置",
+        crate::i18n::text("ui-luciddesk-settings"),
         0,
     );
     for (i, (glyph, command)) in [
-        ("最小化", SC_MINIMIZE),
+        (crate::i18n::text("ui-minimize"), SC_MINIMIZE),
         (
-            if maximized { "还原" } else { "最大化" },
+            if maximized { crate::i18n::text("ui-restore") } else { crate::i18n::text("ui-maximize") },
             if maximized { SC_RESTORE } else { SC_MAXIMIZE },
         ),
-        ("关闭", SC_CLOSE),
+        (crate::i18n::text("ui-close"), SC_CLOSE),
     ]
     .iter()
     .enumerate()
@@ -395,7 +396,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
     let mut toggle_motion = std::collections::HashMap::<usize, ToggleMotion>::new();
     let prepared = Rc::new(std::cell::Cell::new(false));
     let show_prepared = Rc::clone(&prepared);
-    let window = windows_window::Window::new("LucidDesk 设置")
+    let window = windows_window::Window::new(crate::i18n::text("ui-luciddesk-settings"))
         .size(900, DEFAULT_HEIGHT)
         .style(WS_OVERLAPPEDWINDOW)
         .ex_style(WS_EX_TOOLWINDOW | WS_EX_NOREDIRECTIONBITMAP)
@@ -429,7 +430,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         if let Some(value) = edited_solid(appearance.1, *percentage, text) {
                             if let Err(error) = handle(&state, selected, Event::Material(value)) { window::error(&error); }
                             style_input = None;
-                        } else { window::error("请输入 6 位 HEX 颜色或 0–100 的百分比。"); }
+                        } else { window::error(crate::i18n::text("ui-enter-a-six-digit-hex-color-or-a-percentage-from-0-to-100")); }
                     } else { return Some(0); }
                     scene_key = None;
                     unsafe { InvalidateRect(hwnd, std::ptr::null(), 0); }
@@ -690,6 +691,10 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         appearance,
                         options,
                     );
+                if page == 12 {
+                    let chosen = state.borrow().store.preference("language").ok().flatten().unwrap_or_else(|| "system".into());
+                    layout::language(&mut body, w, &chosen);
+                }
                 if page == 11 { layout::fonts(&mut body, w, &font_choices, font_offset); }
                 if page == 8 { layout::folder_defaults(&mut body, w, folder_defaults, folder_entry_mode); }
                 if matches!(page,6|9|10) {
@@ -705,7 +710,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
             }
             if recording_peek || recording_search {
                 for control in &mut cached_scene.as_mut().unwrap().controls {
-                    if (recording_peek && matches!(control.action, Action::PeekShortcut)) || (recording_search && matches!(control.action, Action::SearchShortcut)) { control.label = "按下快捷键…".into(); }
+                    if (recording_peek && matches!(control.action, Action::PeekShortcut)) || (recording_search && matches!(control.action, Action::SearchShortcut)) { control.label = crate::i18n::text("ui-press-a-shortcut").into(); }
                 }
             }
             if let Some((percentage, text)) = &style_input {
@@ -725,7 +730,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 WM_MOUSEWHEEL if scene.viewport.is_some() => {
                     let mut pointer = windows_sys::Win32::Foundation::POINT { x: lp as u16 as i16 as i32, y: (lp >> 16) as u16 as i16 as i32 };
                     unsafe { ScreenToClient(hwnd, &raw mut pointer); }
-                    if pointer.x as f32 / scale < Tokens::CONTENT_X { return Some(0); }
+                    if pointer.x as f32 / scale < Tokens::content_x() { return Some(0); }
                     let delta = ((wp >> 16) as u16 as i16) as f32 / 120.0;
                     scroll_offset = (scroll_offset - delta * 64.0).clamp(0.0, scene.scroll_max);
                     scene_key = None; hover = None; pressed = None;
@@ -911,7 +916,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         if key != VK_ESCAPE {
                             let bits = peek::modifier_bits(&keyboard::Modifiers::current());
                             if !peek::valid_shortcut(key, bits) {
-                                window::error("此快捷键与现有操作冲突或不受支持，请使用字母、数字、功能键或空格，可搭配 Ctrl、Shift、Alt。");
+                                window::error(crate::i18n::text("ui-shortcut-conflicts-or-is-unsupported-use-letters-digits-function-key"));
                                 return Some(0);
                             }
                             let mut value = peek::settings(); value.key = key; value.modifiers = bits;
@@ -999,7 +1004,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         }
                         if let (Some(index), Some(viewport)) = (focus, scene.viewport) {
                             let c = &scene.controls[index];
-                            if !matches!(c.kind, ControlKind::Caption) && c.bounds.left >= Tokens::CONTENT_X {
+                            if !matches!(c.kind, ControlKind::Caption) && c.bounds.left >= Tokens::content_x() {
                                 let delta = if c.bounds.top < viewport.top + 8.0 { c.bounds.top - viewport.top - 8.0 }
                                     else if c.bounds.bottom > viewport.bottom - 8.0 { c.bounds.bottom - viewport.bottom + 8.0 } else { 0.0 };
                                 if delta != 0.0 { scroll_offset = (scroll_offset + delta).clamp(0.0, scene.scroll_max); scene_key = None; }
@@ -1101,9 +1106,9 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                             let mut policy=recovery::Policy::load(&state.borrow().store);
                             if kind==0 {policy.enabled=!policy.enabled;} else {
                                 let options: &[(u64, &'static str)] = if kind == 1 {
-                                    &[(5, "5 分钟"), (15, "15 分钟"), (30, "30 分钟"), (60, "60 分钟")]
+                                    &[(5, crate::i18n::text("ui-5-minutes")), (15, crate::i18n::text("ui-15-minutes")), (30, crate::i18n::text("ui-30-minutes")), (60, crate::i18n::text("ui-60-minutes"))]
                                 } else {
-                                    &[(10, "最近 10 份"), (20, "最近 20 份"), (50, "最近 50 份")]
+                                    &[(10, crate::i18n::text("ui-last-10")), (20, crate::i18n::text("ui-last-20")), (50, crate::i18n::text("ui-last-50"))]
                                 };
                                 let selected = if kind == 1 { policy.minutes } else { policy.keep as u64 };
                                 if let Some(value) = controls::choose(hwnd, point, appearance, options, selected) {
@@ -1118,7 +1123,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         let state=Rc::clone(&state);let path=path.clone();
                         let mut point=windows_sys::Win32::Foundation::POINT::default();unsafe{GetCursorPos(&raw mut point);}
                         window::defer_action(move || {
-                            let rows=vec![super::menu::entry(1,"恢复…","",""),super::menu::entry(2,"导出…","",""),super::menu::entry(3,"删除…","","")];
+                            let rows=vec![super::menu::entry(1,crate::i18n::text("ui-restore-06f9"),"",""),super::menu::entry(2,crate::i18n::text("ui-export"),"",""),super::menu::entry(3,crate::i18n::text("ui-delete"),"","")];
                             let result=super::menu::show_entries(hwnd,point,false,appearance.0,appearance.1,rows);
                             let event=match result{1=>Some(Event::RestoreBackupPath(path)),2=>Some(Event::ExportBackupPath(path)),3=>Some(Event::DeleteBackup(path)),_=>None};
                             if let Some(event)=event{recovery::request(&state,&event);}
@@ -1156,6 +1161,11 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     Action::Change(Event::Material(Backdrop::Solid { .. })) => {
                         let value = solid_style(&state.borrow().store, dark);
                         if let Err(error) = handle(&state, selected, Event::Material(value)) { window::error(&error); }
+                    }
+                    Action::Language(code) => {
+                        let result = state.borrow().store.save_preference("language", code);
+                        if let Err(error) = result { window::error(&error.to_string()); }
+                        scene_key = None;
                     }
                     Action::CopyDiagnostics => {
                         let report = format!("{}Desktop: {}\r\n", crate::diagnostics::report(), desktop_status);
@@ -1284,7 +1294,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
             0,
         ) == 0
         {
-            return Err("无法初始化设置窗口边框".into());
+            return Err(crate::i18n::text("ui-could-not-initialize-settings-window-frame").into());
         }
         let hwnd = window.hwnd().cast();
         let dpi = GetDpiForWindow(hwnd).max(96) as f32 / 96.0;

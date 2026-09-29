@@ -54,7 +54,7 @@ pub(in crate::pane) fn load(store: &WorkspaceStore) -> Result<(), String> {
 pub(in crate::pane) fn save(store: &WorkspaceStore, value: Shortcut) -> Result<(), String> {
     if !valid(value) {
         return Err(
-            "请使用 Ctrl 或 Alt 搭配字母、数字、空格或功能键，避开现有文件操作和系统快捷键。"
+            crate::i18n::text("ui-use-ctrl-or-alt-with-a-letter-digit-space-or-function-key-avoid-exis")
                 .into(),
         );
     }
@@ -114,14 +114,11 @@ impl Registration {
         self.attempted = Some(std::time::Instant::now());
         self.registered = desired.is_some_and(|value| unsafe { RegisterHotKey(hwnd as _, ID, flags(value), u32::from(value.key)) } != 0);
         let status = if desired.is_none() {
-            "搜索已关闭，全局快捷键未注册".into()
+            crate::i18n::text("ui-search-is-disabled-global-shortcut-is-not-registered").into()
         } else if self.registered {
-            "全局生效；Esc 取消录入".into()
+            crate::i18n::text("ui-works-globally-esc-cancels-recording").into()
         } else {
-            format!(
-                "{} 已被占用或无法注册，请更换快捷键",
-                label(desired.unwrap())
-            )
+            crate::i18n::format("ui-is-unavailable-choose-another-shortcut", &[("arg0", format!("{}", label(desired.unwrap())))])
         };
         STATUS.with(|s| *s.borrow_mut() = status);
     }

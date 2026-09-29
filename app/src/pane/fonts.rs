@@ -48,7 +48,7 @@ fn icon_coverage(name: &str) -> windows::core::Result<bool> {
 pub(super) fn family() -> String {
     let value = FAMILY.read().unwrap();
     if value.is_empty() {
-        super::assets::UI_FONT.into()
+        crate::i18n::default_font().into()
     } else {
         value.clone()
     }
@@ -107,7 +107,7 @@ fn readable(name: &str) -> bool {
             return false;
         }
         let old = SelectObject(dc, font);
-        let probe: Vec<u16> = "中文标签文件设置AaZz0123456789".encode_utf16().collect();
+        let probe: Vec<u16> = crate::i18n::font_sample().encode_utf16().collect();
         let mut glyphs = vec![0; probe.len()];
         let count = GetGlyphIndicesW(
             dc,
@@ -152,7 +152,7 @@ pub(super) fn load(store: &desktop_storage::WorkspaceStore) -> Result<(), String
         .preference(KEY)
         .map_err(|e| e.to_string())?
         .unwrap_or_default();
-    if saved.is_empty() || saved == super::assets::UI_FONT {
+    if saved.is_empty() || saved == super::assets::UI_FONT || saved == crate::i18n::default_font() {
         set(String::new());
     } else {
         set(installed()
@@ -163,13 +163,12 @@ pub(super) fn load(store: &desktop_storage::WorkspaceStore) -> Result<(), String
     Ok(())
 }
 pub(super) fn save(store: &desktop_storage::WorkspaceStore, name: &str) -> Result<(), String> {
-    if name != super::assets::UI_FONT && !installed().iter().any(|candidate| candidate == name) {
-        return Err("该字体未安装，或不支持所需的中英文字符".into());
+    if name != crate::i18n::default_font() && !installed().iter().any(|candidate| candidate == name) {
+        return Err(crate::i18n::text("font-unavailable").into());
     }
-    store
-        .save_preference(KEY, name)
-        .map_err(|e| e.to_string())?;
-    set(name.into());
+    let saved = if name == crate::i18n::default_font() { "" } else { name };
+    store.save_preference(KEY, saved).map_err(|e| e.to_string())?;
+    set(saved.into());
     Ok(())
 }
 #[cfg(test)]
@@ -223,7 +222,7 @@ mod tests {
             }
         }
         let _restore = Restore(family());
-        set(super::super::assets::UI_FONT.into());
+        set(crate::i18n::default_font().into());
         let names = installed();
         let alternative = names
             .iter()

@@ -42,7 +42,7 @@ impl Painter {
                 FontWeight(if i == 2 || i == 3 { 600 } else { 400 }),
             ))?
             .with_paragraph_alignment(ParagraphAlignment::Center)
-            .with_word_wrapping(if i == 6 {
+            .with_word_wrapping(if matches!(i, 1 | 6) {
                 WordWrapping::Wrap
             } else {
                 WordWrapping::NoWrap
@@ -76,7 +76,7 @@ impl Painter {
             button_format,
         })
     }
-    fn label_width(&self, text: &str) -> windows::core::Result<f32> {
+    pub(super) fn label_width(&self, text: &str) -> windows::core::Result<f32> {
         let layout = canvas_result(windows_canvas::TextLayout::new(
             text,
             &self.formats[1],
@@ -180,18 +180,18 @@ impl Painter {
                 });
                 t.fill_rounded_rect(
                     &RoundedRect {
-                        rect: Rect::from_xywh(224.0, 0.0, width - 224.0, height),
+                        rect: Rect::from_xywh(Tokens::content_x() - 24.0, 0.0, width - Tokens::content_x() + 24.0, height),
                         radius_x: 8.0,
                         radius_y: 8.0,
                     },
                     &page_background,
                 );
                 for r in &s.separators {
-                    let _clip = ContentClip::new(&t, s, r.left >= Tokens::CONTENT_X);
+                    let _clip = ContentClip::new(&t, s, r.left >= Tokens::content_x());
                     t.fill_rect(r, &border);
                 }
                 for r in &s.cards {
-                    let _clip = ContentClip::new(&t, s, r.left >= Tokens::CONTENT_X);
+                    let _clip = ContentClip::new(&t, s, r.left >= Tokens::content_x());
                     let rr = RoundedRect {
                         rect: *r,
                         radius_x: Tokens::CARD_RADIUS,
@@ -208,7 +208,7 @@ impl Painter {
                     t.draw_bitmap(&bitmap, bounds, 1.0);
                 }
                 for (r, material) in &s.previews {
-                    let _clip = ContentClip::new(&t, s, r.left >= Tokens::CONTENT_X);
+                    let _clip = ContentClip::new(&t, s, r.left >= Tokens::content_x());
                     // Keep only the current image. Theme, strength, custom color or
                     // device/context changes invalidate it; hover and scroll do not.
                     let mut cached = self.preview.borrow_mut();
@@ -269,7 +269,7 @@ impl Painter {
                         );
                     }
                     t.clipped_text(
-                        "桌面面板",
+                        crate::i18n::text("ui-desktop-panel"),
                         &self.formats[0],
                         &Rect::from_xywh(panel.left + 10.0, panel.top + 2.0, 120.0, 24.0),
                         &ink,
@@ -298,7 +298,7 @@ impl Painter {
                     let _clip = ContentClip::new(
                         &t,
                         s,
-                        c.bounds.left >= Tokens::CONTENT_X
+                        c.bounds.left >= Tokens::content_x()
                             && !matches!(c.kind, ControlKind::Caption),
                     );
                     if !c.enabled && c.is_toggle() {
@@ -766,7 +766,7 @@ impl Painter {
                     }
                 }
                 for (r, text, size) in &s.text {
-                    let _clip = ContentClip::new(&t, s, r.left >= Tokens::CONTENT_X);
+                    let _clip = ContentClip::new(&t, s, r.left >= Tokens::content_x());
                     if matches!(*size, 4 | 5) {
                         t.clipped_icon(text, &self.formats[*size], r, &ink);
                         continue;

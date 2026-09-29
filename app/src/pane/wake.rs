@@ -41,7 +41,7 @@ impl Wake {
         let data = Box::into_raw(Box::new(self.clone()));
         if unsafe { SetWindowSubclass(hwnd as _, Some(window_event), READY as usize, data as usize) } == 0 {
             unsafe { drop(Box::from_raw(data)); }
-            return Err("无法注册面板运行时通知".into());
+            return Err(crate::i18n::text("ui-could-not-register-panel-notifications").into());
         }
         Ok(())
     }

@@ -160,7 +160,7 @@ impl Search {
         self.failed = false;
         self.replacing = !self.query.is_empty();
         self.busy = !self.query.is_empty();
-        self.status = self.busy.then(|| "正在搜索…".into());
+        self.status = self.busy.then(|| crate::i18n::text("ui-searching").into());
         self.due = self
             .busy
             .then(|| Instant::now() + Duration::from_millis(250));
@@ -177,7 +177,7 @@ impl Search {
         {
             self.accept(
                 self.generation,
-                Err("搜索线程已停止，请重新打开面板。".into()),
+                Err(crate::i18n::text("ui-search-thread-stopped-reopen-the-panel").into()),
             );
         } else {
             self.busy = true;
@@ -233,7 +233,7 @@ impl Search {
                     }
                 }
                 self.status = if self.entries.is_empty() {
-                    Some("没有找到匹配的文件".into())
+                    Some(crate::i18n::text("ui-no-matching-files-found").into())
                 } else {
                     None
                 };
@@ -341,19 +341,19 @@ impl Search {
     fn footer(&self) -> String {
         if self.busy {
             return if self.replacing {
-                "正在搜索…"
+                crate::i18n::text("ui-searching")
             } else {
-                "正在加载更多…"
+                crate::i18n::text("ui-loading-more")
             }
             .into();
         }
         if self.failed {
-            return "加载失败 · 点击重试".into();
+            return crate::i18n::text("ui-loading-failed-click-to-retry").into();
         }
         if self.selection.is_empty() {
-            format!("{} 个结果", self.total)
+            crate::i18n::format("ui-results", &[("arg0", format!("{}", self.total))])
         } else {
-            format!("{} 个结果 · 已选 {} 项", self.total, self.selection.len())
+            crate::i18n::format("ui-results-selected", &[("arg0", format!("{}", self.total)), ("arg1", format!("{}", self.selection.len()))])
         }
     }
 }
@@ -395,7 +395,7 @@ impl Editor {
             )
         };
         if hwnd.is_null() {
-            return Err("无法创建搜索框".into());
+            return Err(crate::i18n::text("ui-could-not-create-search-box").into());
         }
         unsafe {
             SetPropW(owner, EDIT_PROPERTY, hwnd);
@@ -815,7 +815,7 @@ pub(super) fn create(
     let mut error_tip = false;
     let prepared = Rc::new(std::cell::Cell::new(false));
     let show_prepared = Rc::clone(&prepared);
-    let window = windows_window::Window::new("Everything 搜索")
+    let window = windows_window::Window::new(crate::i18n::text("ui-everything-search"))
         .style(WS_POPUP | WS_THICKFRAME)
         .ex_style(WS_EX_TOOLWINDOW | WS_EX_NOREDIRECTIONBITMAP)
         .size(rect.width.max(1.0) as i32, TOP as i32)
@@ -1283,7 +1283,7 @@ pub(super) fn create(
                             } else if show_error {
                                 tip.show_for_row(
                                     hwnd,
-                                    state.status.as_deref().unwrap_or("请重试"),
+                                    state.status.as_deref().unwrap_or(crate::i18n::text("ui-please-try-again")),
                                     TOP + 10.0,
                                 );
                             } else {
@@ -1322,19 +1322,19 @@ pub(super) fn create(
                         let mut rows = Vec::new();
                         if !items.is_empty() {
                             for (id, label, shortcut) in [
-                                (OPEN, "打开", "Enter"),
-                                (LOCATION, "打开文件位置", ""),
-                                (COPY, "复制", "Ctrl+C"),
-                                (CUT, "剪切", "Ctrl+X"),
-                                (DELETE, "删除", "Del"),
-                                (PEEK, "预览", ""),
+                                (OPEN, crate::i18n::text("ui-open"), "Enter"),
+                                (LOCATION, crate::i18n::text("ui-open-file-location"), ""),
+                                (COPY, crate::i18n::text("ui-copy"), "Ctrl+C"),
+                                (CUT, crate::i18n::text("ui-cut"), "Ctrl+X"),
+                                (DELETE, crate::i18n::text("ui-delete-8907"), "Del"),
+                                (PEEK, crate::i18n::text("ui-preview"), ""),
                             ] {
                                 rows.push(super::menu::entry(id as i32, label, "", shortcut));
                             }
                             rows.push(super::menu::entry(0, "", "", ""));
                         }
-                        rows.push(super::menu::entry(201, "设置", "", ""));
-                        rows.push(super::menu::entry(202, "关闭搜索面板", "", ""));
+                        rows.push(super::menu::entry(201, crate::i18n::text("ui-settings"), "", ""));
+                        rows.push(super::menu::entry(202, crate::i18n::text("ui-close-search-panel"), "", ""));
                         let command =
                             super::menu::show_entries(hwnd, point, false, theme, backdrop, rows);
                         match command {
@@ -1465,7 +1465,7 @@ fn show_location(item: &ShellIdentity) -> Result<(), String> {
         System::Com::CoTaskMemFree,
         UI::Shell::{SHOpenFolderAndSelectItems, SHParseDisplayName},
     };
-    let path = item.file_system_path().ok_or("搜索结果没有文件路径")?;
+    let path = item.file_system_path().ok_or(crate::i18n::text("ui-search-result-has-no-file-path"))?;
     let path: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
     unsafe {
         let mut pidl = std::ptr::null_mut();

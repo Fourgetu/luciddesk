@@ -332,7 +332,7 @@ pub(super) fn browse(owner: isize, provider: Provider) -> Result<Option<String>,
         return if error == 0 {
             Ok(None)
         } else {
-            Err(format!("无法选择预览程序：{error}"))
+            Err(crate::i18n::format("ui-could-not-select-preview-app", &[("error", format!("{}", error))]))
         };
     }
     let path =
@@ -341,7 +341,7 @@ pub(super) fn browse(owner: isize, provider: Provider) -> Result<Option<String>,
         .file_name()
         .is_some_and(|n| n.eq_ignore_ascii_case(provider.executable()))
     {
-        return Err(format!("请选择 {}", provider.executable()));
+        return Err(crate::i18n::format("ui-select", &[("arg0", format!("{}", provider.executable()))]));
     }
     Ok(Some(path))
 }
@@ -362,7 +362,7 @@ fn ensure_running(path: &std::path::Path) -> Result<Vec<Signal>, String> {
     let mut ids = vec![0u32; 65536];
     let mut bytes = 0;
     if unsafe { EnumProcesses(ids.as_mut_ptr(), (ids.len() * 4) as u32, &raw mut bytes) } == 0 {
-        return Err("无法检查 Peek 进程".into());
+        return Err(crate::i18n::text("ui-could-not-inspect-peek-process").into());
     }
     for id in &ids[..bytes as usize / 4] {
         unsafe {
@@ -397,7 +397,7 @@ fn ensure_running(path: &std::path::Path) -> Result<Vec<Signal>, String> {
     std::process::Command::new(path)
         .arg(std::process::id().to_string())
         .spawn()
-        .map_err(|e| format!("无法启动 Peek：{e}"))?;
+        .map_err(|e| crate::i18n::format("ui-could-not-start-peek", &[("e", format!("{}", e))]))?;
     Ok(signals)
 }
 
@@ -411,10 +411,10 @@ pub(super) fn open(owner: isize, identity: &ShellIdentity) -> Result<(), String>
     }
     let path = resolved(&s)
         .filter(|path| path.is_file())
-        .ok_or("未找到 Peek，请在设置中选择 PowerToys.Peek.UI.exe")?;
+        .ok_or(crate::i18n::text("ui-peek-not-found-select-powertoys-peek-ui-exe-in-settings"))?;
     let _signals = ensure_running(&path)?;
     desktop_shell::peek_desktop_item(windows::Win32::Foundation::HWND(owner as _), identity)
-        .map_err(|error| format!("无法打开 PowerToys Peek：{error}"))
+        .map_err(|error| crate::i18n::format("ui-could-not-open-powertoys-peek", &[("error", format!("{}", error))]))
 }
 
 pub(super) fn open_path(identity: &ShellIdentity) -> Result<(), String> {
@@ -428,7 +428,7 @@ pub(super) fn open_path(identity: &ShellIdentity) -> Result<(), String> {
     } else {
         identity
             .file_system_path()
-            .ok_or("此项目没有文件路径")?
+            .ok_or(crate::i18n::text("ui-this-item-has-no-file-path"))?
             .to_path_buf()
     };
     if value.provider == Provider::QuickLook && quicklook_pipe(&path).is_ok() {
@@ -436,7 +436,7 @@ pub(super) fn open_path(identity: &ShellIdentity) -> Result<(), String> {
     }
     let executable = resolved(&value)
         .filter(|p| p.is_file())
-        .ok_or_else(|| format!("未找到 {}，请在设置中选择程序路径", value.provider.name()))?;
+        .ok_or_else(|| crate::i18n::format("ui-not-found-select-its-path-in-settings", &[("arg0", format!("{}", value.provider.name()))]))?;
     if value.provider == Provider::QuickLook {
         std::process::Command::new(executable)
             .arg("/autorun")
@@ -450,14 +450,14 @@ pub(super) fn open_path(identity: &ShellIdentity) -> Result<(), String> {
                 return Ok(());
             }
             if std::time::Instant::now() >= deadline {
-                return Err("QuickLook 启动后未能连接预览服务".into());
+                return Err(crate::i18n::text("ui-quicklook-started-but-its-preview-service-is-unavailable").into());
             }
             unsafe {
                 let mut message = MSG::default();
                 while PeekMessageW(&raw mut message, std::ptr::null_mut(), 0, 0, PM_REMOVE) != 0 {
                     if message.message == WM_QUIT {
                         PostQuitMessage(message.wParam as i32);
-                        return Err("预览已取消".into());
+                        return Err(crate::i18n::text("ui-preview-canceled").into());
                     }
                     TranslateMessage(&raw const message);
                     DispatchMessageW(&raw const message);

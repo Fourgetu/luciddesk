@@ -1,5 +1,11 @@
-//! cargo run -p lucidpane --example icon_quality_probe -- <shortcut> <output.bmp>
+//! cargo run -p luciddesk --example icon_quality_probe -- <shortcut> <output.bmp>
 //! Read-only Shell extraction and a 72-pixel preview for inspecting real icon edges.
+#[path = "../src/diagnostics.rs"]
+#[allow(dead_code)]
+mod diagnostics;
+#[path = "../src/i18n.rs"]
+#[allow(dead_code)]
+mod i18n;
 #[path = "../src/pane/assets.rs"]
 #[allow(dead_code)]
 mod assets;

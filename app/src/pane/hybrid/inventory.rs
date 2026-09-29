@@ -26,7 +26,7 @@ pub(super) fn revision_keys(managed: &[ShellIdentity]) -> Vec<String> {
 pub(super) fn capture(managed: &[ShellIdentity]) -> Result<Inventory, String> {
     let native = desktop_shell::native_desktop_snapshot()?;
     if !native.is_complete() {
-        return Err("桌面正在变化，暂不更新分组清单".into());
+        return Err(crate::i18n::text("ui-desktop-is-changing-group-refresh-deferred").into());
     }
     let mut items: Vec<_> = native.items.into_iter().map(|(item, _, _)| item).collect();
     if !managed.is_empty() {
@@ -40,7 +40,7 @@ pub(super) fn capture(managed: &[ShellIdentity]) -> Result<Inventory, String> {
         .iter()
         .all(|item| seen.insert(item.identity.persistent_key()))
     {
-        return Err("桌面清单包含重复身份，暂不更新分组".into());
+        return Err(crate::i18n::text("ui-duplicate-desktop-identities-group-refresh-deferred").into());
     }
     Ok(Inventory {
         icon_size: native.icon_size,

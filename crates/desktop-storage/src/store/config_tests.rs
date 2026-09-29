@@ -290,3 +290,23 @@ fn failed_workspace_commit_preserves_configuration() {
     );
     assert!(store.load_workspace().unwrap().desktop_items().is_empty());
 }
+
+
+#[test]
+fn language_round_trip_and_legacy_default() {
+    let (dir, store) = open();
+    assert_eq!(store.preference("language").unwrap().as_deref(), Some("system"));
+    for language in ["zh-CN", "zh-TW", "en-US", "ja-JP", "ko-KR", "de-DE", "ru-RU", "system"] {
+        store.save_preference("language", language).unwrap();
+        let reopened = WorkspaceStore::open(&dir.path().join("workspace.db")).unwrap();
+        assert_eq!(reopened.preference("language").unwrap().as_deref(), Some(language));
+    }
+    let config = dir.path().join("config.toml");
+    let original = std::fs::read_to_string(&config).unwrap();
+    assert!(store.save_preference("language", "invalid").is_err());
+    assert_eq!(std::fs::read_to_string(&config).unwrap(), original);
+    drop(store);
+    std::fs::write(&config, original.replace("language = \"system\"\n", "")).unwrap();
+    let reopened = WorkspaceStore::open(&dir.path().join("workspace.db")).unwrap();
+    assert_eq!(reopened.preference("language").unwrap().as_deref(), Some("system"));
+}

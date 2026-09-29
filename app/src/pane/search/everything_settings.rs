@@ -78,11 +78,11 @@ pub(in crate::pane) fn resolved(value: &Settings) -> Option<PathBuf> {
 pub(in crate::pane) fn launch() -> Result<(), String> {
     let path = resolved(&settings())
         .filter(|p| p.is_file())
-        .ok_or("未找到 Everything，请在设置中选择 Everything.exe")?;
+        .ok_or(crate::i18n::text("ui-everything-not-found-select-everything-exe-in-settings"))?;
     std::process::Command::new(path)
         .arg("-startup")
         .spawn()
-        .map_err(|e| format!("无法启动 Everything：{e}"))?;
+        .map_err(|e| crate::i18n::format("ui-could-not-start-everything", &[("e", format!("{}", e))]))?;
     Ok(())
 }
 pub(in crate::pane) fn browse(owner: isize) -> Result<Option<String>, String> {
@@ -102,7 +102,7 @@ pub(in crate::pane) fn browse(owner: isize) -> Result<Option<String>, String> {
         return if error == 0 {
             Ok(None)
         } else {
-            Err(format!("无法选择 Everything：{error}"))
+            Err(crate::i18n::format("ui-could-not-select-everything", &[("error", format!("{}", error))]))
         };
     }
     let path =
@@ -111,7 +111,7 @@ pub(in crate::pane) fn browse(owner: isize) -> Result<Option<String>, String> {
         .file_name()
         .is_some_and(|n| n.eq_ignore_ascii_case("Everything.exe"))
     {
-        return Err("请选择 Everything.exe".into());
+        return Err(crate::i18n::text("ui-select-everything-exe").into());
     }
     Ok(Some(path))
 }

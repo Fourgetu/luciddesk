@@ -760,7 +760,7 @@ fn setting_cards_scroll_without_moving_navigation_or_hitting_caption() {
             }
             for index in 0..original.controls.len() {
                 let control = &original.controls[index];
-                if control.bounds.left < Tokens::CONTENT_X
+                if control.bounds.left < Tokens::content_x()
                     || matches!(control.kind, ControlKind::Caption)
                 {
                     continue;
@@ -819,9 +819,9 @@ fn settings_cards_align_and_long_paths_do_not_overlap_actions() {
             Action::SearchReset,
         );
         let right =
-            Tokens::CONTENT_X + (width - Tokens::CONTENT_X - Tokens::MARGIN).min(Tokens::MAX_WIDTH);
+            Tokens::content_x() + (width - Tokens::content_x() - Tokens::MARGIN).min(Tokens::MAX_WIDTH);
         for card in &s.cards {
-            assert_eq!(card.left, Tokens::CONTENT_X);
+            assert_eq!(card.left, Tokens::content_x());
             assert_eq!(card.right, right);
             for control in s.controls.iter().filter(|c| {
                 c.bounds.top >= card.top
@@ -1039,7 +1039,7 @@ pub(in crate::pane) fn solid_settings_edit_preview_save_and_remember_style() {
         // Reset actual scrolling, then locate the semantic control in the current layout.
         let scale = GetDpiForWindow(hwnd).max(96) as f32 / 96.0;
         let mut pointer = windows_sys::Win32::Foundation::POINT {
-            x: ((Tokens::CONTENT_X + 32.0) * scale) as i32,
+            x: ((Tokens::content_x() + 32.0) * scale) as i32,
             y: (200.0 * scale) as i32,
         };
         ClientToScreen(hwnd, &raw mut pointer);
@@ -1118,4 +1118,63 @@ pub(in crate::pane) fn solid_settings_edit_preview_save_and_remember_style() {
     click(point(0, |a| matches!(a, Action::Change(Event::Material(Backdrop::Solid { .. }))), 0.5));
     assert_eq!(state.borrow().workspace.appearance().unwrap().1, solid);
     unsafe { SendMessageW(hwnd, WM_CLOSE, 0, 0); }
+}
+
+
+#[test]
+fn all_languages_layout_and_render_without_control_overflow() {
+    let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let device = windows_canvas::GpuDevice::new_warp().unwrap();
+    for locale in 0..7 {
+        crate::i18n::with_locale(locale, || {
+            let painter = Painter::new().unwrap();
+            for page in [0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] {
+                let width = 800.0;
+                let height = 620.0;
+                let material = if page == 7 { Backdrop::Solid { color: 0xf3f3f3, opacity: 1.0 } } else { Backdrop::Acrylic };
+                let mut body = scene(width, height - TITLE_HEIGHT, page, true,
+                    (PanelTheme::Light, material), desktop_core::PaneOptions::default());
+                match page {
+                    8 => layout::folder_defaults(&mut body, width, folder::Defaults::default(), folder::EntryMode::Inline),
+                    9 => layout::backup_history(&mut body, width, &recovery::View::default(), 0),
+                    6 | 10 => layout::backup_page(&mut body, width, &recovery::View::default(), recovery::Policy::default(), page == 10),
+                    11 => layout::fonts(&mut body, width, &[], 0),
+                    12 => layout::language(&mut body, width, "system"),
+                    _ => {},
+                }
+                let mut scene = with_titlebar(body, width, false);
+                scene.scroll_to(width, height, &mut 0.0);
+                let navigation: Vec<_> = scene.controls.iter().filter(|c| matches!(c.kind, ControlKind::Navigation)).collect();
+                for pair in navigation.windows(2) { assert!(pair[0].bounds.bottom <= pair[1].bounds.top); }
+                for c in &scene.controls {
+                    assert!(c.bounds.left >= 0.0 && c.bounds.right <= width, "locale={locale}, page={page}, {}", c.label);
+                    if matches!(c.kind, ControlKind::Navigation) {
+                        assert!(painter.label_width(&c.label).unwrap() <= c.bounds.right - c.bounds.left - controls::Style::NAV_TEXT_INSET - 8.0, "Navigation truncated: {}", c.label);
+                    }
+                }
+                for scale in [1.0, 1.5, 2.0] {
+                    let w = (width * scale) as u32;
+                    let h = (height * scale) as u32;
+                    let bitmap = super::super::canvas::Offscreen::new(&device, w, h).unwrap();
+                    for dark in [true, false] {
+                        painter.paint(&bitmap.target, &scene, width, height, scale, dark, false, None, None, &Default::default()).unwrap();
+                    }
+                    if scale == 1.0 && std::env::var_os("LUCIDPANE_TEST_EXPORT_SNAPSHOTS").is_some() {
+                        let pixels = bitmap.pixels().unwrap();
+                        let mut bmp = vec![0u8; 54];
+                        bmp[..2].copy_from_slice(b"BM");
+                        bmp[2..6].copy_from_slice(&(54 + pixels.len() as u32).to_le_bytes());
+                        bmp[10..14].copy_from_slice(&54u32.to_le_bytes());
+                        bmp[14..18].copy_from_slice(&40u32.to_le_bytes());
+                        bmp[18..22].copy_from_slice(&(w as i32).to_le_bytes());
+                        bmp[22..26].copy_from_slice(&(-(h as i32)).to_le_bytes());
+                        bmp[26..28].copy_from_slice(&1u16.to_le_bytes());
+                        bmp[28..30].copy_from_slice(&32u16.to_le_bytes());
+                        bmp.extend(pixels);
+                        std::fs::write(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../target/i18n-{locale}-{page}.bmp")), bmp).unwrap();
+                    }
+                }
+            }
+        });
+    }
 }

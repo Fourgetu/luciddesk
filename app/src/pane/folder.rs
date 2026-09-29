@@ -208,7 +208,7 @@ impl Source {
                                 items
                             })
                             .map_err(|error| {
-                                format!("无法读取文件夹，请检查路径或访问权限。\n{error}")
+                                crate::i18n::format("ui-cannot-read-folder-check-the-path-and-permissions-n", &[("error", format!("{}", error))])
                             });
                         if result.is_err() {
                             cache.lock().unwrap().retain_folder(&root, &Default::default());
@@ -478,7 +478,7 @@ pub(super) fn navigate(
     let mut history = old.history.clone();
     let path = if let Some(path) = path {
         if !path.is_dir() {
-            return Err("文件夹不可访问".into());
+            return Err(crate::i18n::text("ui-folder-inaccessible").into());
         }
         history.push(old.path.clone());
         path
@@ -520,7 +520,7 @@ pub(super) fn choose(owner: isize) -> Result<Option<PathBuf>, String> {
             .SetOptions(FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST | FOS_NOCHANGEDIR)
             .map_err(|e| e.to_string())?;
         dialog
-            .SetTitle(windows::core::w!("选择要映射的文件夹"))
+            .SetTitle(windows::core::PCWSTR(crate::i18n::wide("ui-select-a-folder-to-display")))
             .map_err(|e| e.to_string())?;
         if let Err(error) = dialog.Show(Some(windows::Win32::Foundation::HWND(owner as _))) {
             if error.code().0 as u32 == 0x800704c7 {
@@ -669,7 +669,7 @@ pub(super) fn request_picker(
             window::error(&error);
         }
     }) {
-        return Err("无法打开文件夹选择器".into());
+        return Err(crate::i18n::text("ui-could-not-open-folder-picker").into());
     }
     Ok(())
 }

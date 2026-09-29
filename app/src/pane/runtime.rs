@@ -38,8 +38,8 @@ pub(super) fn status(s: &PaneApp) -> String {
         .as_ref()
         .and_then(|r| r.desktop_error.as_ref())
         .map_or_else(
-            || "桌面分组已连接".into(),
-            |error| format!("桌面分组暂不可用，文件夹与搜索仍可使用。\n{error}"),
+            || crate::i18n::text("ui-desktop-groups-connected").into(),
+            |error| crate::i18n::format("ui-desktop-groups-unavailable-folder-panels-and-search-still-work-n", &[("error", format!("{}", error))]),
         )
 }
 
@@ -84,7 +84,7 @@ fn suspend(state: &Rc<RefCell<PaneApp>>) {
         let mut s = state.borrow_mut();
         s.session.take();
         if let Some(runtime) = &mut s.runtime {
-            runtime.desktop_error = Some("Explorer 连接已断开，正在等待恢复".into());
+            runtime.desktop_error = Some(crate::i18n::text("ui-explorer-disconnected-waiting-to-reconnect").into());
             runtime.reconnect_failures = 0;
             runtime.last_attempt = Instant::now() - reconnect_delay(0);
         }

@@ -37,25 +37,25 @@ pub(super) fn folder_defaults(
     let mut form = SettingsForm::new(
         s,
         width,
-        "设置文件夹的打开方式，以及新建文件夹面板的默认视图。",
+        crate::i18n::text("ui-set-folder-navigation-and-the-default-view-for-new-folder-panels"),
     );
-    form.section("文件夹入口");
+    form.section(crate::i18n::text("ui-folder-navigation"));
     form.choices(
-        "子文件夹打开方式",
-        "双击或按 Enter 时生效，应用于所有文件夹面板。",
+        crate::i18n::text("ui-open-subfolders-in"),
+        crate::i18n::text("ui-used-on-double-click-or-enter-in-all-folder-panels"),
         [
-            ("面板内打开", folder::EntryMode::Inline),
-            ("资源管理器", folder::EntryMode::Explorer),
+            (crate::i18n::text("ui-this-panel"), folder::EntryMode::Inline),
+            (crate::i18n::text("ui-file-explorer"), folder::EntryMode::Explorer),
         ]
         .into_iter()
         .map(|(label, choice)| (label, Action::FolderEntryMode(choice), mode == choice))
         .collect(),
     );
-    form.section("新建面板默认值");
+    form.section(crate::i18n::text("ui-new-panel-defaults"));
     form.choices(
-        "默认视图",
-        "仅用于新建面板，已有面板保持原样。",
-        [("图标", false), ("列表", true)]
+        crate::i18n::text("ui-default-view"),
+        crate::i18n::text("ui-applies-to-new-panels-existing-panels-keep-their-settings"),
+        [(crate::i18n::text("ui-icons"), false), (crate::i18n::text("ui-list"), true)]
             .into_iter()
             .map(|(label, list)| {
                 (
@@ -66,10 +66,10 @@ pub(super) fn folder_defaults(
             })
             .collect(),
     );
-    for (label, column) in [("类型", 1), ("修改时间", 2), ("大小", 3)] {
+    for (label, column) in [(crate::i18n::text("ui-type"), 1), (crate::i18n::text("ui-modified"), 2), (crate::i18n::text("ui-size"), 3)] {
         form.toggle(
             label,
-            "列表视图中显示此列；名称始终显示。",
+            crate::i18n::text("ui-show-this-column-in-list-view-name-is-always-shown"),
             value.columns & (1 << column) != 0,
             Action::FolderDefaults(folder::Defaults {
                 columns: value.columns ^ (1 << column),
@@ -78,24 +78,25 @@ pub(super) fn folder_defaults(
         );
     }
     form.button(
-        "恢复视图默认值",
-        "还原新建面板的视图和显示列。",
-        "恢复默认",
+        crate::i18n::text("ui-reset-view-defaults"),
+        crate::i18n::text("ui-reset-the-view-and-columns-for-new-panels"),
+        crate::i18n::text("ui-reset"),
         Action::FolderDefaults(folder::Defaults::default()),
     );
 }
 
 // Page IDs stay stable; display order is independent of routing.
-const PAGES: [(usize, &str, &str); 8] = [
-    (0, "主题与材质", "\u{e790}"),
-    (1, "面板布局", "\u{f0e2}"),
-    (11, "字体", "\u{e8d2}"),
-    (8, "文件夹面板", "\u{e8b7}"),
-    (4, "Everything 搜索", "\u{e721}"),
-    (3, "文件预览", "\u{e890}"),
-    (6, "备份与恢复", "\u{e81c}"),
-    (5, "关于", "\u{e946}"),
-];
+pub(super) fn pages() -> [(usize, &'static str, &'static str); 9] { [
+    (0, crate::i18n::text("ui-theme-materials"), "\u{e790}"),
+    (1, crate::i18n::text("ui-panel-layout"), "\u{f0e2}"),
+    (11, crate::i18n::text("ui-fonts"), "\u{e8d2}"),
+    (8, crate::i18n::text("ui-folder-panels"), "\u{e8b7}"),
+    (4, crate::i18n::text("ui-everything-search"), "\u{e721}"),
+    (3, crate::i18n::text("ui-file-preview"), "\u{e890}"),
+    (6, crate::i18n::text("ui-backup-restore"), "\u{e81c}"),
+    (12, crate::i18n::text("language-title"), "\u{e8d2}"),
+    (5, crate::i18n::text("ui-about"), "\u{e946}"),
+] }
 
 pub(super) fn scene(
     width: f32,
@@ -138,32 +139,33 @@ fn scene_with_mica(
         app_icon: None,
     };
     s.text(Rect::from_xywh(28.0, 26.0, 172.0, 32.0), "LucidDesk", 2);
-    for (position, &(id, name, icon)) in PAGES.iter().enumerate() {
+    for (position, &(id, name, icon)) in pages().iter().enumerate() {
         // Keep spacing tied to semantic groups, not insertion positions.
         let gap = match id {
             4 | 3 => 10.0,
-            6 | 5 => 20.0,
+            6 | 12 | 5 => 20.0,
             _ => 0.0,
         };
-        let y = 78.0 + position as f32 * 42.0 + gap;
+        let stride = ((_height - 136.0) / 8.0).clamp(38.0, 42.0);
+        let y = 78.0 + position as f32 * stride + gap;
         s.control(
             ControlKind::Navigation,
-            Rect::from_xywh(12.0, y, 200.0, 38.0),
+            Rect::from_xywh(12.0, y, Tokens::content_x() - 48.0, 38.0),
             name,
             Action::Page(id),
             page == id || (page == 7 && id == 0) || (matches!(page, 9 | 10) && id == 6),
         );
         s.text(Rect::from_xywh(30.0, y, 22.0, 38.0), icon, 5);
     }
-    let x = 248.0;
+    let x = Tokens::content_x();
     let w = (width - x - Tokens::MARGIN).min(Tokens::MAX_WIDTH);
     s.text(
         Rect::from_xywh(x, 28.0, w, 44.0),
-        PAGES.iter().find(|(id, _, _)| *id == page).map_or(
+        pages().iter().find(|(id, _, _)| *id == page).map_or(
             match page {
-                9 => "管理备份",
-                10 => "高级选项",
-                _ => "配色",
+                9 => crate::i18n::text("ui-manage-backups"),
+                10 => crate::i18n::text("ui-advanced-options"),
+                _ => crate::i18n::text("ui-colors"),
             },
             |(_, name, _)| *name,
         ),
@@ -176,20 +178,20 @@ fn scene_with_mica(
         s.control(
             ControlKind::BackButton,
             Rect::from_xywh(x + w - 86.0, 34.0, 86.0, 32.0),
-            "返回",
+            crate::i18n::text("ui-back"),
             Action::Page(0),
             false,
         );
         let mut form =
-            SettingsForm::new(&mut s, width, "选择预设颜色或精确调整 RGB，修改即时生效。");
+            SettingsForm::new(&mut s, width, crate::i18n::text("ui-choose-a-preset-or-adjust-rgb-changes-apply-immediately"));
         form.preview(
-            &format!("面板预览 · {}%", (opacity * 100.0).round() as u8),
+            &crate::i18n::format("ui-panel-preview", &[("arg0", format!("{}", (opacity * 100.0).round() as u8))]),
             color,
             opacity,
         );
         form.colors(color);
-        form.section("自定义颜色");
-        for (channel, name) in ["红 R", "绿 G", "蓝 B"].into_iter().enumerate() {
+        form.section(crate::i18n::text("ui-custom-color"));
+        for (channel, name) in [crate::i18n::text("ui-red-r"), crate::i18n::text("ui-green-g"), crate::i18n::text("ui-blue-b")].into_iter().enumerate() {
             let value = ((color >> ((2 - channel) * 8)) & 255) as u8;
             form.slider(
                 name,
@@ -205,15 +207,15 @@ fn scene_with_mica(
             );
         }
         form.button(
-            "HEX 色值",
-            "输入六位十六进制颜色，按 Enter 确认。",
+            crate::i18n::text("ui-hex-color"),
+            crate::i18n::text("ui-enter-a-six-digit-hex-color-and-press-enter"),
             &format!("#{color:06X}"),
             Action::StyleInput(false),
         );
         form.button(
-            "恢复纯色设置",
-            "恢复默认颜色和不透明度。",
-            "恢复默认",
+            crate::i18n::text("ui-reset-solid-color"),
+            crate::i18n::text("ui-restore-the-default-color-and-opacity"),
+            crate::i18n::text("ui-reset"),
             Action::SolidReset,
         );
         return s;
@@ -222,16 +224,16 @@ fn scene_with_mica(
         let mut form = SettingsForm::new(
             &mut s,
             width,
-            "调整面板的主题、背景材质和通透效果，修改即时生效。",
+            crate::i18n::text("ui-adjust-the-theme-material-and-transparency-changes-apply-immediately"),
         );
-        form.section("外观");
+        form.section(crate::i18n::text("ui-appearance"));
         form.choices(
-            "应用主题",
-            "选择浅色、深色或跟随系统。",
+            crate::i18n::text("ui-app-theme"),
+            crate::i18n::text("ui-choose-light-dark-or-system-default"),
             [
-                ("跟随系统", PanelTheme::System),
-                ("浅色", PanelTheme::Light),
-                ("深色", PanelTheme::Dark),
+                (crate::i18n::text("ui-system-default"), PanelTheme::System),
+                (crate::i18n::text("ui-light"), PanelTheme::Light),
+                (crate::i18n::text("ui-dark"), PanelTheme::Dark),
             ]
             .into_iter()
             .map(|(name, value)| {
@@ -256,13 +258,13 @@ fn scene_with_mica(
             }
         };
         form.choices(
-            "窗口材质",
-            "选择面板背景的质感。",
+            crate::i18n::text("ui-window-material"),
+            crate::i18n::text("ui-choose-the-panel-background-material"),
             [
-                ("亚克力", Backdrop::Acrylic),
+                (crate::i18n::text("ui-acrylic"), Backdrop::Acrylic),
                 ("Mica", Backdrop::Mica),
                 ("Mica Alt", Backdrop::MicaAlt),
-                ("纯色", solid),
+                (crate::i18n::text("ui-solid-color"), solid),
             ]
             .into_iter()
             .filter(|(_, material)| show_mica || !matches!(material, Backdrop::Mica | Backdrop::MicaAlt))
@@ -275,52 +277,52 @@ fn scene_with_mica(
             })
             .collect(),
         );
-        form.section("效果与预览");
+        form.section(crate::i18n::text("ui-effects-preview"));
         let name = match appearance.1.base() {
-            Backdrop::Mica => "Mica · 柔和底色",
-            Backdrop::MicaAlt => "Mica Alt · 鲜明层次",
-            Backdrop::Solid { .. } => "纯色面板",
-            _ => "亚克力 · 磨砂玻璃",
+            Backdrop::Mica => crate::i18n::text("ui-mica-soft-tones"),
+            Backdrop::MicaAlt => crate::i18n::text("ui-mica-alt-vivid-depth"),
+            Backdrop::Solid { .. } => crate::i18n::text("ui-solid-color-panel"),
+            _ => crate::i18n::text("ui-acrylic-frosted-glass"),
         };
         form.material_preview(name, appearance.1);
         if let Backdrop::Solid { color, opacity } = appearance.1 {
             form.button(
-                "背景配色",
-                &format!("当前颜色 #{color:06X}"),
-                "编辑配色",
+                crate::i18n::text("ui-background-color"),
+                &crate::i18n::format("ui-current-color", &[("color", format!("{:06X}", color))]),
+                crate::i18n::text("ui-edit-colors"),
                 Action::SolidColor,
             );
             let value = (opacity * 100.0).round() as u8;
             form.slider(
-                "面板不透明度",
-                "数值越低，背景越通透。",
+                crate::i18n::text("ui-panel-opacity"),
+                crate::i18n::text("ui-lower-values-make-the-background-more-transparent"),
                 Slider::linear(f32::from(value), 100.0),
                 &format!("{value}%"),
                 Action::Opacity(value),
             );
             form.button(
-                "恢复纯色设置",
-                "恢复默认颜色和不透明度。",
-                "恢复默认",
+                crate::i18n::text("ui-reset-solid-color"),
+                crate::i18n::text("ui-restore-the-default-color-and-opacity"),
+                crate::i18n::text("ui-reset"),
                 Action::SolidReset,
             );
         }
         if let Some(value) = material_strength {
             form.slider(
-                "效果强度",
-                "从通透到厚实，居中为默认。",
+                crate::i18n::text("ui-effect-strength"),
+                crate::i18n::text("ui-from-transparent-to-dense-the-center-is-the-default"),
                 Slider::centered(f32::from(value), 100.0),
                 &if value == 50 {
-                    "默认".into()
+                    crate::i18n::text("ui-default").into()
                 } else {
                     format!("{:+}", i16::from(value) - 50)
                 },
                 Action::Strength(value),
             );
             form.button(
-                "恢复材质效果",
-                "将效果强度还原到默认值。",
-                "恢复默认",
+                crate::i18n::text("ui-reset-material"),
+                crate::i18n::text("ui-reset-effect-strength-to-its-default"),
+                crate::i18n::text("ui-reset"),
                 Action::StrengthReset,
             );
         }
@@ -328,12 +330,12 @@ fn scene_with_mica(
         let mut form = SettingsForm::new(
             &mut s,
             width,
-            "调整面板外形、文字和图标布局，修改即时生效。",
+            crate::i18n::text("ui-adjust-panel-shape-text-and-icon-layout-changes-apply-immediately"),
         );
-        form.section("面板外形");
+        form.section(crate::i18n::text("ui-panel-shape"));
         form.slider(
-            "圆角大小",
-            "调整面板和标签的边角弧度。",
+            crate::i18n::text("ui-corner-radius"),
+            crate::i18n::text("ui-adjust-corner-rounding-for-panels-and-tabs"),
             Slider::linear(
                 options.corner_radius,
                 desktop_core::PaneOptions::MAX_CORNER_RADIUS,
@@ -343,34 +345,34 @@ fn scene_with_mica(
         );
         for (title, description, value, event) in [
             (
-                "显示边框",
-                "用细边框区分面板和桌面背景。",
+                crate::i18n::text("ui-show-border"),
+                crate::i18n::text("ui-separate-panels-from-the-desktop-with-a-thin-border"),
                 options.border,
                 Event::ToggleBorder,
             ),
             (
-                "边缘吸附",
-                "移动面板时对齐邻近面板和屏幕边缘。",
+                crate::i18n::text("ui-edge-snapping"),
+                crate::i18n::text("ui-snap-to-nearby-panels-and-screen-edges-when-moving"),
                 options.snap,
                 Event::ToggleSnap,
             ),
             (
-                "标题分隔线",
-                "在标题栏和内容之间显示细分隔线。",
+                crate::i18n::text("ui-header-divider"),
+                crate::i18n::text("ui-show-a-thin-line-between-the-header-and-content"),
                 header_divider::enabled(),
                 Event::ToggleHeaderDivider,
             ),
         ] {
             form.toggle(title, description, value, Action::Change(event));
         }
-        form.section("文字与图标");
+        form.section(crate::i18n::text("ui-text-icons"));
         form.choices(
-            "面板文字",
-            "自动模式根据面板背景选择明暗。",
+            crate::i18n::text("ui-panel-text"),
+            crate::i18n::text("ui-automatic-mode-selects-text-brightness-for-the-background"),
             [
-                ("自动", desktop_core::PanelText::Auto),
-                ("浅色文字", desktop_core::PanelText::Light),
-                ("深色文字", desktop_core::PanelText::Dark),
+                (crate::i18n::text("ui-automatic"), desktop_core::PanelText::Auto),
+                (crate::i18n::text("ui-light-text"), desktop_core::PanelText::Light),
+                (crate::i18n::text("ui-dark-text"), desktop_core::PanelText::Dark),
             ]
             .into_iter()
             .map(|(label, value)| {
@@ -383,40 +385,40 @@ fn scene_with_mica(
             .collect(),
         );
         form.toggle(
-            "明暗底色保护",
-            "提高文字可读性；关闭后保留原始通透效果。",
+            crate::i18n::text("ui-text-contrast-backing"),
+            crate::i18n::text("ui-improve-text-readability-disable-to-preserve-full-transparency"),
             options.text_protection,
             Action::Change(Event::ToggleTextProtection),
         );
         form.slider(
-            "图标网格缩放",
-            "同时调整图标大小和排列间距。",
+            crate::i18n::text("ui-icon-grid-scale"),
+            crate::i18n::text("ui-adjust-icon-size-and-spacing-together"),
             Slider::centered(grid_slider_position(options.grid_scale), 1.0),
             &format!("{:.0}%", options.grid_scale),
             Action::GridSize(options.grid_scale),
         );
         form.button(
-            "恢复面板布局",
-            "将本页设置还原到默认值。",
-            "恢复默认",
+            crate::i18n::text("ui-reset-panel-layout"),
+            crate::i18n::text("ui-reset-this-page-to-its-defaults"),
+            crate::i18n::text("ui-reset"),
             Action::Change(Event::ResetPaneOptions),
         );
     } else if page == 3 {
         let value = peek::settings();
         let resolved = peek::resolved(&value);
         let mut form =
-            SettingsForm::new(&mut s, width, "连接预览程序，在面板内使用快捷键预览文件。");
-        form.section("预览服务");
+            SettingsForm::new(&mut s, width, crate::i18n::text("ui-connect-a-preview-app-to-preview-files-with-a-shortcut"));
+        form.section(crate::i18n::text("ui-preview-service"));
         form.toggle_enabled(
-            "启用文件预览",
-            "找到可用程序后即可开启。",
+            crate::i18n::text("ui-enable-file-preview"),
+            crate::i18n::text("ui-available-after-a-compatible-app-is-found"),
             value.enabled && resolved.is_some(),
             resolved.is_some(),
             Action::PeekEnable,
         );
         form.choices(
-            "预览程序",
-            "选择用于打开文件预览的程序。",
+            crate::i18n::text("ui-preview-app"),
+            crate::i18n::text("ui-choose-the-app-used-for-file-previews"),
             [peek::Provider::Peek, peek::Provider::QuickLook]
                 .into_iter()
                 .map(|provider| {
@@ -430,23 +432,23 @@ fn scene_with_mica(
         );
         let path = resolved
             .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_else(|| format!("未找到 {}，请选择程序", value.provider.name()));
+            .unwrap_or_else(|| crate::i18n::format("ui-not-found-select-the-app", &[("arg0", format!("{}", value.provider.name()))]));
         form.path(
             if value.active_path().is_empty() {
-                "程序路径 · 自动"
+                crate::i18n::text("ui-app-path-automatic")
             } else {
-                "程序路径"
+                crate::i18n::text("ui-app-path")
             },
             &path,
             vec![
-                ("浏览…", Action::PeekBrowse),
-                ("自动检测", Action::PeekDetect),
+                (crate::i18n::text("ui-browse"), Action::PeekBrowse),
+                (crate::i18n::text("ui-detect-automatically"), Action::PeekDetect),
             ],
         );
-        form.section("快捷键");
+        form.section(crate::i18n::text("ui-keyboard-shortcut"));
         form.shortcut(
-            "预览快捷键",
-            "仅在面板内生效。",
+            crate::i18n::text("ui-preview-shortcut"),
+            crate::i18n::text("ui-works-only-within-panels"),
             &peek::shortcut_label(&value),
             Action::PeekShortcut,
             Action::PeekReset,
@@ -454,37 +456,37 @@ fn scene_with_mica(
     } else if page == 4 {
         let value = everything_settings::settings();
         let resolved = everything_settings::resolved(&value);
-        let mut form = SettingsForm::new(&mut s, width, "连接 Everything，快速搜索本机文件。");
-        form.section("搜索服务");
+        let mut form = SettingsForm::new(&mut s, width, crate::i18n::text("ui-connect-everything-to-quickly-find-local-files"));
+        form.section(crate::i18n::text("ui-search-service"));
         form.toggle_enabled(
-            "启用搜索面板",
-            "找到 Everything 程序后即可开启。",
+            crate::i18n::text("ui-enable-search-panel"),
+            crate::i18n::text("ui-available-after-everything-is-found"),
             search_enabled && resolved.is_some(),
             resolved.is_some(),
             Action::Change(Event::ToggleSearch),
         );
         let path = resolved
             .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "未找到 Everything，请选择程序".into());
+            .unwrap_or_else(|| crate::i18n::text("ui-everything-not-found-select-the-app").into());
         form.path(
             if value.path.is_empty() {
-                "程序路径 · 自动"
+                crate::i18n::text("ui-app-path-automatic")
             } else {
-                "程序路径"
+                crate::i18n::text("ui-app-path")
             },
             &path,
             vec![
-                ("浏览…", Action::EverythingBrowse),
-                ("自动检测", Action::EverythingDetect),
-                ("启动", Action::EverythingLaunch),
+                (crate::i18n::text("ui-browse"), Action::EverythingBrowse),
+                (crate::i18n::text("ui-detect-automatically"), Action::EverythingDetect),
+                (crate::i18n::text("ui-start"), Action::EverythingLaunch),
             ],
         );
-        form.section("快捷键");
+        form.section(crate::i18n::text("ui-keyboard-shortcut"));
         let status = search_hotkey::status();
         form.shortcut(
-            "全局快捷键",
+            crate::i18n::text("ui-global-shortcut"),
             if status.is_empty() {
-                "在任意应用中唤起搜索面板。"
+                crate::i18n::text("ui-focus-the-desktop-search-panel-from-any-app")
             } else {
                 &status
             },
@@ -499,23 +501,23 @@ fn scene_with_mica(
 
 // Shared by the live page and raster tests so status and actions use the same layout.
 pub(super) fn about_status(s: &mut Scene, width: f32, status: &str, copied: bool) {
-    let mut form = SettingsForm::new(s, width, "把 Windows 桌面整理成顺手的工作区。");
+    let mut form = SettingsForm::new(s, width, crate::i18n::text("ui-turn-your-windows-desktop-into-a-workspace-that-works-for-you"));
     form.brand();
     form.button(
-        "开发者与开源许可",
+        crate::i18n::text("ui-developer-license"),
         concat!(env!("CARGO_PKG_AUTHORS"), " · MIT / Apache-2.0"),
-        "项目主页",
+        crate::i18n::text("ui-project-website"),
         Action::ProjectHome,
     );
-    form.section("运行状态");
-    form.info("操作系统", &format!("{} · {}", crate::diagnostics::system().summary(), std::env::consts::ARCH));
+    form.section(crate::i18n::text("ui-status"));
+    form.info(crate::i18n::text("ui-operating-system"), &format!("{} · {}", crate::diagnostics::system().summary(), std::env::consts::ARCH));
     form.actions(
-        "桌面连接",
+        crate::i18n::text("ui-desktop-connection"),
         status,
         vec![
-            ("重新连接", Action::Change(Event::RetryDesktop)),
+            (crate::i18n::text("ui-reconnect"), Action::Change(Event::RetryDesktop)),
             (
-                if copied { "已复制" } else { "复制诊断" },
+                if copied { crate::i18n::text("ui-copied") } else { crate::i18n::text("ui-copy-diagnostics") },
                 Action::CopyDiagnostics,
             ),
         ],
@@ -530,83 +532,83 @@ pub(super) fn backup_page(
     advanced: bool,
 ) {
     let first_control = s.controls.len();
-    let mut form = SettingsForm::new(s, width, "备份仅保存配置和布局，不包含实际文件。");
+    let mut form = SettingsForm::new(s, width, crate::i18n::text("ui-backups-contain-settings-and-layouts-not-your-actual-files"));
     if advanced {
-        form.back("返回备份与恢复", Action::Page(6));
-        form.section("配置维护");
+        form.back(crate::i18n::text("ui-back-to-backup-restore"), Action::Page(6));
+        form.section(crate::i18n::text("ui-configuration-maintenance"));
         form.button(
-            "配置目录",
-            "打开本地配置文件所在位置。",
-            "打开目录",
+            crate::i18n::text("ui-configuration-folder"),
+            crate::i18n::text("ui-open-the-folder-containing-your-configuration"),
+            crate::i18n::text("ui-open-folder"),
             Action::Change(Event::OpenConfigDirectory),
         );
         form.button(
-            "重新加载配置",
-            "读取磁盘上的配置并应用到当前工作区。",
-            "重新加载",
+            crate::i18n::text("ui-reload-configuration"),
+            crate::i18n::text("ui-read-configuration-from-disk-and-apply-it-to-this-workspace"),
+            crate::i18n::text("ui-reload"),
             Action::Change(Event::ReloadConfig),
         );
         form.button(
-            "导出当前配置",
-            "选择位置保存一份配置副本。",
-            "导出…",
+            crate::i18n::text("ui-export-configuration"),
+            crate::i18n::text("ui-choose-where-to-save-a-configuration-copy"),
+            crate::i18n::text("ui-export"),
             Action::Change(Event::ExportBackup),
         );
     } else {
         let status = if view.status.is_empty() {
-            "尚无备份"
+            crate::i18n::text("ui-no-backups-yet")
         } else {
             &view.status
         };
-        if view.status.contains("失败") {
-            form.button("备份状态", status, "查看详情", Action::BackupStatus);
+        if view.status.contains(crate::i18n::text("ui-failed")) {
+            form.button(crate::i18n::text("ui-backup-status"), status, crate::i18n::text("ui-view-details"), Action::BackupStatus);
         } else {
-            form.info("备份状态", status);
+            form.info(crate::i18n::text("ui-backup-status"), status);
         }
-        form.section("自动备份");
+        form.section(crate::i18n::text("ui-automatic-backups"));
         form.toggle(
-            "自动备份",
-            "按设定间隔保存配置和布局。",
+            crate::i18n::text("ui-automatic-backups"),
+            crate::i18n::text("ui-save-settings-and-layouts-at-the-chosen-interval"),
             policy.enabled,
             Action::BackupPolicy(0),
         );
         form.combo(
-            "备份间隔",
-            "自动备份的执行频率。",
-            &format!("{} 分钟", policy.minutes),
+            crate::i18n::text("ui-backup-interval"),
+            crate::i18n::text("ui-how-often-automatic-backups-run"),
+            &crate::i18n::format("ui-minutes", &[("arg0", format!("{}", policy.minutes))]),
             Action::BackupPolicy(1),
         );
         form.combo(
-            "保留自动备份",
-            "超出数量的旧自动备份会被清理。",
-            &format!("最近 {} 份", policy.keep),
+            crate::i18n::text("ui-keep-automatic-backups"),
+            crate::i18n::text("ui-older-automatic-backups-beyond-this-limit-are-removed"),
+            &crate::i18n::format("ui-last-backups", &[("arg0", format!("{}", policy.keep))]),
             Action::BackupPolicy(2),
         );
-        form.section("备份与恢复");
+        form.section(crate::i18n::text("ui-backup-restore"));
         form.actions(
-            "手动操作",
-            "立即创建备份，或从已有备份文件恢复。",
+            crate::i18n::text("ui-manual-actions"),
+            crate::i18n::text("ui-create-a-backup-now-or-restore-an-existing-one"),
             vec![
-                ("立即备份", Action::Change(Event::CreateBackup)),
-                ("从文件恢复…", Action::Change(Event::RestoreBackup)),
+                (crate::i18n::text("ui-back-up-now"), Action::Change(Event::CreateBackup)),
+                (crate::i18n::text("ui-restore-from-file"), Action::Change(Event::RestoreBackup)),
             ],
         );
         form.link(
-            "管理备份",
-            "查看、恢复、导出或删除已有备份。",
+            crate::i18n::text("ui-manage-backups"),
+            crate::i18n::text("ui-view-restore-export-or-delete-existing-backups"),
             Action::Page(9),
         );
         if let Some(path) = &view.undo {
             form.button(
-                "撤销本次恢复",
-                "恢复到本次还原操作之前的配置。",
-                "撤销恢复…",
+                crate::i18n::text("ui-undo-this-restore"),
+                crate::i18n::text("ui-return-to-the-configuration-before-this-restore"),
+                crate::i18n::text("ui-undo-restore"),
                 Action::Change(Event::RestoreBackupPath(path.clone())),
             );
         }
         form.link(
-            "高级选项",
-            "管理配置目录、重新加载或导出配置。",
+            crate::i18n::text("ui-advanced-options"),
+            crate::i18n::text("ui-manage-the-configuration-folder-reload-or-export-settings"),
             Action::BackupAdvanced,
         );
     }
@@ -625,15 +627,15 @@ pub(super) fn backup_page(
     }
 }
 pub(super) fn backup_history(s: &mut Scene, width: f32, view: &recovery::View, offset: usize) {
-    let mut form = SettingsForm::new(s, width, "最新备份在前；手动备份不会自动清理。");
-    form.back("返回备份与恢复", Action::Page(6));
+    let mut form = SettingsForm::new(s, width, crate::i18n::text("ui-newest-first-manual-backups-are-not-automatically-removed"));
+    form.back(crate::i18n::text("ui-back-to-backup-restore"), Action::Page(6));
     form.button(
-        "备份文件夹",
-        "在文件资源管理器中查看本地备份。",
-        "打开目录",
+        crate::i18n::text("ui-backup-folder"),
+        crate::i18n::text("ui-view-local-backups-in-file-explorer"),
+        crate::i18n::text("ui-open-folder"),
         Action::Change(Event::OpenBackups),
     );
-    form.section("备份记录");
+    form.section(crate::i18n::text("ui-backup-history"));
     for record in view.records.iter().skip(offset).take(6) {
         form.button(
             &record.date,
@@ -642,20 +644,15 @@ pub(super) fn backup_history(s: &mut Scene, width: f32, view: &recovery::View, o
                 record.kind,
                 folder::size_text(Some(record.bytes), false)
             ),
-            "管理…",
+            crate::i18n::text("ui-manage"),
             Action::BackupRecord(record.path.clone()),
         );
     }
     if view.records.is_empty() {
-        form.info("暂无备份", "创建第一份备份后，记录会显示在这里。");
+        form.info(crate::i18n::text("ui-no-backups"), crate::i18n::text("ui-your-backups-will-appear-here-after-the-first-one-is-created"));
     }
     form.pager(
-        &format!(
-            "{} / {} · 共 {} 份",
-            offset / 6 + 1,
-            view.records.len().div_ceil(6).max(1),
-            view.records.len()
-        ),
+        &crate::i18n::format("ui-total", &[("arg0", format!("{}", offset / 6 + 1)), ("arg1", format!("{}", view.records.len().div_ceil(6).max(1))), ("arg2", format!("{}", view.records.len()))]),
         (Action::BackupPage(-1), offset > 0),
         (Action::BackupPage(1), offset + 6 < view.records.len()),
     );
@@ -670,29 +667,33 @@ pub(super) fn backup_history(s: &mut Scene, width: f32, view: &recovery::View, o
 
 pub(super) fn fonts(s: &mut Scene, width: f32, choices: &[String], offset: usize) {
     let selected = super::super::fonts::family();
-    let mut form = SettingsForm::new(s, width, "仅列出普通字重、非斜体且支持常用中英文的字体。");
-    form.info("当前字体", &selected);
-    form.section("可用字体");
+    let mut form = SettingsForm::new(s, width, crate::i18n::text("font-description"));
+    form.info(crate::i18n::text("ui-current-font"), &selected);
+    form.section(crate::i18n::text("ui-available-fonts"));
     for name in choices.iter().skip(offset).take(7) {
         form.option(name, Action::Font(name.clone()), name == &selected);
     }
     if choices.is_empty() {
-        form.info("暂无可用字体", "可恢复默认字体继续使用。");
+        form.info(crate::i18n::text("ui-no-fonts-available"), crate::i18n::text("ui-reset-to-the-default-font-to-continue"));
     }
     form.pager(
-        &format!(
-            "{} / {} · {} 种字体",
-            offset / 7 + 1,
-            choices.len().div_ceil(7).max(1),
-            choices.len()
-        ),
+        &crate::i18n::format("ui-fonts-7446", &[("arg0", format!("{}", offset / 7 + 1)), ("arg1", format!("{}", choices.len().div_ceil(7).max(1))), ("arg2", format!("{}", choices.len()))]),
         (Action::FontPage(-1), offset > 0),
         (Action::FontPage(1), offset + 7 < choices.len()),
     );
     form.button(
-        "恢复默认字体",
-        "使用应用内置的默认字体。",
-        "恢复默认",
-        Action::Font(super::super::assets::UI_FONT.into()),
+        crate::i18n::text("ui-reset-font"),
+        crate::i18n::text("ui-use-the-app-s-default-font"),
+        crate::i18n::text("ui-reset"),
+        Action::Font(crate::i18n::default_font().into()),
     );
+}
+
+
+pub(super) fn language(s: &mut Scene, width: f32, selected: &str) {
+    let mut form = SettingsForm::new(s, width, crate::i18n::text("language-description"));
+    for (code, name) in crate::i18n::LANGUAGES {
+        let name = if code == "system" { crate::i18n::text("language-system") } else { name };
+        form.option(name, Action::Language(code), selected == code);
+    }
 }

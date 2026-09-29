@@ -80,37 +80,37 @@ fn pane_entries(folder: (bool, bool), visible_columns: u8,
     let mut rows = Vec::new();
     if folder.0 {
         rows.extend([
-            entry(20, "在资源管理器中打开", "", ""),
-            entry(9, "刷新", "", "F5"),
-            entry(21, "更换映射文件夹…", "", ""),
+            entry(20, crate::i18n::text("ui-open-in-file-explorer"), "", ""),
+            entry(9, crate::i18n::text("ui-refresh"), "", "F5"),
+            entry(21, crate::i18n::text("ui-change-folder"), "", ""),
             entry(0, "", "", ""),
         ]);
     }
-    let mut view = entry(22, "视图", "", "");
+    let mut view = entry(22, crate::i18n::text("ui-view"), "", "");
     view.children = vec![
-        entry(25, "图标", if folder.1 { "" } else { "✓" }, ""),
-        entry(26, "列表", if folder.1 { "✓" } else { "" }, ""),
+        entry(25, crate::i18n::text("ui-icons"), if folder.1 { "" } else { "✓" }, ""),
+        entry(26, crate::i18n::text("ui-list"), if folder.1 { "✓" } else { "" }, ""),
     ];
     rows.push(view);
     if folder.0 && folder.1 {
-        let mut columns = entry(24, "显示列", "", "");
+        let mut columns = entry(24, crate::i18n::text("ui-columns"), "", "");
         columns.children = column_entries(visible_columns);
         rows.push(columns);
     }
     rows.extend([
         entry(0, "", "", ""),
-        entry(48, "展开 / 收起面板", "", ""),
-        entry(10, "锁定面板", if locked { "✓" } else { "" }, ""),
-        entry(7, "自动收起", if auto_hide { "✓" } else { "" }, ""),
-        entry(12, "始终置顶", if topmost { "✓" } else { "" }, ""),
+        entry(48, crate::i18n::text("ui-expand-collapse-panel"), "", ""),
+        entry(10, crate::i18n::text("ui-lock-panel"), if locked { "✓" } else { "" }, ""),
+        entry(7, crate::i18n::text("ui-auto-collapse"), if auto_hide { "✓" } else { "" }, ""),
+        entry(12, crate::i18n::text("ui-always-on-top"), if topmost { "✓" } else { "" }, ""),
         entry(0, "", "", ""),
-        entry(1, "新建普通面板", "", ""),
-        entry(19, "新建文件夹面板…", "", ""),
-        Entry { children: tab_entries(), ..entry(39, "标签页", "", "") },
+        entry(1, crate::i18n::text("ui-new-group-panel"), "", ""),
+        entry(19, crate::i18n::text("ui-new-folder-panel"), "", ""),
+        Entry { children: tab_entries(), ..entry(39, crate::i18n::text("ui-tabs"), "", "") },
         entry(0, "", "", ""),
-        entry(18, "设置…", "", ""),
-        entry(11, "关闭面板", "", ""),
-        entry(4, "退出 LucidDesk", "", ""),
+        entry(18, crate::i18n::text("ui-settings-9497"), "", ""),
+        entry(11, crate::i18n::text("ui-close-panel"), "", ""),
+        entry(4, crate::i18n::text("ui-exit-luciddesk"), "", ""),
     ]);
     if folder.0 { rows.retain(|row| row.id != 39); }
     rows
@@ -118,16 +118,16 @@ fn pane_entries(folder: (bool, bool), visible_columns: u8,
 
 pub(super) fn tab_entries() -> Vec<Entry> {
     vec![
-        entry(40, "新建分组标签", "", ""),
+        entry(40, crate::i18n::text("ui-new-group-tab"), "", ""),
         entry(0, "", "", ""),
-        entry(46, "上一个标签", "", "Ctrl+Shift+Tab"),
-        entry(47, "下一个标签", "", "Ctrl+Tab"),
-        entry(43, "重命名标签", "", ""),
-        entry(44, "向左移动", "", ""),
-        entry(45, "向右移动", "", ""),
-        entry(49, "分离为独立面板", "", ""),
+        entry(46, crate::i18n::text("ui-previous-tab"), "", "Ctrl+Shift+Tab"),
+        entry(47, crate::i18n::text("ui-next-tab"), "", "Ctrl+Tab"),
+        entry(43, crate::i18n::text("ui-rename-tab"), "", ""),
+        entry(44, crate::i18n::text("ui-move-left"), "", ""),
+        entry(45, crate::i18n::text("ui-move-right"), "", ""),
+        entry(49, crate::i18n::text("ui-detach-as-panel"), "", ""),
         entry(0, "", "", ""),
-        entry(42, "关闭标签", "", "Ctrl+W"),
+        entry(42, crate::i18n::text("ui-close-tab"), "", "Ctrl+W"),
     ]
 }
 
@@ -136,14 +136,14 @@ pub(super) fn tab_context_entries(model: &super::GroupModel, topmost: bool) -> V
     let mut entries = pane_entries((model.folder.is_some(), model.is_list()),
         model.folder_visible_columns, model.auto_hide, model.locked, topmost);
     for row in &mut entries {
-        if row.id == 48 { row.label = if model.collapsed { "展开面板" } else { "收起面板" }; }
+        if row.id == 48 { row.label = if model.collapsed { crate::i18n::text("ui-expand-panel") } else { crate::i18n::text("ui-collapse-panel") }; }
     }
-    entries.splice(0..0, [entry(49, "分离为独立面板", "", ""), entry(43, "重命名标签", "", ""), entry(42, "关闭标签", "", "Ctrl+W"), entry(0, "", "", "")]);
+    entries.splice(0..0, [entry(49, crate::i18n::text("ui-detach-as-panel"), "", ""), entry(43, crate::i18n::text("ui-rename-tab"), "", ""), entry(42, crate::i18n::text("ui-close-tab"), "", "Ctrl+W"), entry(0, "", "", "")]);
     entries
 }
 
 pub(super) fn column_entries(visible: u8) -> Vec<Entry> {
-    [(1, "类型"), (2, "修改时间"), (3, "大小")].into_iter()
+    [(1, crate::i18n::text("ui-type")), (2, crate::i18n::text("ui-modified")), (3, crate::i18n::text("ui-size"))].into_iter()
         .map(|(column, label)| entry(30 + column, label, if visible & (1 << column) != 0 { "✓" } else { "" }, ""))
         .collect()
 }
@@ -219,7 +219,7 @@ fn show_level(
         .map(|_| super::animation::Motion::settled(0.0, Instant::now()))
         .collect();
     let mut hover_timer_running = false;
-    let window = windows_window::Window::new("分组菜单")
+    let window = windows_window::Window::new(crate::i18n::text("ui-group-menu"))
         .style(WS_POPUP)
         .ex_style(WS_EX_TOOLWINDOW | WS_EX_NOREDIRECTIONBITMAP | WS_EX_TOPMOST)
         .size(width, height)

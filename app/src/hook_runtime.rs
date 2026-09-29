@@ -5,17 +5,14 @@ pub(crate) fn runtime_dll(database: &Path) -> Result<PathBuf, String> {
         .map_err(|e| e.to_string())?
         .with_file_name("desktop_hook.dll");
     let bytes = std::fs::read(&source).map_err(|e| {
-        format!(
-            "缺少原生 Hook DLL {}。请构建整个 workspace 后启动：{e}",
-            source.display()
-        )
+        crate::i18n::format("ui-missing-hook-dll-build-the-entire-workspace", &[("arg0", format!("{}", source.display())), ("e", format!("{}", e))])
     })?;
     let hash = bytes.iter().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
         (h ^ u64::from(*b)).wrapping_mul(0x100_0000_01b3)
     });
     let folder = database
         .parent()
-        .ok_or("配置路径无效")?
+        .ok_or(crate::i18n::text("ui-invalid-configuration-path"))?
         .join("hook-runtime")
         .join(format!("{hash:016x}"));
     std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;

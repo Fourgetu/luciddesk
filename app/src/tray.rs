@@ -35,7 +35,7 @@ impl Tray {
         let callback_icon = Rc::clone(&icon);
         let recreated = unsafe { RegisterWindowMessageW(windows_sys::w!("TaskbarCreated")) };
         if recreated == 0 {
-            return Err("无法注册托盘恢复消息".into());
+            return Err(crate::i18n::text("ui-could-not-register-tray-recovery-message").into());
         }
         let mut pending = None;
         let window = Window::new("LucidDesk Tray")
@@ -118,7 +118,7 @@ fn data(hwnd: HWND, icon: HICON) -> NOTIFYICONDATAW {
     for (slot, ch) in data
         .szTip
         .iter_mut()
-        .zip("LucidDesk · 桌面分组与文件整理".encode_utf16())
+        .zip(crate::i18n::text("ui-luciddesk-desktop-organization").encode_utf16())
     {
         *slot = ch;
     }
@@ -129,11 +129,11 @@ fn add(hwnd: HWND, icon: HICON) -> Result<(), String> {
     let data = data(hwnd, icon);
     unsafe {
         if Shell_NotifyIconW(NIM_ADD, &data) == 0 {
-            return Err("无法添加 LucidDesk 托盘图标".into());
+            return Err(crate::i18n::text("ui-could-not-add-luciddesk-tray-icon").into());
         }
         if Shell_NotifyIconW(NIM_SETVERSION, &data) == 0 {
             Shell_NotifyIconW(NIM_DELETE, &data);
-            return Err("无法初始化托盘交互".into());
+            return Err(crate::i18n::text("ui-could-not-initialize-tray-interaction").into());
         }
     }
     Ok(())
@@ -176,13 +176,13 @@ fn menu(
         theme,
         backdrop,
         vec![
-            entry(1, "显示面板", "\u{e737}", ""),
+            entry(1, crate::i18n::text("ui-show-panels"), "\u{e737}", ""),
             entry(0, "", "", ""),
-            entry(2, "新建分组", "\u{e710}", ""),
-            entry(5, "新建文件夹面板…", "\u{e8b7}", ""),
+            entry(2, crate::i18n::text("ui-new-group"), "\u{e710}", ""),
+            entry(5, crate::i18n::text("ui-new-folder-panel"), "\u{e8b7}", ""),
             entry(0, "", "", ""),
-            entry(4, "设置", "\u{e713}", ""),
-            entry(3, "退出 LucidDesk", "\u{e7e8}", ""),
+            entry(4, crate::i18n::text("ui-settings"), "\u{e713}", ""),
+            entry(3, crate::i18n::text("ui-exit-luciddesk"), "\u{e7e8}", ""),
         ],
     );
     unsafe {

@@ -198,7 +198,7 @@ impl Renderer {
             .with_word_wrapping(WordWrapping::NoWrap);
         canvas::ellipsis(&tab_title)?;
         let mut column_label_widths = [0.0; 4];
-        for (index, name) in ["文件名", "类型", "修改时间", "大小"].iter().enumerate() {
+        for (index, name) in [crate::i18n::text("ui-name"), crate::i18n::text("ui-type"), crate::i18n::text("ui-modified"), crate::i18n::text("ui-size")].iter().enumerate() {
             column_label_widths[index] = canvas_result(windows_canvas::TextLayout::new(
                 name, &details, 256.0, super::layout::LIST_HEADER,
             ))?.metrics().width_including_trailing_whitespace;
@@ -606,7 +606,7 @@ impl Renderer {
                                 &hover,
                             );
                         }
-                        for (column, name) in ["文件名", "类型", "修改时间", "大小"].iter().enumerate()
+                        for (column, name) in [crate::i18n::text("ui-name"), crate::i18n::text("ui-type"), crate::i18n::text("ui-modified"), crate::i18n::text("ui-size")].iter().enumerate()
                         {
                             if column > 0 && model.folder_visible_columns & (1 << column) == 0 { continue; }
                             let inset = if column == 0 { 0.0 } else { 8.0 };
@@ -847,14 +847,14 @@ impl Renderer {
                             status.as_str()
                         } else if model.folder.is_some() {
                             if model.loading {
-                                "正在读取文件夹…"
+                                crate::i18n::text("ui-loading-folder")
                             } else {
-                                "此文件夹为空"
+                                crate::i18n::text("ui-this-folder-is-empty")
                             }
                         } else if model.loading {
-                            "正在读取桌面项目…"
+                            crate::i18n::text("ui-loading-desktop-items")
                         } else {
-                            "将图标拖入此分组"
+                            crate::i18n::text("ui-drag-icons-into-this-group")
                         };
                         target.clipped_text(
                             text,

@@ -32,6 +32,8 @@ canvas-core = { package = "windows-core", version = "=0.100.0", default-features
 windows-animation = "=0.100.0"
 windows-version = "=0.100.0"
 desktop-graphics = { path = "../crates/desktop-graphics" }
+fluent-bundle = "0.16"
+unic-langid = "0.9"
 
 [dev-dependencies]
 windows-sys = { workspace = true, features = ["Win32_System_Diagnostics_Debug", "Win32_System_ProcessStatus"] }

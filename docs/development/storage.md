@@ -6,6 +6,8 @@
 
 ## 全局配置
 
+根级字段 `language` 保存界面语言：`system`、`zh-CN`、`zh-TW`、`en-US`、`ja-JP`、`ko-KR`、`de-DE`、`ru-RU`。旧配置缺少该字段时默认 `system`，无效值报错；修改后重启应用生效。
+
 `config.toml` 是持久化全局偏好的唯一来源，界面和外部编辑器共用同一文件。示例见 [config.example.toml](../config.example.toml)。
 
 | 节 | 内容 |

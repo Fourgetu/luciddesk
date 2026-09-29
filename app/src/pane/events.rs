@@ -80,7 +80,7 @@ pub(super) fn activate_with(
                 window::error(&error);
             }
         }) {
-            return Err("无法安排打开项目".into());
+            return Err(crate::i18n::text("ui-could-not-schedule-opening-the-item").into());
         }
     }
     Ok(())
@@ -121,7 +121,7 @@ pub(super) fn handle(
                 let s = state.borrow();
                 if s.workspace.panel(target).is_none_or(Panel::locked) { return Ok(false); }
                 if !s.workspace.tab_group(id).is_some_and(|g| g.members.contains(&target)) { return Ok(false); }
-                let view = s.views.iter().find(|v| v.id == id).ok_or("面板已关闭")?;
+                let view = s.views.iter().find(|v| v.id == id).ok_or(crate::i18n::text("ui-panel-closed"))?;
                 (view.window.hwnd().cast(), view.model.clone())
             };
             let state = Rc::clone(state);
@@ -209,7 +209,7 @@ pub(super) fn handle(
     if matches!(event, Event::ToggleListView) {
         let mut s = state.borrow_mut();
         let old = s.workspace.clone();
-        let panel = s.workspace.panel_mut(id).ok_or("面板已关闭")?;
+        let panel = s.workspace.panel_mut(id).ok_or(crate::i18n::text("ui-panel-closed"))?;
         if panel.is_search() {
             return Ok(false);
         }
@@ -257,9 +257,9 @@ pub(super) fn handle(
     if let Event::SetFolder(path) = &event {
         let mut s = state.borrow_mut();
         let old = s.workspace.clone();
-        let panel = s.workspace.panel_mut(id).ok_or("面板已关闭")?;
+        let panel = s.workspace.panel_mut(id).ok_or(crate::i18n::text("ui-panel-closed"))?;
         if panel.folder().is_none() {
-            return Err("此面板不是文件夹面板".into());
+            return Err(crate::i18n::text("ui-this-is-not-a-folder-panel").into());
         }
         panel.set_folder(Some(path.clone()));
         if let Err(error) = save(&mut s) {
@@ -364,10 +364,10 @@ pub(super) fn handle(
                     )
                 };
                 if let Err(error) = result {
-                    window::error(&format!("文件操作失败：{error}"));
+                    window::error(&crate::i18n::format("ui-file-operation-failed", &[("error", format!("{}", error))]));
                 }
             }) {
-                return Err("无法安排文件操作".into());
+                return Err(crate::i18n::text("ui-could-not-schedule-file-operation").into());
             }
         }
         return Ok(false);
@@ -619,7 +619,7 @@ pub(super) fn handle(
         if let Some((owner, label, model)) = target {
             let weak = Rc::downgrade(state);
             rename::show_managed(owner, &identity, &label, model, Rc::new(move |identity, name| {
-                let state = weak.upgrade().ok_or("分组已关闭")?;
+                let state = weak.upgrade().ok_or(crate::i18n::text("ui-group-closed"))?;
                 hybrid::rename_item(&state, owner, identity, name)
             }))?;
         }
@@ -689,7 +689,7 @@ pub(super) fn handle(
                             .to_string_lossy()
                             .into_owned()
                     })
-                    .unwrap_or_else(|| "新建分组".into()),
+                    .unwrap_or_else(|| crate::i18n::text("ui-new-group").into()),
                 RectDip::new(240.0, 240.0, 480.0, 360.0),
             );
             panel.set_folder(path.clone());
@@ -698,7 +698,7 @@ pub(super) fn handle(
             }
             if search {
                 panel.set_search(true);
-                panel.set_title("Everything 搜索".to_string());
+                panel.set_title(crate::i18n::text("ui-everything-search").to_string());
                 panel.set_rect(RectDip::new(240.0, 240.0, 360.0, 200.0));
             }
             s.workspace.add_panel(panel).map_err(|e| e.to_string())?;
@@ -759,7 +759,7 @@ pub(super) fn handle(
             let old = s.workspace.clone();
             s.workspace
                 .panel_mut(id)
-                .ok_or("分组不存在")?
+                .ok_or(crate::i18n::text("ui-group-not-found"))?
                 .set_title(title.clone());
             if let Err(error) = save(&mut s) {
                 s.workspace = old;
@@ -789,7 +789,7 @@ pub(super) fn handle(
             unreachable!("Handled before borrowing PaneApp")
         }
         Event::ToggleLocked => {
-            let panel = s.workspace.panel_mut(id).ok_or("分组不存在")?;
+            let panel = s.workspace.panel_mut(id).ok_or(crate::i18n::text("ui-group-not-found"))?;
             let enabled = !panel.locked();
             panel.set_locked(enabled);
             if let Err(error) = save(&mut s) {
@@ -804,7 +804,7 @@ pub(super) fn handle(
             }
         }
         Event::ToggleTopmost => {
-            let panel = s.workspace.panel_mut(id).ok_or("分组不存在")?;
+            let panel = s.workspace.panel_mut(id).ok_or(crate::i18n::text("ui-group-not-found"))?;
             let enabled = !panel.always_on_top();
             panel.set_always_on_top(enabled);
             if let Err(error) = save(&mut s) {
