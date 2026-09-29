@@ -69,7 +69,8 @@ impl Painter {
         Ok(Self {
             preview: RefCell::new(None),
             app_icon: {
-                let icon = crate::app_icon::load(128, 128).map_err(|message| {
+                // Use the straight-alpha PNG frame; smaller DIB frames target Shell compatibility.
+                let icon = crate::app_icon::load(256, 256).map_err(|message| {
                     windows::core::Error::new(windows::Win32::Foundation::E_FAIL, message)
                 })?;
                 super::super::assets::icon_pixels(windows::Win32::UI::WindowsAndMessaging::HICON(

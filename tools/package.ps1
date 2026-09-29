@@ -21,6 +21,7 @@ try {
     if ($Offline) { $buildArgs += '--offline' }
     & cargo @buildArgs
     if ($LASTEXITCODE -ne 0) { throw 'Release build failed.' }
+    & (Join-Path $PSScriptRoot 'verify-app-icon.ps1') -Executable (Join-Path $productionTarget 'release/luciddesk.exe')
     $metadata = & cargo metadata --no-deps --format-version 1 --offline --locked | ConvertFrom-Json
     if ($LASTEXITCODE -ne 0) { throw 'Could not read package metadata.' }
     $version = ($metadata.packages | Where-Object name -eq 'luciddesk').version
@@ -34,6 +35,7 @@ try {
     foreach ($file in @('luciddesk.exe', 'desktop_hook.dll')) {
         Copy-Item -LiteralPath (Join-Path $productionTarget "release\$file") -Destination $stage
     }
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Refresh-App-Icon.ps1') -Destination $stage
     $readme = if ($Portable) { 'docs\portable.md' } else { 'docs\package.md' }
     Copy-Item -LiteralPath (Join-Path $repoRoot $readme) -Destination (Join-Path $stage 'README.md')
     if ($Portable) {

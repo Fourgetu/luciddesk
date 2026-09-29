@@ -1,6 +1,8 @@
-# LucidDesk 应用图标
+# LucidDesk 历史蓝青图标
 
-当前图标源文件为 [lucidpane-icon-aligned-cyan-v16.png](lucidpane-icon-aligned-cyan-v16.png)，运行资源为 [lucidpane.ico](../../app/assets/lucidpane.ico)。EXE、窗口、托盘及关于页使用同一图标体系，源文件保留既有名称。
+此设计已由[翡翠绿、薄荷绿与深松绿方案](luciddesk-green-simple-v17.png)替代，当前资源与导出说明见[应用资源说明](../../app/assets/README.md)。
+
+历史图标源文件为 [lucidpane-icon-aligned-cyan-v16.png](lucidpane-icon-aligned-cyan-v16.png)，保留用于追溯，不再用于生成应用资源。
 
 ## 视觉规范
 

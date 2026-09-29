@@ -94,7 +94,7 @@ mod tests {
 
     #[test]
     fn embedded_icon_loads_at_shell_sizes() {
-        for size in [16, 20, 24, 32, 40, 48, 64, 96, 128, 256] {
+        for size in [16, 20, 24, 30, 32, 36, 40, 48, 60, 64, 72, 80, 96, 128, 256] {
             let icon = load(size, size).unwrap();
             let mut info = ICONINFO::default();
             assert_ne!(unsafe { GetIconInfo(icon.0, &raw mut info) }, 0);

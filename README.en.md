@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/images/app-icon.png" width="128" height="128" alt="LucidDesk" />
+
 # LucidDesk
 
 [简体中文](README.md) · English
