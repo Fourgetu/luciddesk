@@ -656,3 +656,62 @@ fn clearing_search_releases_large_result_buffer_and_rejects_stale_pages() {
     ));
     assert!(state.entries.is_empty());
 }
+
+#[test]
+fn refresh_restores_later_page_selection_and_anchor_atomically() {
+    let mut state = populated_search();
+    let (sender, requests) = mpsc::channel();
+    state.sender = sender;
+    state.entries = (0..400).map(|i| Entry { path: format!("C:/result-{i}").into(), folder: false }).collect();
+    state.total = 800;
+    state.select(250, false, false);
+    state.select(260, false, true);
+    let old_scroll = state.scroll;
+    let original = state.entries.clone();
+    state.change("x".into());
+    state.due = None;
+    state.accept(state.generation, Ok(Page { total: 800, offset: 0, entries: original[..200].to_vec() }));
+    assert!(state.replacing && state.busy);
+    assert_eq!(state.entries.len(), 400);
+    assert_eq!(state.scroll, old_scroll);
+    assert!(state.selected().is_empty());
+    assert_eq!(requests.try_recv().unwrap().offset, 200);
+    state.accept(state.generation, Ok(Page { total: 800, offset: 200, entries: original[200..].to_vec() }));
+    assert!(!state.replacing && !state.busy);
+    assert_eq!(state.selection, (250..=260).collect());
+    assert_eq!(state.focused, Some(260));
+    assert_eq!(state.anchor, Some(250));
+    assert_eq!(state.scroll, old_scroll);
+    assert!(requests.try_recv().is_err(), "refresh must not enumerate unseen pages");
+}
+
+#[test]
+fn refresh_stops_on_shrinking_results_and_discards_cancelled_pages() {
+    let mut state = populated_search();
+    let (sender, requests) = mpsc::channel();
+    state.sender = sender;
+    state.select(20, false, false);
+    state.change("x".into());
+    state.accept(state.generation, Ok(Page { total: 1, offset: 0, entries: vec![state.entries[0].clone()] }));
+    assert!(!state.replacing);
+    assert!(state.selection.is_empty());
+    assert!(requests.try_recv().is_err());
+    state.refresh_entries = state.entries.clone();
+    let stale = state.generation;
+    state.change("different".into());
+    assert!(state.refresh_entries.is_empty());
+    assert_eq!(state.refresh_limit, 0);
+    assert!(!state.accept(stale, Ok(Page { total: 0, offset: 200, entries: vec![] })));
+}
+
+#[test]
+fn double_click_requires_same_file_within_interval() {
+    let path = std::path::PathBuf::from("C:/first.txt");
+    let recent = (path.clone(), Instant::now());
+    let interval = Duration::from_millis(500);
+    assert!(same_click_target(Some(&recent), &path, interval));
+    assert!(!same_click_target(Some(&recent), std::path::Path::new("C:/replacement.txt"), interval));
+    assert!(!same_click_target(None, &path, interval));
+    let expired = (path.clone(), Instant::now() - Duration::from_secs(1));
+    assert!(!same_click_target(Some(&expired), &path, interval));
+}

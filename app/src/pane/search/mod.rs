@@ -75,6 +75,10 @@ fn identity(path: std::path::PathBuf) -> ShellIdentity {
     }
 }
 
+fn same_click_target(last: Option<&(std::path::PathBuf, Instant)>, path: &std::path::Path, interval: Duration) -> bool {
+    last.is_some_and(|(previous, time)| previous == path && time.elapsed() < interval)
+}
+
 struct Request {
     generation: u64,
     query: String,
@@ -98,6 +102,8 @@ struct Search {
     status: Option<String>,
     replacing: bool,
     preserve_selection: bool,
+    refresh_limit: usize,
+    refresh_entries: Vec<Entry>,
     failed: bool,
     hovered: Option<usize>,
 }
@@ -137,6 +143,8 @@ impl Search {
             status: None,
             replacing: false,
             preserve_selection: false,
+            refresh_limit: 0,
+            refresh_entries: Vec::new(),
             failed: false,
             hovered: None,
         }
@@ -145,6 +153,8 @@ impl Search {
         self.wake.notify();
         self.generation += 1;
         self.preserve_selection = value.trim() == self.query;
+        self.refresh_limit = if self.preserve_selection { self.entries.len() } else { 0 };
+        self.refresh_entries = Vec::new();
         self.query = value.trim().into();
         if !self.preserve_selection || self.query.is_empty() {
             self.selection.clear();
@@ -189,7 +199,20 @@ impl Search {
         }
         self.busy = false;
         match result {
-            Ok(page) => {
+            Ok(mut page) => {
+                // Refresh the already loaded range before replacing the visible snapshot.
+                // Bound this work by the previous result count, never the entire index.
+                if self.replacing && self.refresh_limit > 0 {
+                    let progress = !page.entries.is_empty();
+                    self.refresh_entries.append(&mut page.entries);
+                    if progress && self.refresh_entries.len() < self.refresh_limit.min(page.total as usize) {
+                        self.request(self.refresh_entries.len() as u32);
+                        return true;
+                    }
+                    page.offset = 0;
+                    page.entries = std::mem::take(&mut self.refresh_entries);
+                    self.refresh_limit = 0;
+                }
                 self.total = page.total;
                 if page.offset == 0 {
                     let selected: BTreeSet<_> = if self.preserve_selection {
@@ -205,6 +228,7 @@ impl Search {
                         .focused
                         .and_then(|i| self.entries.get(i))
                         .map(|e| e.path.clone());
+                    let anchor = self.anchor.and_then(|i| self.entries.get(i)).map(|e| e.path.clone());
                     self.entries = page.entries;
                     self.selection = self
                         .entries
@@ -215,7 +239,7 @@ impl Search {
                         .collect();
                     self.focused =
                         focused.and_then(|path| self.entries.iter().position(|e| e.path == path));
-                    self.anchor = self.focused;
+                    self.anchor = anchor.and_then(|path| self.entries.iter().position(|e| e.path == path));
                 } else {
                     self.entries.extend(page.entries);
                 }
@@ -239,6 +263,8 @@ impl Search {
                 };
             }
             Err(error) => {
+                self.refresh_entries = Vec::new();
+                self.refresh_limit = 0;
                 self.failed = true;
                 if self.replacing {
                     self.entries = Vec::new();
@@ -809,7 +835,7 @@ pub(super) fn create(
     let mut visibility = super::visibility::Transition::default();
     let mut state = Search::new();
     let wake = state.wake.clone();
-    let mut last_click: Option<(usize, Instant)> = None;
+    let mut last_click: Option<(std::path::PathBuf, Instant)> = None;
     let mut move_origin: Option<super::snap::DragOrigin> = None;
     let mut tooltip: Option<tooltip::Tooltip> = None;
     let mut error_tip = false;
@@ -1020,6 +1046,7 @@ pub(super) fn create(
                         KillTimer(hwnd, POLL);
                     }
                     if state.tick() {
+                        last_click = None;
                         if let Some(tip) = &mut tooltip {
                             tip.hide();
                         }
@@ -1047,6 +1074,8 @@ pub(super) fn create(
                 CLEAR_SELECTION => {
                     state.selection.clear();
                     state.focused = None;
+                    state.anchor = None;
+                    last_click = None;
                     invalidate(hwnd);
                     return Some(0);
                 }
@@ -1152,18 +1181,13 @@ pub(super) fn create(
                         (callback.borrow_mut())(Event::PaneItemFocus);
                         if !ctrl
                             && !shift
-                            && last_click.is_some_and(|(old, time)| {
-                                old == row
-                                    && time.elapsed()
-                                        < Duration::from_millis(u64::from(unsafe {
-                                            GetDoubleClickTime()
-                                        }))
-                            })
+                            && same_click_target(last_click.as_ref(), &state.entries[row].path,
+                                Duration::from_millis(u64::from(unsafe { GetDoubleClickTime() })))
                         {
                             action(hwnd, OPEN, state.selected());
                             last_click = None;
                         } else {
-                            last_click = Some((row, Instant::now()));
+                            last_click = Some((state.entries[row].path.clone(), Instant::now()));
                         }
                     }
                     invalidate(hwnd);
@@ -1249,6 +1273,7 @@ pub(super) fn create(
                 }
                 WM_COMMAND => {
                     if wp == REFRESH {
+                        last_click = None;
                         state.change(text(edit(hwnd)));
                         resize(hwnd, &mut state);
                     } else {
