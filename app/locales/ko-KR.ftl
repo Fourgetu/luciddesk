@@ -1182,3 +1182,7 @@ font-search-empty = 일치하는 글꼴이 없습니다. 검색어를 변경하�
 
 font-loading = 글꼴 불러오는 중…
 font-load-failed = 글꼴을 불러오지 못했습니다. 이 페이지를 다시 열어 주세요.
+
+tray-search = 파일 검색
+tray-refresh-all = 모든 패널 새로 고침
+tray-open-config = 설정 폴더 열기

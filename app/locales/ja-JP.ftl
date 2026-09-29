@@ -1182,3 +1182,7 @@ font-search-empty = 一致するフォントがありません。検索内容を
 
 font-loading = フォントを読み込み中…
 font-load-failed = フォントを読み込めませんでした。このページを開き直してください。
+
+tray-search = ファイルを検索
+tray-refresh-all = すべてのパネルを更新
+tray-open-config = 設定フォルダーを開く

@@ -16,6 +16,9 @@ const NIN_KEYSELECT: u32 = NIN_SELECT | 1;
 #[derive(Clone, Copy)]
 pub enum Action {
     Settings,
+    Search,
+    Refresh,
+    OpenConfig,
     Show,
     New,
     NewFolder,
@@ -28,7 +31,7 @@ pub struct Tray {
 }
 impl Tray {
     pub fn new(
-        mut appearance: impl FnMut() -> (desktop_core::PanelTheme, desktop_core::Backdrop) + 'static,
+        mut appearance: impl FnMut() -> (desktop_core::PanelTheme, desktop_core::Backdrop, bool) + 'static,
         mut action: impl FnMut(Action) + 'static,
     ) -> Result<Self, String> {
         let icon = Rc::new(make_icon()?);
@@ -64,8 +67,8 @@ impl Tray {
                             WM_CONTEXTMENU => {
                                 // Read fresh settings after the synchronous Shell
                                 // callback has returned, before pumping menu messages.
-                                let (theme, backdrop) = appearance();
-                                if let Some(command) = menu(hwnd, anchor, theme, backdrop) {
+                                let (theme, backdrop, search_enabled) = appearance();
+                                if let Some(command) = menu(hwnd, anchor, theme, backdrop, search_enabled) {
                                     action(command);
                                 }
                             }
@@ -148,8 +151,9 @@ fn menu(
     anchor: usize,
     theme: desktop_core::PanelTheme,
     backdrop: desktop_core::Backdrop,
+    search_enabled: bool,
 ) -> Option<Action> {
-    use crate::pane::menu::{entry, show_entries};
+    use crate::pane::menu::show_entries;
     use windows_sys::Win32::Foundation::POINT;
 
     // Version 4 packs signed screen coordinates in wParam.
@@ -159,7 +163,12 @@ fn menu(
     };
     unsafe {
         if position.x == -1 && position.y == -1 {
-            GetCursorPos(&raw mut position);
+            let id = NOTIFYICONIDENTIFIER { cbSize: size_of::<NOTIFYICONIDENTIFIER>() as u32, hWnd: hwnd, uID: ICON_ID, ..Default::default() };
+            let mut rect = windows_sys::Win32::Foundation::RECT::default();
+            if Shell_NotifyIconGetRect(&id, &raw mut rect) >= 0 {
+                position.x = rect.left + (rect.right - rect.left) / 2;
+                position.y = rect.top;
+            } else { GetCursorPos(&raw mut position); }
         }
         // The hidden owner must use the taskbar monitor's DPI for the flyout.
         SetWindowPos(
@@ -179,15 +188,7 @@ fn menu(
         false,
         theme,
         backdrop,
-        vec![
-            entry(1, crate::i18n::text("ui-show-panels"), "\u{e737}", ""),
-            entry(0, "", "", ""),
-            entry(2, crate::i18n::text("ui-new-group"), "\u{e710}", ""),
-            entry(5, crate::i18n::text("ui-new-folder-panel"), "\u{e8b7}", ""),
-            entry(0, "", "", ""),
-            entry(4, crate::i18n::text("ui-settings"), "\u{e713}", ""),
-            entry(3, crate::i18n::text("ui-exit-luciddesk"), "\u{e7e8}", ""),
-        ],
+        menu_entries(search_enabled),
     );
     unsafe {
         PostMessageW(hwnd, WM_NULL, 0, 0);
@@ -199,9 +200,30 @@ fn menu(
         3 => Some(Action::Exit),
         4 => Some(Action::Settings),
         5 => Some(Action::NewFolder),
+        6 => Some(Action::Search),
+        7 => Some(Action::Refresh),
+        8 => Some(Action::OpenConfig),
         _ => None,
     }
 }
+fn menu_entries(search_enabled: bool) -> Vec<crate::pane::menu::Entry> {
+    use crate::pane::menu::entry;
+    let mut rows = vec![entry(1, crate::i18n::text("ui-show-panels"), "\u{e737}", "")];
+    if search_enabled { rows.push(entry(6, crate::i18n::text("tray-search"), "\u{e721}", "")); }
+    rows.extend([
+        entry(7, crate::i18n::text("tray-refresh-all"), "\u{e72c}", ""),
+        entry(0, "", "", ""),
+        entry(2, crate::i18n::text("ui-new-group"), "\u{e710}", ""),
+        entry(5, crate::i18n::text("ui-new-folder-panel"), "\u{e8b7}", ""),
+        entry(0, "", "", ""),
+        entry(4, crate::i18n::text("ui-settings"), "\u{e713}", ""),
+        entry(8, crate::i18n::text("tray-open-config"), "\u{e8b7}", ""),
+        entry(0, "", "", ""),
+        entry(3, crate::i18n::text("ui-exit-luciddesk"), "\u{e7e8}", ""),
+    ]);
+    rows
+}
+
 fn make_icon() -> Result<Icon, String> {
     crate::app_icon::load(unsafe { GetSystemMetrics(SM_CXSMICON) }, unsafe {
         GetSystemMetrics(SM_CYSMICON)
@@ -214,6 +236,19 @@ mod tests {
     use std::cell::Cell;
 
     #[test]
+    fn common_actions_follow_search_setting_and_exit_is_separate() {
+        for enabled in [false, true] {
+            let rows = menu_entries(enabled);
+            assert_eq!(rows.iter().filter(|r| r.id == 6).count(), usize::from(enabled));
+            for id in [1, 2, 3, 4, 5, 7, 8] {
+                assert_eq!(rows.iter().filter(|r| r.id == id).count(), 1);
+            }
+            assert_eq!(rows.last().unwrap().id, 3);
+            assert_eq!(rows[rows.len() - 2].id, 0);
+        }
+    }
+
+    #[test]
     #[ignore = "Requires the interactive Windows notification area; run with --ignored"]
     fn tray_registers_handles_keyboard_selection_readds_and_removes() {
         let calls = Rc::new(Cell::new(0));
@@ -223,6 +258,7 @@ mod tests {
                 (
                     desktop_core::PanelTheme::System,
                     desktop_core::Backdrop::Mica,
+                    false,
                 )
             },
             move |action| {
@@ -285,6 +321,7 @@ mod tests {
                 (
                     desktop_core::PanelTheme::System,
                     desktop_core::Backdrop::Mica,
+                    false,
                 )
             },
             move |_| *observed.borrow_mut() += 1,

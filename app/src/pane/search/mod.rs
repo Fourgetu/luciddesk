@@ -35,6 +35,11 @@ const CUT: usize = 113;
 const DELETE: usize = 114;
 const PEEK: usize = 115;
 const REFRESH: usize = 107;
+
+pub(super) fn refresh(hwnd: HWND) {
+    unsafe { PostMessageW(hwnd, WM_COMMAND, REFRESH, 0); }
+}
+
 pub(super) const INPUT: u32 = WM_APP + 119;
 const NAVIGATE: u32 = WM_APP + 120;
 pub(super) const FOCUS_INPUT: u32 = WM_APP + 130;

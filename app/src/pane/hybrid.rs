@@ -162,16 +162,19 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
                 .upgrade()
                 .and_then(|state| {
                     let s = state.borrow();
-                    s.workspace.appearance().or_else(|| {
+                    let appearance = s.workspace.appearance().or_else(|| {
                         s.workspace
                             .panels()
                             .first()
                             .map(|p| (p.theme(), p.backdrop()))
-                    })
+                    });
+                    let (theme, backdrop) = appearance.unwrap_or((desktop_core::PanelTheme::System, desktop_core::Backdrop::Mica));
+                    Some((theme, backdrop, search::everything_settings::enabled(&s.store).unwrap_or(false)))
                 })
                 .unwrap_or((
                     desktop_core::PanelTheme::System,
                     desktop_core::Backdrop::Mica,
+                    false,
                 ))
         },
         move |action| {
@@ -179,6 +182,19 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
                 return;
             };
             match action {
+                crate::tray::Action::Search => search::hotkey::activate(&state),
+                crate::tray::Action::OpenConfig => recovery::request(&state, &Event::OpenConfigDirectory),
+                crate::tray::Action::Refresh => {
+                    let mut s = state.borrow_mut();
+                    refresh_icons(&mut s);
+                    for source in s.folders.values() { source.refresh(); }
+                    for view in &s.views {
+                        if s.workspace.panel(view.id).is_some_and(Panel::is_search) {
+                            search::refresh(view.window.hwnd().cast());
+                        }
+                    }
+                    s.wake.notify();
+                }
                 crate::tray::Action::NewFolder => {
                     if let Err(error) = handle(&state, PanelId::new(0), Event::NewFolder) {
                         window::error(&error);

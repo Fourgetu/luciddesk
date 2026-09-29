@@ -1182,3 +1182,7 @@ font-search-empty = Keine passenden Schriften. Suche ändern oder leeren.
 
 font-loading = Schriftarten werden geladen…
 font-load-failed = Schriftarten konnten nicht geladen werden. Öffnen Sie diese Seite erneut.
+
+tray-search = Dateien suchen
+tray-refresh-all = Alle Panels aktualisieren
+tray-open-config = Konfigurationsordner öffnen

@@ -1182,3 +1182,7 @@ font-search-empty = 没有匹配的字体，请修改或清空搜索内容。
 
 font-loading = 正在加载字体…
 font-load-failed = 字体加载失败，请重新进入此页面重试。
+
+tray-search = 搜索文件
+tray-refresh-all = 刷新所有面板
+tray-open-config = 打开配置目录

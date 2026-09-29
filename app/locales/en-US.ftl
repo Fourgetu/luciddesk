@@ -1182,3 +1182,7 @@ font-search-empty = No matching fonts. Change or clear the search.
 
 font-loading = Loading fonts…
 font-load-failed = Could not load fonts. Reopen this page to retry.
+
+tray-search = Search files
+tray-refresh-all = Refresh all panels
+tray-open-config = Open configuration folder
