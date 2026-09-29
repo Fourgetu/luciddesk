@@ -2,12 +2,19 @@
 
 [简体中文](CHANGELOG.md) · English
 
-User-facing changes in each release. The current version is **0.12.0**. Windows 11 x64 is the primary validation platform.
+User-facing changes in each release. The current version is **0.13.0**. Windows 11 x64 is the primary validation platform.
 
 Exit the app before upgrading a portable installation and preserve its `data` folder. See the [portable guide](docs/portable.md) (Chinese).
 
-## Unreleased
+## 0.13.0 · 2026-09-30
 
+- Add tray entries for file search, refreshing all panels and opening the configuration folder, with clearer menu grouping.
+- Add a Windows 11 context-menu toggle for regular panels, enabled by default; apply system light/dark styling and DPI-aware spacing to classic fallback menus.
+- Reorganize refresh, rename, view and creation commands in panel menus, and show collapse or expand according to the current state.
+- Skip automatic backups when content is unchanged, prioritize manual actions and backup history, and unify back buttons on settings subpages.
+- Introduce the green three-panel icon with 15 ICO sizes and an updated About icon; verify embedded resources during packaging and add actual screenshots to both READMEs.
+- Remove startup DLL copying and load `luciddesk_desktop.dll` directly beside the executable. Extract the complete new package when upgrading to avoid mixing DLL versions.
+- Adopt the MIT License with attribution to Yuchen95, and synchronize license information in About and release packages.
 - Fix language changes incorrectly closing panels, and require an explicit close request before starting the close animation.
 - Refresh language-dependent text and fonts in place, preserving panel items, selection, scroll positions and font search text without explicitly cancelling renames.
 - Stop the font-loading timer when cancelling a previous language's task; retry language-dependent settings renderer refreshes and clear interaction state tied to the old layout.

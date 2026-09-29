@@ -12,26 +12,34 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Build CI](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml/badge.svg)](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml)
-[![版本](https://img.shields.io/badge/version-0.12.0-087EA4?style=flat-square)](CHANGELOG.md)
+[![版本](https://img.shields.io/badge/version-0.13.0-087EA4?style=flat-square)](CHANGELOG.md)
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square)](#系统与兼容性)
 [![架构](https://img.shields.io/badge/arch-x64-475569?style=flat-square)](docs/portable.md)
 [![Rust](https://img.shields.io/badge/Rust-1.95%2B-CE6F32?style=flat-square)](Cargo.toml)
 
-[下载发布包](https://github.com/Yuch3nE/luciddesk/releases) · [开始使用](#开始使用) · [使用指南](docs/usage.md) · [更新记录](CHANGELOG.md) · [参与开发](#参与开发)
+[下载发布包](https://github.com/Yuch3nE/luciddesk/releases) · [界面截图](#界面截图) · [开始使用](#开始使用) · [使用指南](docs/usage.md) · [更新记录](CHANGELOG.md) · [参与开发](#参与开发)
 
 </div>
 
-![LucidDesk 功能示意：以标签收纳桌面图标，通过文件夹面板浏览目录，并用 Everything 搜索本机文件。](docs/images/overview.svg)
+LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。将零散图标收进面板，把常用目录放到桌面，配合标签、文件搜索与预览，让常用内容更容易找到。
 
-> 上图为功能示意，并非实际界面截图。
+## 界面截图
 
-LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。将零散图标收进面板，把常用目录放到桌面，再按自己的习惯调整面板位置、标签和外观。
+| 桌面面板 | 主题与材质 |
+| :---: | :---: |
+| <a href="screenshot/zh/pane.png"><img src="screenshot/zh/pane.png" height="220" alt="中文桌面面板" /></a> | <a href="screenshot/zh/setting.png"><img src="screenshot/zh/setting.png" height="220" alt="中文主题与材质设置" /></a> |
+| 拖入图标，按需折叠与整理 | 调整深浅主题与背景材质 |
 
-图标加载期间，面板会显示随尺寸缩放、适配深浅色的文件或文件夹轮廓，加载完成后自动替换为真实图标。
+点击截图查看原图。图中为深色亚克力，实际效果随壁纸和系统设置变化；Mica 系列仅在 Windows 11 提供。
 
-文件夹面板支持自然名称排序，修改时间和大小默认降序；搜索刷新会恢复此前已加载范围内的选中项。
+<details>
+<summary>查看功能示意图</summary>
 
-字体页支持名称搜索与连续滚动，候选字体按界面语言筛选、在首次进入时后台加载，不显示字体预览。关闭设置后释放候选列表，减少闲置占用。
+![LucidDesk 功能示意：面板标签、文件夹浏览与 Everything 搜索](docs/images/overview.svg)
+
+此图用于说明功能，并非实际界面截图。
+
+</details>
 
 ## 功能
 
@@ -42,6 +50,8 @@ LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。将零散图标�
 | 文件夹面板 | 在桌面浏览常用目录，按名称、类型、时间或大小排序，文件变化后自动刷新 |
 | 文件搜索 | 通过 Everything 查找本机文件，直接打开或定位所在文件夹 |
 | 文件预览 | 选中文件后按空格，使用 PowerToys Peek 或 QuickLook 查看内容 |
+| 字体与语言 | 搜索适合当前语言的字体，切换七种界面语言，无需重启 |
+| 备份与恢复 | 保存设置和布局，按需恢复；自动备份跳过未变化的内容 |
 
 面板可以移动、缩放、折叠、自动收起，也可以吸附边缘、锁定或置顶。支持调整字体、圆角与颜色，选择纯色、亚克力或云母材质。文件夹与搜索面板独立显示，不参与面板标签合并。
 
@@ -67,7 +77,9 @@ LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。将零散图标�
    便携版还需保留 `portable.marker`，以启用程序目录内的配置存储。
 3. 将桌面图标拖入面板；右键托盘图标，选择“新建面板”或“新建文件夹面板…”添加更多内容。
 
-找不到面板时，点击托盘图标或选择“显示面板”，即可将面板提到前面。切换到其他应用后，普通面板仍可正常被遮挡；已设置“始终置顶”的面板保持置顶。也可在“设置 → 面板布局”启用“显示所有面板”的全局快捷键（默认关闭，预设 `Ctrl + Shift + D`），效果与托盘“显示面板”相同。退出时选择托盘菜单中的“退出 LucidDesk”。
+点击托盘图标可显示面板；右键菜单提供新建、搜索、刷新、打开配置目录和退出入口。普通面板在切换应用后仍可被遮挡，“始终置顶”的面板保持置顶。
+
+需要键盘操作时，可在“设置 → 面板布局”启用“显示所有面板”快捷键，默认关闭，预设为 `Ctrl + Shift + D`。
 
 ### 开启搜索与预览
 

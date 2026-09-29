@@ -12,38 +12,50 @@ Desktop panels · Folder panels · Everything search · Spacebar preview
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Build CI](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml/badge.svg)](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml)
-[![Version](https://img.shields.io/badge/version-0.12.0-087EA4?style=flat-square)](CHANGELOG.en.md)
+[![Version](https://img.shields.io/badge/version-0.13.0-087EA4?style=flat-square)](CHANGELOG.en.md)
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square)](#compatibility)
-
 [![Architecture](https://img.shields.io/badge/arch-x64-475569?style=flat-square)](docs/portable.md)
 [![Rust](https://img.shields.io/badge/Rust-1.95%2B-CE6F32?style=flat-square)](Cargo.toml)
 
-[Downloads](https://github.com/Yuch3nE/luciddesk/releases) · [Getting started](#getting-started) · [Changelog](CHANGELOG.en.md) · [Contributing](#contributing)
+[Downloads](https://github.com/Yuch3nE/luciddesk/releases) · [Screenshots](#screenshots) · [Getting started](#getting-started) · [Changelog](CHANGELOG.en.md) · [Contributing](#contributing)
 
 </div>
 
-![LucidDesk feature overview: organize desktop icons into tabbed panels, browse folders, and find local files with Everything.](docs/images/overview.en.svg)
+LucidDesk is a Windows desktop organizer written in Rust. Collect desktop icons into panels, keep frequently used folders within reach, and use tabs, file search and previews to find what you need.
 
-> Feature illustration, not an actual screenshot.
+## Screenshots
 
-LucidDesk is a Windows desktop organizer written in Rust. Organize desktop icons into panels, keep frequently used folders within reach, and find local files with Everything.
+| Desktop panel | Theme & materials |
+| :---: | :---: |
+| <a href="screenshot/en/pane.png"><img src="screenshot/en/pane.png" height="220" alt="Desktop panel in English" /></a> | <a href="screenshot/en/setting.png"><img src="screenshot/en/setting.png" height="220" alt="Theme and material settings in English" /></a> |
+| Drag in icons to organize your desktop | Customize the theme and background |
 
-While icons load, panels show scalable file or folder outlines suited to light and dark themes, then replace them with the actual icons.
+Click a screenshot to view the original. These show dark Acrylic; the appearance varies with your wallpaper and system settings. Mica materials require Windows 11.
 
-Folder panels support natural name sorting, with newest-first dates and largest-first sizes. Search refreshes restore selections within the previously loaded result range.
+<details>
+<summary>View the feature illustration</summary>
 
-Find fonts by name in a continuously scrolling list filtered for the interface language. Candidates load in the background on first use, without font previews, and the list is released when settings closes.
+![LucidDesk feature illustration: panel tabs, folder browsing and Everything search](docs/images/overview.en.svg)
+
+This illustration explains the features; it is not an actual screenshot.
+
+</details>
 
 ## Features
 
-- **Desktop panels:** organize files, folders and shortcuts without moving the original files.
-- **Panel tabs:** switch between panels, reorder tabs, or detach them into separate panels.
-- **Folder panels:** browse directories with sorting and automatic updates.
-- **File search:** search through Everything and open files or their locations.
-- **File preview:** press Space to preview selected files with PowerToys Peek or QuickLook.
-- **Appearance:** customize fonts, rounded corners, colors, and solid, Acrylic, Mica or Mica Alt backgrounds.
+| Feature | What you can do |
+| --- | --- |
+| Desktop panels | Organize files, folders and shortcuts without moving the original files |
+| Panel tabs | Switch between panels, reorder tabs, merge them or detach them into separate windows |
+| Folder panels | Browse directories, sort by name, type, date or size, and follow file changes automatically |
+| File search | Find local files through Everything and open files or their locations |
+| File preview | Press Space to preview selected files with PowerToys Peek or QuickLook |
+| Fonts & languages | Search fonts suited to the current language and switch between seven interface languages without restarting |
+| Backup & restore | Save and restore settings and layouts; automatic backups skip unchanged content |
 
-Panels can move, resize, collapse, snap to edges, lock, or stay on top. Folder and search panels remain independent of panel tabs. File commands such as delete, rename, cut and paste operate on real files.
+Panels can move, resize, collapse, auto-hide, snap to edges, lock, or stay on top. Customize fonts, rounded corners, colors and background materials. Folder and search panels remain independent of panel tabs.
+
+**Desktop panels do not move your files.** Dragging icons into a panel changes how they are organized on the desktop. Drag them back to remove them from the panel; closing a panel does not delete the original files. File menu commands such as delete, rename and cut, along with dropping or pasting into folder panels, operate on real files.
 
 ## Getting started
 
@@ -64,7 +76,18 @@ See the [standard package guide](docs/package.md) or [portable guide](docs/porta
 2. Run `luciddesk.exe`. Keep `luciddesk_desktop.dll` beside it; portable mode also requires `portable.marker`. Do not run the app inside the ZIP.
 3. Drag desktop icons into a panel. Use the tray menu to create panels or folder panels and open Settings.
 
-Search and preview are disabled by default. Install Everything, PowerToys Peek or QuickLook separately, then enable the corresponding integration in Settings. These tools are not bundled.
+Click the tray icon to show panels. Its menu also provides creation, search, refresh, configuration folder and exit actions.
+
+### Enable search and preview
+
+Search and preview are **disabled by default** and require separately installed software.
+
+| Feature | Setup |
+| --- | --- |
+| File search | Install and run Everything, then enable the search panel in **Settings → Everything search** |
+| Spacebar preview | Install PowerToys Peek or QuickLook, then select and enable it in **Settings → File preview** |
+
+These tools are not bundled with either package. See the [user guide](docs/usage.md) (Chinese) for more controls and shortcuts.
 
 An optional **Show all panels** global shortcut is available in **Settings → Panel layout**. It is off by default, with `Ctrl + Shift + D` as the preset. It performs the same action as **Show panels** in the tray and preserves each panel’s always-on-top setting.
 
@@ -117,7 +140,7 @@ Build packages from the repository root:
 .\tools\package.ps1 -Portable
 ```
 
-Standard ZIPs are written to `target/packages/`; portable ZIPs are written to `target/portable/<timestamp>/`. Keep the executable and Hook DLL from the same build together. See the [build guide](docs/development/build.md) for checks and diagnostic builds.
+Standard ZIPs are written to `target/packages/`; portable ZIPs are written to `target/portable/<timestamp>/`. Keep `luciddesk.exe` and `luciddesk_desktop.dll` from the same build together. See the [build guide](docs/development/build.md) for checks and diagnostic builds.
 
 ## Contributing
 
