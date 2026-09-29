@@ -16,6 +16,37 @@ use windows_canvas::ID2D1DeviceContext;
 use windows::core::Result;
 type ImageBitmap = (Arc<assets::Pixels>, windows_canvas::Bitmap, (u32, u32));
 
+// A quiet, font-independent silhouette fills the same slot as the real icon.
+// It also remains useful when Shell extraction fails; no perpetual loading animation.
+fn draw_placeholder(target: &canvas::DrawPass<'_>, slot: Rect, folder: bool,
+    fill: &windows_canvas::Brush, edge: &windows_canvas::Brush) {
+    let size = slot.right - slot.left;
+    let x = slot.left;
+    let y = slot.top;
+    let stroke = (size * 0.035).clamp(1.0, 1.6);
+    let shape = |left: f32, top: f32, width: f32, height: f32| RoundedRect {
+        rect: Rect::from_xywh(x + left * size, y + top * size, width * size, height * size),
+        radius_x: size * 0.06,
+        radius_y: size * 0.06,
+    };
+    if folder {
+        let tab = shape(0.10, 0.22, 0.38, 0.22);
+        target.fill_rounded_rect(&tab, fill);
+        target.draw_rounded_rect(&tab, edge, stroke);
+        let body = shape(0.10, 0.34, 0.80, 0.48);
+        target.fill_rounded_rect(&body, fill);
+        target.draw_rounded_rect(&body, edge, stroke);
+    } else {
+        let body = shape(0.22, 0.10, 0.56, 0.80);
+        target.fill_rounded_rect(&body, fill);
+        target.draw_rounded_rect(&body, edge, stroke);
+        for (top, width) in [(0.55, 0.32), (0.69, 0.22)] {
+            target.draw_line(Vector2::new(x + size * 0.34, y + size * top),
+                Vector2::new(x + size * (0.34 + width), y + size * top), edge, stroke);
+        }
+    }
+}
+
 struct TitleLayout {
     text: String,
     natural_width: f32,
@@ -428,6 +459,8 @@ impl Renderer {
                     canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 1.0)))?;
                 let dim =
                     canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.85)))?;
+                let placeholder_fill = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.08)))?;
+                let placeholder_edge = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.48)))?;
                 let selection =
                     canvas_result(target.create_solid_brush(ColorF::new(0.55, 0.75, 1.0, 0.25)))?;
                 let hover =
@@ -782,18 +815,13 @@ impl Renderer {
                                 1.0,
                             );
                         } else {
-                            // Enumeration is published before Shell image extraction.
-                            // Keep a visible placeholder while loading or after a failure.
-                            target.clipped_icon(
-                                if item.details.folder { "\u{e8b7}" } else { "\u{e8a5}" },
-                                &self.icons,
-                                &Rect::from_xywh(
-                                    if list { x + 4.0 } else { x + (grid.cell_width - grid.icon_size) / 2.0 },
-                                    y, grid.icon_size,
-                                    if list { grid.cell_height } else { grid.icon_size },
-                                ),
-                                &white,
-                            );
+                            let left = if list { x + 4.0 } else { x + (grid.cell_width - grid.icon_size) / 2.0 };
+                            let top = if list { y + (grid.cell_height - grid.icon_size) / 2.0 } else { y + 2.0 };
+                            draw_placeholder(&target,
+                                Rect::from_xywh((left * scale).round() / scale, (top * scale).round() / scale,
+                                    grid.icon_size, grid.icon_size),
+                                item.details.folder, &placeholder_fill, &placeholder_edge);
+
                         }
 
                         if list {
@@ -1255,6 +1283,45 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    #[test]
+    fn placeholders_render_without_textures_then_yield_to_loaded_icons() {
+        let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        for dark in [false, true] {
+            let mut model = sample_model();
+            model.dark = dark;
+            model.native_material = false;
+            model.title = "Placeholder preview".into();
+            let loaded = model.items[0].image.take();
+            model.items[0].label = "Document".into();
+            let mut folder = model.items[0].clone();
+            folder.identity = ShellIdentity::Namespace { parsing_name: "test:folder".into() };
+            folder.label = "Folder".into();
+            folder.details.folder = true;
+            model.items.push(folder);
+            let mut renderer = Renderer::new().unwrap();
+            for scale in [1.0, 1.5, 2.0] {
+                let pixels = renderer.pixels((320.0 * scale) as u32, (180.0 * scale) as u32, scale, &model).unwrap();
+                assert!(renderer.images.is_empty(), "placeholders must not upload textures");
+                if scale == 1.0 && std::env::var_os("LUCIDPANE_TEST_EXPORT_SNAPSHOTS").is_some() {
+                    let mut bmp = vec![0u8; 54];
+                    bmp[0..2].copy_from_slice(b"BM");
+                    bmp[2..6].copy_from_slice(&(54 + pixels.len() as u32).to_le_bytes());
+                    bmp[10..14].copy_from_slice(&54u32.to_le_bytes());
+                    bmp[14..18].copy_from_slice(&40u32.to_le_bytes());
+                    bmp[18..22].copy_from_slice(&320i32.to_le_bytes());
+                    bmp[22..26].copy_from_slice(&(-180i32).to_le_bytes());
+                    bmp[26..28].copy_from_slice(&1u16.to_le_bytes());
+                    bmp[28..30].copy_from_slice(&32u16.to_le_bytes());
+                    bmp.extend(pixels);
+                    std::fs::write(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../target/placeholder-{dark}.bmp")), bmp).unwrap();
+                }
+            }
+            model.items[0].image = loaded;
+            renderer.pixels(320, 180, 1.0, &model).unwrap();
+            assert_eq!(renderer.images.len(), 1);
         }
     }
 
