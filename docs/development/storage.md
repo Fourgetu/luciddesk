@@ -1,6 +1,6 @@
 # 配置与工作区存储
 
-当前开发版使用 `config.toml`（格式版本 1）和 `workspace.db`。默认目录为 `%LOCALAPPDATA%\LucidPane`，`LUCIDPANE_DATA_DIR` 可以指定独立目录。
+当前开发版使用 `config.toml`（格式版本 1）和 `workspace.db`。默认目录为 `%LOCALAPPDATA%\LucidDesk`，`LUCIDDESK_DATA_DIR` 可以指定独立目录；便携版使用程序旁的 `data`。旧目录与环境变量的兼容规则见[品牌规范](../brand.md)。
 
 项目尚未发布，不实现旧数据库迁移。程序不再读取 `hook-desktop.db`；同名 `workspace.db` 如果结构不兼容，会报告不兼容而不修改其内容。开发时使用新目录或自行移走旧开发数据。数据库名称仅描述工作区用途，与 Hook 实现解耦。
 

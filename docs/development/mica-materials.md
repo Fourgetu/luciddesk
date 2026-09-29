@@ -1,99 +1,36 @@
-# Mica and Mica Alt
+# 背景材质与主题
 
-## Native recipe verification
+当前提供纯色、亚克力、Mica 和 Mica Alt。Windows 11 为优先维护平台；Windows 10 已由用户实机验证，其设置页提供纯色和亚克力。材质使用自定义 Composition 视觉树，不引入 XAML 窗口或原生 Mica 控制器。
 
-On 2026-09-28, queried Windows App Runtime 1.6.618 (CBS package
-6000.900.156.100) using `MicaController` with a composition target attached,
-`SystemBackdropConfiguration.Theme` explicitly set, and dispatcher messages pumped.
-Without an attached target the theme-dependent getters can retain light defaults.
-Values below are defaults at LucidPane material strength 50.
+## 实现职责
 
-| Material | Theme | TintColor | TintOpacity | LuminosityOpacity | FallbackColor |
-| --- | --- | --- | --- | --- | --- |
-| Mica / Base | Light | #F3F3F3 | 0.5 | 1 | #F3F3F3 |
-| Mica / Base | Dark | #202020 | 0.8 | 1 | #202020 |
-| Mica Alt / BaseAlt | Light | #DADADA | 0.5 | 1 | #E8E8E8 |
-| Mica Alt / BaseAlt | Dark | #0A0A0A | 0 | 1 | #202020 |
+| 模块 | 职责 |
+| --- | --- |
+| `acrylic.rs` | 合成运行时、窗口目标、材质选择与系统策略回退 |
+| `acrylic/effects.rs` | 亮度与染色混合、主题配方和效果工厂 |
+| `acrylic/host.rs` | HostBackdrop 能力探测与兼容入口 |
+| `composition.rs` | 内容交换链、材质缓存、透明度与圆角裁剪 |
+| `theme.rs` | 面板边框、标签及卡片的局部配色 |
+| `settings/components.rs` | 设置侧栏的选中、悬停与主题配色 |
 
-Tint colors and fallback colors are distinct. The XAML solid BaseAlt token
-is #DADADA / #0A0A0A; it must not be substituted for the controller fallback.
-These are measured version-specific defaults, not a promise that every Windows
-App SDK version uses identical values. The diagnostic is kept in the ignored
-`target/mica-probe` directory; no runtime DLLs are shipped with this change.
+## 背景与局部控件
 
-## Composition and layers
+亚克力使用系统已模糊的 HostBackdrop；Mica 与 Mica Alt 使用系统壁纸画刷，再进行亮度和染色混合。颜色由主题决定，不采集桌面像素到 CPU。材质参数以源码中的共享配方为准，设置预览复用这些参数，但使用固定示例背景，不是用户桌面的实时截图。
 
-The GPU graph uses the blurred wallpaper backdrop, a luminosity blend, then a
-color blend. The native graph notes that Direct2D Color/Luminosity mode names
-are swapped. Both preview and live material consume the same palette and
-strength adjustment. The preview uses a deterministic illustrative wallpaper
-and CPU blending; it is not a pixel-identical DWM capture.
+面板标题与内容区域使用连续背景。标签、设置卡片和导航项使用各自的局部填充，不在整个面板上额外铺设不透明底色。导航项区分选中、悬停和选中后悬停；深浅主题及四种材质分别调整对比度，文字和选中指示条保持清晰。
 
-Desktop panes expose a continuous material across the title bar and body.
-Do not apply full-body content or command overlays: stacking them obscures the
-wallpaper and creates an unwanted gray slab. Layer tokens are retained only
-for local UI surfaces such as selected tabs:
+亚克力和 Mica 支持效果强度；Mica Alt 使用固定预设。纯色保存 RGB 与背景不透明度，不创建背景采样画刷，文字和图标透明度不随背景滑块变化。面板设置与设置窗口自身的默认材质效果分别处理。
 
-| Token | Light | Dark |
-| --- | --- | --- |
-| LayerFillColorDefault | #80FFFFFF | #4C3A3A3A |
-| LayerOnMicaBaseAltFillColorDefault | #B3FFFFFF | #733A3A3A |
+## 系统策略与回退
 
-Local overlays remain separate from the backdrop strength.
-The settings preview also omits full-body Mica overlays. Acrylic and solid backgrounds retain their
-existing rendering. Missing wallpaper material first tries the acrylic recipe,
-preserving the requested strength. If the host backdrop or effect is also
-unavailable, rendering uses the opaque theme fallback. Stored material preferences
-remain unchanged.
+1. 系统允许高级效果时，尝试所选材质；壁纸画刷不可用时，Mica 类材质先尝试亚克力。
+2. 系统关闭高级效果、进入节电模式，或背景效果创建失败时，使用深色 `#202020` 或浅色 `#F3F3F3` 不透明底色。
+3. 系统策略改变会使材质缓存失效；重新允许效果后可恢复所选材质，不覆盖保存的设置。
 
-Host-backdrop setup is deferred until an acrylic brush is needed. The public
-`DWMWA_USE_HOSTBACKDROPBRUSH` attribute is tried first. An unsupported-attribute
-error (`E_INVALIDARG` / `E_NOTIMPL`) enables the isolated downlevel accent path:
-`SetWindowCompositionAttribute`, `WCA_ACCENT_POLICY`, `ACCENT_ENABLE_HOSTBACKDROP`.
-The export is resolved dynamically; absent or rejected capabilities fall back
-to color. Hiding or replacing the material releases the legacy accent policy.
-This compatibility ABI needs Windows 10 validation; the native entry and forced
-material-failure tests on Windows 11 do not establish Windows 10 visual behavior.
+HostBackdrop 优先使用公开 DWM 属性；不支持时通过动态加载的兼容入口尝试初始化，失败则回退。Windows 10 隐藏 Mica 与 Mica Alt 选项，从 Windows 11 带来的云母配置以亚克力回退显示。
 
-API references: [host-backdrop attribute](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwmwindowattribute),
-[host brush](https://learn.microsoft.com/en-us/uwp/api/windows.ui.composition.compositor.createhostbackdropbrush),
-[dynamic attribute entry](https://learn.microsoft.com/en-us/windows/win32/dwm/setwindowcompositionattribute).
+## 圆角、图标与生命周期
 
-## Sources
+内容与背景使用一致的圆角裁剪；Windows 10 还使用缓存的窗口区域处理外轮廓。图标优先使用可用且覆盖所需字符的图标字体，MDL2 回退按实际字形边界与文字中线对齐。
 
-- [Microsoft Mica design guidance](https://learn.microsoft.com/en-us/windows/apps/design/style/mica)
-- [WinUI theme resources](https://github.com/microsoft/microsoft-ui-xaml/blob/main/controls/dev/CommonStyles/Common_themeresources_any.xaml)
-- [Public native blend graph](https://github.com/microsoft/microsoft-ui-xaml/blob/v2.8.0/dev/Materials/Backdrop/SystemBackdropBrushFactory.cpp)
-
-## Verification
-
-The material regression covers native palette values, blend mode/source order,
-strength endpoints, and preview differences across themes. Settings render
-snapshots cover light/dark and multiple DPI scales. Visual comparison of the
-preview does not establish exact native desktop backdrop parity.
-
-## Local material styling
-
-`theme::material_chrome` owns active/inactive/incoming tab fills, panel edges,
-settings cards and card edges. Acrylic uses lighter local fills and a clearer
-edge, Mica uses quiet surfaces, and BaseAlt uses a stronger selected surface.
-These are application UI choices, not additional native controller defaults.
-Acrylic and Mica strengths interpolate local fills around the reference at 50;
-minimum strength retains selection/card cues, while pane borders fade to zero.
-BaseAlt remains fixed because it has no strength control. No full-pane body
-surface is introduced. Settings keep their original base material strength and neutral solid background.
-Only the companion card/tab/edge styles respond to the selected pane strength;
-the native material recipe, opacity and strength mapping are unchanged.
-
-## WinUI 3 pane strokes
-
-Pane/search outlines and their preview use `SurfaceStrokeColorDefault`
-(#66757575 in both themes). Internal separators use `DividerStrokeColorDefault`
-(#15FFFFFF dark, #0F000000 light), from the linked official theme resources.
-The custom renderer uses these WinUI colors; this is not a migration to XAML
-windows or the DWM window frame. The second DWM outline remains disabled.
-Line width stays one physical pixel. Existing configured corner radii remain.
-For custom transparency, line opacity fades below the default material strength;
-at and above the default the official ARGB values are used without amplification.
-No wallpaper sampling, material-specific hue, or custom-color tint is applied.
-Native backdrop recipes and card/tab fills are unchanged by this border change.
+窗口释放后清理合成运行时和图形设备缓存，随后退出 OLE/COM，具体顺序见[架构说明](architecture.md#启动与退出)。绘制与验证入口见[绘图与绑定](rendering.md)和[验证记录](validation.md)。

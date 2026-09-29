@@ -2,7 +2,7 @@
 
 ## 绘制边界
 
-应用直接使用 `windows_canvas` 的几何、颜色、画刷、文本格式、布局、位图和绘制上下文。旧 Format/Brush 持有器及逐图元转发方法已移除；普通绘图不转换两套重复类型。
+应用直接使用 `windows_canvas` 的几何、颜色、画刷、文本格式、布局、位图和绘制上下文。绘制代码直接使用这些类型，绑定转换集中在互操作模块。
 
 `canvas::DrawPass` 管理绘制生命周期与错误，并解引用到 Canvas 的 `DrawingSession`。它保留以下当前实现所需的原生操作：
 
@@ -12,7 +12,7 @@
 - 文本省略号裁剪。
 - 离屏目标绑定及像素读回。
 
-`composition::Surface` 管理交换链与内容呈现，直接持有 `desktop_graphics::Layer`。面板、搜索、菜单与设置共用这条路径；交换链按客户区尺寸创建，避免首帧先创建 1×1 缓冲再调整大小。
+`composition::Surface` 管理交换链与内容呈现，按窗口类型选择独立内容层或共享 WinRT 视觉树。面板、搜索、菜单与设置共用 Surface 接口；交换链按客户区尺寸创建，避免首帧先创建 1×1 缓冲再调整大小。
 
 UI 线程复用 D3D/D2D 设备，同一 DXGI 设备还复用 DirectComposition 设备，各窗口保留独立交换链与视觉树。合成设备缓存保留 COM 身份引用；图形设备变化时替换缓存，已有窗口仍持有自己的引用。
 
@@ -41,7 +41,7 @@ UI 线程复用 D3D/D2D 设备，同一 DXGI 设备还复用 DirectComposition �
 | `native_interface()` | 通过 QueryInterface 获取带独立引用计数的应用侧接口 |
 | `canvas_result()` | 将新绑定错误转换为应用侧 HRESULT 错误 |
 | `create_layer()` | 借用已知 DXGI 接口构造内容层 |
-| `set_attribute()`、`extend_frame()` | 设置 DWM 属性与客户区扩展，不再保持旧裸指针调用签名 |
+| `set_attribute()`、`extend_frame()` | 设置 DWM 属性与客户区扩展 |
 
 不通过裸指针转移源接口所有权，不在普通绘图调用中分散类型转换。
 
@@ -53,8 +53,9 @@ UI 线程复用 D3D/D2D 设备，同一 DXGI 设备还复用 DirectComposition �
 
 ## 材质与动画
 
+背景使用 Windows.UI.Composition 与 HWND 桌面互操作，壁纸或 HostBackdrop 经过亮度和染色混合；实现与回退规则见 [背景材质与主题](mica-materials.md)。这不是完整原生 Mica 控制器。系统高级效果关闭或进入节电模式时，亚克力、Mica 和 Mica Alt 回退为随主题变化的不透明底色，保留材质设置。策略恢复会使材质缓存失效并重新应用效果。壁纸画刷单独不可用时可先回退亚克力，其他失败再回退纯色。
 
-背景使用 Windows.UI.Composition 与 HWND 桌面互操作。云母使用系统模糊壁纸画刷，经亮度、染色两级 GPU 混合，参考 [WinUI 2.8 的公开实现](https://github.com/microsoft/microsoft-ui-xaml/blob/v2.8.0/dev/Materials/Backdrop/SystemBackdropBrushFactory.cpp)。主题底色为深色 #202020、浅色 #F3F3F3，染色强度分别为 80% 和 50%；Alt 暂为增强壁纸色彩的预设，强度为 65% 和 35%，不声称与官方 BaseAlt 完全一致。效果工厂在同一合成运行时内复用，不读取壁纸像素到 CPU，也不额外计算模糊。壁纸材质不可用时优先使用亚克力配方，保留所选效果强度；HostBackdrop 或效果也不可用时回退到不透明主题底色。Win10 的 HostBackdrop 初始化使用独立封装的动态兼容入口，详见 [Mica 材质](mica-materials.md)。当前仍不是完整原生 Mica 控制器，未复刻全部激活和系统策略行为；亚克力使用 HostBackdrop 已模糊背景，复用亮度、染色两级混合，按 WinUI AcrylicBrush 的中性色公式修正染色与亮度不透明度，避免对背景重复模糊。颜色固定跟随主题，不开放自定义颜色。当前尚未叠加官方配方中的噪点纹理。
+合成资源应在窗口释放之后、OLE/COM 退出之前清理，不依赖进程退出时的 TLS 析构；见[启动与退出](architecture.md#启动与退出)。
 
 菜单淡入由 `windows-animation` 提供统一透明度，同时作用于内容与材质。首帧准备完成后开始计时，延迟帧仍提交终值，失败或系统禁用动画时直接显示。折叠保留现有曲线与真实 HWND 高度更新。
 
@@ -64,32 +65,12 @@ UI 线程复用 D3D/D2D 设备，同一 DXGI 设备还复用 DirectComposition �
 
 覆盖多 DPI、透明文字、裁剪失败清理、缓存位图替换、合成读回及淡入首尾状态。构建与测试通过不代替可见桌面的逐帧观察，详细结果见[验证记录](validation.md)。
 
-### Settings first presentation
+## 设置窗口首帧
 
-Settings attaches its swap chain above its material in one WinRT composition
-visual tree. Before showing the HWND it sets `DWMWA_CLOAK`; unlike `SW_HIDE`,
-cloaking allows DWM to compose the window without displaying partial content.
-After showing without activation, a short-lived timer polls `RequestCommitAsync`.
-Once the material commit completes, a 160 ms opacity animation is attached to
-the shared root if Windows client-area animations are enabled. Its initial
-frame is committed while still cloaked to avoid a full-opacity flash. Then
-`DwmFlush` synchronizes presentation and the window is uncloaked and activated.
-The compositor animates content and material together without app repainting.
-The timer is removed immediately on reveal; a one-second
-failure deadline prevents an indefinitely inaccessible settings window.
-This is a composition fence, not an API guarantee that every host backdrop
-implementation has finished sampling. Opening-frame captures are required when
-changing this sequence. No opaque cover, separate material fade, CPU readback or persistent
-render loop is used. Plain-translucent mode hides only the material visuals so
-content sharing the tree stays visible.
+设置窗口在同一 WinRT 视觉树中组合材质与交换链。显示前使用 `DWMWA_CLOAK` 隐藏尚未完成的画面，再以不激活方式显示窗口并等待 `RequestCommitAsync`。提交完成后按系统动画设置准备淡入，通过 `DwmFlush` 同步后解除隐藏并激活。
 
+短期定时器只服务首帧准备，显示完成后移除；超时路径防止窗口永久不可见。该顺序保证应用提交完成，不代表系统背景采样在所有驱动上都具有相同完成时刻。修改此流程应检查实际首帧显示。
 
-### Solid material
+## 纯色背景
 
-`Backdrop::Solid` carries RGB and a background-only opacity. It uses a
-`CompositionColorBrush` with a transparent tint visual, without creating a host
-backdrop or wallpaper brush for this material. Existing content visuals and
-corner clips are reused; content opacity stays independent. Slider gestures
-update visuals in memory and commit the workspace once on release. The storage
-The workspace database stores per-panel color overrides in `panels`, and global solid
-style defaults in `config.toml`. Development builds do not migrate older databases.
+`Backdrop::Solid` 保存 RGB 和背景不透明度，通过 `CompositionColorBrush` 绘制并复用内容与圆角。拖动滑块时更新视觉，松开后保存配置；全局默认值写入 `config.toml`，面板独立覆盖写入工作区数据库。

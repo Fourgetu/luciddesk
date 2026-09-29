@@ -4,7 +4,7 @@
 
 ## 启动
 
-完整解压到有写入权限的文件夹，退出已运行的旧版，再双击 `luciddesk.exe`。请将 `desktop_hook.dll` 和 `portable.marker` 保留在程序旁。当前为预览版，主要验证平台为 Windows 11 x64。
+完整解压到有写入权限的文件夹，退出已运行的旧版，再双击 `luciddesk.exe`。请将 `desktop_hook.dll` 和 `portable.marker` 保留在程序旁。当前为预览版，优先维护 Windows 11 x64，Windows 10 已由用户完成实机验证。
 
 ## 数据随程序携带
 
@@ -16,6 +16,6 @@
 
 ## 使用与校验
 
-操作见 [使用说明](usage.md)，本次变化见 [版本记录](CHANGELOG.md)。Everything、PowerToys Peek 和 QuickLook 需另行安装，默认关闭相关功能。
+操作见 [使用说明](usage.md)，本次变化见随包提供的 `CHANGELOG.md`。Everything、PowerToys Peek 和 QuickLook 需另行安装，默认关闭相关功能。
 
 `build.json` 保留实际构建来源和二进制文件校验值。ZIP 旁的 `.sha256` 用于验证包完整性。

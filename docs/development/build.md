@@ -4,7 +4,7 @@
 
 ## 环境
 
-- Windows x64 交互桌面，Explorer 正常运行。
+- 主要使用 Windows 11 x64 交互桌面验证，Explorer 正常运行；Windows 10 已由用户完成实机验证，平台记录见[验证记录](validation.md)。
 - Rust MSVC 工具链；仓库声明的最低 Rust 版本为 1.95，使用 edition 2024。
 - Visual Studio C++ 构建工具与 Windows SDK，用于链接 Win32 库。
 
@@ -20,19 +20,19 @@ $env:LUCIDDESK_DATA_DIR = Join-Path $PWD 'target\dev-data'
 
 主程序与 Hook DLL 必须来自同次构建，位于同一目录。当前应用使用视图过滤协议 v1，数据库为 `workspace.db`，全局设置为 `config.toml`。不使用旧运行模式参数，也不提供旧数据库迁移。
 
-默认 feature 集为空，应用使用 `FilterSession` 与独立 Shell 菜单。`main` 已移除旧几何后端、MinHook、专用探针和 `legacy-geometry`／`drag-trace`／`input-trace` 开关；完整旧方案及主程序接入保留在 `hook` 分支（清理时指向 `403463c`）。复现旧方案应使用该分支的独立工作目录及构建说明。
+默认 feature 集为空，应用使用 `FilterSession` 与独立 Shell 菜单。诊断功能按需启用，发布包使用默认功能集。
 
-## 显式启用实验与诊断
+## 诊断构建
 
 | Feature | 所属包 | 用途 |
 | --- | --- | --- |
-| `desktop-menu-diagnostics` | desktop-shell | 在真实桌面选择项目的旧菜单对照入口，默认关闭 |
+| `desktop-menu-diagnostics` | desktop-shell | 在真实桌面选择项目的菜单诊断入口，默认关闭 |
 | `menu-diagnostics` | desktop-hook、desktop-shell；app 同时转发 | 在 Release 中收集菜单计时，默认关闭；Debug 自动收集 |
 
-旧实验使用独立目录，避免与默认产物混用。调用探针前仍需阅读其交互范围。
+诊断构建使用独立目录，避免与发布产物混用。菜单探针会操作真实桌面选择，应在可中断的交互会话中运行。
 
 ```powershell
-# 旧桌面菜单入口仅供对照实验
+# 真实桌面菜单诊断入口
 cargo build -p desktop-shell --example desktop_menu_service_probe --features desktop-menu-diagnostics --target-dir target\desktop-menu-diagnostics --locked --offline
 
 # 同时启用主程序、Hook 和 Shell 的 Release 菜单计时
@@ -67,6 +67,16 @@ cargo build -p luciddesk -p desktop-hook --locked --offline --target-dir target\
 
 产物位于 `target\preview`。包内配置仍默认保存在 LocalAppData；未提交代码会在包名和 `build.json` 中标记为 dirty。GitHub Actions 的 Windows preview 工作流执行全目标编译、核心和存储测试后上传 ZIP；原生桌面 UI 测试仍在交互会话运行。
 
+便携版使用以下命令，产物位于 `target\portable\时间戳`，含 `portable.marker`，配置保存在包旁的 `data` 中：
+
+```powershell
+.\tools\package-preview.ps1 -Portable -Offline
+# 排查问题时另行生成带诊断脚本的便携包
+.\tools\package-preview.ps1 -Portable -RenderDiagnostics -Offline
+```
+
+诊断包提供 A（当前渲染路径）、B（共享合成树）、C（禁用背景特效）三个启动入口，具体开关与日志见[渲染诊断说明](../../tools/render-diagnostics/RENDER-TEST.md)。崩溃采集、可选转储配置及恢复步骤见[崩溃转储说明](../../tools/render-diagnostics/CRASH-DUMPS.md)。这些脚本不随常规便携包分发。分析转储前保留同次构建的 EXE、DLL 和 PDB；之后重新构建会覆盖 `target\production` 中的符号文件。
+
 ```powershell
 cargo check --workspace --all-targets --offline
 cargo test -p desktop-core -p desktop-storage -p desktop-hook -p desktop-shell --lib --offline -- --test-threads=1
@@ -75,6 +85,13 @@ cargo test -p luciddesk --test canvas_compat --offline
 ```
 
 UI 测试按单线程执行，降低原生窗口与 COM 消息的相互干扰。部分 Shell 测试需要实际桌面权限；受限会话中的失败应与代码回归区分，并记录具体错误。
+
+搜索层级测试会激活真实窗口，需单独运行。退出回归测试会启动三个测试子进程，检查图形资源释放后整个进程能否正常退出：
+
+```powershell
+cargo test -p luciddesk editor_click_raises_search_among_panes_but_hotkey_stays_on_desktop --offline -- --ignored --test-threads=1
+cargo test -p luciddesk graphics_caches_release_before_apartment_and_process_exit --offline -- --test-threads=1
+```
 
 设置页渲染测试默认不写图片。需要视觉检查时，设置环境变量 `LUCIDPANE_TEST_EXPORT_SNAPSHOTS=1` 后运行 `settings_layout_and_rendering_at_multiple_scales`，图片输出至 `target/settings-*.bmp`；检查后移除该环境变量即可恢复无图片写入的常规测试。
 
@@ -99,7 +116,7 @@ cargo run --locked --offline --manifest-path tools/windows-bindings/Cargo.toml -
 
 ## 探针与真实桌面验证
 
-当前主线使用下方的 `filter_backend_probe` 验证成员过滤。旧几何探针、`native_backdrop_probe` 和 Hook／绘图联合消融脚本已移至历史方案范围，仅在 `hook` 分支复现；历史文档中的对应命令不适用于当前主线。
+使用下方的 `filter_backend_probe` 验证成员过滤及恢复。
 
 自动测试不能代替实际拖入、拖出、排序、重命名、退出恢复及混合 DPI 检查。最近记录见[验证记录](validation.md)。
 
@@ -113,8 +130,6 @@ cargo build -p desktop-shell --example filter_backend_probe
 .\target\debug\examples\filter_backend_probe.exe
 ```
 
-结果及兼容边界见[视图过滤验证](../desktop-view-filter-verification.md)。
+结果及兼容边界见[验证记录](validation.md)。
 
 品牌更名兼容：若新的数据目录不存在且旧目录 `%LOCALAPPDATA%\LucidPane` 已存在，继续使用旧目录。`LUCIDDESK_DATA_DIR` 优先，旧变量 `LUCIDPANE_DATA_DIR` 仍受支持；详见[品牌规范](../brand.md)。
-
-便携包构建：运行 `./tools/package-preview.ps1 -Portable`（可加 `-Offline`）。产物写入 `target/portable/时间戳/`，包含 `portable.marker`，不包含个人数据。

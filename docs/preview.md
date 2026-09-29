@@ -19,7 +19,7 @@
 | Everything 未安装或未运行 | 搜索页显示状态；先启动 Everything，再在设置中检测路径或选择程序并启用搜索面板 |
 | PowerToys Peek 不可用 | 不影响分组和文件操作，可在设置中关闭或指定路径 |
 
-Everything、PowerToys 和 QuickLook 不包含在本包中。Windows 10、ARM64 和远程桌面环境尚未经过完整验证。
+Everything、PowerToys 和 QuickLook 不包含在本包中。Windows 10 已由用户完成实机验证；ARM64 和远程桌面环境尚未经过完整验证。
 
 开发版使用 `config.toml` 和 `workspace.db`，不迁移旧库。旧版数据请使用独立目录保留；本版不会读取 `hook-desktop.db`。
 

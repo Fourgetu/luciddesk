@@ -1,19 +1,10 @@
-# Win11 独立 Shell 菜单点击分发修正
+# Win11 独立 Shell 菜单命令路由
 
-2026-09-15，在当前 Win11 x64 主机验证。目标是独立 Shell 视图的精简菜单；没有嵌入、裁剪或隐藏一个完整 Explorer 文件窗口。
+本文说明独立 Shell 菜单的命令路由与生命周期；该路径依赖系统内部接口，不能保证所有 Windows 构建兼容。
 
-## 根因与证据
+## 命令分发
 
-独立宿主已经创建了原生菜单 Presenter，但缺少完整 Explorer 浏览器承担的命令消息转发。
-
-1. 菜单弹出窗口处于 enabled 状态，`WindowFromPoint` 命中菜单，`WM_NCHITTEST` 返回 `HTCLIENT`。
-2. 点击顶部“重命名”后，独立 `SHELLDLL_DefView` 收到注册消息 `FILE_EXPLORER_CONTEXTMENU_INVOKEMENUITEM`，本轮消息 ID 为 `0xc162`，命令 ID 为 `0x7913`。旧实现把它交给默认窗口过程，菜单没有执行重命名。
-3. 本机缓存符号和系统 DLL 的只读分析显示，`CDesktopBrowser::_WndProcBS` 处理这条注册消息时调用 `IContextMenuPresenter::Invoke(UINT)`，即该接口第 8 个虚表槽位（从 0 开始）。独立 IExplorerBrowser 宿主没有提供这一转发。
-4. 为独立视图补上该转发后，同一菜单点击产生 `command_route.invoke` / `command_route.return`，随后菜单关闭、原生重命名编辑框出现。再次选择“属性”（本轮 ID `0x7914`）打开了测试文件的属性窗口。
-
-不能把所有失败都归因于鼠标命中或线程循环。另有一次自动化操作在点击之前使宿主失焦、菜单关闭，导致点击落到背后的视图；这类结果需与真正收到菜单命令但没有分发的故障区分。
-
-## 修改
+独立 Shell 视图需将注册消息 `FILE_EXPLORER_CONTEXTMENU_INVOKEMENUITEM` 转发到菜单 Presenter 的 `Invoke`。消息编号及命令编号由当前运行环境确定，不能硬编码历史日志中的数值。窗口命中只说明输入到达，不代表 Shell 命令已执行；验证时同时检查命令路由与最终操作结果。
 
 ### 产品结构
 
@@ -119,7 +110,7 @@ sequenceDiagram
 
 修正版实机点击精简菜单“重命名”进入 Pane 自绘输入框，Esc 取消，未提交文件名；再次右键仍为精简菜单，Esc 关闭。Hook 库测试 19 项通过、1 项默认忽略；应用与 Hook 编译通过。瞬时光标的完整视觉效果仍需用户操作确认，本轮不增加其他 Windows 构建的兼容性结论。
 
-### 2026-09-15：异常路径审查修正
+### 异常路径与清理
 
 按 P1、P2 顺序修正以下问题：
 
@@ -134,22 +125,7 @@ sequenceDiagram
 
 真实 `filter_backend_probe` 验证 85→83、正常恢复与原坐标、控制进程异常退出恢复，并新增丢失 END 普通请求后由定时器释放、旧释放标记不影响新事务、取消宿主后重新准备菜单。实际 Pane 复测精简菜单重命名进入自绘输入框、Esc 取消，未提交用户文件名。尚未覆盖全部第三方扩展的无限阻塞、Win10 实机、多显示配置和所有属性窗口组合。
 
-## 本轮验证范围
 
-- Explorer 内的独立 Shell 原型：精简菜单“重命名”进入真实编辑框，然后 Esc 取消，未更改文件名。
-- 同一原型：“属性”打开 `Rename test A.txt 属性` 窗口，随后关闭。
-- 同一原型：Esc 关闭精简菜单。菜单关闭是异步过程，操作后的第一帧仍可能包含旧菜单，需观察最终状态。
-- `cargo check -p desktop-hook -p desktop-shell --offline` 通过。
-- `cargo build -p lucidpane -p desktop-hook --offline` 通过。
-- `cargo test -p desktop-hook --lib --offline`：18 项通过，覆盖动态命令范围变化、无效范围、准备失败清除旧范围、普通命令转发、重命名截获，以及真实临时文件改名后的新 PIDL 和恢复坐标交接。
-- Shell 临时文件连续提交两次改名测试通过；每次返回实际新路径，稳定文件 ID 和内容不变。Pane 审计测试确认稳定 ID 不变时仍能拒绝旧路径结果。
-- 生产过滤回归新增 `identity_update_does_not_restore_membership=true`：更新期间维持 85→83，拒绝嵌套更新而不破坏连接，结束后过滤正确。
-- 实际自绘 Pane：用户截图确认精简菜单“重命名”进入 Pane 图标下的输入框。诊断记录本次 `first=30977`、`command=0x7913`、`rename=true`；这些数值仅作证据，不写入命令匹配逻辑。
-- 实际自绘 Pane：用户手动确认精简菜单“属性”可以打开属性窗口并正常关闭。
-- 清理诊断代码后的生产过滤回归通过：85 项过滤至 83 项，同一目标重复准备复用宿主，无效目标后恢复、更换目标、刷新后过滤、退出和异常退出后的成员及坐标恢复。此检查不等同于菜单完整交互测试。
+## 验证入口
 
-可见原型验证对象是 `target/shell-pane-probe/80676/A/Rename test A.txt`。随后实际 Pane 使用 `target/pane-menu-routing-smoke` 隔离配置，引用桌面快捷方式，验证菜单和输入框；自动化没有输入或提交新文件名。测试入口 `LUCIDPANE_INSPECT=1` 让宿主可被检查，宿主窗口区域仍为空，Pane 后面不显示完整 Explorer 窗口。临时命令日志已从产品代码移除。
-
-提交改名修正版已启动，正在等待用户对“图标不返回桌面、再次仍是精简菜单、再次能重命名”的实机复测。尚未完成：正式非 inspect 样式的完整菜单回归、多选与第三方扩展全部命令、属性窗口保持打开时切换多个目标、长时间复用、显示配置变化后的输入命中，以及全部 Win10/Win11 构建兼容测试。可见编辑框和属性通过不等于这些场景已经通过。
-
-仍使用已有未公开 Presenter COM ABI；本次运行不依赖符号下载或系统 DLL 地址补丁，但当前机器成功不等于已经验证全部 Win10/Win11 构建。
+当前验证范围见[验证记录](development/validation.md)，操作与改名事务见[图标菜单与重命名](development/pane-item-rename.md)。

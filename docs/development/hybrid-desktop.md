@@ -1,10 +1,10 @@
 # 原生桌面与成员过滤
 
-更新：2026-09-26，按当前主线源码核对。应用使用 `FilterSession` 管理视图成员，不创建自绘桌面窗口；旧几何方案保留在 `hook` 分支。
+更新：2026-09-29，按当前主线源码核对。应用使用 `FilterSession` 管理视图成员，不创建自绘桌面窗口。
 
 ## 收纳与显示
 
-Explorer 继续绘制桌面。分组收纳成功且图标加载完成后，控制端发送完整的 Shell 解析名集合。DLL 在 Explorer 桌面线程内使用 `IShellFolderView::RemoveObject` 从视图集合移除这些项目。开启自动排列时，剩余项目由 Explorer 补位；关闭自动排列时保留系统自己的布局行为。
+Explorer 继续绘制桌面。分组收纳先保存归属并刷新面板；图标加载完成后，控制端异步提交完整的 Shell 解析名集合，再检查 Explorer 的确认。DLL 在 Explorer 桌面线程内使用 `IShellFolderView::RemoveObject` 从视图集合移除这些项目。开启自动排列时，剩余项目由 Explorer 补位；关闭自动排列时保留系统自己的布局行为。
 
 收纳不删除或移动源文件。分组仍由应用独立绘制，图标加载失败时保留原生图标。桌面到分组的 OLE Drop 先返回，再通过排队动作提交收纳，避免双方 STA 相互等待。
 
@@ -36,6 +36,6 @@ Peek 仍需要真实桌面选择上下文，其预览调用作用域内暂时恢
 
 ## 边界
 
-应用不安装原来五个私有几何 Hook，也不下载 PDB。`IShellFolderView` 仍是被微软弃用的接口，所以采用运行期探测，不能保证所有系统版本。当前真实验证平台是 Win11 x64 26200.9168；Win10、多屏/DPI、完整鼠标拖放与菜单交互仍需补充覆盖。
+应用通过视图成员过滤连接 Explorer，不依赖固定地址的几何拦截或下载 PDB。`IShellFolderView` 仍是被微软弃用的接口，所以采用运行期探测，不能保证所有系统版本。Windows 11 x64 为优先维护平台，Windows 10 已由用户完成实机验证。多屏、混合 DPI 与 Shell 扩展组合需要在对应环境中回归；具体记录见[验证记录](validation.md)。
 
-详见[验证记录](../desktop-view-filter-verification.md)。
+详见[验证记录](validation.md)。
