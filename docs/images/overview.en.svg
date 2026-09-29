@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1200" height="740" viewBox="0 0 1200 740" role="img" aria-labelledby="title desc">
   <title id="title">LucidDesk — Less clutter. More focus.</title>
-  <desc id="desc">Organize icons, keep folders close, and find files from your desktop. Groups keep references. Your files stay in place. Feature illustration · Not a screenshot</desc>
+  <desc id="desc">Organize icons, keep folders close, and find files from your desktop. Panels keep references. Your files stay in place. Feature illustration · Not a screenshot</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop stop-color="#101d32"/>
@@ -58,7 +58,7 @@
   <rect x="32" y="204" width="1136" height="422" rx="24" fill="#071420" fill-opacity=".38" stroke="#779bac" stroke-opacity=".2"/>
   <path d="M290 251v321" stroke="#7995a6" stroke-opacity=".15" stroke-dasharray="3 7"/>
   <text x="60" y="243" class="caption">YOUR DESKTOP</text>
-  <text x="330" y="243" class="caption">DESKTOP GROUPS</text>
+  <text x="330" y="243" class="caption">DESKTOP PANELS</text>
   <text x="766" y="243" class="caption">FOLDER PANELS</text>
   <use xlink:href="#file" x="82" y="288"/>
   <text x="103" y="364" class="label">Plan</text>
@@ -113,6 +113,6 @@
   <text x="1113" y="581" class="small" text-anchor="end">Find files on your PC</text>
   <circle cx="61" cy="667" r="12" fill="#8fe2d9" fill-opacity=".14"/>
   <path d="m56 667 4 4 7-8" fill="none" stroke="#9ae8de" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-  <text x="84" y="673" class="body">Groups keep references. Your files stay in place.</text>
+  <text x="84" y="673" class="body">Panels keep references. Your files stay in place.</text>
   <text x="1150" y="710" class="small" text-anchor="end">Feature illustration · Not a screenshot</text>
 </svg>

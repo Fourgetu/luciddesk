@@ -40,6 +40,14 @@ class ReleaseNotesTests(unittest.TestCase):
         self.assertEqual(versions(zh), versions(en))
         version = tomllib.loads((ROOT / "app/Cargo.toml").read_text())["package"]["version"]
         self.assertEqual(versions(zh)[0], version)
+        lock = tomllib.loads((ROOT / "Cargo.lock").read_text())
+        self.assertEqual(next(p["version"] for p in lock["package"] if p["name"] == "luciddesk"), version)
+        for name in ["README.md", "README.en.md"]:
+            badges = re.findall(r"badge/version-([0-9]+\.[0-9]+\.[0-9]+)-", (ROOT / name).read_text(encoding="utf-8"))
+            self.assertEqual(badges, [version])
+        self.assertIn(f"**{version}**", zh.split("\n## ")[0])
+        self.assertIn(f"**{version}**", en.split("\n## ")[0])
+
         for ver in versions(zh):
             notes.bilingual(zh, en, "v" + ver, "Yuch3nE/luciddesk")
 

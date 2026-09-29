@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1200" height="740" viewBox="0 0 1200 740" role="img" aria-labelledby="title desc">
   <title id="title">LucidDesk — 桌面有序，专注随行。</title>
-  <desc id="desc">用分组整理图标，让常用目录与文件搜索触手可及。 分组只保存引用，原文件留在原处。 功能示意 · 非实际界面截图</desc>
+  <desc id="desc">用面板整理图标，让常用目录与文件搜索触手可及。 面板只保存引用，原文件留在原处。 功能示意 · 非实际界面截图</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop stop-color="#101d32"/>
@@ -54,11 +54,11 @@
   <rect x="1027" y="38" width="125" height="30" rx="15" fill="#80dcd6" fill-opacity=".08" stroke="#80dcd6" stroke-opacity=".18"/>
   <text x="1089" y="58" text-anchor="middle" font-size="13" fill="#b2d9de">Windows 10 / 11</text>
   <text x="48" y="125" class="" font-size="42" font-weight="600">桌面有序，专注随行。</text>
-  <text x="50" y="164" class="body" style="fill:#afc6d4">用分组整理图标，让常用目录与文件搜索触手可及。</text>
+  <text x="50" y="164" class="body" style="fill:#afc6d4">用面板整理图标，让常用目录与文件搜索触手可及。</text>
   <rect x="32" y="204" width="1136" height="422" rx="24" fill="#071420" fill-opacity=".38" stroke="#779bac" stroke-opacity=".2"/>
   <path d="M290 251v321" stroke="#7995a6" stroke-opacity=".15" stroke-dasharray="3 7"/>
   <text x="60" y="243" class="caption">你的桌面</text>
-  <text x="330" y="243" class="caption">桌面分组</text>
+  <text x="330" y="243" class="caption">桌面面板</text>
   <text x="766" y="243" class="caption">文件夹面板</text>
   <use xlink:href="#file" x="82" y="288"/>
   <text x="103" y="364" class="label">方案</text>
@@ -70,7 +70,7 @@
   <text x="227" y="490" class="label">笔记</text>
   <path d="M245 386h63m-7-6 7 6-7 6" fill="none" stroke="#8be0de" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
   <rect x="64" y="537" width="192" height="35" rx="17" fill="#86e1dd" fill-opacity=".08"/>
-  <text x="160" y="560" class="teal" text-anchor="middle">拖入分组</text>
+  <text x="160" y="560" class="teal" text-anchor="middle">拖入面板</text>
   <rect x="320" y="277" width="418" height="258" rx="18" fill="#030c16" fill-opacity=".3"/>
   <rect x="320" y="269" width="418" height="258" rx="18" fill="url(#glass)" stroke="#88b9cb" stroke-opacity=".35"/>
   <rect x="756" y="277" width="380" height="258" rx="18" fill="#030c16" fill-opacity=".3"/>
@@ -113,6 +113,6 @@
   <text x="1113" y="581" class="small" text-anchor="end">快速找到本机文件</text>
   <circle cx="61" cy="667" r="12" fill="#8fe2d9" fill-opacity=".14"/>
   <path d="m56 667 4 4 7-8" fill="none" stroke="#9ae8de" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-  <text x="84" y="673" class="body">分组只保存引用，原文件留在原处。</text>
+  <text x="84" y="673" class="body">面板只保存引用，原文件留在原处。</text>
   <text x="1150" y="710" class="small" text-anchor="end">功能示意 · 非实际界面截图</text>
 </svg>

@@ -6,10 +6,10 @@
 
 **Turn your Windows desktop into a workspace that works for you.**
 
-Desktop groups · Folder panels · Everything search · Spacebar preview
+Desktop panels · Folder panels · Everything search · Spacebar preview
 
 [![Build CI](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml/badge.svg)](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml)
-[![Version](https://img.shields.io/badge/version-0.10.6-087EA4?style=flat-square)](CHANGELOG.en.md)
+[![Version](https://img.shields.io/badge/version-0.11.0-087EA4?style=flat-square)](CHANGELOG.en.md)
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square)](#compatibility)
 
 [![Architecture](https://img.shields.io/badge/arch-x64-475569?style=flat-square)](docs/portable.md)
@@ -19,22 +19,22 @@ Desktop groups · Folder panels · Everything search · Spacebar preview
 
 </div>
 
-![LucidDesk feature overview: organize desktop icons into tabbed groups, browse folders, and find local files with Everything.](docs/images/overview.en.svg)
+![LucidDesk feature overview: organize desktop icons into tabbed panels, browse folders, and find local files with Everything.](docs/images/overview.en.svg)
 
 > Feature illustration, not an actual screenshot.
 
-LucidDesk is a Windows desktop organizer written in Rust. Group desktop icons, keep frequently used folders within reach, and find local files with Everything.
+LucidDesk is a Windows desktop organizer written in Rust. Organize desktop icons into panels, keep frequently used folders within reach, and find local files with Everything.
 
 ## Features
 
-- **Desktop groups:** organize files, folders and shortcuts without moving the original files.
-- **Group tabs:** switch between groups, reorder tabs, or detach them into separate panels.
+- **Desktop panels:** organize files, folders and shortcuts without moving the original files.
+- **Panel tabs:** switch between panels, reorder tabs, or detach them into separate panels.
 - **Folder panels:** browse directories with sorting and automatic updates.
 - **File search:** search through Everything and open files or their locations.
 - **File preview:** press Space to preview selected files with PowerToys Peek or QuickLook.
 - **Appearance:** customize fonts, rounded corners, colors, and solid, Acrylic, Mica or Mica Alt backgrounds.
 
-Panels can move, resize, collapse, snap to edges, lock, or stay on top. Folder and search panels remain independent of group tabs. File commands such as delete, rename, cut and paste operate on real files.
+Panels can move, resize, collapse, snap to edges, lock, or stay on top. Folder and search panels remain independent of panel tabs. File commands such as delete, rename, cut and paste operate on real files.
 
 ## Getting started
 
@@ -53,15 +53,17 @@ See the [standard package guide](docs/package.md) or [portable guide](docs/porta
 
 1. Exit any running copy and extract the entire ZIP to a writable folder.
 2. Run `luciddesk.exe`. Keep `desktop_hook.dll` beside it; portable mode also requires `portable.marker`. Do not run the app inside the ZIP.
-3. Drag desktop icons into a group. Use the tray menu to create groups or folder panels and open Settings.
+3. Drag desktop icons into a panel. Use the tray menu to create panels or folder panels and open Settings.
 
 Search and preview are disabled by default. Install Everything, PowerToys Peek or QuickLook separately, then enable the corresponding integration in Settings. These tools are not bundled.
 
+An optional **Show all panels** global shortcut is available in **Settings → Panel layout**. It is off by default, with `Ctrl + Shift + D` as the preset. It performs the same action as **Show panels** in the tray and preserves each panel’s always-on-top setting.
+
 ## Languages
 
-The interface supports 简体中文, 繁體中文, English, 日本語, 한국어, Deutsch and Русский. It follows the Windows display language by default and falls back to English for unsupported languages. Choose a language in **Settings → Language**, then restart LucidDesk.
+The interface supports 简体中文, 繁體中文, English, 日本語, 한국어, Deutsch and Русский. It follows the Windows display language by default and falls back to English for unsupported languages. Choose a language in **Settings → Language**; it applies immediately.
 
-Translations are embedded in the executable. Saved group names and file names are unchanged. Native Windows Shell menus follow the system language. Translation contributions and corrections are welcome.
+Translations are embedded in the executable. Saved panel names and file names are unchanged. Native Windows Shell menus follow the system language. Translation contributions and corrections are welcome.
 
 ## Upgrading and backups
 
@@ -72,7 +74,7 @@ Exit the app before upgrading and replace the complete set of app files so the e
 
 Upgrades may continue using an existing `LucidPane` data directory. To switch from standard to portable mode, export and restore your configuration.
 
-Use **Settings → Backup & restore** to export or restore your configuration. Backups contain settings and layouts, not the original files referenced by groups. Moving a portable folder does not move those original files.
+Use **Settings → Backup & restore** to export or restore your configuration. Backups contain settings and layouts, not the original files referenced by panels. Moving a portable folder does not move those original files.
 
 ## Compatibility
 
@@ -84,7 +86,7 @@ When Windows disables background effects, LucidDesk uses a theme-aware solid fal
 
 **Panels are hidden:** click the tray icon or choose **Show panels**. Normal panels can still be covered when you switch to another app; panels set to stay on top remain above other windows.
 
-**Desktop groups cannot connect:** check the connection status in **Settings → About** and try reconnecting. LucidDesk keeps the group configuration and retries automatically. Folder and search panels can still work independently.
+**Desktop panels cannot connect:** check the connection status in **Settings → About** and try reconnecting. LucidDesk keeps the panel configuration and retries automatically. Folder and search panels can still work independently.
 
 ## Build from source
 

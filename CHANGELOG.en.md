@@ -2,9 +2,17 @@
 
 [简体中文](CHANGELOG.md) · English
 
-User-facing changes in each release. The current version is **0.10.6**. Windows 11 x64 is the primary validation platform.
+User-facing changes in each release. The current version is **0.11.0**. Windows 11 x64 is the primary validation platform.
 
 Exit the app before upgrading a portable installation and preserve its `data` folder. See the [portable guide](docs/portable.md) (Chinese).
+
+## 0.11.0 · 2026-09-30
+
+- Add an optional Show all panels global shortcut, disabled by default with `Ctrl + Shift + D` as the preset, with the same behavior as the tray action, customizable keys and conflict reporting.
+- Switch interface languages immediately and follow changes to the effective Windows display language in system mode.
+- Preview fonts in the current language, show the default fallback font, and refresh candidates when the language changes. Unify translucent accent states across settings materials and light/dark themes.
+- Update About to use the public project website and add links to downloads, the changelog and issue reporting.
+- Use “panel” consistently throughout the interface and both READMEs, preserving user-defined names.
 
 ## 0.10.6 · 2026-09-30
 
