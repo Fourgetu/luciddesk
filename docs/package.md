@@ -4,7 +4,7 @@
 
 开发者：**Yuchen95**
 
-解压整个目录，双击 `luciddesk.exe`。`desktop_hook.dll` 必须与程序放在一起；不要混用其他版本的 DLL。重复启动会唤起已有实例。退出可使用托盘菜单。
+解压整个目录，双击 `luciddesk.exe`。`luciddesk_desktop.dll` 必须与程序放在一起；不要混用其他版本的 DLL。重复启动会唤起已有实例。退出可使用托盘菜单。
 
 配置默认存放在 `%LOCALAPPDATA%\LucidDesk`，不会写入程序目录。免安装不表示配置随程序目录携带；开发时可通过 `LUCIDDESK_DATA_DIR` 指定独立数据目录。设置中的“备份与恢复”可以导出、恢复配置；备份不包含原文件。
 

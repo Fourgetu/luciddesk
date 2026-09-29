@@ -1,6 +1,6 @@
 //! Explorer hosts the compact menu against an isolated, validated Shell selection.
 use desktop_core::ShellIdentity;
-use desktop_hook::filter::FilterSession;
+use luciddesk_desktop::filter::FilterSession;
 use windows_sys::Win32::Foundation::{HWND, POINT};
 
 /// Preparation, popup and cancellation may pump messages. The caller must hold

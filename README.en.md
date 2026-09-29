@@ -61,7 +61,7 @@ See the [standard package guide](docs/package.md) or [portable guide](docs/porta
 ### Extract and launch
 
 1. Exit any running copy and extract the entire ZIP to a writable folder.
-2. Run `luciddesk.exe`. Keep `desktop_hook.dll` beside it; portable mode also requires `portable.marker`. Do not run the app inside the ZIP.
+2. Run `luciddesk.exe`. Keep `luciddesk_desktop.dll` beside it; portable mode also requires `portable.marker`. Do not run the app inside the ZIP.
 3. Drag desktop icons into a panel. Use the tray menu to create panels or folder panels and open Settings.
 
 Search and preview are disabled by default. Install Everything, PowerToys Peek or QuickLook separately, then enable the corresponding integration in Settings. These tools are not bundled.

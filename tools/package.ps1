@@ -32,7 +32,7 @@ try {
     $outRoot = Join-Path $repoRoot $(if ($Portable) { "target\portable\$stamp" } else { 'target\packages' })
     $stage = Join-Path $outRoot $name
     New-Item -ItemType Directory -Path $stage | Out-Null
-    foreach ($file in @('luciddesk.exe', 'desktop_hook.dll')) {
+    foreach ($file in @('luciddesk.exe', 'luciddesk_desktop.dll')) {
         Copy-Item -LiteralPath (Join-Path $productionTarget "release\$file") -Destination $stage
     }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Refresh-App-Icon.ps1') -Destination $stage
@@ -52,7 +52,7 @@ try {
     foreach ($changelog in @('CHANGELOG.md', 'CHANGELOG.en.md')) {
         Copy-Item -LiteralPath (Join-Path $repoRoot $changelog) -Destination (Join-Path $stage $changelog)
     }
-    $files = @('luciddesk.exe', 'desktop_hook.dll') | ForEach-Object {
+    $files = @('luciddesk.exe', 'luciddesk_desktop.dll') | ForEach-Object {
         $fileHash = Get-FileHash -LiteralPath (Join-Path $stage $_) -Algorithm SHA256
         [ordered]@{ file = $_; sha256 = $fileHash.Hash.ToLowerInvariant() }
     }

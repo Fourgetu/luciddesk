@@ -129,7 +129,7 @@ cargo build -p luciddesk -p desktop-hook --locked
 .\target\debug\luciddesk.exe
 ```
 
-主程序和 `desktop_hook.dll` 必须来自同次构建并放在同一目录。分别生成普通版与便携版 ZIP：
+主程序和 `luciddesk_desktop.dll` 必须来自同次构建并放在同一目录。分别生成普通版与便携版 ZIP：
 
 ```powershell
 .\tools\package.ps1

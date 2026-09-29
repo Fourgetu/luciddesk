@@ -140,7 +140,7 @@ enum Event {
     PreviewPaneMove,
     ToggleHeaderDivider,
     PaneItemFocus,
-    BeginItemMenu(Rc<RefCell<Option<Result<Rc<desktop_hook::filter::FilterSession>, String>>>>),
+    BeginItemMenu(Rc<RefCell<Option<Result<Rc<luciddesk_desktop::filter::FilterSession>, String>>>>),
     EndItemMenu,
     RenameItem(ShellIdentity),
     RenameTitle,

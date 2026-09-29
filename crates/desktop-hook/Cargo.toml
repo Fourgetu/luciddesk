@@ -6,6 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [lib]
+name = "luciddesk_desktop"
 crate-type = ["rlib", "cdylib"]
 
 [features]

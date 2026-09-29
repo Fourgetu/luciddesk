@@ -19,7 +19,6 @@
 app/src/
 ├── main.rs                 # 启动与参数
 ├── tray.rs                 # 托盘生命周期
-├── hook_runtime.rs         # Hook DLL 运行副本
 ├── diagnostics.rs
 ├── app_icon.rs
 └── pane/
