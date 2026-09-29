@@ -1,6 +1,7 @@
 [CmdletBinding()]
-param([switch]$Offline, [switch]$Portable)
+param([switch]$Offline, [switch]$Portable, [switch]$RenderDiagnostics)
 $ErrorActionPreference = 'Stop'
+if ($RenderDiagnostics -and -not $Portable) { throw 'Rendering comparison launchers require -Portable.' }
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $previousRevision = $env:LUCIDPANE_BUILD_REVISION
 Push-Location -LiteralPath $repoRoot
@@ -26,6 +27,7 @@ try {
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
     $name = "LucidDesk-$version-preview-$revisionLabel-windows-x64-$stamp"
     if ($Portable) { $name = "LucidDesk-$version-windows-x64-portable" }
+    if ($RenderDiagnostics) { $name += '-render-test' }
     $outRoot = Join-Path $repoRoot $(if ($Portable) { "target\portable\$stamp" } else { 'target\preview' })
     $stage = Join-Path $outRoot $name
     New-Item -ItemType Directory -Path $stage | Out-Null
@@ -37,6 +39,11 @@ try {
     if ($Portable) {
         'LucidDesk portable mode: store configuration in ./data.' | Set-Content -LiteralPath (Join-Path $stage 'portable.marker') -Encoding ASCII
     }
+    if ($RenderDiagnostics) {
+        Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'render-diagnostics') -File | ForEach-Object {
+            Copy-Item -LiteralPath $_.FullName -Destination $stage
+        }
+    }
     Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\usage.md') -Destination (Join-Path $stage 'usage.md')
     Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\brand.md') -Destination (Join-Path $stage 'brand.md')
     Copy-Item -LiteralPath (Join-Path $repoRoot 'CHANGELOG.md') -Destination (Join-Path $stage 'CHANGELOG.md')
@@ -47,6 +54,7 @@ try {
     [ordered]@{
         version = $version; channel = 'preview'; revision = $revision; uncommittedChanges = $dirty
         portable = [bool]$Portable
+        renderingDiagnostics = [bool]$RenderDiagnostics
         builtAt = (Get-Date).ToUniversalTime().ToString('o'); architecture = 'windows-x64'
         files = $files
     } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $stage 'build.json') -Encoding UTF8

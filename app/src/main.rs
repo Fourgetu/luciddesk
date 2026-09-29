@@ -23,6 +23,7 @@ fn main() -> Result<(), String> {
         return Ok(());
     };
     let _ = diagnostics::system();
+    diagnostics::render_trace(format_args!("startup"));
     let path = database_path()?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
