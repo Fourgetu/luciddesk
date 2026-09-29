@@ -140,18 +140,17 @@ impl GroupModel {
             .selection_anchor
             .and_then(|i| self.items.get(i))
             .map(|i| i.identity.clone());
-        let identities = self.selected_identities();
+        // Borrow identities while remapping; avoid cloning paths and an O(items × selection) scan.
+        let identities: std::collections::HashSet<_> = self.selection.iter()
+            .filter_map(|&index| self.items.get(index).map(|item| &item.identity)).collect();
+        let selection = items.iter().enumerate()
+            .filter_map(|(index, item)| identities.contains(&item.identity).then_some(index)).collect();
         self.items = items;
         self.selected =
             focus.and_then(|identity| self.items.iter().position(|i| i.identity == identity));
         self.selection_anchor =
             anchor.and_then(|identity| self.items.iter().position(|i| i.identity == identity));
-        self.selection = self
-            .items
-            .iter()
-            .enumerate()
-            .filter_map(|(index, item)| identities.contains(&item.identity).then_some(index))
-            .collect();
+        self.selection = selection;
     }
 
     fn icon_grid(&self, width: f32, height: f32) -> layout::Grid {

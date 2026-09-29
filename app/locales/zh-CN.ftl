@@ -102,8 +102,8 @@ ui-open-in-file-explorer = { "在资源管理器中打开" }
 # 刷新
 ui-refresh = { "刷新" }
 
-# 更换映射文件夹…
-ui-change-folder = { "更换映射文件夹…" }
+# 更换文件夹…
+ui-change-folder = { "更换文件夹…" }
 
 # 视图
 ui-view = { "视图" }

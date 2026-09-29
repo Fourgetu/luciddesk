@@ -262,14 +262,19 @@ pub(super) fn handle(
             return Err(crate::i18n::text("ui-this-is-not-a-folder-panel").into());
         }
         panel.set_folder(Some(path.clone()));
+        let title = path.file_name().unwrap_or(path.as_os_str()).to_string_lossy().into_owned();
+        panel.set_title(title.clone());
         if let Err(error) = save(&mut s) {
             s.workspace = old;
             return Err(error);
         }
         folder::ensure(&mut s, id)?;
+        folder::home(&mut s, id)?;
         if let Some(view) = s.views.iter().find(|v| v.id == id) {
             let mut model = view.model.borrow_mut();
             model.folder = Some(path.clone());
+            model.title = title;
+            unsafe { InvalidateRect(view.window.hwnd().cast(), std::ptr::null(), 0); }
             model.clear_selection();
             model.scroll = 0;
         }

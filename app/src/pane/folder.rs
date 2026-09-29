@@ -342,16 +342,21 @@ pub(super) fn poll(state: &mut PaneApp) {
         }
         let mut patches = HashMap::new();
         while let Ok(batch) = source.images.try_recv() {
-            for item in batch { patches.insert(item.identity.persistent_key(), item); }
+            for item in batch { patches.insert(item.identity.clone(), item); }
         }
         if !patches.is_empty() {
             let mut patched = false;
+            let mut kind_changed = false;
             for item in &mut source.items {
-                if let Some(update) = patches.remove(&item.identity.persistent_key()) {
-                    patched |= apply_image_patch(item, update);
+                if patches.is_empty() { break; }
+                if let Some(update) = patches.remove(&item.identity) {
+                    let different_kind = item.details.kind != update.details.kind;
+                    let applied = apply_image_patch(item, update);
+                    kind_changed |= applied && different_kind;
+                    patched |= applied;
                 }
             }
-            if patched && source.sort.0 == 1 { sort_items(&mut source.items, source.sort); }
+            if kind_changed && source.sort.0 == 1 { sort_items(&mut source.items, source.sort); }
             changed |= patched;
         }
     }
@@ -419,28 +424,34 @@ fn sort_items(items: &mut Vec<Item>, sort: (u8, bool)) {
         windows_sys::Win32::UI::Shell::StrCmpLogicalW(a.as_ptr(), b.as_ptr()).cmp(&0)
     };
     let direction = |order: std::cmp::Ordering| if sort.1 { order.reverse() } else { order };
-    sorted.sort_by(|(af, an, ak, at, a), (bf, bn, bk, bt, b)| {
-        let name = || text_order(an, bn);
+    // The identity tie-breaker gives deterministic order without stable-sort scratch storage.
+    sorted.sort_unstable_by(|(af, an, ak, at, a), (bf, bn, bk, bt, b)| {
+        let name = || text_order(an, bn).then_with(|| an.cmp(bn)).then_with(|| a.identity.persistent_key().cmp(&b.identity.persistent_key()));
         match sort.0 {
             // Explorer reverses the complete name order, including folder grouping.
             0 => direction(bf.cmp(af).then_with(name)),
             // Type keeps folders first and names ascending in either direction.
             1 => bf.cmp(af).then_with(|| {
-                if *af { name() } else { direction(text_order(ak, bk)).then_with(name) }
+                if *af { name() } else {
+                    let unknown = |kind: &str| kind.trim().is_empty() || kind == "—";
+                    unknown(&a.details.kind).cmp(&unknown(&b.details.kind))
+                        .then_with(|| if unknown(&a.details.kind) { std::cmp::Ordering::Equal } else { direction(text_order(ak, bk)) }).then_with(name)
+                }
             }),
             // Preserve the existing mixed timeline for modified-date sorting.
             2 => {
                 if at.is_none() || bt.is_none() {
                     at.is_none().cmp(&bt.is_none()).then_with(name)
                 } else {
-                    direction(at.cmp(bt).then_with(name))
+                    direction(at.cmp(bt)).then_with(name)
                 }
             }
             // Empty sizes precede files ascending and follow them descending;
             // equal sizes (including folders) always use ascending names.
             3 => direction(bf.cmp(af)).then_with(|| {
                 if *af { name() } else {
-                    direction(a.details.size.cmp(&b.details.size)).then_with(name)
+                    a.details.size.is_none().cmp(&b.details.size.is_none())
+                        .then_with(|| direction(a.details.size.cmp(&b.details.size))).then_with(name)
                 }
             }),
             _ => name(),
@@ -453,7 +464,8 @@ pub(super) fn sort(state: &mut PaneApp, id: PanelId, column: u8) -> Result<(), S
     let Some(source) = state.folders.get_mut(&id) else {
         return Ok(());
     };
-    let order = (column.min(3), if source.sort.0 == column { !source.sort.1 } else { column == 3 });
+    let column = column.min(3);
+    let order = (column, if source.sort.0 == column { !source.sort.1 } else { column >= 2 });
     state
         .store
         .save_preference(
@@ -463,6 +475,9 @@ pub(super) fn sort(state: &mut PaneApp, id: PanelId, column: u8) -> Result<(), S
         .map_err(|e| e.to_string())?;
     source.sort = order;
     sort_items(&mut source.items, order);
+    if let Some(view) = state.views.iter().find(|view| view.id == id) {
+        view.model.borrow_mut().scroll = 0;
+    }
     refresh_changed_views(state, true);
     Ok(())
 }
@@ -776,7 +791,7 @@ mod tests {
         };
         let mut items = vec![make("large", Some(1024 * 1024), false), make("unknown", None, false), make("small", Some(9), false), make("folder", None, true)];
         sort_items(&mut items, (3, false));
-        assert_eq!(items.iter().map(|i| i.label.as_str()).collect::<Vec<_>>(), ["folder", "unknown", "small", "large"]);
+        assert_eq!(items.iter().map(|i| i.label.as_str()).collect::<Vec<_>>(), ["folder", "small", "large", "unknown"]);
         sort_items(&mut items, (3, true));
         assert_eq!(items.iter().map(|i| i.label.as_str()).collect::<Vec<_>>(), ["large", "small", "unknown", "folder"]);
     }
@@ -1024,6 +1039,42 @@ mod tests {
     }
 
     #[test]
+    fn metadata_sort_keeps_unknowns_last_and_ties_natural() {
+        let make = |name: &str, kind: &str, seconds: Option<u64>| Item {
+            identity: identity(PathBuf::from(name)), label: name.into(), image: None,
+            details: ItemDetails { kind: kind.into(), modified_time: seconds.map(|s| std::time::UNIX_EPOCH + Duration::from_secs(s)), ..Default::default() },
+        };
+        let original = vec![make("file10", "Text", Some(10)), make("file2", "Text", Some(10)),
+            make("unknown", "—", None), make("pending", "", None)];
+        for column in [1, 2] {
+            for descending in [false, true] {
+                let mut items = original.clone();
+                sort_items(&mut items, (column, descending));
+                assert_eq!(items.iter().map(|i| i.label.as_str()).collect::<Vec<_>>(), ["file2", "file10", "pending", "unknown"]);
+            }
+        }
+    }
+
+    #[test]
+    fn reselecting_mapped_root_leaves_child_and_persists_title() {
+        let root = tempfile::tempdir().unwrap();
+        let child = root.path().join("child");
+        std::fs::create_dir(&child).unwrap();
+        let mut state = super::super::tests::test_state();
+        let id = PanelId::new(2);
+        state.workspace.panel_mut(id).unwrap().set_folder(Some(root.path().to_path_buf()));
+        ensure(&mut state, id).unwrap();
+        navigate(&mut state, id, Some(child)).unwrap();
+        let state = Rc::new(RefCell::new(state));
+        super::super::events::handle(&state, id, Event::SetFolder(root.path().to_path_buf())).unwrap();
+        let state = state.borrow();
+        assert_eq!(state.folders[&id].path, root.path());
+        assert_eq!(state.folders[&id].navigation(), [false, false]);
+        let saved = state.store.load_workspace().unwrap();
+        assert_eq!(saved.panel(id).unwrap().title(), root.path().file_name().unwrap().to_string_lossy());
+    }
+
+    #[test]
     fn navigation_and_sort_keep_the_mapping_and_back_history() {
         let root = std::env::temp_dir().join(format!(
             "lucidpane-navigation-{}-{}",
@@ -1051,6 +1102,11 @@ mod tests {
             .unwrap()
             .unwrap();
         state.folders.get_mut(&id).unwrap().items = items;
+        sort(&mut state, id, 2).unwrap();
+        assert_eq!(state.folders[&id].sort, (2, true));
+        sort(&mut state, id, 2).unwrap();
+        assert_eq!(state.folders[&id].sort, (2, false));
+        sort(&mut state, id, 0).unwrap();
         sort(&mut state, id, 0).unwrap();
         assert_eq!(
             state.folders[&id]

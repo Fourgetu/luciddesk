@@ -102,7 +102,7 @@ ui-open-in-file-explorer = { "Im Explorer öffnen" }
 # 刷新
 ui-refresh = { "Aktualisieren" }
 
-# 更换映射文件夹…
+# 更换文件夹…
 ui-change-folder = { "Ordner ändern…" }
 
 # 视图

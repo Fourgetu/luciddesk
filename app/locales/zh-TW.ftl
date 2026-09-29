@@ -102,8 +102,8 @@ ui-open-in-file-explorer = { "在檔案總管中開啟" }
 # 刷新
 ui-refresh = { "重新整理" }
 
-# 更换映射文件夹…
-ui-change-folder = { "變更對應資料夾…" }
+# 更换文件夹…
+ui-change-folder = { "變更資料夾…" }
 
 # 视图
 ui-view = { "檢視" }

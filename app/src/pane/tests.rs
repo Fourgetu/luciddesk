@@ -1962,4 +1962,23 @@ fn multiselection_preserves_anchor_toggle_and_file_identity_on_refresh() {
     model.replace_items(vec![]);
     model.select_all();
     assert!(model.selection.is_empty());
+
+    // Large multi-selections must survive reordered snapshots and removed files.
+    model.items = (0..10_000).map(|i| Item {
+        details: Default::default(), identity: ShellIdentity::Namespace { parsing_name: format!("large:{i}") },
+        label: i.to_string(), image: None,
+    }).collect();
+    model.select_all();
+    model.selected = Some(9_999);
+    model.selection_anchor = Some(5_000);
+    let mut replacement = model.items.clone();
+    replacement.reverse();
+    replacement.retain(|item| item.label != "5000");
+    let started = std::time::Instant::now();
+    model.replace_items(replacement);
+    eprintln!("10,000 selected items remapped in {:?}", started.elapsed());
+    assert_eq!(model.selection.len(), 9_999);
+    assert_eq!(model.selected, Some(0));
+    assert_eq!(model.selection_anchor, None);
+    assert_eq!(model.items.last().unwrap().label, "0");
 }
