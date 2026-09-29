@@ -9,7 +9,7 @@
 桌面面板 · 文件夹面板 · Everything 搜索 · 空格预览
 
 [![Build CI](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml/badge.svg)](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml)
-[![版本](https://img.shields.io/badge/version-0.11.2-087EA4?style=flat-square)](CHANGELOG.md)
+[![版本](https://img.shields.io/badge/version-0.12.0-087EA4?style=flat-square)](CHANGELOG.md)
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square)](#系统与兼容性)
 [![架构](https://img.shields.io/badge/arch-x64-475569?style=flat-square)](docs/portable.md)
 [![Rust](https://img.shields.io/badge/Rust-1.95%2B-CE6F32?style=flat-square)](Cargo.toml)
@@ -27,6 +27,8 @@ LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。将零散图标�
 图标加载期间，面板会显示随尺寸缩放、适配深浅色的文件或文件夹轮廓，加载完成后自动替换为真实图标。
 
 文件夹面板支持自然名称排序，修改时间和大小默认降序；搜索刷新会恢复此前已加载范围内的选中项。
+
+字体页支持名称搜索与连续滚动，候选字体按界面语言筛选、在首次进入时后台加载，不显示字体预览。关闭设置后释放候选列表，减少闲置占用。
 
 ## 功能
 

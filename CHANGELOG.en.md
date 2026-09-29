@@ -2,9 +2,17 @@
 
 [简体中文](CHANGELOG.md) · English
 
-User-facing changes in each release. The current version is **0.11.2**. Windows 11 x64 is the primary validation platform.
+User-facing changes in each release. The current version is **0.12.0**. Windows 11 x64 is the primary validation platform.
 
 Exit the app before upgrading a portable installation and preserve its `data` folder. See the [portable guide](docs/portable.md) (Chinese).
+
+## 0.12.0 · 2026-09-30
+
+- Add font-name search with multiple keywords, full-width Latin letters and digits, and common separators. Replace candidate previews with a continuously scrolling list that marks the current and default fonts.
+- Enumerate fonts and check language coverage in the background on the first visit to the font page, keeping settings interactive. Reuse the list within the open settings window, release it on close, and cancel unfinished loading without a process-wide candidate cache.
+- Improve the font search field's light and dark colors, placeholder contrast, focus feedback, and text cursor. Support a clear button and Escape; keep the current font and search field fixed above the scrolling list.
+- Align settings control spacing and selection states, reduce temporary font enumeration resources, and validate only the selected family when saving instead of rescanning every candidate.
+- Fix font handle cleanup when closing settings and release the text measurement cache, including its allocated capacity, with the settings renderer.
 
 ## 0.11.2 · 2026-09-30
 
