@@ -1,4 +1,4 @@
-//! Installed outline fonts with basic Chinese/Latin coverage, shared by GDI and DirectWrite.
+//! Installed outline fonts with coverage for the active interface language, shared by GDI and DirectWrite.
 use std::sync::RwLock;
 use windows_sys::Win32::Graphics::Gdi::*;
 const KEY: &str = "ui_font_family";
@@ -145,6 +145,10 @@ pub(super) fn installed() -> Vec<String> {
     names.sort_by_key(|name| name.to_lowercase());
     names.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
     names.retain(|name| readable(name));
+    if let Some(index) = names.iter().position(|name| name == crate::i18n::default_font()) {
+        let default = names.remove(index);
+        names.insert(0, default);
+    }
     names
 }
 pub(super) fn load(store: &desktop_storage::WorkspaceStore) -> Result<(), String> {
@@ -152,7 +156,7 @@ pub(super) fn load(store: &desktop_storage::WorkspaceStore) -> Result<(), String
         .preference(KEY)
         .map_err(|e| e.to_string())?
         .unwrap_or_default();
-    if saved.is_empty() || saved == super::assets::UI_FONT || saved == crate::i18n::default_font() {
+    if saved.is_empty() {
         set(String::new());
     } else {
         set(installed()
@@ -174,6 +178,20 @@ pub(super) fn save(store: &desktop_storage::WorkspaceStore, name: &str) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn candidates_follow_language_and_prefer_its_default() {
+        for locale in 0..7 {
+            crate::i18n::with_locale(locale, || {
+                let names = installed();
+                assert!(!names.is_empty());
+                assert!(names.iter().all(|name| readable(name)));
+                if names.iter().any(|name| name == crate::i18n::default_font()) {
+                    assert_eq!(names[0], crate::i18n::default_font());
+                }
+            });
+        }
+    }
+
     #[test]
     fn downlevel_icon_font_covers_all_application_symbols() {
         assert_eq!(choose_icon_family(|_| false), "Segoe MDL2 Assets");

@@ -1254,7 +1254,7 @@ where
                         })();
                         if let Err(error) = result {
                             if !paint_error {
-                                eprintln!("分组渲染失败：{error}");
+                                eprintln!("面板渲染失败：{error}");
                             }
                             paint_error = true;
                             {

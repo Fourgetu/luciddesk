@@ -47,6 +47,10 @@ impl Tray {
                     return Some(0);
                 }
                 let hwnd = raw.cast();
+                if message == crate::i18n::CHANGED {
+                    unsafe { Shell_NotifyIconW(NIM_MODIFY, &data(hwnd, callback_icon.0)); }
+                    return Some(0);
+                }
                 if message == recreated {
                     // Explorer discards all notification icons when rebuilding
                     // its taskbar. This re-adds ours without restarting Explorer.

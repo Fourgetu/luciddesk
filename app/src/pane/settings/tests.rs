@@ -401,7 +401,7 @@ fn about_page_stays_within_minimum_width() {
         (PanelTheme::Dark, Backdrop::Mica),
         desktop_core::PaneOptions::default(),
     );
-    layout::about_status(&mut body, width, "桌面分组已连接", true);
+    layout::about_status(&mut body, width, "桌面面板已连接", true);
     let s = with_titlebar(body, width, false);
     for bounds in s
         .text
@@ -527,7 +527,7 @@ fn settings_layout_and_rendering_at_multiple_scales() {
                                 layout::about_status(
                                     &mut body,
                                     viewport_width,
-                                    "桌面分组已连接",
+                                    "桌面面板已连接",
                                     false,
                                 );
                             }
@@ -729,7 +729,7 @@ fn setting_cards_scroll_without_moving_navigation_or_hitting_caption() {
                     ..Default::default()
                 };
                 match page {
-                    5 => layout::about_status(&mut body, width, "桌面分组已连接", false),
+                    5 => layout::about_status(&mut body, width, "桌面面板已连接", false),
                     6 | 10 => layout::backup_page(
                         &mut body,
                         width,
@@ -1135,10 +1135,11 @@ fn all_languages_layout_and_render_without_control_overflow() {
                 let mut body = scene(width, height - TITLE_HEIGHT, page, true,
                     (PanelTheme::Light, material), desktop_core::PaneOptions::default());
                 match page {
+                    1 => layout::show_panels_shortcut(&mut body, width, &WorkspaceStore::open_in_memory().unwrap()),
                     8 => layout::folder_defaults(&mut body, width, folder::Defaults::default(), folder::EntryMode::Inline),
                     9 => layout::backup_history(&mut body, width, &recovery::View::default(), 0),
                     6 | 10 => layout::backup_page(&mut body, width, &recovery::View::default(), recovery::Policy::default(), page == 10),
-                    11 => layout::fonts(&mut body, width, &[], 0),
+                    11 => layout::fonts(&mut body, width, &fonts::installed(), 0),
                     12 => layout::language(&mut body, width, "system"),
                     _ => {},
                 }
@@ -1174,6 +1175,27 @@ fn all_languages_layout_and_render_without_control_overflow() {
                         std::fs::write(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../target/i18n-{locale}-{page}.bmp")), bmp).unwrap();
                     }
                 }
+            }
+        });
+    }
+}
+
+#[test]
+fn show_panels_shortcut_is_off_and_accessible_in_every_language() {
+    for locale in 0..7 {
+        crate::i18n::with_locale(locale, || {
+            let store = WorkspaceStore::open_in_memory().unwrap();
+            let mut body = scene(800.0, 560.0 - TITLE_HEIGHT, 1, false,
+                (PanelTheme::Light, Backdrop::Acrylic), Default::default());
+            layout::show_panels_shortcut(&mut body, 800.0, &store);
+            let mut s = with_titlebar(body, 800.0, false);
+            let toggle = s.controls.iter().find(|c| matches!(c.action, Action::ShowPanelsEnable)).unwrap();
+            assert!(!toggle.selected);
+            let mut offset = toggle.bounds.top - TITLE_HEIGHT - 16.0;
+            s.scroll_to(800.0, 560.0, &mut offset);
+            for c in s.controls.iter().filter(|c| matches!(c.action, Action::ShowPanelsEnable | Action::ShowPanelsShortcut | Action::ShowPanelsReset)) {
+                assert!(c.bounds.right <= 800.0 && c.bounds.left >= Tokens::content_x());
+                assert!(s.accepts_pointer(c, c.bounds.left + 1.0, c.bounds.top + 1.0));
             }
         });
     }

@@ -320,6 +320,7 @@ mod padding_tests {
     }
 }
 
+#[cfg(test)]
 pub const UI_FONT: &str = "Microsoft YaHei UI";
 
 pub fn use_ui_font(font: &mut windows_sys::Win32::Graphics::Gdi::LOGFONTW) {

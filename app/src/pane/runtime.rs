@@ -178,7 +178,7 @@ fn reconnect_delay(failures: u8) -> Duration {
     Duration::from_millis((250u64 << failures.saturating_sub(1).min(6)).min(10_000))
 }
 
-fn next_work(s: &PaneApp, hotkey: &search_hotkey::Registration) -> Option<u32> {
+fn next_work(s: &PaneApp, hotkey: &search_hotkey::Registration, reveal: &search_hotkey::Registration) -> Option<u32> {
     let now = Instant::now();
     let runtime = s.runtime.as_ref();
     // Slow safety check for missed window lifecycle notifications or a failed
@@ -193,6 +193,7 @@ fn next_work(s: &PaneApp, hotkey: &search_hotkey::Registration) -> Option<u32> {
         .chain(runtime.and_then(|r| r.layouts.deadline()))
         .chain(recovery::deadline(s))
         .chain(hotkey.retry_deadline())
+        .chain(reveal.retry_deadline())
         .min()
         .map(|due| due.saturating_duration_since(now).as_millis().clamp(25, u32::MAX as u128) as u32)
 }
@@ -259,11 +260,13 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
     let changed = wake.clone();
     state.borrow_mut().store.set_change_callback(move || changed.notify());
     let mut hotkey = search_hotkey::Registration::default();
+    let mut reveal_hotkey = search_hotkey::Registration::with_id(show_hotkey::ID);
     let mut search_state = None;
     let mut search_enabled = false;
     let mut search_checked = Instant::now();
     let show_message = unsafe { RegisterWindowMessageW(windows_sys::w!("LucidPane.ShowExisting")) };
     let taskbar_created = unsafe { RegisterWindowMessageW(windows_sys::w!("TaskbarCreated")) };
+    let mut language_dirty = false;
     let mut layout_dirty = false;
     let mut reconnect_hint = false;
     let window = windows_window::Window::new("LucidDesk Runtime")
@@ -277,6 +280,11 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
             if msg == WM_DESTROY {
                 received.unbind();
                 hotkey.update(raw as isize, None);
+                reveal_hotkey.update(raw as isize, None);
+                return Some(0);
+            }
+            if msg == WM_HOTKEY && wp == show_hotkey::ID as usize {
+                if let Some(state) = weak.upgrade() { show_hotkey::activate(&state); }
                 return Some(0);
             }
             if msg == WM_HOTKEY && wp == search_hotkey::ID as usize {
@@ -306,6 +314,7 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
                 }
                 return Some(0);
             }
+            language_dirty |= msg == WM_SETTINGCHANGE || msg == super::wake::READY;
             if matches!(msg, WM_DISPLAYCHANGE | WM_SETTINGCHANGE | WM_DPICHANGED | WM_POWERBROADCAST) {
                 layout_dirty = true;
             } else if taskbar_created != 0 && msg == taskbar_created {
@@ -320,6 +329,25 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
             if let Some(state) = weak.upgrade() {
                 if state.try_borrow_mut().is_ok() {
                     unsafe { KillTimer(raw.cast(), 2); }
+                    if std::mem::take(&mut language_dirty) {
+                        let result = (|| -> Result<(), String> {
+                            let mut s = state.borrow_mut();
+                            if crate::i18n::initialize(&s.store)? {
+                                fonts::load(&s.store)?;
+                                for view in &s.views { rename::cancel(view.window.hwnd().cast()); }
+                                refresh_changed_views(&mut s, true);
+                                // Post after the borrow is released, including owned settings/search windows.
+                                unsafe extern "system" fn notify(hwnd: windows_sys::Win32::Foundation::HWND, _: isize) -> i32 {
+                                    unsafe { PostMessageW(hwnd, crate::i18n::CHANGED, 0, 0); InvalidateRect(hwnd, std::ptr::null(), 0); }
+                                    1
+                                }
+                                unsafe { EnumThreadWindows(GetWindowThreadProcessId(raw.cast(), std::ptr::null_mut()), Some(notify), 0); }
+                            }
+                            Ok(())
+                        })();
+                        if let Err(error) = result { eprintln!("Language refresh: {error}"); }
+                    }
+
                     {
                         let mut s = state.borrow_mut();
                         if let Some(runtime) = &mut s.runtime {
@@ -340,7 +368,7 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
                     }
                     let previous = {
                         let s = state.borrow();
-                        (status(&s), backup_status(&s), search_hotkey::status())
+                        (status(&s), backup_status(&s), search_hotkey::status(), show_hotkey::status())
                     };
                     let managed = state.borrow().runtime.is_some();
                     if managed && let Err(error) = maintain(&state, false) {
@@ -356,12 +384,14 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
                         search_checked = Instant::now();
                     }
                     hotkey.update(raw as isize, search_enabled.then(search_hotkey::settings));
+                    reveal_hotkey.update(raw as isize, show_hotkey::enabled(&s.store).then(|| show_hotkey::settings(&s.store)));
+                    show_hotkey::update_status(reveal_hotkey.message());
                     unsafe {
-                        if let Some(delay) = next_work(&s, &hotkey) {
+                        if let Some(delay) = next_work(&s, &hotkey, &reveal_hotkey) {
                             SetTimer(raw.cast(), 2, delay, None);
                         }
                     }
-                    if previous != (status(&s), backup_status(&s), search_hotkey::status())
+                    if previous != (status(&s), backup_status(&s), search_hotkey::status(), show_hotkey::status())
                         && let Some(settings) = &s.settings
                     {
                         unsafe {
@@ -386,6 +416,36 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn saved_language_notifies_open_windows_without_restart() {
+        let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        crate::i18n::with_locale(0, || {
+            let state = Rc::new(RefCell::new(super::super::tests::test_state()));
+            let observed = Rc::new(std::cell::Cell::new(false));
+            let flag = observed.clone();
+            let observer = windows_window::Window::new("language observer")
+                .size(1, 1).style(WS_POPUP)
+                .on_message(move |_, msg, _, _| {
+                    if msg == crate::i18n::CHANGED { flag.set(true); return Some(0); }
+                    None
+                }).create().unwrap();
+            let runtime = supervisor(&state).unwrap();
+            state.borrow().store.save_preference("language", "en-US").unwrap();
+            unsafe { SendMessageW(runtime.hwnd().cast(), super::super::wake::READY, 0, 0); }
+            assert_eq!(crate::i18n::language(), "en-US");
+            unsafe {
+                let mut msg = MSG::default();
+                while PeekMessageW(&raw mut msg, observer.hwnd().cast(), crate::i18n::CHANGED, crate::i18n::CHANGED, PM_REMOVE) != 0 {
+                    DispatchMessageW(&msg);
+                }
+            }
+            assert!(observed.get());
+            state.borrow().store.save_preference("language", "zh-CN").unwrap();
+            unsafe { SendMessageW(runtime.hwnd().cast(), super::super::wake::READY, 0, 0); }
+            assert_eq!(crate::i18n::language(), "zh-CN");
+        });
+    }
+
     use super::*;
 
     #[test]

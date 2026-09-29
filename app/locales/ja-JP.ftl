@@ -12,7 +12,7 @@ ui-invalid-configuration-path = { "設定のパスが無効です" }
 # 无法注册托盘恢复消息
 ui-could-not-register-tray-recovery-message = { "トレイ復元メッセージを登録できません" }
 
-# LucidDesk · 桌面分组与文件整理
+# LucidDesk · 桌面面板与文件整理
 ui-luciddesk-desktop-organization = { "LucidDesk · デスクトップ整理" }
 
 # 无法添加 LucidDesk 托盘图标
@@ -24,8 +24,8 @@ ui-could-not-initialize-tray-interaction = { "トレイ操作を初期化でき�
 # 显示面板
 ui-show-panels = { "パネルを表示" }
 
-# 新建分组
-ui-new-group = { "新しいグループ" }
+# 新建面板
+ui-new-group = { "新しいパネル" }
 
 # 新建文件夹面板…
 ui-new-folder-panel = { "新しいフォルダーパネル…" }
@@ -51,14 +51,14 @@ ui-file-operation-failed = { "ファイル操作に失敗しました：" }{ $er
 # 无法安排文件操作
 ui-could-not-schedule-file-operation = { "ファイル操作を予約できません" }
 
-# 分组已关闭
-ui-group-closed = { "グループは閉じられました" }
+# 面板已关闭
+ui-group-closed = { "パネルは閉じられました" }
 
 # Everything 搜索
 ui-everything-search = { "Everything 検索" }
 
-# 分组不存在
-ui-group-not-found = { "グループがありません" }
+# 面板不存在
+ui-group-not-found = { "パネルがありません" }
 
 # 无法读取文件夹，请检查路径或访问权限。\n{error}
 ui-cannot-read-folder-check-the-path-and-permissions-n = { "フォルダーを読み込めません。パスと権限を確認してください。\u000A" }{ $error }
@@ -90,8 +90,8 @@ ui-explorer-view-filter-disconnected = { "Explorer の表示フィルターが�
 # 桌面过滤连接尚未就绪
 ui-desktop-filter-is-not-ready = { "デスクトップフィルターの準備ができていません" }
 
-# 桌面分组正在同步，请稍后重试
-ui-desktop-groups-are-syncing-try-again-shortly = { "デスクトップグループを同期中です。しばらくして再試行してください。" }
+# 桌面面板正在同步，请稍后重试
+ui-desktop-groups-are-syncing-try-again-shortly = { "デスクトップパネルを同期中です。しばらくして再試行してください。" }
 
 # 已有活动菜单或预览
 ui-a-menu-or-preview-is-already-active = { "メニューまたはプレビューが既に開いています" }
@@ -130,7 +130,7 @@ ui-auto-collapse = { "自動で折りたたむ" }
 ui-always-on-top = { "常に手前に表示" }
 
 # 新建普通面板
-ui-new-group-panel = { "新しいグループパネル" }
+ui-new-group-panel = { "新しいデスクトップパネル" }
 
 # 标签页
 ui-tabs = { "タブ" }
@@ -141,8 +141,8 @@ ui-settings-9497 = { "設定…" }
 # 关闭面板
 ui-close-panel = { "パネルを閉じる" }
 
-# 新建分组标签
-ui-new-group-tab = { "新しいグループタブ" }
+# 新建面板标签
+ui-new-group-tab = { "新しいパネルタブ" }
 
 # 上一个标签
 ui-previous-tab = { "前のタブ" }
@@ -180,14 +180,14 @@ ui-modified = { "更新日時" }
 # 大小
 ui-size = { "サイズ" }
 
-# 分组菜单
-ui-group-menu = { "グループメニュー" }
+# 面板菜单
+ui-group-menu = { "パネルメニュー" }
 
 # 标签已关闭
 ui-tab-closed = { "タブは閉じられました" }
 
-# 保存分组失败：{e}
-ui-could-not-save-group = { "グループを保存できません：" }{ $e }
+# 保存面板失败：{e}
+ui-could-not-save-group = { "パネルを保存できません：" }{ $e }
 
 # 目标面板不可用
 ui-target-panel-unavailable = { "移動先のパネルを利用できません" }
@@ -354,8 +354,8 @@ ui-could-not-create-icon-name-editor = { "アイコン名の編集欄を作成�
 # 无法连接名称编辑框
 ui-could-not-attach-name-editor = { "名前編集欄に接続できません" }
 
-# 无法连接分组编辑状态
-ui-could-not-attach-group-editing-state = { "グループ編集状態に接続できません" }
+# 无法连接面板编辑状态
+ui-could-not-attach-group-editing-state = { "パネル編集状態に接続できません" }
 
 # 重命名失败
 ui-rename-failed = { "名前の変更に失敗しました" }
@@ -375,14 +375,14 @@ ui-this-folder-is-empty = { "このフォルダーは空です" }
 # 正在读取桌面项目…
 ui-loading-desktop-items = { "デスクトップ項目を読み込み中…" }
 
-# 将图标拖入此分组
+# 将图标拖入此面板
 ui-drag-icons-into-this-group = { "ここにアイコンをドラッグ" }
 
-# 桌面分组已连接
-ui-desktop-groups-connected = { "デスクトップグループに接続済み" }
+# 桌面面板已连接
+ui-desktop-groups-connected = { "デスクトップパネルに接続済み" }
 
-# 桌面分组暂不可用，文件夹与搜索仍可使用。\n{error}
-ui-desktop-groups-unavailable-folder-panels-and-search-still-work-n = { "デスクトップグループを利用できません。フォルダーと検索は利用可能です。\u000A" }{ $error }
+# 桌面面板暂不可用，文件夹与搜索仍可使用。\n{error}
+ui-desktop-groups-unavailable-folder-panels-and-search-still-work-n = { "デスクトップパネルを利用できません。フォルダーと検索は利用可能です。\u000A" }{ $error }
 
 # Explorer 连接已断开，正在等待恢复
 ui-explorer-disconnected-waiting-to-reconnect = { "Explorer が切断されました。再接続を待機中" }
@@ -454,7 +454,7 @@ ui-tab-group-closed = { "タブグループは閉じられました" }
 ui-target-tab-does-not-belong-to-this-panel = { "対象のタブはこのパネルに属していません" }
 
 # 仅普通面板支持标签
-ui-only-group-panels-support-tabs = { "グループパネルのみタブに対応しています" }
+ui-only-group-panels-support-tabs = { "デスクトップパネルのみタブに対応しています" }
 
 # 请先解锁面板
 ui-unlock-the-panel-first = { "先にパネルの固定を解除してください" }
@@ -466,7 +466,7 @@ ui-tab-limit-exceeded = { "タブ数が上限を超えています" }
 ui-folder-panels-do-not-support-tabs-create-a-separate-panel = { "フォルダーパネルはタブに非対応です。独立したパネルを作成してください" }
 
 # 请选择未锁定的普通面板
-ui-select-an-unlocked-group-panel = { "固定されていないグループパネルを選択してください" }
+ui-select-an-unlocked-group-panel = { "固定されていないデスクトップパネルを選択してください" }
 
 # 面板已关闭或活动标签已改变
 ui-panel-closed-or-active-tab-changed = { "パネルが閉じられたか、アクティブタブが変わりました" }
@@ -480,22 +480,22 @@ ui-tabs-a81a = { "＋ " }{ $remaining }{ " タブ" }
 # 无法注册面板运行时通知
 ui-could-not-register-panel-notifications = { "パネル通知を登録できません" }
 
-# 分组渲染失败：{error}
-ui-group-rendering-failed = { "グループの描画に失敗しました：" }{ $error }
+# 面板渲染失败：{error}
+ui-group-rendering-failed = { "パネルの描画に失敗しました：" }{ $error }
 
 # 菜单准备未完成
 ui-menu-is-not-ready = { "メニューの準備ができていません" }
 
-# 无法初始化无边框分组窗口
-ui-could-not-initialize-borderless-group-window = { "枠なしグループウィンドウを初期化できません" }
+# 无法初始化无边框面板窗口
+ui-could-not-initialize-borderless-group-window = { "枠なしパネルウィンドウを初期化できません" }
 
 # 桌面检查线程已退出，将重建检查线程
 ui-desktop-audit-thread-stopped-restarting = { "デスクトップ確認スレッドが終了しました。再起動します" }
 
-# 桌面正在变化，暂不更新分组清单
+# 桌面正在变化，暂不更新面板清单
 ui-desktop-is-changing-group-refresh-deferred = { "デスクトップが変更中のため、更新を延期します" }
 
-# 桌面清单包含重复身份，暂不更新分组
+# 桌面清单包含重复身份，暂不更新面板
 ui-duplicate-desktop-identities-group-refresh-deferred = { "項目の識別子が重複しているため、更新を延期します" }
 
 # 搜索本机文件…
@@ -642,8 +642,8 @@ ui-previous = { "前へ" }
 # 下一页
 ui-next = { "次へ" }
 
-# 桌面分组与文件整理
-ui-desktop-groups-and-file-organization = { "デスクトップのグループ化とファイル整理" }
+# 桌面面板与文件整理
+ui-desktop-groups-and-file-organization = { "デスクトップパネルとファイル整理" }
 
 # 预设配色
 ui-color-presets = { "プリセットカラー" }
@@ -1148,10 +1148,31 @@ ui-desktop-panel = { "デスクトップパネル" }
 
 language-title = 言語
 
-language-description = 表示言語を選択してください。LucidDesk の再起動後に適用されます。
+language-description = 選択はすぐに反映されます。システム設定では Windows の表示言語が適用されると更新されます。
 
 language-system = システムに従う
 
-font-description = 現在の表示言語に対応する標準の太さの非斜体フォントを表示します。
+font-description = 現在の言語に対応する標準フォントを表示します。不足する文字には既定のフォントを使用します。
 
 font-unavailable = フォントが未インストールか、現在の言語の文字に非対応です
+
+ui-project-resources = { "プロジェクト情報" }
+
+ui-download-releases = { "ダウンロード" }
+
+ui-release-history = { "更新履歴" }
+
+ui-report-an-issue = { "問題を報告" }
+
+ui-changelog-url = { "https://github.com/Yuch3nE/luciddesk/blob/main/CHANGELOG.en.md" }
+
+font-fallback = 既定の代替フォント
+font-preview = デスクトップ · ファイル  Aa 0123
+
+show-panels-hotkey = すべてのパネルを表示
+
+show-panels-enable = グローバルショートカットを有効にする
+
+show-panels-description = トレイの「パネルを表示」と同じ動作です。最前面の設定を維持し、すべてのパネルを一度前面に移動します。
+
+show-panels-disabled = 既定では無効です。有効にすると他のアプリからすべてのパネルを表示できます。

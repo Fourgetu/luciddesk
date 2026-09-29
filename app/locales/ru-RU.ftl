@@ -12,7 +12,7 @@ ui-invalid-configuration-path = { "Неверный путь к настройк
 # 无法注册托盘恢复消息
 ui-could-not-register-tray-recovery-message = { "Не удалось зарегистрировать восстановление значка в трее" }
 
-# LucidDesk · 桌面分组与文件整理
+# LucidDesk · 桌面面板与文件整理
 ui-luciddesk-desktop-organization = { "LucidDesk · Организация рабочего стола" }
 
 # 无法添加 LucidDesk 托盘图标
@@ -24,8 +24,8 @@ ui-could-not-initialize-tray-interaction = { "Не удалось инициал
 # 显示面板
 ui-show-panels = { "Показать панели" }
 
-# 新建分组
-ui-new-group = { "Новая группа" }
+# 新建面板
+ui-new-group = { "Новая панель" }
 
 # 新建文件夹面板…
 ui-new-folder-panel = { "Новая панель папки…" }
@@ -51,14 +51,14 @@ ui-file-operation-failed = { "Ошибка операции с файлом: " }
 # 无法安排文件操作
 ui-could-not-schedule-file-operation = { "Не удалось запланировать операцию с файлом" }
 
-# 分组已关闭
-ui-group-closed = { "Группа закрыта" }
+# 面板已关闭
+ui-group-closed = { "Панель закрыта" }
 
 # Everything 搜索
 ui-everything-search = { "Поиск Everything" }
 
-# 分组不存在
-ui-group-not-found = { "Группа не найдена" }
+# 面板不存在
+ui-group-not-found = { "Панель не найдена" }
 
 # 无法读取文件夹，请检查路径或访问权限。\n{error}
 ui-cannot-read-folder-check-the-path-and-permissions-n = { "Не удалось прочитать папку. Проверьте путь и права.\u000A" }{ $error }
@@ -90,8 +90,8 @@ ui-explorer-view-filter-disconnected = { "Фильтр представлени�
 # 桌面过滤连接尚未就绪
 ui-desktop-filter-is-not-ready = { "Фильтр рабочего стола ещё не готов" }
 
-# 桌面分组正在同步，请稍后重试
-ui-desktop-groups-are-syncing-try-again-shortly = { "Группы синхронизируются. Повторите попытку позже." }
+# 桌面面板正在同步，请稍后重试
+ui-desktop-groups-are-syncing-try-again-shortly = { "Панели синхронизируются. Повторите попытку позже." }
 
 # 已有活动菜单或预览
 ui-a-menu-or-preview-is-already-active = { "Меню или предпросмотр уже открыты" }
@@ -130,7 +130,7 @@ ui-auto-collapse = { "Автосворачивание" }
 ui-always-on-top = { "Поверх всех окон" }
 
 # 新建普通面板
-ui-new-group-panel = { "Новая панель группы" }
+ui-new-group-panel = { "Новая панель рабочего стола" }
 
 # 标签页
 ui-tabs = { "Вкладки" }
@@ -141,8 +141,8 @@ ui-settings-9497 = { "Настройки…" }
 # 关闭面板
 ui-close-panel = { "Закрыть панель" }
 
-# 新建分组标签
-ui-new-group-tab = { "Новая вкладка группы" }
+# 新建面板标签
+ui-new-group-tab = { "Новая вкладка панели" }
 
 # 上一个标签
 ui-previous-tab = { "Предыдущая вкладка" }
@@ -180,14 +180,14 @@ ui-modified = { "Дата изменения" }
 # 大小
 ui-size = { "Размер" }
 
-# 分组菜单
-ui-group-menu = { "Меню группы" }
+# 面板菜单
+ui-group-menu = { "Меню панели" }
 
 # 标签已关闭
 ui-tab-closed = { "Вкладка закрыта" }
 
-# 保存分组失败：{e}
-ui-could-not-save-group = { "Не удалось сохранить группу: " }{ $e }
+# 保存面板失败：{e}
+ui-could-not-save-group = { "Не удалось сохранить панель: " }{ $e }
 
 # 目标面板不可用
 ui-target-panel-unavailable = { "Целевая панель недоступна" }
@@ -354,8 +354,8 @@ ui-could-not-create-icon-name-editor = { "Не удалось создать р�
 # 无法连接名称编辑框
 ui-could-not-attach-name-editor = { "Не удалось подключить редактор имени" }
 
-# 无法连接分组编辑状态
-ui-could-not-attach-group-editing-state = { "Не удалось подключить состояние редактирования группы" }
+# 无法连接面板编辑状态
+ui-could-not-attach-group-editing-state = { "Не удалось подключить состояние редактирования панели" }
 
 # 重命名失败
 ui-rename-failed = { "Не удалось переименовать" }
@@ -375,14 +375,14 @@ ui-this-folder-is-empty = { "Эта папка пуста" }
 # 正在读取桌面项目…
 ui-loading-desktop-items = { "Загрузка элементов рабочего стола…" }
 
-# 将图标拖入此分组
-ui-drag-icons-into-this-group = { "Перетащите значки в эту группу" }
+# 将图标拖入此面板
+ui-drag-icons-into-this-group = { "Перетащите значки в эту панель" }
 
-# 桌面分组已连接
-ui-desktop-groups-connected = { "Группы рабочего стола подключены" }
+# 桌面面板已连接
+ui-desktop-groups-connected = { "Панели рабочего стола подключены" }
 
-# 桌面分组暂不可用，文件夹与搜索仍可使用。\n{error}
-ui-desktop-groups-unavailable-folder-panels-and-search-still-work-n = { "Группы недоступны. Панели папок и поиск продолжают работать.\u000A" }{ $error }
+# 桌面面板暂不可用，文件夹与搜索仍可使用。\n{error}
+ui-desktop-groups-unavailable-folder-panels-and-search-still-work-n = { "Панели недоступны. Панели папок и поиск продолжают работать.\u000A" }{ $error }
 
 # Explorer 连接已断开，正在等待恢复
 ui-explorer-disconnected-waiting-to-reconnect = { "Explorer отключён, ожидание подключения" }
@@ -454,7 +454,7 @@ ui-tab-group-closed = { "Группа вкладок закрыта" }
 ui-target-tab-does-not-belong-to-this-panel = { "Целевая вкладка не принадлежит этой панели" }
 
 # 仅普通面板支持标签
-ui-only-group-panels-support-tabs = { "Вкладки поддерживаются только в панелях групп" }
+ui-only-group-panels-support-tabs = { "Вкладки поддерживаются только в панелях рабочего стола" }
 
 # 请先解锁面板
 ui-unlock-the-panel-first = { "Сначала открепите панель" }
@@ -466,7 +466,7 @@ ui-tab-limit-exceeded = { "Превышен лимит вкладок" }
 ui-folder-panels-do-not-support-tabs-create-a-separate-panel = { "Панели папок не поддерживают вкладки. Создайте отдельную панель" }
 
 # 请选择未锁定的普通面板
-ui-select-an-unlocked-group-panel = { "Выберите незакреплённую панель группы" }
+ui-select-an-unlocked-group-panel = { "Выберите незакреплённую панель рабочего стола" }
 
 # 面板已关闭或活动标签已改变
 ui-panel-closed-or-active-tab-changed = { "Панель закрыта или активная вкладка изменилась" }
@@ -480,22 +480,22 @@ ui-tabs-a81a = { "＋ вкладок: " }{ $remaining }
 # 无法注册面板运行时通知
 ui-could-not-register-panel-notifications = { "Не удалось зарегистрировать уведомления панели" }
 
-# 分组渲染失败：{error}
-ui-group-rendering-failed = { "Ошибка отрисовки группы: " }{ $error }
+# 面板渲染失败：{error}
+ui-group-rendering-failed = { "Ошибка отрисовки панели: " }{ $error }
 
 # 菜单准备未完成
 ui-menu-is-not-ready = { "Меню ещё не готово" }
 
-# 无法初始化无边框分组窗口
-ui-could-not-initialize-borderless-group-window = { "Не удалось инициализировать окно группы без рамки" }
+# 无法初始化无边框面板窗口
+ui-could-not-initialize-borderless-group-window = { "Не удалось инициализировать окно панели без рамки" }
 
 # 桌面检查线程已退出，将重建检查线程
 ui-desktop-audit-thread-stopped-restarting = { "Поток проверки рабочего стола остановлен; перезапуск" }
 
-# 桌面正在变化，暂不更新分组清单
-ui-desktop-is-changing-group-refresh-deferred = { "Рабочий стол изменяется; обновление групп отложено" }
+# 桌面正在变化，暂不更新面板清单
+ui-desktop-is-changing-group-refresh-deferred = { "Рабочий стол изменяется; обновление панелей отложено" }
 
-# 桌面清单包含重复身份，暂不更新分组
+# 桌面清单包含重复身份，暂不更新面板
 ui-duplicate-desktop-identities-group-refresh-deferred = { "Повторяющиеся идентификаторы; обновление отложено" }
 
 # 搜索本机文件…
@@ -642,8 +642,8 @@ ui-previous = { "Назад" }
 # 下一页
 ui-next = { "Далее" }
 
-# 桌面分组与文件整理
-ui-desktop-groups-and-file-organization = { "Группы рабочего стола и организация файлов" }
+# 桌面面板与文件整理
+ui-desktop-groups-and-file-organization = { "Панели рабочего стола и организация файлов" }
 
 # 预设配色
 ui-color-presets = { "Готовые цвета" }
@@ -1148,10 +1148,31 @@ ui-desktop-panel = { "Панель рабочего стола" }
 
 language-title = Язык
 
-language-description = Выберите язык интерфейса. Перезапустите LucidDesk для применения.
+language-description = Изменения применяются сразу. Системный режим обновляется после применения языка интерфейса Windows.
 
 language-system = Как в системе
 
-font-description = Показаны обычные прямые шрифты с поддержкой текущего языка интерфейса.
+font-description = Обычные шрифты для текущего языка. Отсутствующие символы отображаются шрифтом по умолчанию.
 
 font-unavailable = Шрифт не установлен или не содержит символов текущего языка
+
+ui-project-resources = { "Ресурсы проекта" }
+
+ui-download-releases = { "Скачать" }
+
+ui-release-history = { "История изменений" }
+
+ui-report-an-issue = { "Сообщить об ошибке" }
+
+ui-changelog-url = { "https://github.com/Yuch3nE/luciddesk/blob/main/CHANGELOG.en.md" }
+
+font-fallback = Резервный шрифт
+font-preview = Панели · Просмотр файлов  Ёё 0123
+
+show-panels-hotkey = Показать все панели
+
+show-panels-enable = Включить глобальное сочетание
+
+show-panels-description = Как команда в трее: вывести все панели вперёд, сохранив настройки отображения поверх окон.
+
+show-panels-disabled = По умолчанию выключено. Включите для показа всех панелей из других приложений.

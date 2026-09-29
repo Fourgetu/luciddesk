@@ -22,6 +22,7 @@ pub fn text_ink_center_offset(layout: &c::TextLayout) -> Result<f32> {
 
 /// Preserve the final path component or extension when trimming long labels.
 pub fn ellipsis_delimiter(format: &c::TextFormat, delimiter: u32) -> Result<()> {
+    apply_fallback(format)?;
     use windows::Win32::Graphics::DirectWrite::*;
     unsafe {
         let native: IDWriteTextFormat = native_interface(format.raw())?;
@@ -36,6 +37,26 @@ pub fn ellipsis_delimiter(format: &c::TextFormat, delimiter: u32) -> Result<()> 
             },
             &sign,
         )
+    }
+}
+
+/// Prefer the language default for missing text glyphs, then Windows fallback.
+/// The format owns the mapping; no COM objects survive in thread-local caches.
+pub fn apply_fallback(format: &c::TextFormat) -> Result<()> {
+    use windows::Win32::Graphics::DirectWrite::*;
+    use windows::core::PCWSTR;
+    unsafe {
+        let factory: IDWriteFactory2 = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
+        let builder = factory.CreateFontFallbackBuilder()?;
+        let wide: Vec<u16> = crate::i18n::default_font().encode_utf16().chain(Some(0)).collect();
+        // Private-use icons keep their dedicated font mapping.
+        builder.AddMapping(&[
+            DWRITE_UNICODE_RANGE { first: 0, last: 0xd7ff },
+            DWRITE_UNICODE_RANGE { first: 0xf900, last: 0xeffff },
+        ], &[wide.as_ptr()], None, PCWSTR::null(), PCWSTR::null(), 1.0)?;
+        builder.AddMappings(&factory.GetSystemFontFallback()?)?;
+        let native: IDWriteTextFormat1 = native_interface(format.raw())?;
+        native.SetFontFallback(&builder.CreateFontFallback()?)
     }
 }
 

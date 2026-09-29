@@ -17,6 +17,8 @@ pub(super) const KEYS: &[&str] = &[
     "search_enabled",
     "everything",
     "search_hotkey",
+    "show_panels_enabled",
+    "show_panels_hotkey",
     "peek",
 ];
 const DEFAULTS: &str = r##"# LucidDesk global settings. Reload from Settings after editing.
@@ -47,6 +49,10 @@ border = true
 snap = true
 text = "auto"
 text_protection = false
+
+[show_panels]
+enabled = false
+shortcut = "Ctrl+Shift+D"
 
 [search]
 enabled = false
@@ -274,6 +280,9 @@ pub(super) fn decode(doc: &DocumentMut) -> Result<BTreeMap<String, String>, Stor
     );
     let (key, bits) = shortcut(&s(&["search", "shortcut"])?, true)?;
     map.insert("search_hotkey".into(), format!("{key}:{bits}"));
+    map.insert("show_panels_enabled".into(), if b(&["show_panels", "enabled"])? { "1" } else { "0" }.into());
+    let (key, bits) = shortcut(&s(&["show_panels", "shortcut"])?, true)?;
+    map.insert("show_panels_hotkey".into(), format!("{key}:{bits}"));
     let provider = match s(&["preview", "provider"])?.as_str() {
         "peek" => "Peek",
         "quicklook" => "QuickLook",
@@ -382,6 +391,9 @@ fn update(doc: &mut DocumentMut, key: &str, raw: &str) -> Result<(), StoreError>
             ],
             value(raw.parse::<i64>().map_err(io)?),
         ),
+        "show_panels_enabled" if ["0", "1"].contains(&raw) => {
+            set(doc, &["show_panels", "enabled"], value(raw == "1"));
+        }
         "search_enabled" if ["0", "1"].contains(&raw) => {
             set(doc, &["search", "enabled"], value(raw == "1"));
         }
@@ -391,13 +403,14 @@ fn update(doc: &mut DocumentMut, key: &str, raw: &str) -> Result<(), StoreError>
                 .ok_or_else(|| error("invalid legacy Everything settings"))?;
             set(doc, &["search", "everything_path"], value(path));
         }
-        "search_hotkey" => {
+        "search_hotkey" | "show_panels_hotkey" => {
+            let section = if key == "show_panels_hotkey" { "show_panels" } else { "search" };
             let (key, bits) = raw
                 .split_once(':')
                 .ok_or_else(|| error("invalid shortcut"))?;
             set(
                 doc,
-                &["search", "shortcut"],
+                &[section, "shortcut"],
                 value(shortcut_label(key, bits)?),
             );
         }

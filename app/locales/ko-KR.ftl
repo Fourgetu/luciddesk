@@ -12,7 +12,7 @@ ui-invalid-configuration-path = { "잘못된 설정 경로" }
 # 无法注册托盘恢复消息
 ui-could-not-register-tray-recovery-message = { "트레이 복구 메시지를 등록할 수 없음" }
 
-# LucidDesk · 桌面分组与文件整理
+# LucidDesk · 桌面面板与文件整理
 ui-luciddesk-desktop-organization = { "LucidDesk · 바탕 화면 정리" }
 
 # 无法添加 LucidDesk 托盘图标
@@ -24,8 +24,8 @@ ui-could-not-initialize-tray-interaction = { "트레이 동작을 초기화할 �
 # 显示面板
 ui-show-panels = { "패널 표시" }
 
-# 新建分组
-ui-new-group = { "새 그룹" }
+# 新建面板
+ui-new-group = { "새 패널" }
 
 # 新建文件夹面板…
 ui-new-folder-panel = { "새 폴더 패널…" }
@@ -51,14 +51,14 @@ ui-file-operation-failed = { "파일 작업 실패: " }{ $error }
 # 无法安排文件操作
 ui-could-not-schedule-file-operation = { "파일 작업을 예약할 수 없음" }
 
-# 分组已关闭
-ui-group-closed = { "그룹이 닫혔습니다" }
+# 面板已关闭
+ui-group-closed = { "패널이 닫혔습니다" }
 
 # Everything 搜索
 ui-everything-search = { "Everything 검색" }
 
-# 分组不存在
-ui-group-not-found = { "그룹을 찾을 수 없음" }
+# 面板不存在
+ui-group-not-found = { "패널을 찾을 수 없음" }
 
 # 无法读取文件夹，请检查路径或访问权限。\n{error}
 ui-cannot-read-folder-check-the-path-and-permissions-n = { "폴더를 읽을 수 없습니다. 경로와 권한을 확인하세요.\u000A" }{ $error }
@@ -90,8 +90,8 @@ ui-explorer-view-filter-disconnected = { "Explorer 보기 필터 연결이 끊�
 # 桌面过滤连接尚未就绪
 ui-desktop-filter-is-not-ready = { "바탕 화면 필터가 준비되지 않았습니다" }
 
-# 桌面分组正在同步，请稍后重试
-ui-desktop-groups-are-syncing-try-again-shortly = { "바탕 화면 그룹 동기화 중입니다. 잠시 후 다시 시도하세요." }
+# 桌面面板正在同步，请稍后重试
+ui-desktop-groups-are-syncing-try-again-shortly = { "바탕 화면 패널 동기화 중입니다. 잠시 후 다시 시도하세요." }
 
 # 已有活动菜单或预览
 ui-a-menu-or-preview-is-already-active = { "메뉴 또는 미리 보기가 이미 열려 있습니다" }
@@ -130,7 +130,7 @@ ui-auto-collapse = { "자동 접기" }
 ui-always-on-top = { "항상 위에 표시" }
 
 # 新建普通面板
-ui-new-group-panel = { "새 그룹 패널" }
+ui-new-group-panel = { "새 바탕 화면 패널" }
 
 # 标签页
 ui-tabs = { "탭" }
@@ -141,8 +141,8 @@ ui-settings-9497 = { "설정…" }
 # 关闭面板
 ui-close-panel = { "패널 닫기" }
 
-# 新建分组标签
-ui-new-group-tab = { "새 그룹 탭" }
+# 新建面板标签
+ui-new-group-tab = { "새 패널 탭" }
 
 # 上一个标签
 ui-previous-tab = { "이전 탭" }
@@ -180,14 +180,14 @@ ui-modified = { "수정한 날짜" }
 # 大小
 ui-size = { "크기" }
 
-# 分组菜单
-ui-group-menu = { "그룹 메뉴" }
+# 面板菜单
+ui-group-menu = { "패널 메뉴" }
 
 # 标签已关闭
 ui-tab-closed = { "탭이 닫혔습니다" }
 
-# 保存分组失败：{e}
-ui-could-not-save-group = { "그룹 저장 실패: " }{ $e }
+# 保存面板失败：{e}
+ui-could-not-save-group = { "패널 저장 실패: " }{ $e }
 
 # 目标面板不可用
 ui-target-panel-unavailable = { "대상 패널 사용 불가" }
@@ -354,8 +354,8 @@ ui-could-not-create-icon-name-editor = { "아이콘 이름 편집기를 만들 �
 # 无法连接名称编辑框
 ui-could-not-attach-name-editor = { "이름 편집기를 연결할 수 없음" }
 
-# 无法连接分组编辑状态
-ui-could-not-attach-group-editing-state = { "그룹 편집 상태를 연결할 수 없음" }
+# 无法连接面板编辑状态
+ui-could-not-attach-group-editing-state = { "패널 편집 상태를 연결할 수 없음" }
 
 # 重命名失败
 ui-rename-failed = { "이름 변경 실패" }
@@ -375,14 +375,14 @@ ui-this-folder-is-empty = { "이 폴더는 비어 있습니다" }
 # 正在读取桌面项目…
 ui-loading-desktop-items = { "바탕 화면 항목 불러오는 중…" }
 
-# 将图标拖入此分组
-ui-drag-icons-into-this-group = { "아이콘을 이 그룹으로 끌어오세요" }
+# 将图标拖入此面板
+ui-drag-icons-into-this-group = { "아이콘을 이 패널로 끌어오세요" }
 
-# 桌面分组已连接
-ui-desktop-groups-connected = { "바탕 화면 그룹 연결됨" }
+# 桌面面板已连接
+ui-desktop-groups-connected = { "바탕 화면 패널 연결됨" }
 
-# 桌面分组暂不可用，文件夹与搜索仍可使用。\n{error}
-ui-desktop-groups-unavailable-folder-panels-and-search-still-work-n = { "바탕 화면 그룹을 사용할 수 없습니다. 폴더와 검색은 사용 가능합니다.\u000A" }{ $error }
+# 桌面面板暂不可用，文件夹与搜索仍可使用。\n{error}
+ui-desktop-groups-unavailable-folder-panels-and-search-still-work-n = { "바탕 화면 패널을 사용할 수 없습니다. 폴더와 검색은 사용 가능합니다.\u000A" }{ $error }
 
 # Explorer 连接已断开，正在等待恢复
 ui-explorer-disconnected-waiting-to-reconnect = { "Explorer 연결 끊김, 재연결 대기 중" }
@@ -454,7 +454,7 @@ ui-tab-group-closed = { "탭 그룹이 닫혔습니다" }
 ui-target-tab-does-not-belong-to-this-panel = { "대상 탭이 이 패널에 속하지 않습니다" }
 
 # 仅普通面板支持标签
-ui-only-group-panels-support-tabs = { "그룹 패널만 탭을 지원합니다" }
+ui-only-group-panels-support-tabs = { "바탕 화면 패널만 탭을 지원합니다" }
 
 # 请先解锁面板
 ui-unlock-the-panel-first = { "먼저 패널 잠금을 해제하세요" }
@@ -466,7 +466,7 @@ ui-tab-limit-exceeded = { "탭 개수 제한 초과" }
 ui-folder-panels-do-not-support-tabs-create-a-separate-panel = { "폴더 패널은 탭을 지원하지 않습니다. 별도 패널을 만드세요" }
 
 # 请选择未锁定的普通面板
-ui-select-an-unlocked-group-panel = { "잠기지 않은 그룹 패널을 선택하세요" }
+ui-select-an-unlocked-group-panel = { "잠기지 않은 바탕 화면 패널을 선택하세요" }
 
 # 面板已关闭或活动标签已改变
 ui-panel-closed-or-active-tab-changed = { "패널이 닫혔거나 활성 탭이 변경되었습니다" }
@@ -480,23 +480,23 @@ ui-tabs-a81a = { "＋ " }{ $remaining }{ "개 탭" }
 # 无法注册面板运行时通知
 ui-could-not-register-panel-notifications = { "패널 알림을 등록할 수 없음" }
 
-# 分组渲染失败：{error}
-ui-group-rendering-failed = { "그룹 렌더링 실패: " }{ $error }
+# 面板渲染失败：{error}
+ui-group-rendering-failed = { "패널 렌더링 실패: " }{ $error }
 
 # 菜单准备未完成
 ui-menu-is-not-ready = { "메뉴가 준비되지 않았습니다" }
 
-# 无法初始化无边框分组窗口
-ui-could-not-initialize-borderless-group-window = { "테두리 없는 그룹 창을 초기화할 수 없음" }
+# 无法初始化无边框面板窗口
+ui-could-not-initialize-borderless-group-window = { "테두리 없는 패널 창을 초기화할 수 없음" }
 
 # 桌面检查线程已退出，将重建检查线程
 ui-desktop-audit-thread-stopped-restarting = { "바탕 화면 검사 스레드가 중지되어 다시 시작합니다" }
 
-# 桌面正在变化，暂不更新分组清单
-ui-desktop-is-changing-group-refresh-deferred = { "바탕 화면이 변경 중이므로 그룹 갱신을 미룹니다" }
+# 桌面正在变化，暂不更新面板清单
+ui-desktop-is-changing-group-refresh-deferred = { "바탕 화면이 변경 중이므로 패널 갱신을 미룹니다" }
 
-# 桌面清单包含重复身份，暂不更新分组
-ui-duplicate-desktop-identities-group-refresh-deferred = { "바탕 화면 식별자가 중복되어 그룹 갱신을 미룹니다" }
+# 桌面清单包含重复身份，暂不更新面板
+ui-duplicate-desktop-identities-group-refresh-deferred = { "바탕 화면 식별자가 중복되어 패널 갱신을 미룹니다" }
 
 # 搜索本机文件…
 ui-search-local-files = { "로컬 파일 검색…" }
@@ -642,8 +642,8 @@ ui-previous = { "이전" }
 # 下一页
 ui-next = { "다음" }
 
-# 桌面分组与文件整理
-ui-desktop-groups-and-file-organization = { "바탕 화면 그룹 및 파일 정리" }
+# 桌面面板与文件整理
+ui-desktop-groups-and-file-organization = { "바탕 화면 패널 및 파일 정리" }
 
 # 预设配色
 ui-color-presets = { "색상 프리셋" }
@@ -1148,10 +1148,31 @@ ui-desktop-panel = { "바탕 화면 패널" }
 
 language-title = 언어
 
-language-description = 표시 언어를 선택하세요. LucidDesk를 다시 시작하면 적용됩니다.
+language-description = 선택한 언어가 즉시 적용됩니다. 시스템 모드에서는 Windows 표시 언어가 적용될 때 갱신됩니다.
 
 language-system = 시스템 설정 사용
 
-font-description = 현재 표시 언어를 지원하는 일반 굵기의 비기울임 글꼴을 표시합니다.
+font-description = 현재 언어를 지원하는 일반 글꼴을 표시합니다. 누락된 문자는 기본 글꼴로 표시합니다.
 
 font-unavailable = 글꼴이 없거나 현재 언어에 필요한 문자를 지원하지 않습니다
+
+ui-project-resources = { "프로젝트 정보" }
+
+ui-download-releases = { "다운로드" }
+
+ui-release-history = { "변경 기록" }
+
+ui-report-an-issue = { "문제 신고" }
+
+ui-changelog-url = { "https://github.com/Yuch3nE/luciddesk/blob/main/CHANGELOG.en.md" }
+
+font-fallback = 기본 대체 글꼴
+font-preview = 바탕 화면 · 파일 미리 보기  Aa 0123
+
+show-panels-hotkey = 모든 패널 표시
+
+show-panels-enable = 전역 단축키 사용
+
+show-panels-description = 트레이의 패널 표시와 동일합니다. 항상 위 설정을 유지하며 모든 패널을 한 번 앞으로 가져옵니다.
+
+show-panels-disabled = 기본적으로 꺼져 있습니다. 켜면 다른 앱에서 모든 패널을 표시할 수 있습니다.

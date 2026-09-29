@@ -29,6 +29,10 @@ snap = true
 text = "auto"
 text_protection = false
 
+[show_panels]
+enabled = false
+shortcut = "Ctrl+Shift+D"
+
 [search]
 enabled = false
 shortcut = "Ctrl+Shift+Space"

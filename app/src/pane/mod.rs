@@ -32,6 +32,7 @@ mod render;
 mod render_bench;
 mod runtime;
 mod quick_reveal;
+mod show_hotkey;
 mod auto_hide;
 mod tabs;
 mod scaled_icons;

@@ -12,7 +12,7 @@ ui-invalid-configuration-path = { "Ungültiger Konfigurationspfad" }
 # 无法注册托盘恢复消息
 ui-could-not-register-tray-recovery-message = { "Tray-Wiederherstellung nicht registriert" }
 
-# LucidDesk · 桌面分组与文件整理
+# LucidDesk · 桌面面板与文件整理
 ui-luciddesk-desktop-organization = { "LucidDesk · Desktop organisieren" }
 
 # 无法添加 LucidDesk 托盘图标
@@ -24,8 +24,8 @@ ui-could-not-initialize-tray-interaction = { "Tray-Interaktion konnte nicht init
 # 显示面板
 ui-show-panels = { "Panels anzeigen" }
 
-# 新建分组
-ui-new-group = { "Neue Gruppe" }
+# 新建面板
+ui-new-group = { "Neues Panel" }
 
 # 新建文件夹面板…
 ui-new-folder-panel = { "Neues Ordnerpanel…" }
@@ -51,14 +51,14 @@ ui-file-operation-failed = { "Dateioperation fehlgeschlagen: " }{ $error }
 # 无法安排文件操作
 ui-could-not-schedule-file-operation = { "Dateioperation konnte nicht geplant werden" }
 
-# 分组已关闭
-ui-group-closed = { "Gruppe geschlossen" }
+# 面板已关闭
+ui-group-closed = { "Panel geschlossen" }
 
 # Everything 搜索
 ui-everything-search = { "Everything-Suche" }
 
-# 分组不存在
-ui-group-not-found = { "Gruppe nicht gefunden" }
+# 面板不存在
+ui-group-not-found = { "Panel nicht gefunden" }
 
 # 无法读取文件夹，请检查路径或访问权限。\n{error}
 ui-cannot-read-folder-check-the-path-and-permissions-n = { "Ordner nicht lesbar. Pfad und Berechtigungen prüfen.\u000A" }{ $error }
@@ -90,8 +90,8 @@ ui-explorer-view-filter-disconnected = { "Explorer-Ansichtsfilter getrennt" }
 # 桌面过滤连接尚未就绪
 ui-desktop-filter-is-not-ready = { "Desktopfilter noch nicht bereit" }
 
-# 桌面分组正在同步，请稍后重试
-ui-desktop-groups-are-syncing-try-again-shortly = { "Desktopgruppen werden synchronisiert. Gleich erneut versuchen." }
+# 桌面面板正在同步，请稍后重试
+ui-desktop-groups-are-syncing-try-again-shortly = { "Desktoppanels werden synchronisiert. Gleich erneut versuchen." }
 
 # 已有活动菜单或预览
 ui-a-menu-or-preview-is-already-active = { "Ein Menü oder eine Vorschau ist bereits aktiv" }
@@ -130,7 +130,7 @@ ui-auto-collapse = { "Automatisch einklappen" }
 ui-always-on-top = { "Immer im Vordergrund" }
 
 # 新建普通面板
-ui-new-group-panel = { "Neues Gruppenpanel" }
+ui-new-group-panel = { "Neues Desktoppanel" }
 
 # 标签页
 ui-tabs = { "Tabs" }
@@ -141,8 +141,8 @@ ui-settings-9497 = { "Einstellungen…" }
 # 关闭面板
 ui-close-panel = { "Panel schließen" }
 
-# 新建分组标签
-ui-new-group-tab = { "Neuer Gruppentab" }
+# 新建面板标签
+ui-new-group-tab = { "Neuer Paneltab" }
 
 # 上一个标签
 ui-previous-tab = { "Vorheriger Tab" }
@@ -180,14 +180,14 @@ ui-modified = { "Geändert" }
 # 大小
 ui-size = { "Größe" }
 
-# 分组菜单
-ui-group-menu = { "Gruppenmenü" }
+# 面板菜单
+ui-group-menu = { "Panelmenü" }
 
 # 标签已关闭
 ui-tab-closed = { "Tab geschlossen" }
 
-# 保存分组失败：{e}
-ui-could-not-save-group = { "Gruppe konnte nicht gespeichert werden: " }{ $e }
+# 保存面板失败：{e}
+ui-could-not-save-group = { "Panel konnte nicht gespeichert werden: " }{ $e }
 
 # 目标面板不可用
 ui-target-panel-unavailable = { "Zielpanel nicht verfügbar" }
@@ -354,8 +354,8 @@ ui-could-not-create-icon-name-editor = { "Symbolnamen-Editor konnte nicht erstel
 # 无法连接名称编辑框
 ui-could-not-attach-name-editor = { "Namenseditor konnte nicht verbunden werden" }
 
-# 无法连接分组编辑状态
-ui-could-not-attach-group-editing-state = { "Gruppenbearbeitungszustand konnte nicht verbunden werden" }
+# 无法连接面板编辑状态
+ui-could-not-attach-group-editing-state = { "Panelbearbeitungszustand konnte nicht verbunden werden" }
 
 # 重命名失败
 ui-rename-failed = { "Umbenennen fehlgeschlagen" }
@@ -375,14 +375,14 @@ ui-this-folder-is-empty = { "Dieser Ordner ist leer" }
 # 正在读取桌面项目…
 ui-loading-desktop-items = { "Desktopelemente werden geladen…" }
 
-# 将图标拖入此分组
-ui-drag-icons-into-this-group = { "Symbole in diese Gruppe ziehen" }
+# 将图标拖入此面板
+ui-drag-icons-into-this-group = { "Symbole in dieses Panel ziehen" }
 
-# 桌面分组已连接
-ui-desktop-groups-connected = { "Desktopgruppen verbunden" }
+# 桌面面板已连接
+ui-desktop-groups-connected = { "Desktoppanels verbunden" }
 
-# 桌面分组暂不可用，文件夹与搜索仍可使用。\n{error}
-ui-desktop-groups-unavailable-folder-panels-and-search-still-work-n = { "Desktopgruppen nicht verfügbar. Ordner und Suche funktionieren weiterhin.\u000A" }{ $error }
+# 桌面面板暂不可用，文件夹与搜索仍可使用。\n{error}
+ui-desktop-groups-unavailable-folder-panels-and-search-still-work-n = { "Desktoppanels nicht verfügbar. Ordner und Suche funktionieren weiterhin.\u000A" }{ $error }
 
 # Explorer 连接已断开，正在等待恢复
 ui-explorer-disconnected-waiting-to-reconnect = { "Explorer getrennt; warte auf Verbindung" }
@@ -454,7 +454,7 @@ ui-tab-group-closed = { "Tabgruppe geschlossen" }
 ui-target-tab-does-not-belong-to-this-panel = { "Zieltab gehört nicht zu diesem Panel" }
 
 # 仅普通面板支持标签
-ui-only-group-panels-support-tabs = { "Nur Gruppenpanels unterstützen Tabs" }
+ui-only-group-panels-support-tabs = { "Nur Desktoppanels unterstützen Tabs" }
 
 # 请先解锁面板
 ui-unlock-the-panel-first = { "Panel zuerst entsperren" }
@@ -466,7 +466,7 @@ ui-tab-limit-exceeded = { "Tablimit überschritten" }
 ui-folder-panels-do-not-support-tabs-create-a-separate-panel = { "Ordnerpanels unterstützen keine Tabs. Separates Panel erstellen" }
 
 # 请选择未锁定的普通面板
-ui-select-an-unlocked-group-panel = { "Entsperrtes Gruppenpanel wählen" }
+ui-select-an-unlocked-group-panel = { "Entsperrtes Desktoppanel wählen" }
 
 # 面板已关闭或活动标签已改变
 ui-panel-closed-or-active-tab-changed = { "Panel geschlossen oder aktiver Tab geändert" }
@@ -480,22 +480,22 @@ ui-tabs-a81a = { "＋ " }{ $remaining }{ " Tabs" }
 # 无法注册面板运行时通知
 ui-could-not-register-panel-notifications = { "Panelbenachrichtigungen konnten nicht registriert werden" }
 
-# 分组渲染失败：{error}
-ui-group-rendering-failed = { "Gruppendarstellung fehlgeschlagen: " }{ $error }
+# 面板渲染失败：{error}
+ui-group-rendering-failed = { "Paneldarstellung fehlgeschlagen: " }{ $error }
 
 # 菜单准备未完成
 ui-menu-is-not-ready = { "Menü noch nicht bereit" }
 
-# 无法初始化无边框分组窗口
-ui-could-not-initialize-borderless-group-window = { "Rahmenloses Gruppenfenster konnte nicht initialisiert werden" }
+# 无法初始化无边框面板窗口
+ui-could-not-initialize-borderless-group-window = { "Rahmenloses Panelfenster konnte nicht initialisiert werden" }
 
 # 桌面检查线程已退出，将重建检查线程
 ui-desktop-audit-thread-stopped-restarting = { "Desktop-Prüfthread beendet; Neustart" }
 
-# 桌面正在变化，暂不更新分组清单
-ui-desktop-is-changing-group-refresh-deferred = { "Desktop ändert sich; Gruppenaktualisierung verschoben" }
+# 桌面正在变化，暂不更新面板清单
+ui-desktop-is-changing-group-refresh-deferred = { "Desktop ändert sich; Panelaktualisierung verschoben" }
 
-# 桌面清单包含重复身份，暂不更新分组
+# 桌面清单包含重复身份，暂不更新面板
 ui-duplicate-desktop-identities-group-refresh-deferred = { "Doppelte Desktop-Identitäten; Aktualisierung verschoben" }
 
 # 搜索本机文件…
@@ -642,8 +642,8 @@ ui-previous = { "Zurück" }
 # 下一页
 ui-next = { "Weiter" }
 
-# 桌面分组与文件整理
-ui-desktop-groups-and-file-organization = { "Desktopgruppen und Dateiverwaltung" }
+# 桌面面板与文件整理
+ui-desktop-groups-and-file-organization = { "Desktoppanels und Dateiverwaltung" }
 
 # 预设配色
 ui-color-presets = { "Farbvorlagen" }
@@ -1148,10 +1148,31 @@ ui-desktop-panel = { "Desktoppanel" }
 
 language-title = Sprache
 
-language-description = Anzeigesprache wählen. LucidDesk zum Anwenden neu starten.
+language-description = Änderungen gelten sofort. Im Systemmodus wird die wirksame Windows-Anzeigesprache übernommen.
 
 language-system = Systemeinstellung
 
-font-description = Zeigt reguläre, nicht kursive Schriften für die aktuelle Anzeigesprache.
+font-description = Zeigt reguläre Schriften für die aktuelle Sprache. Fehlende Zeichen verwenden die Standardschrift.
 
 font-unavailable = Schrift fehlt oder unterstützt die aktuelle Sprache nicht
+
+ui-project-resources = { "Projektressourcen" }
+
+ui-download-releases = { "Downloads" }
+
+ui-release-history = { "Änderungsprotokoll" }
+
+ui-report-an-issue = { "Problem melden" }
+
+ui-changelog-url = { "https://github.com/Yuch3nE/luciddesk/blob/main/CHANGELOG.en.md" }
+
+font-fallback = Standard-Ersatzschrift
+font-preview = Desktoppanels · Dateivorschau  ÄÖÜ 0123
+
+show-panels-hotkey = Alle Panels anzeigen
+
+show-panels-enable = Globales Tastenkürzel aktivieren
+
+show-panels-description = Wie Panels anzeigen im Infobereich: alle Panels einmal nach vorne holen und ihre Vordergrund-Einstellungen beibehalten.
+
+show-panels-disabled = Standardmäßig deaktiviert. Aktivieren, um alle Panels aus anderen Apps anzuzeigen.

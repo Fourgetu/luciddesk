@@ -547,7 +547,7 @@ mod tests {
                     let mut title = [0u16; 64];
                     let length = GetWindowTextW(hwnd, title.as_mut_ptr(), 64);
                     if GetWindow(hwnd, GW_OWNER) == pair.0
-                        && String::from_utf16_lossy(&title[..length as usize]) == "分组菜单" {
+                        && String::from_utf16_lossy(&title[..length as usize]) == "面板菜单" {
                         pair.1 = hwnd;
                     }
                 }
@@ -645,7 +645,7 @@ mod tests {
                         unsafe {
                             if observed_pulses.get() == 1 {
                                 let popup =
-                                    FindWindowW(std::ptr::null(), windows_sys::w!("分组菜单"));
+                                    FindWindowW(std::ptr::null(), windows_sys::w!("面板菜单"));
                                 observed_topmost.set(
                                     !popup.is_null()
                                         && GetWindow(popup, GW_OWNER) == hwnd
@@ -713,7 +713,7 @@ mod tests {
             let mut title = [0u16; 32];
             unsafe {
                 let len = GetWindowTextW(hwnd, title.as_mut_ptr(), title.len() as i32);
-                if String::from_utf16_lossy(&title[..len.max(0) as usize]) == "分组菜单" {
+                if String::from_utf16_lossy(&title[..len.max(0) as usize]) == "面板菜单" {
                     PostMessageW(hwnd, WM_CLOSE, 0, 0);
                 }
             }

@@ -26,6 +26,7 @@ struct TitleLayout {
 
 pub struct Renderer {
     family: String,
+    language: &'static str,
     #[cfg(test)]
     offscreen_device: Option<windows_canvas::GpuDevice>,
     labels: windows_canvas::TextFormat,
@@ -205,6 +206,7 @@ impl Renderer {
         }
         Ok(Self {
             family: family.clone(),
+            language: crate::i18n::language(),
             #[cfg(test)]
             offscreen_device: None,
             labels,
@@ -364,9 +366,10 @@ impl Renderer {
 
     #[allow(clippy::too_many_lines)]
     fn draw(&mut self, width: u32, height: u32, scale: f32, model: &GroupModel) -> Result<()> {
-        if self.family != super::fonts::family() {
+        if self.family != super::fonts::family() || self.language != crate::i18n::language() {
             let fresh = Self::new()?;
             self.family = fresh.family;
+            self.language = fresh.language;
             self.labels = fresh.labels;
             self.title = fresh.title;
             self.tab_title = fresh.tab_title;

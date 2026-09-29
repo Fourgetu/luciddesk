@@ -55,7 +55,7 @@ enum Action {
     BackupPage(isize),
     BackupAdvanced,
     BackupStatus,
-    ProjectHome,
+    ProjectLink(&'static str),
     CopyDiagnostics,
     Window(u32),
     Page(usize),
@@ -77,6 +77,9 @@ enum Action {
     PeekDetect,
     PeekShortcut,
     SearchShortcut,
+    ShowPanelsEnable,
+    ShowPanelsShortcut,
+    ShowPanelsReset,
     SearchReset,
     PeekReset,
     EverythingBrowse,
@@ -372,6 +375,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
     };
     let mut recording_peek = false;
     let mut recording_search = false;
+    let mut recording_show_panels = false;
     let mut search_visible = false;
     let mut selected = id;
     let mut hover = None;
@@ -414,6 +418,20 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
             let Some(state) = weak.upgrade() else {
                 return Some(0);
             };
+            if msg == crate::i18n::CHANGED {
+                scene_key = None;
+                font_choices = fonts::installed();
+                font_offset = 0;
+                scroll_offset = 0.0;
+                focus = None;
+                toggle_motion.clear();
+                if let Ok(fresh) = Painter::new() { painter = fresh; painter_family = fonts::family(); }
+                unsafe {
+                    SetWindowTextW(hwnd, crate::i18n::wide("ui-luciddesk-settings"));
+                    InvalidateRect(hwnd, std::ptr::null(), 0);
+                }
+                return Some(0);
+            }
             if let Some((percentage, text)) = &mut style_input {
                 if msg == WM_CHAR {
                     if wp == 8 { text.pop(); }
@@ -675,7 +693,9 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 options,
                 peek::settings(),
                 everything_settings::settings(),
-                (recording_peek, recording_search, search_hotkey::settings(), search_hotkey::status()),
+                (recording_peek, recording_search, search_hotkey::settings(), search_hotkey::status(),
+                    recording_show_panels, show_hotkey::enabled(&state.borrow().store),
+                    show_hotkey::settings(&state.borrow().store), show_hotkey::status()),
                 unsafe { IsZoomed(hwnd) } != 0,
                 search_visible,
                 (desktop_status.clone(), header_divider::enabled()),
@@ -695,6 +715,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     let chosen = state.borrow().store.preference("language").ok().flatten().unwrap_or_else(|| "system".into());
                     layout::language(&mut body, w, &chosen);
                 }
+                if page == 1 { layout::show_panels_shortcut(&mut body, w, &state.borrow().store); }
                 if page == 11 { layout::fonts(&mut body, w, &font_choices, font_offset); }
                 if page == 8 { layout::folder_defaults(&mut body, w, folder_defaults, folder_entry_mode); }
                 if matches!(page,6|9|10) {
@@ -708,9 +729,9 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 cached_scene = Some(full);
                 scene_key = Some(key);
             }
-            if recording_peek || recording_search {
+            if recording_peek || recording_search || recording_show_panels {
                 for control in &mut cached_scene.as_mut().unwrap().controls {
-                    if (recording_peek && matches!(control.action, Action::PeekShortcut)) || (recording_search && matches!(control.action, Action::SearchShortcut)) { control.label = crate::i18n::text("ui-press-a-shortcut").into(); }
+                    if (recording_peek && matches!(control.action, Action::PeekShortcut)) || (recording_search && matches!(control.action, Action::SearchShortcut)) || (recording_show_panels && matches!(control.action, Action::ShowPanelsShortcut)) { control.label = crate::i18n::text("ui-press-a-shortcut").into(); }
                 }
             }
             if let Some((percentage, text)) = &style_input {
@@ -897,15 +918,17 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     pressed = None;
                 }
                 WM_KEYDOWN | WM_SYSKEYDOWN => {
-                    if recording_search {
+                    if recording_search || recording_show_panels {
                         if lp & (1 << 30) != 0 { return Some(0); }
                         let key = wp as u16;
                         if matches!(key, VK_CONTROL | VK_SHIFT | VK_MENU | VK_LWIN | VK_RWIN) { return Some(0); }
                         if key != VK_ESCAPE {
                             let value = search_hotkey::Shortcut { key, modifiers: peek::modifier_bits(&keyboard::Modifiers::current()) };
-                            if let Err(error) = search_hotkey::save(&state.borrow().store, value) { window::error(&error); return Some(0); }
+                            let result = if recording_show_panels { show_hotkey::save(&state.borrow().store, value) } else { search_hotkey::save(&state.borrow().store, value) };
+                            if let Err(error) = result { window::error(&error); return Some(0); }
                         }
                         recording_search = false;
+                        recording_show_panels = false;
                         unsafe { InvalidateRect(hwnd, std::ptr::null(), 0); }
                         return Some(0);
                     }
@@ -1174,9 +1197,9 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                             Err(error) => window::error(&error.to_string()),
                         }
                     }
-                    Action::ProjectHome => {
+                    Action::ProjectLink(url) => {
                         if let Err(error) = desktop_shell::open_shell_identity(hwnd as isize, &desktop_core::ShellIdentity::Namespace {
-                            parsing_name: "https://git.bbkingdom.fun:30443/yuchen95/LucidDesk".into(),
+                            parsing_name: (*url).into(),
                         }) { window::error(&error.to_string()); }
                     }
                     Action::EverythingBrowse | Action::EverythingDetect | Action::EverythingLaunch => {
@@ -1196,12 +1219,23 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         if let Err(error) = result { window::error(&error); }
                         scene_key = None;
                     }
-                    Action::SearchShortcut => { recording_search = true; recording_peek = false; }
+                    Action::ShowPanelsEnable => {
+                        let s = state.borrow();
+                        let enabled = !show_hotkey::enabled(&s.store);
+                        if let Err(error) = s.store.save_preference("show_panels_enabled", if enabled { "1" } else { "0" }) { window::error(&error.to_string()); }
+                        recording_show_panels = false;
+                    }
+                    Action::ShowPanelsShortcut => { recording_show_panels = true; recording_search = false; recording_peek = false; }
+                    Action::ShowPanelsReset => {
+                        if let Err(error) = show_hotkey::save(&state.borrow().store, show_hotkey::default_shortcut()) { window::error(&error); }
+                        recording_show_panels = false;
+                    }
+                    Action::SearchShortcut => { recording_search = true; recording_peek = false; recording_show_panels = false; }
                     Action::SearchReset => {
                         if let Err(error) = search_hotkey::save(&state.borrow().store, Default::default()) { window::error(&error); }
                         recording_search = false;
                     }
-                    Action::PeekShortcut => { recording_peek = true; recording_search = false; }
+                    Action::PeekShortcut => { recording_peek = true; recording_search = false; recording_show_panels = false; }
                     Action::PreviewProvider(_) | Action::PeekEnable | Action::PeekBrowse | Action::PeekDetect | Action::PeekReset => {
                         let mut value = peek::settings();
                         let result = (|| -> Result<(), String> {
@@ -1252,6 +1286,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         if *value == 11 { font_choices = fonts::installed(); font_offset = 0; }
                         recording_peek = false;
                         recording_search = false;
+                        recording_show_panels = false;
                         diagnostics_copied = false;
                         page = *value;
                         toggle_motion.clear();

@@ -1,8 +1,8 @@
-//! Embedded Fluent resources. The active language is fixed for the process lifetime.
+//! Embedded Fluent resources. Catalogs stay alive while the active language can change at runtime.
 use fluent_bundle::{FluentArgs, FluentResource, concurrent::FluentBundle};
 use std::{
     collections::HashMap,
-    sync::{LazyLock, OnceLock},
+    sync::{LazyLock, atomic::{AtomicUsize, Ordering}},
 };
 
 pub const LANGUAGES: [(&str, &str); 8] = [
@@ -24,7 +24,8 @@ const SOURCES: [&str; 7] = [
     include_str!("../locales/de-DE.ftl"),
     include_str!("../locales/ru-RU.ftl"),
 ];
-static ACTIVE: OnceLock<usize> = OnceLock::new();
+static ACTIVE: AtomicUsize = AtomicUsize::new(usize::MAX);
+pub const CHANGED: u32 = 0x8000 + 198;
 struct Catalog {
     bundle: FluentBundle<FluentResource>,
     text: HashMap<String, String>,
@@ -107,7 +108,7 @@ fn system_language() -> String {
         "en-US".into()
     }
 }
-pub fn initialize(store: &desktop_storage::WorkspaceStore) -> Result<(), String> {
+pub fn initialize(store: &desktop_storage::WorkspaceStore) -> Result<bool, String> {
     let selected = store
         .preference("language")
         .map_err(|e| e.to_string())?
@@ -117,8 +118,12 @@ pub fn initialize(store: &desktop_storage::WorkspaceStore) -> Result<(), String>
     } else {
         selected
     };
-    let _ = ACTIVE.set(resolve(&language));
-    Ok(())
+    let next = resolve(&language);
+    #[cfg(test)]
+    if TEST_LOCALE.with(|value| value.get().is_some()) {
+        return Ok(TEST_LOCALE.with(|value| value.replace(Some(next))) != Some(next));
+    }
+    Ok(ACTIVE.swap(next, Ordering::Relaxed) != next)
 }
 fn active() -> usize {
     #[cfg(test)]
@@ -126,14 +131,17 @@ fn active() -> usize {
         return locale;
     }
     // Unit tests that construct isolated UI models keep their original Chinese fixtures.
-    *ACTIVE.get_or_init(|| {
-        if cfg!(test) {
-            0
-        } else {
-            resolve(&system_language())
-        }
-    })
+    let current = ACTIVE.load(Ordering::Relaxed);
+    if current != usize::MAX { return current; }
+    let initial = if cfg!(test) { 0 } else { resolve(&system_language()) };
+    match ACTIVE.compare_exchange(usize::MAX, initial, Ordering::Relaxed, Ordering::Relaxed) {
+        Ok(_) => initial,
+        Err(value) => value,
+    }
+
 }
+pub fn language() -> &'static str { LANGUAGES[active() + 1].0 }
+
 pub fn text(id: &'static str) -> &'static str {
     CATALOGS[active()]
         .text
@@ -173,6 +181,25 @@ fn format_locale(locale: usize, id: &str, values: &[(&str, String)]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn live_selection_refreshes_text_and_keeps_borrowed_strings_valid() {
+        with_locale(0, || {
+            let store = desktop_storage::WorkspaceStore::open_in_memory().unwrap();
+            let original = text("ui-about");
+            let original_wide = wide("ui-about");
+            for (code, expected) in [("en-US", "About"), ("de-DE", "Info"), ("zh-CN", "关于")] {
+                store.save_preference("language", code).unwrap();
+                assert!(initialize(&store).unwrap());
+                assert_eq!(language(), code);
+                if code != "de-DE" { assert_eq!(text("ui-about"), expected); }
+                assert!(!initialize(&store).unwrap());
+                assert_eq!(original, "关于");
+                assert_eq!(unsafe { *original_wide }, '关' as u16);
+            }
+            assert_eq!(store.preference("language").unwrap().as_deref(), Some("zh-CN"));
+        });
+    }
+
     #[test]
     fn system_locale_matching() {
         for (name, expected) in [

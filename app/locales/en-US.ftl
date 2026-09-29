@@ -12,7 +12,7 @@ ui-invalid-configuration-path = { "Invalid configuration path" }
 # 无法注册托盘恢复消息
 ui-could-not-register-tray-recovery-message = { "Could not register tray recovery message" }
 
-# LucidDesk · 桌面分组与文件整理
+# LucidDesk · 桌面面板与文件整理
 ui-luciddesk-desktop-organization = { "LucidDesk · Desktop organization" }
 
 # 无法添加 LucidDesk 托盘图标
@@ -24,8 +24,8 @@ ui-could-not-initialize-tray-interaction = { "Could not initialize tray interact
 # 显示面板
 ui-show-panels = { "Show panels" }
 
-# 新建分组
-ui-new-group = { "New group" }
+# 新建面板
+ui-new-group = { "New panel" }
 
 # 新建文件夹面板…
 ui-new-folder-panel = { "New folder panel…" }
@@ -51,14 +51,14 @@ ui-file-operation-failed = { "File operation failed: " }{ $error }
 # 无法安排文件操作
 ui-could-not-schedule-file-operation = { "Could not schedule file operation" }
 
-# 分组已关闭
-ui-group-closed = { "Group closed" }
+# 面板已关闭
+ui-group-closed = { "Panel closed" }
 
 # Everything 搜索
 ui-everything-search = { "Everything search" }
 
-# 分组不存在
-ui-group-not-found = { "Group not found" }
+# 面板不存在
+ui-group-not-found = { "Panel not found" }
 
 # 无法读取文件夹，请检查路径或访问权限。\n{error}
 ui-cannot-read-folder-check-the-path-and-permissions-n = { "Cannot read folder. Check the path and permissions.\u000A" }{ $error }
@@ -90,8 +90,8 @@ ui-explorer-view-filter-disconnected = { "Explorer view filter disconnected" }
 # 桌面过滤连接尚未就绪
 ui-desktop-filter-is-not-ready = { "Desktop filter is not ready" }
 
-# 桌面分组正在同步，请稍后重试
-ui-desktop-groups-are-syncing-try-again-shortly = { "Desktop groups are syncing. Try again shortly." }
+# 桌面面板正在同步，请稍后重试
+ui-desktop-groups-are-syncing-try-again-shortly = { "Desktop panels are syncing. Try again shortly." }
 
 # 已有活动菜单或预览
 ui-a-menu-or-preview-is-already-active = { "A menu or preview is already active" }
@@ -130,7 +130,7 @@ ui-auto-collapse = { "Auto-collapse" }
 ui-always-on-top = { "Always on top" }
 
 # 新建普通面板
-ui-new-group-panel = { "New group panel" }
+ui-new-group-panel = { "New desktop panel" }
 
 # 标签页
 ui-tabs = { "Tabs" }
@@ -141,8 +141,8 @@ ui-settings-9497 = { "Settings…" }
 # 关闭面板
 ui-close-panel = { "Close panel" }
 
-# 新建分组标签
-ui-new-group-tab = { "New group tab" }
+# 新建面板标签
+ui-new-group-tab = { "New panel tab" }
 
 # 上一个标签
 ui-previous-tab = { "Previous tab" }
@@ -180,14 +180,14 @@ ui-modified = { "Modified" }
 # 大小
 ui-size = { "Size" }
 
-# 分组菜单
-ui-group-menu = { "Group menu" }
+# 面板菜单
+ui-group-menu = { "Panel menu" }
 
 # 标签已关闭
 ui-tab-closed = { "Tab closed" }
 
-# 保存分组失败：{e}
-ui-could-not-save-group = { "Could not save group: " }{ $e }
+# 保存面板失败：{e}
+ui-could-not-save-group = { "Could not save panel: " }{ $e }
 
 # 目标面板不可用
 ui-target-panel-unavailable = { "Target panel unavailable" }
@@ -354,8 +354,8 @@ ui-could-not-create-icon-name-editor = { "Could not create icon name editor" }
 # 无法连接名称编辑框
 ui-could-not-attach-name-editor = { "Could not attach name editor" }
 
-# 无法连接分组编辑状态
-ui-could-not-attach-group-editing-state = { "Could not attach group editing state" }
+# 无法连接面板编辑状态
+ui-could-not-attach-group-editing-state = { "Could not attach panel editing state" }
 
 # 重命名失败
 ui-rename-failed = { "Rename failed" }
@@ -375,14 +375,14 @@ ui-this-folder-is-empty = { "This folder is empty" }
 # 正在读取桌面项目…
 ui-loading-desktop-items = { "Loading desktop items…" }
 
-# 将图标拖入此分组
-ui-drag-icons-into-this-group = { "Drag icons into this group" }
+# 将图标拖入此面板
+ui-drag-icons-into-this-group = { "Drag icons into this panel" }
 
-# 桌面分组已连接
-ui-desktop-groups-connected = { "Desktop groups connected" }
+# 桌面面板已连接
+ui-desktop-groups-connected = { "Desktop panels connected" }
 
-# 桌面分组暂不可用，文件夹与搜索仍可使用。\n{error}
-ui-desktop-groups-unavailable-folder-panels-and-search-still-work-n = { "Desktop groups unavailable. Folder panels and search still work.\u000A" }{ $error }
+# 桌面面板暂不可用，文件夹与搜索仍可使用。\n{error}
+ui-desktop-groups-unavailable-folder-panels-and-search-still-work-n = { "Desktop panels unavailable. Folder panels and search still work.\u000A" }{ $error }
 
 # Explorer 连接已断开，正在等待恢复
 ui-explorer-disconnected-waiting-to-reconnect = { "Explorer disconnected; waiting to reconnect" }
@@ -454,7 +454,7 @@ ui-tab-group-closed = { "Tab group closed" }
 ui-target-tab-does-not-belong-to-this-panel = { "Target tab does not belong to this panel" }
 
 # 仅普通面板支持标签
-ui-only-group-panels-support-tabs = { "Only group panels support tabs" }
+ui-only-group-panels-support-tabs = { "Only desktop panels support tabs" }
 
 # 请先解锁面板
 ui-unlock-the-panel-first = { "Unlock the panel first" }
@@ -466,7 +466,7 @@ ui-tab-limit-exceeded = { "Tab limit exceeded" }
 ui-folder-panels-do-not-support-tabs-create-a-separate-panel = { "Folder panels do not support tabs. Create a separate panel." }
 
 # 请选择未锁定的普通面板
-ui-select-an-unlocked-group-panel = { "Select an unlocked group panel" }
+ui-select-an-unlocked-group-panel = { "Select an unlocked desktop panel" }
 
 # 面板已关闭或活动标签已改变
 ui-panel-closed-or-active-tab-changed = { "Panel closed or active tab changed" }
@@ -480,23 +480,23 @@ ui-tabs-a81a = { "＋ " }{ $remaining }{ " tabs" }
 # 无法注册面板运行时通知
 ui-could-not-register-panel-notifications = { "Could not register panel notifications" }
 
-# 分组渲染失败：{error}
-ui-group-rendering-failed = { "Group rendering failed: " }{ $error }
+# 面板渲染失败：{error}
+ui-group-rendering-failed = { "Panel rendering failed: " }{ $error }
 
 # 菜单准备未完成
 ui-menu-is-not-ready = { "Menu is not ready" }
 
-# 无法初始化无边框分组窗口
-ui-could-not-initialize-borderless-group-window = { "Could not initialize borderless group window" }
+# 无法初始化无边框面板窗口
+ui-could-not-initialize-borderless-group-window = { "Could not initialize borderless panel window" }
 
 # 桌面检查线程已退出，将重建检查线程
 ui-desktop-audit-thread-stopped-restarting = { "Desktop audit thread stopped; restarting" }
 
-# 桌面正在变化，暂不更新分组清单
-ui-desktop-is-changing-group-refresh-deferred = { "Desktop is changing; group refresh deferred" }
+# 桌面正在变化，暂不更新面板清单
+ui-desktop-is-changing-group-refresh-deferred = { "Desktop is changing; panel refresh deferred" }
 
-# 桌面清单包含重复身份，暂不更新分组
-ui-duplicate-desktop-identities-group-refresh-deferred = { "Duplicate desktop identities; group refresh deferred" }
+# 桌面清单包含重复身份，暂不更新面板
+ui-duplicate-desktop-identities-group-refresh-deferred = { "Duplicate desktop identities; panel refresh deferred" }
 
 # 搜索本机文件…
 ui-search-local-files = { "Search local files…" }
@@ -642,8 +642,8 @@ ui-previous = { "Previous" }
 # 下一页
 ui-next = { "Next" }
 
-# 桌面分组与文件整理
-ui-desktop-groups-and-file-organization = { "Desktop groups and file organization" }
+# 桌面面板与文件整理
+ui-desktop-groups-and-file-organization = { "Desktop panels and file organization" }
 
 # 预设配色
 ui-color-presets = { "Color presets" }
@@ -1148,10 +1148,31 @@ ui-desktop-panel = { "Desktop panel" }
 
 language-title = Language
 
-language-description = Choose an interface language. Restart LucidDesk to apply it.
+language-description = Changes apply immediately. System mode updates when the Windows display language takes effect.
 
 language-system = System default
 
-font-description = Lists regular, non-italic fonts supporting the current interface language.
+font-description = Lists regular fonts supporting the current language. Missing characters use the default fallback font.
 
 font-unavailable = Font not installed or missing characters required for this language
+
+ui-project-resources = { "Project resources" }
+
+ui-download-releases = { "Downloads" }
+
+ui-release-history = { "Changelog" }
+
+ui-report-an-issue = { "Report an issue" }
+
+ui-changelog-url = { "https://github.com/Yuch3nE/luciddesk/blob/main/CHANGELOG.en.md" }
+
+font-fallback = Default fallback font
+font-preview = Desktop panels · File preview  Aa 0123
+
+show-panels-hotkey = Show all panels
+
+show-panels-enable = Enable global shortcut
+
+show-panels-description = Same as Show panels in the tray: raise all panels once and preserve their always-on-top settings.
+
+show-panels-disabled = Off by default. Enable to show all panels from other apps.

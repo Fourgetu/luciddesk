@@ -74,7 +74,7 @@ pub(super) fn navigation_colors(material: Backdrop, dark: bool) -> [ColorF; 3] {
         b: (rgb & 255) as f32 / 255.0,
         a: alpha * factor,
     };
-    let selection = if dark { 0xffffff } else { Palette::for_theme(false).accent };
+    let selection = Palette::for_theme(dark).accent;
     [
         fill(selection, selected),
         fill(if dark { 0xffffff } else { 0x000000 }, hovered),
@@ -82,10 +82,14 @@ pub(super) fn navigation_colors(material: Backdrop, dark: bool) -> [ColorF; 3] {
     ]
 }
 impl<'a> SettingsForm<'a> {
+    pub fn continuation(scene: &'a mut Scene, width: f32, y: f32) -> Self {
+        Self { scene, x: Tokens::content_x(), width: (width - Tokens::content_x() - Tokens::MARGIN).min(Tokens::MAX_WIDTH), y }
+    }
     pub fn new(scene: &'a mut Scene, width: f32, description: &str) -> Self {
         let width = (width - Tokens::content_x() - Tokens::MARGIN).min(Tokens::MAX_WIDTH);
+        let description_height = text_height(description, 12.0, width).max(36.0);
         scene.text(
-            Rect::from_xywh(Tokens::content_x(), 76.0, width, 36.0),
+            Rect::from_xywh(Tokens::content_x(), 76.0, width, description_height),
             description,
             6,
         );
@@ -93,7 +97,7 @@ impl<'a> SettingsForm<'a> {
             scene,
             x: Tokens::content_x(),
             width,
-            y: 120.0,
+            y: 84.0 + description_height,
         }
     }
     pub fn section(&mut self, title: &str) {
@@ -282,6 +286,13 @@ impl<'a> SettingsForm<'a> {
         control.selected = selected;
         control.bounds.bottom = self.y + 40.0;
         self.y += 48.0;
+    }
+    pub fn font_option(&mut self, name: &str, selected: bool) {
+        self.scene.row(self.x, self.y, self.width, name, Action::Font(name.into()));
+        let control = self.scene.controls.last_mut().unwrap();
+        control.selected = selected;
+        control.bounds.bottom = self.y + 68.0;
+        self.y += 76.0;
     }
     pub fn pager(&mut self, label: &str, previous: (Action, bool), next: (Action, bool)) {
         let r = self.card(crate::i18n::text("ui-pages"), label, 232.0);
@@ -536,14 +547,15 @@ fn text_height(text: &str, size: f32, width: f32) -> f32 {
     measured_text(text, size, width).1.ceil()
 }
 fn measured_text(text: &str, size: f32, width: f32) -> (f32, f32) {
-    type Key = (String, String, u32, u32);
+    type Key = (String, String, String, u32, u32);
     thread_local! { static METRICS: std::cell::RefCell<std::collections::HashMap<Key, (f32, f32)>> = std::cell::RefCell::new(std::collections::HashMap::new()); }
     let family = super::super::fonts::family();
-    let key = (family.clone(), text.to_owned(), size.to_bits(), width.to_bits());
+    let key = (family.clone(), crate::i18n::default_font().into(), text.to_owned(), size.to_bits(), width.to_bits());
     if let Some(metrics) = METRICS.with(|cache| cache.borrow().get(&key).copied()) { return metrics; }
     let Ok(format) = windows_canvas::TextFormat::new(&family, size) else {
         return (text.chars().count() as f32 * size, size * 2.0);
     };
+    let _ = super::super::canvas::apply_fallback(&format);
     let format = format.with_word_wrapping(windows_canvas::WordWrapping::Wrap);
     let Ok(layout) = windows_canvas::TextLayout::new(text, &format, width.max(1.0), 10000.0) else {
         return (text.chars().count() as f32 * size, size * 2.0);

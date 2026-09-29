@@ -10,6 +10,7 @@ struct CachedPreview {
 
 pub(super) struct Painter {
     preview: RefCell<Option<CachedPreview>>,
+    font_previews: RefCell<std::collections::HashMap<String, windows_canvas::TextFormat>>,
     app_icon: super::super::assets::Pixels,
     formats: Vec<windows_canvas::TextFormat>,
     button_format: windows_canvas::TextFormat,
@@ -64,6 +65,7 @@ impl Painter {
         super::super::canvas::ellipsis(&button_format)?;
         Ok(Self {
             preview: RefCell::new(None),
+            font_previews: RefCell::new(std::collections::HashMap::new()),
             app_icon: {
                 let icon = crate::app_icon::load(128, 128).map_err(|message| {
                     windows::core::Error::new(windows::Win32::Foundation::E_FAIL, message)
@@ -149,16 +151,8 @@ impl Painter {
                 let nav_selected = canvas_result(t.create_solid_brush(nav_selection))?;
                 let nav_hovered = canvas_result(t.create_solid_brush(nav_hover))?;
                 let nav_selected_hovered = canvas_result(t.create_solid_brush(nav_selection_hover))?;
-                let selected = canvas_result(t.create_solid_brush(color(if dark {
-                    0x344656
-                } else {
-                    0xe2eff9
-                })))?;
-                let hovered = canvas_result(t.create_solid_brush(color(if dark {
-                    0x383838
-                } else {
-                    0xeeeeee
-                })))?;
+                let selected = canvas_result(t.create_solid_brush(nav_selection))?;
+                let hovered = canvas_result(t.create_solid_brush(nav_hover))?;
                 let page_background = canvas_result(t.create_solid_brush(ColorF {
                     a: if native {
                         if dark { 0.12 } else { 0.22 }
@@ -498,7 +492,7 @@ impl Painter {
                             .unwrap_or(if c.selected { 1.0 } else { 0.0 });
                     if c.is_toggle() {
                         let off = color(if dark { 0x383838 } else { 0xffffff });
-                        let on = color(if dark { 0x76b9ed } else { 0x0067c0 });
+                        let on = color(palette.accent);
                         let brush = canvas_result(t.create_solid_brush(ColorF {
                             r: off.r + (on.r - off.r) * progress,
                             g: off.g + (on.g - off.g) * progress,
@@ -516,6 +510,8 @@ impl Painter {
                                 &nav_selected
                             } else if navigation && c.enabled && hover == Some(i) {
                                 &nav_hovered
+                            } else if c.selected && c.enabled && hover == Some(i) {
+                                &nav_selected_hovered
                             } else if c.selected {
                                 &selected
                             } else if c.enabled && hover == Some(i) {
@@ -691,6 +687,25 @@ impl Painter {
                             a: 1.0,
                         }))?;
                         t.fill_ellipse(&toggle_thumb(c.bounds, progress), &brush);
+                    } else if let Action::Font(name) = &c.action && c.kind.is_row() {
+                        let r = c.bounds;
+                        t.clipped_text(&c.label, &self.formats[1],
+                            &Rect::from_xywh(r.left + 16.0, r.top + 6.0, r.right - r.left - 56.0, 24.0), &ink);
+                        let mut previews = self.font_previews.borrow_mut();
+                        if !previews.contains_key(name) {
+                            let format = canvas_result(windows_canvas::TextFormat::new(name, 18.0))?
+                                .with_word_wrapping(windows_canvas::WordWrapping::NoWrap)
+                                .with_paragraph_alignment(windows_canvas::ParagraphAlignment::Center);
+                            super::super::canvas::ellipsis(&format)?;
+                            if previews.len() >= 32 { previews.clear(); }
+                            previews.insert(name.clone(), format);
+                        }
+                        t.clipped_text(crate::i18n::text("font-preview"), &previews[name],
+                            &Rect::from_xywh(r.left + 16.0, r.top + 32.0, r.right - r.left - 56.0, 28.0), &muted);
+                        if c.selected {
+                            t.clipped_icon("\u{e73e}", &self.formats[4],
+                                &Rect::from_xywh(r.right - 32.0, r.top + 24.0, 16.0, 20.0), &accent);
+                        }
                     } else if caption {
                         if hover == Some(i) && matches!(c.action, Action::Window(SC_CLOSE)) {
                             let red = canvas_result(t.create_solid_brush(color(0xc42b1c)))?;

@@ -34,7 +34,7 @@ pub(in crate::pane) fn valid(value: Shortcut) -> bool {
         && value.key != VK_F12
         && peek::valid_shortcut(value.key, value.modifiers)
 }
-fn decode(raw: &str) -> Option<Shortcut> {
+pub(in crate::pane) fn decode(raw: &str) -> Option<Shortcut> {
     let (key, modifiers) = raw.split_once(':')?;
     let value = Shortcut {
         key: key.parse().ok()?,
@@ -88,14 +88,30 @@ fn flags(value: Shortcut) -> u32 {
         }
         | if value.modifiers & 4 != 0 { MOD_ALT } else { 0 }
 }
-#[derive(Default)]
 pub(in crate::pane) struct Registration {
+    id: i32,
     hwnd: isize,
     desired: Option<Shortcut>,
     registered: bool,
     attempted: Option<std::time::Instant>,
 }
+impl Default for Registration {
+    fn default() -> Self { Self::with_id(ID) }
+}
 impl Registration {
+    pub fn with_id(id: i32) -> Self {
+        Self { id, hwnd: 0, desired: None, registered: false, attempted: None }
+    }
+    pub fn message(&self) -> String {
+        if self.desired.is_none() {
+            crate::i18n::text(if self.id == ID { "ui-search-is-disabled-global-shortcut-is-not-registered" } else { "show-panels-disabled" }).into()
+        } else if self.registered {
+            crate::i18n::text("ui-works-globally-esc-cancels-recording").into()
+        } else {
+            crate::i18n::format("ui-is-unavailable-choose-another-shortcut", &[("arg0", label(self.desired.unwrap()))])
+        }
+    }
+
     pub fn retry_deadline(&self) -> Option<std::time::Instant> {
         self.attempted.filter(|_| self.desired.is_some() && !self.registered)
             .map(|time| time + std::time::Duration::from_secs(10))
@@ -112,20 +128,13 @@ impl Registration {
         self.hwnd = hwnd;
         self.desired = desired;
         self.attempted = Some(std::time::Instant::now());
-        self.registered = desired.is_some_and(|value| unsafe { RegisterHotKey(hwnd as _, ID, flags(value), u32::from(value.key)) } != 0);
-        let status = if desired.is_none() {
-            crate::i18n::text("ui-search-is-disabled-global-shortcut-is-not-registered").into()
-        } else if self.registered {
-            crate::i18n::text("ui-works-globally-esc-cancels-recording").into()
-        } else {
-            crate::i18n::format("ui-is-unavailable-choose-another-shortcut", &[("arg0", format!("{}", label(desired.unwrap())))])
-        };
-        STATUS.with(|s| *s.borrow_mut() = status);
+        self.registered = desired.is_some_and(|value| unsafe { RegisterHotKey(hwnd as _, self.id, flags(value), u32::from(value.key)) } != 0);
+        if self.id == ID { STATUS.with(|s| *s.borrow_mut() = self.message()); }
     }
     fn clear(&mut self) {
         if self.registered {
             unsafe {
-                UnregisterHotKey(self.hwnd as _, ID);
+                UnregisterHotKey(self.hwnd as _, self.id);
             }
         }
         self.registered = false;
@@ -190,6 +199,29 @@ mod tests {
             UnregisterHotKey(hwnd as _, ID + 1);
         }
     }
+    #[test]
+    fn independent_registrations_release_only_their_own_binding() {
+        let window = windows_window::Window::new("Independent shortcuts")
+            .style(WS_POPUP).create().unwrap();
+        let hwnd = window.hwnd() as isize;
+        let mut first = Registration::default();
+        let mut second = Registration::with_id(super::super::super::show_hotkey::ID);
+        let available: Vec<_> = (VK_F13..=VK_F24).map(|key| Shortcut { key, modifiers: 7 })
+            .filter(|value| unsafe {
+                if RegisterHotKey(hwnd as _, ID + 8, flags(*value), u32::from(value.key)) == 0 { return false; }
+                UnregisterHotKey(hwnd as _, ID + 8); true
+            }).take(2).collect();
+        assert_eq!(available.len(), 2);
+        first.update(hwnd, Some(available[0]));
+        second.update(hwnd, Some(available[1]));
+        assert!(first.registered && second.registered);
+        second.update(hwnd, None);
+        assert!(first.registered);
+        assert_eq!(unsafe { RegisterHotKey(hwnd as _, ID + 8, flags(available[0]), u32::from(available[0].key)) }, 0);
+        assert_ne!(unsafe { RegisterHotKey(hwnd as _, ID + 8, flags(available[1]), u32::from(available[1].key)) }, 0);
+        unsafe { UnregisterHotKey(hwnd as _, ID + 8); }
+    }
+
     #[test]
     fn shortcut_persists_and_reserves_system_and_file_commands() {
         let store = WorkspaceStore::open_in_memory().unwrap();

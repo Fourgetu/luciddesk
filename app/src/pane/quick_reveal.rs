@@ -9,6 +9,14 @@ pub(super) fn show(hwnd: HWND) {
     super::window::raise_once(hwnd);
 }
 
+/// Shared by the tray and the optional global shortcut. Release the app borrow
+/// before changing window order, because native calls can dispatch messages.
+pub(super) fn show_all(state: &std::rc::Rc<std::cell::RefCell<super::PaneApp>>) {
+    let windows: Vec<_> = state.borrow().views.iter().map(|v| v.window.hwnd()).collect();
+    for &hwnd in &windows { show(hwnd.cast()); }
+    if let Some(&hwnd) = windows.first() { unsafe { SetForegroundWindow(hwnd.cast()); } }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -3,6 +3,7 @@ use super::*;
 
 pub(super) struct Drawing {
     family: String,
+    language: &'static str,
     pub(super) surface: crate::pane::composition::Surface,
     name: windows_canvas::TextFormat,
     path: windows_canvas::TextFormat,
@@ -24,6 +25,7 @@ impl Drawing {
         crate::pane::canvas::ellipsis_delimiter(&path, '\\' as u32).map_err(|e| e.to_string())?;
         Ok(Self {
             family: crate::pane::fonts::family(),
+            language: crate::i18n::language(),
             surface: crate::pane::composition::Surface::new_pane(windows::Win32::Foundation::HWND(
                 hwnd,
             ))
@@ -49,7 +51,7 @@ impl Drawing {
     ) -> Result<(), String> {
         use crate::pane::native_graphics::canvas_result;
         let family = crate::pane::fonts::family();
-        if family != self.family {
+        if family != self.family || self.language != crate::i18n::language() {
             use windows_canvas::{ParagraphAlignment, TextFormat, WordWrapping};
             let make = |size| {
                 TextFormat::new(&family, size)
@@ -71,6 +73,7 @@ impl Drawing {
             self.path = path;
             self.placeholder = placeholder;
             self.family = family;
+            self.language = crate::i18n::language();
         }
 
         use windows_canvas::{ColorF, Rect, RoundedRect};

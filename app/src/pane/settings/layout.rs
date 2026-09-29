@@ -507,7 +507,16 @@ pub(super) fn about_status(s: &mut Scene, width: f32, status: &str, copied: bool
         crate::i18n::text("ui-developer-license"),
         concat!(env!("CARGO_PKG_AUTHORS"), " · MIT / Apache-2.0"),
         crate::i18n::text("ui-project-website"),
-        Action::ProjectHome,
+        Action::ProjectLink("https://github.com/Yuch3nE/luciddesk"),
+    );
+    form.actions(
+        crate::i18n::text("ui-project-resources"),
+        "GitHub · Yuch3nE/luciddesk",
+        vec![
+            (crate::i18n::text("ui-download-releases"), Action::ProjectLink("https://github.com/Yuch3nE/luciddesk/releases")),
+            (crate::i18n::text("ui-release-history"), Action::ProjectLink(crate::i18n::text("ui-changelog-url"))),
+            (crate::i18n::text("ui-report-an-issue"), Action::ProjectLink("https://github.com/Yuch3nE/luciddesk/issues")),
+        ],
     );
     form.section(crate::i18n::text("ui-status"));
     form.info(crate::i18n::text("ui-operating-system"), &format!("{} · {}", crate::diagnostics::system().summary(), std::env::consts::ARCH));
@@ -668,10 +677,15 @@ pub(super) fn backup_history(s: &mut Scene, width: f32, view: &recovery::View, o
 pub(super) fn fonts(s: &mut Scene, width: f32, choices: &[String], offset: usize) {
     let selected = super::super::fonts::family();
     let mut form = SettingsForm::new(s, width, crate::i18n::text("font-description"));
-    form.info(crate::i18n::text("ui-current-font"), &selected);
+    form.button(
+        crate::i18n::text("ui-current-font"),
+        &format!("{}\n{}: {}", selected, crate::i18n::text("font-fallback"), crate::i18n::default_font()),
+        crate::i18n::text("ui-reset"),
+        Action::Font(crate::i18n::default_font().into()),
+    );
     form.section(crate::i18n::text("ui-available-fonts"));
     for name in choices.iter().skip(offset).take(7) {
-        form.option(name, Action::Font(name.clone()), name == &selected);
+        form.font_option(name, name == &selected);
     }
     if choices.is_empty() {
         form.info(crate::i18n::text("ui-no-fonts-available"), crate::i18n::text("ui-reset-to-the-default-font-to-continue"));
@@ -681,12 +695,7 @@ pub(super) fn fonts(s: &mut Scene, width: f32, choices: &[String], offset: usize
         (Action::FontPage(-1), offset > 0),
         (Action::FontPage(1), offset + 7 < choices.len()),
     );
-    form.button(
-        crate::i18n::text("ui-reset-font"),
-        crate::i18n::text("ui-use-the-app-s-default-font"),
-        crate::i18n::text("ui-reset"),
-        Action::Font(crate::i18n::default_font().into()),
-    );
+
 }
 
 
@@ -696,4 +705,20 @@ pub(super) fn language(s: &mut Scene, width: f32, selected: &str) {
         let name = if code == "system" { crate::i18n::text("language-system") } else { name };
         form.option(name, Action::Language(code), selected == code);
     }
+}
+
+
+pub(super) fn show_panels_shortcut(s: &mut Scene, width: f32, store: &WorkspaceStore) {
+    // Append below the existing panel-layout controls, retaining normal page scrolling.
+    let bottom = s.cards.iter().map(|r| r.bottom)
+        .chain(s.controls.iter().filter(|c| c.bounds.left >= Tokens::content_x()).map(|c| c.bounds.bottom))
+        .fold(120.0_f32, f32::max);
+    let mut form = SettingsForm::continuation(s, width, bottom + 24.0);
+    form.section(crate::i18n::text("show-panels-hotkey"));
+    form.toggle(crate::i18n::text("show-panels-enable"), crate::i18n::text("show-panels-description"),
+        show_hotkey::enabled(store), Action::ShowPanelsEnable);
+    let status = show_hotkey::status();
+    form.shortcut(crate::i18n::text("ui-global-shortcut"),
+        if status.is_empty() { crate::i18n::text("show-panels-disabled") } else { &status },
+        &search_hotkey::label(show_hotkey::settings(store)), Action::ShowPanelsShortcut, Action::ShowPanelsReset);
 }

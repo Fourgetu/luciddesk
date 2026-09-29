@@ -310,3 +310,27 @@ fn language_round_trip_and_legacy_default() {
     let reopened = WorkspaceStore::open(&dir.path().join("workspace.db")).unwrap();
     assert_eq!(reopened.preference("language").unwrap().as_deref(), Some("system"));
 }
+
+#[test]
+fn show_panels_hotkey_defaults_disabled_and_persists_independently() {
+    let (dir, store) = open();
+    assert_eq!(store.preference("show_panels_enabled").unwrap().as_deref(), Some("0"));
+    assert_eq!(store.preference("show_panels_hotkey").unwrap().as_deref(), Some("68:3"));
+    store.save_preference("show_panels_hotkey", "74:5").unwrap();
+    store.save_preference("show_panels_enabled", "1").unwrap();
+    let reopened = WorkspaceStore::open(&dir.path().join("workspace.db")).unwrap();
+    assert_eq!(reopened.preference("show_panels_hotkey").unwrap().as_deref(), Some("74:5"));
+    assert_eq!(reopened.preference("show_panels_enabled").unwrap().as_deref(), Some("1"));
+    assert_eq!(reopened.preference("search_enabled").unwrap().as_deref(), Some("0"));
+    assert_eq!(reopened.preference("search_hotkey").unwrap().as_deref(), Some("32:3"));
+    assert!(store.save_preference("show_panels_enabled", "yes").is_err());
+    assert!(store.save_preference("show_panels_hotkey", "32:4").is_err());
+    drop(reopened);
+    drop(store);
+    let path = dir.path().join("config.toml");
+    let mut doc = std::fs::read_to_string(&path).unwrap().parse::<toml_edit::DocumentMut>().unwrap();
+    doc.remove("show_panels");
+    std::fs::write(&path, doc.to_string()).unwrap();
+    let legacy = WorkspaceStore::open(&dir.path().join("workspace.db")).unwrap();
+    assert_eq!(legacy.preference("show_panels_enabled").unwrap().as_deref(), Some("0"));
+}

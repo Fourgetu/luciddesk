@@ -190,22 +190,7 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
                     }
                 }
                 crate::tray::Action::Exit => windows_window::quit(),
-                crate::tray::Action::Show => {
-                    let windows: Vec<_> = state
-                        .borrow()
-                        .views
-                        .iter()
-                        .map(|v| v.window.hwnd())
-                        .collect();
-                    for &hwnd in &windows {
-                        quick_reveal::show(hwnd.cast());
-                    }
-                    if let Some(&hwnd) = windows.first() {
-                        unsafe {
-                            SetForegroundWindow(hwnd.cast());
-                        }
-                    }
-                }
+                crate::tray::Action::Show => quick_reveal::show_all(&state),
                 crate::tray::Action::New => {
                     if let Err(error) = handle(&state, PanelId::new(0), Event::New) {
                         window::error(&error);

@@ -12,8 +12,8 @@ ui-invalid-configuration-path = { "配置路径无效" }
 # 无法注册托盘恢复消息
 ui-could-not-register-tray-recovery-message = { "无法注册托盘恢复消息" }
 
-# LucidDesk · 桌面分组与文件整理
-ui-luciddesk-desktop-organization = { "LucidDesk · 桌面分组与文件整理" }
+# LucidDesk · 桌面面板与文件整理
+ui-luciddesk-desktop-organization = { "LucidDesk · 桌面面板与文件整理" }
 
 # 无法添加 LucidDesk 托盘图标
 ui-could-not-add-luciddesk-tray-icon = { "无法添加 LucidDesk 托盘图标" }
@@ -24,8 +24,8 @@ ui-could-not-initialize-tray-interaction = { "无法初始化托盘交互" }
 # 显示面板
 ui-show-panels = { "显示面板" }
 
-# 新建分组
-ui-new-group = { "新建分组" }
+# 新建面板
+ui-new-group = { "新建面板" }
 
 # 新建文件夹面板…
 ui-new-folder-panel = { "新建文件夹面板…" }
@@ -51,14 +51,14 @@ ui-file-operation-failed = { "文件操作失败：" }{ $error }
 # 无法安排文件操作
 ui-could-not-schedule-file-operation = { "无法安排文件操作" }
 
-# 分组已关闭
-ui-group-closed = { "分组已关闭" }
+# 面板已关闭
+ui-group-closed = { "面板已关闭" }
 
 # Everything 搜索
 ui-everything-search = { "Everything 搜索" }
 
-# 分组不存在
-ui-group-not-found = { "分组不存在" }
+# 面板不存在
+ui-group-not-found = { "面板不存在" }
 
 # 无法读取文件夹，请检查路径或访问权限。\n{error}
 ui-cannot-read-folder-check-the-path-and-permissions-n = { "无法读取文件夹，请检查路径或访问权限。\u000A" }{ $error }
@@ -90,8 +90,8 @@ ui-explorer-view-filter-disconnected = { "Explorer 视图过滤连接已断开" 
 # 桌面过滤连接尚未就绪
 ui-desktop-filter-is-not-ready = { "桌面过滤连接尚未就绪" }
 
-# 桌面分组正在同步，请稍后重试
-ui-desktop-groups-are-syncing-try-again-shortly = { "桌面分组正在同步，请稍后重试" }
+# 桌面面板正在同步，请稍后重试
+ui-desktop-groups-are-syncing-try-again-shortly = { "桌面面板正在同步，请稍后重试" }
 
 # 已有活动菜单或预览
 ui-a-menu-or-preview-is-already-active = { "已有活动菜单或预览" }
@@ -141,8 +141,8 @@ ui-settings-9497 = { "设置…" }
 # 关闭面板
 ui-close-panel = { "关闭面板" }
 
-# 新建分组标签
-ui-new-group-tab = { "新建分组标签" }
+# 新建面板标签
+ui-new-group-tab = { "新建面板标签" }
 
 # 上一个标签
 ui-previous-tab = { "上一个标签" }
@@ -180,14 +180,14 @@ ui-modified = { "修改时间" }
 # 大小
 ui-size = { "大小" }
 
-# 分组菜单
-ui-group-menu = { "分组菜单" }
+# 面板菜单
+ui-group-menu = { "面板菜单" }
 
 # 标签已关闭
 ui-tab-closed = { "标签已关闭" }
 
-# 保存分组失败：{e}
-ui-could-not-save-group = { "保存分组失败：" }{ $e }
+# 保存面板失败：{e}
+ui-could-not-save-group = { "保存面板失败：" }{ $e }
 
 # 目标面板不可用
 ui-target-panel-unavailable = { "目标面板不可用" }
@@ -354,8 +354,8 @@ ui-could-not-create-icon-name-editor = { "无法创建图标名称编辑框" }
 # 无法连接名称编辑框
 ui-could-not-attach-name-editor = { "无法连接名称编辑框" }
 
-# 无法连接分组编辑状态
-ui-could-not-attach-group-editing-state = { "无法连接分组编辑状态" }
+# 无法连接面板编辑状态
+ui-could-not-attach-group-editing-state = { "无法连接面板编辑状态" }
 
 # 重命名失败
 ui-rename-failed = { "重命名失败" }
@@ -375,14 +375,14 @@ ui-this-folder-is-empty = { "此文件夹为空" }
 # 正在读取桌面项目…
 ui-loading-desktop-items = { "正在读取桌面项目…" }
 
-# 将图标拖入此分组
-ui-drag-icons-into-this-group = { "将图标拖入此分组" }
+# 将图标拖入此面板
+ui-drag-icons-into-this-group = { "将图标拖入此面板" }
 
-# 桌面分组已连接
-ui-desktop-groups-connected = { "桌面分组已连接" }
+# 桌面面板已连接
+ui-desktop-groups-connected = { "桌面面板已连接" }
 
-# 桌面分组暂不可用，文件夹与搜索仍可使用。\n{error}
-ui-desktop-groups-unavailable-folder-panels-and-search-still-work-n = { "桌面分组暂不可用，文件夹与搜索仍可使用。\u000A" }{ $error }
+# 桌面面板暂不可用，文件夹与搜索仍可使用。\n{error}
+ui-desktop-groups-unavailable-folder-panels-and-search-still-work-n = { "桌面面板暂不可用，文件夹与搜索仍可使用。\u000A" }{ $error }
 
 # Explorer 连接已断开，正在等待恢复
 ui-explorer-disconnected-waiting-to-reconnect = { "Explorer 连接已断开，正在等待恢复" }
@@ -480,23 +480,23 @@ ui-tabs-a81a = { "＋ " }{ $remaining }{ " 个标签" }
 # 无法注册面板运行时通知
 ui-could-not-register-panel-notifications = { "无法注册面板运行时通知" }
 
-# 分组渲染失败：{error}
-ui-group-rendering-failed = { "分组渲染失败：" }{ $error }
+# 面板渲染失败：{error}
+ui-group-rendering-failed = { "面板渲染失败：" }{ $error }
 
 # 菜单准备未完成
 ui-menu-is-not-ready = { "菜单准备未完成" }
 
-# 无法初始化无边框分组窗口
-ui-could-not-initialize-borderless-group-window = { "无法初始化无边框分组窗口" }
+# 无法初始化无边框面板窗口
+ui-could-not-initialize-borderless-group-window = { "无法初始化无边框面板窗口" }
 
 # 桌面检查线程已退出，将重建检查线程
 ui-desktop-audit-thread-stopped-restarting = { "桌面检查线程已退出，将重建检查线程" }
 
-# 桌面正在变化，暂不更新分组清单
-ui-desktop-is-changing-group-refresh-deferred = { "桌面正在变化，暂不更新分组清单" }
+# 桌面正在变化，暂不更新面板清单
+ui-desktop-is-changing-group-refresh-deferred = { "桌面正在变化，暂不更新面板清单" }
 
-# 桌面清单包含重复身份，暂不更新分组
-ui-duplicate-desktop-identities-group-refresh-deferred = { "桌面清单包含重复身份，暂不更新分组" }
+# 桌面清单包含重复身份，暂不更新面板
+ui-duplicate-desktop-identities-group-refresh-deferred = { "桌面清单包含重复身份，暂不更新面板" }
 
 # 搜索本机文件…
 ui-search-local-files = { "搜索本机文件…" }
@@ -642,8 +642,8 @@ ui-previous = { "上一页" }
 # 下一页
 ui-next = { "下一页" }
 
-# 桌面分组与文件整理
-ui-desktop-groups-and-file-organization = { "桌面分组与文件整理" }
+# 桌面面板与文件整理
+ui-desktop-groups-and-file-organization = { "桌面面板与文件整理" }
 
 # 预设配色
 ui-color-presets = { "预设配色" }
@@ -1148,10 +1148,31 @@ ui-desktop-panel = { "桌面面板" }
 
 language-title = 语言
 
-language-description = 选择界面语言，重启 LucidDesk 后生效。
+language-description = 选择后立即生效。跟随系统时，Windows 显示语言生效后自动更新。
 
 language-system = 跟随系统
 
-font-description = 仅列出普通字重、非斜体且支持当前界面文字的字体。
+font-description = 仅列出支持当前界面语言的常规字体；缺失字符使用默认字体回退。
 
 font-unavailable = 该字体未安装，或不支持当前界面所需字符
+
+ui-project-resources = { "项目资源" }
+
+ui-download-releases = { "下载发布版" }
+
+ui-release-history = { "更新记录" }
+
+ui-report-an-issue = { "问题反馈" }
+
+ui-changelog-url = { "https://github.com/Yuch3nE/luciddesk/blob/main/CHANGELOG.md" }
+
+font-fallback = 默认回退字体
+font-preview = 桌面面板 · 文件预览  Aa 0123
+
+show-panels-hotkey = 显示所有面板
+
+show-panels-enable = 启用全局快捷键
+
+show-panels-description = 与托盘“显示面板”相同，一次提升所有面板；保留原有置顶设置。
+
+show-panels-disabled = 默认关闭。启用后可从其他应用显示所有面板。
