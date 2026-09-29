@@ -26,6 +26,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Could not read package version.' }
           $version = ($metadata.packages | Where-Object name -eq 'luciddesk').version
           if ($env:GITHUB_REF_NAME -cne "v$version") { throw 'Tag must match the app version: v<version>.' }
+      - name: Test bilingual release notes / 测试双语发布说明
+        run: python -m unittest discover -s tools -p "test_release_notes.py"
       - name: Check language resources
         run: python tools/check-locales.py
       - name: Test Fluent resources
@@ -63,7 +65,7 @@ jobs:
         with:
           name: LucidDesk-windows-x64
           path: artifacts
-      - name: Verify and publish release assets
+      - name: Verify and publish bilingual release / 校验并发布双语 Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -71,7 +73,7 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          python3 tools/release-notes.py --tag "$RELEASE_TAG" --repository "$GH_REPO" --output release-notes.md
+          python3 tools/release-notes.py --tag "$RELEASE_TAG" --repository "$GH_REPO" --changelog CHANGELOG.md --changelog-en CHANGELOG.en.md --output release-notes.md
           mapfile -d '' archives < <(find artifacts -type f -name '*.zip' -print0)
           mapfile -d '' checksums < <(find artifacts -type f -name '*.zip.sha256' -print0)
           [[ ${#archives[@]} -eq 2 && ${#checksums[@]} -eq 2 ]]

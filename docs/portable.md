@@ -16,6 +16,6 @@
 
 ## 使用与校验
 
-操作见 [使用说明](usage.md)，本次变化见随包提供的 `CHANGELOG.md`。Everything、PowerToys Peek 和 QuickLook 需另行安装，默认关闭相关功能。
+操作见 [使用说明](usage.md)，本次变化见随包提供的 `CHANGELOG.md`（中文）与 `CHANGELOG.en.md`（英文）。Everything、PowerToys Peek 和 QuickLook 需另行安装，默认关闭相关功能。
 
 `build.json` 保留实际构建来源和二进制文件校验值。ZIP 旁的 `.sha256` 用于验证包完整性。

@@ -136,6 +136,6 @@ cargo build -p desktop-shell --example filter_backend_probe
 
 ## GitHub Release
 
-公开仓库 `Yuch3nE/luciddesk` 收到 `v<版本>` 标签（例如 `v0.10.5`）后，Build CI 核对标签与应用 Cargo 版本，完成检查与双版本打包，再发布对应 GitHub Release。同步本地仓库时需要一并同步标签。普通分支推送和 PR 只生成 Actions 产物，不创建 Release；也可在已有版本标签上手动运行工作流补发。
+公开仓库 `Yuch3nE/luciddesk` 收到 `v<版本>` 标签（例如 `v0.10.6`）后，Build CI 核对标签与应用 Cargo 版本，完成检查与双版本打包，再发布对应 GitHub Release。同步本地仓库时需要一并同步标签。普通分支推送和 PR 只生成 Actions 产物，不创建 Release；也可在已有版本标签上手动运行工作流补发。
 
-Release 包含两个 ZIP 及各自的 SHA256 文件。发布任务先验证校验值；正文从标签对应源码中的 `CHANGELOG.md` 提取匹配版本章节，保留标题、日期及完整内容，并将相对链接转换为该标签下的 GitHub 链接。章节缺失、重复或为空时中止发布。重跑时同步更新正文与同名附件。发布权限仅授予独立的 Release 任务。
+Release 包含两个 ZIP 及各自的 SHA256 文件，两个 ZIP 均附带中英文更新记录。发布任务先验证校验值；正文从标签对应源码中的 `CHANGELOG.md` 和 `CHANGELOG.en.md` 分别提取匹配版本章节，按中文、英文顺序合并，保留版本标题、日期及完整内容，并将相对链接转换为该标签下的 GitHub 链接。任一语言的章节缺失、重复或为空时中止发布；普通构建也会运行双语提取测试。重跑时同步更新正文与同名附件。发布权限仅授予独立的 Release 任务。

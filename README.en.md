@@ -9,13 +9,13 @@
 Desktop groups · Folder panels · Everything search · Spacebar preview
 
 [![Build CI](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml/badge.svg)](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml)
-[![Version](https://img.shields.io/badge/version-0.10.5-087EA4?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.10.6-087EA4?style=flat-square)](CHANGELOG.en.md)
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square)](#compatibility)
 
 [![Architecture](https://img.shields.io/badge/arch-x64-475569?style=flat-square)](docs/portable.md)
 [![Rust](https://img.shields.io/badge/Rust-1.95%2B-CE6F32?style=flat-square)](Cargo.toml)
 
-[Downloads](https://github.com/Yuch3nE/luciddesk/releases) · [Getting started](#getting-started) · [Changelog](CHANGELOG.md) · [Contributing](#contributing)
+[Downloads](https://github.com/Yuch3nE/luciddesk/releases) · [Getting started](#getting-started) · [Changelog](CHANGELOG.en.md) · [Contributing](#contributing)
 
 </div>
 

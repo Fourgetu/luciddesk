@@ -1,4 +1,4 @@
-"""Extract one version from CHANGELOG.md for GitHub Releases (standard library only)."""
+"""Extract matching Chinese and English changelog sections for GitHub Releases (standard library only)."""
 import argparse
 import re
 from pathlib import Path
@@ -7,7 +7,7 @@ from urllib.parse import urljoin
 
 def extract(text, tag, repository):
     if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag):
-        raise ValueError("Expected a release tag such as v0.10.5")
+        raise ValueError("Expected a release tag such as v0.10.6")
     headings = list(re.finditer(r"^##[ \t]+(.+)$", text, re.MULTILINE))
     matches = []
     for index, heading in enumerate(headings):
@@ -26,12 +26,24 @@ def extract(text, tag, repository):
     return title + "\n\n" + body + "\n"
 
 
+def bilingual(chinese, english, tag, repository):
+    zh = extract(chinese, tag, repository)
+    en = extract(english, tag, repository)
+    # Keep each original version heading beneath a language heading.
+    return "## 简体中文\n\n" + "#" + zh + "\n---\n\n## English\n\n" + "#" + en
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tag", required=True)
     parser.add_argument("--repository", required=True)
     parser.add_argument("--changelog", type=Path, default=Path("CHANGELOG.md"))
+    parser.add_argument("--changelog-en", type=Path, default=Path("CHANGELOG.en.md"))
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    notes = extract(args.changelog.read_text(encoding="utf-8-sig"), args.tag, args.repository)
+    notes = bilingual(
+        args.changelog.read_text(encoding="utf-8-sig"),
+        args.changelog_en.read_text(encoding="utf-8-sig"),
+        args.tag, args.repository,
+    )
     args.output.write_text(notes, encoding="utf-8")
