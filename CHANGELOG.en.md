@@ -2,9 +2,14 @@
 
 [简体中文](CHANGELOG.md) · English
 
-User-facing changes in each release. The current version is **0.11.0**. Windows 11 x64 is the primary validation platform.
+User-facing changes in each release. The current version is **0.11.1**. Windows 11 x64 is the primary validation platform.
 
 Exit the app before upgrading a portable installation and preserve its `data` folder. See the [portable guide](docs/portable.md) (Chinese).
+
+## 0.11.1 · 2026-09-30
+
+- Improve pending icons in desktop and folder panels with scalable file and folder outlines, aligned with loaded icons and adapted to light and dark themes.
+- Keep placeholders independent of icon fonts and free of continuous animations; retain recognizable outlines if icon extraction fails.
 
 ## 0.11.0 · 2026-09-30
 
