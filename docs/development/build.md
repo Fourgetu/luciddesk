@@ -65,7 +65,7 @@ cargo build -p luciddesk -p desktop-hook --locked --offline --target-dir target\
 .\tools\package.ps1 -Offline
 ```
 
-产物位于 `target\packages`。包内配置仍默认保存在 LocalAppData；未提交代码会在包名和 `build.json` 中标记为 dirty。GitHub Actions 的 Windows build 工作流执行全目标编译、核心和存储测试后上传 ZIP；原生桌面 UI 测试仍在交互会话运行。
+产物位于 `target\packages`。包内配置仍默认保存在 LocalAppData；未提交代码会在包名和 `build.json` 中标记为 dirty。GitHub Actions 的 Build CI 工作流执行全目标编译、核心和存储测试后，同时上传非便携版、便携版 ZIP 及 SHA256 校验文件；原生桌面 UI 测试仍在交互会话运行。
 
 便携版使用以下命令，产物位于 `target\portable\时间戳`，含 `portable.marker`，配置保存在包旁的 `data` 中：
 
@@ -133,3 +133,9 @@ cargo build -p desktop-shell --example filter_backend_probe
 结果及兼容边界见[验证记录](validation.md)。
 
 品牌更名兼容：若新的数据目录不存在且旧目录 `%LOCALAPPDATA%\LucidPane` 已存在，继续使用旧目录。`LUCIDDESK_DATA_DIR` 优先，旧变量 `LUCIDPANE_DATA_DIR` 仍受支持；详见[品牌规范](../brand.md)。
+
+## GitHub Release
+
+公开仓库 `Yuch3nE/luciddesk` 收到 `v<版本>` 标签（例如 `v0.10.5`）后，Build CI 核对标签与应用 Cargo 版本，完成检查与双版本打包，再发布对应 GitHub Release。同步本地仓库时需要一并同步标签。普通分支推送和 PR 只生成 Actions 产物，不创建 Release；也可在已有版本标签上手动运行工作流补发。
+
+Release 包含两个 ZIP 及各自的 SHA256 文件。发布任务先验证校验值；正文从标签对应源码中的 `CHANGELOG.md` 提取匹配版本章节，保留标题、日期及完整内容，并将相对链接转换为该标签下的 GitHub 链接。章节缺失、重复或为空时中止发布。重跑时同步更新正文与同名附件。发布权限仅授予独立的 Release 任务。
