@@ -1186,3 +1186,8 @@ font-load-failed = Schriftarten konnten nicht geladen werden. Öffnen Sie diese 
 tray-search = Dateien suchen
 tray-refresh-all = Alle Panels aktualisieren
 tray-open-config = Konfigurationsordner öffnen
+
+ui-rename-panel = { "Panel umbenennen…" }
+
+compact-menu-title = Windows-11-Kontextmenüs verwenden
+compact-menu-description = Kompakte Menüs für Elemente in normalen Panels. Ausschalten für klassische Menüs. Gilt beim nächsten Öffnen.

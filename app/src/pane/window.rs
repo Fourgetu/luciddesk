@@ -2009,7 +2009,7 @@ where
                                 }
                             }
                             invalidate(hwnd);
-                            if model.borrow().folder.is_some() {
+                            if model.borrow().folder.is_some() || !super::compact_menu::enabled() {
                                 let result = desktop_shell::show_file_items_menu(
                                     windows::Win32::Foundation::HWND(hwnd),
                                     &identities,
@@ -2057,9 +2057,9 @@ where
                             // discard every image and trigger a visible reload.
                             return;
                         }
-                        let (auto_hide, locked, theme, backdrop) = {
+                        let (auto_hide, locked, theme, backdrop, collapsed) = {
                             let m = model.borrow();
-                            (m.auto_hide, m.locked, m.theme, m.backdrop)
+                            (m.auto_hide, m.locked, m.theme, m.backdrop, m.collapsed)
                         };
                         update_pointer(hwnd, &model, None);
                         invalidate(hwnd);
@@ -2080,6 +2080,7 @@ where
                             backdrop,
                             is_folder,
                             visible_columns,
+                            collapsed,
                         ) };
                         update_pointer(hwnd, &model, None);
                         invalidate(hwnd);
@@ -2223,6 +2224,7 @@ fn menu(
     backdrop: desktop_core::Backdrop,
     folder: (bool, bool),
     visible_columns: u8,
+    collapsed: bool,
 ) -> i32 {
     let anchored = lparam == -1;
     let mut anchor = point(lparam);
@@ -2246,6 +2248,7 @@ fn menu(
         backdrop,
         folder,
         visible_columns,
+        collapsed,
     )
 }
 pub fn error(message: &str) {

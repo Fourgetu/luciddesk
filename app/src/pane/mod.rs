@@ -6,6 +6,7 @@
 )]
 mod fonts;
 mod header_divider;
+mod compact_menu;
 mod acrylic;
 mod animation;
 mod visibility;
@@ -139,6 +140,7 @@ enum Event {
     FinishPaneMove(bool),
     PreviewPaneMove,
     ToggleHeaderDivider,
+    ToggleCompactMenu,
     PaneItemFocus,
     BeginItemMenu(Rc<RefCell<Option<Result<Rc<luciddesk_desktop::filter::FilterSession>, String>>>>),
     EndItemMenu,

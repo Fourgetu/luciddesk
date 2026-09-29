@@ -1,4 +1,10 @@
 //! Public Shell menu fallback; selection and command ownership stay isolated.
+// Compile the same native-menu styling as folder panels in the host process.
+#[path = "../../../../desktop-shell/src/menu_theme.rs"]
+#[allow(dead_code)]
+mod menu_theme;
+#[path = "../../../../desktop-shell/src/menu_frame.rs"]
+mod menu_frame;
 use super::{MenuContext, lifecycle::Invocation};
 use std::cell::RefCell;
 use windows::{
@@ -33,12 +39,17 @@ pub(super) fn show(
 ) -> Result<()> {
     unsafe {
         invocation.check()?;
+        let theme = menu_theme::apply_scoped(hwnd);
         let popup = Popup(CreatePopupMenu()?);
         menu.QueryContextMenu(popup.0, 0, 1, 0x7fff, CMF_NORMAL | CMF_CANRENAME)
             .ok()?;
         invocation.check()?;
         *routing.borrow_mut() = Some(menu.clone());
         let _routing = Routing(routing);
+        let frame = menu_frame::MenuFrame::install(hwnd, windows_sys::Win32::Foundation::POINT {
+            x: context.x,
+            y: context.y,
+        });
         let command = TrackPopupMenuEx(
             popup.0,
             (TPM_RETURNCMD | TPM_RIGHTBUTTON).0,
@@ -48,6 +59,8 @@ pub(super) fn show(
             None,
         )
         .0;
+        drop(frame);
+        drop(theme);
         invocation.check()?;
         if command != 0 {
             menu.InvokeCommand(&CMINVOKECOMMANDINFO {

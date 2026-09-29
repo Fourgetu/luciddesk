@@ -129,3 +129,23 @@ sequenceDiagram
 ## 验证入口
 
 当前验证范围见[验证记录](development/validation.md)，操作与改名事务见[图标菜单与重命名](development/pane-item-rename.md)。
+
+## 普通菜单回退外观
+
+精简菜单回退到原生 HMENU 时，复用文件夹面板的系统明暗主题与按 DPI 缩放的上下留白。每次弹出重新读取系统主题，高对比度沿用系统绘制；弹出结束后释放菜单窗口钩子，并恢复 Explorer 进程原先的主题偏好。Shell 扩展仍负责自己的菜单项、分隔线和子菜单。
+
+## 文件菜单崩溃排查（2026-09-30）
+
+PDF、TXT、PNG 均被报告触发 Explorer 重启。收到的 5 份转储均为 `SHELL32.dll` 10.0.26100.9549、`0xc0000005`、偏移 `0x14c197`，读取地址为零。通过匹配的微软公开符号和调用点反汇编，定位到：
+
+```text
+COpenWithExplorerCommand::EnumSubCommands
+CreateInstanceWithParam<COpenWithExplorerCommandEnumerator, IUnknown *>
+CObjectWithSite::CObjectWithSite + 0x17
+```
+
+“打开方式”枚举器构造时收到空的 site，随后对它执行 AddRef 导致崩溃。至少一份转储仅加载最新测试包的 DLL，因此不能仅归因于旧 DLL 残留，也没有证据指向 PDF 专属扩展。
+
+菜单的重命名包装层此前只暴露 `IContextMenu3`，截断了 Shell 对原始菜单的 `IObjectWithSite` 调用。现已补齐 `SetSite` / `GetSite` 转发，包括空值清理、错误透传与统一 COM 身份；不自行替换宿主，不按文件后缀分流，不改动 Win11 菜单默认开关。
+
+验证：27 项普通 Hook 单元测试通过；新增回归覆盖宿主设置、替换、读取与清理。单独运行原生 Shell 视图测试通过，确认真实菜单通过包装层接受并返回视图 site，且保留重命名命令。上述验证不等价于 Explorer 内精简菜单的实机回归，仍需使用修复包复测 PDF、TXT、PNG 的菜单打开、打开方式子菜单和关闭行为。

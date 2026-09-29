@@ -1186,3 +1186,8 @@ font-load-failed = Could not load fonts. Reopen this page to retry.
 tray-search = Search files
 tray-refresh-all = Refresh all panels
 tray-open-config = Open configuration folder
+
+ui-rename-panel = { "Rename panel…" }
+
+compact-menu-title = Use Windows 11 context menus
+compact-menu-description = Use compact menus for items in regular panels. Turn off for classic menus. Applies the next time a menu opens.

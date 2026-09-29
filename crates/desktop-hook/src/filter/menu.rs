@@ -583,6 +583,14 @@ mod fallback_tests {
                 assert!(callbacks.presenter.is_none());
                 let menu: IContextMenu = callbacks.view.GetItemObject(SVGIO_SELECTION).unwrap();
                 let menu = commands::wrap(menu, HWND(owner), callbacks.first.clone());
+                // Exercise the real Shell menu's site contract through the
+                // rename wrapper, as CDefView does before compact enumeration.
+                let menu_site: IObjectWithSite = menu.cast().unwrap();
+                menu_site.SetSite(&callbacks.view).unwrap();
+                assert_eq!(
+                    menu_site.GetSite::<IUnknown>().unwrap(),
+                    callbacks.view.cast::<IUnknown>().unwrap()
+                );
                 let popup = windows::Win32::UI::WindowsAndMessaging::CreatePopupMenu().unwrap();
                 let count = menu.QueryContextMenu(popup, 0, 1, 0x7fff, CMF_NORMAL | CMF_CANRENAME);
                 count.ok().unwrap();
@@ -591,6 +599,7 @@ mod fallback_tests {
                     "public fallback must keep native rename without a private Presenter"
                 );
                 windows::Win32::UI::WindowsAndMessaging::DestroyMenu(popup).unwrap();
+                menu_site.SetSite(None::<&IUnknown>).unwrap();
             }
             std::fs::remove_file(path).unwrap();
             DestroyWindow(owner);

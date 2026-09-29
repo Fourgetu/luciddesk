@@ -2,16 +2,38 @@
 use windows::{
     Win32::{
         Foundation::{E_POINTER, HWND, LPARAM, LRESULT, WPARAM},
+        System::Ole::{IObjectWithSite, IObjectWithSite_Impl},
         UI::{Shell::*, WindowsAndMessaging::HMENU},
     },
-    core::{HRESULT, Interface, PSTR, Result, implement},
+    core::{GUID, HRESULT, IUnknown, Interface, PSTR, Ref, Result, implement},
 };
-#[implement(IContextMenu3)]
+#[implement(IContextMenu3, IObjectWithSite)]
 struct Menu {
     inner: IContextMenu,
     desktop: HWND,
     first: std::rc::Rc<std::cell::Cell<Option<u32>>>,
     cancelled: std::rc::Rc<dyn Fn() -> bool>,
+}
+// CDefView sites the menu before the presenter enumerates Explorer commands.
+// Losing this interface leaves Open With's command without its host; shell32
+// dereferences that null site in COpenWithExplorerCommand::EnumSubCommands.
+impl IObjectWithSite_Impl for Menu_Impl {
+    fn SetSite(&self, site: Ref<IUnknown>) -> Result<()> {
+        unsafe { self.inner.cast::<IObjectWithSite>()?.SetSite(site.as_ref()) }
+    }
+    fn GetSite(&self, iid: *const GUID, out: *mut *mut std::ffi::c_void) -> Result<()> {
+        unsafe {
+            if out.is_null() {
+                return Err(E_POINTER.into());
+            }
+            *out = std::ptr::null_mut();
+            if iid.is_null() {
+                return Err(E_POINTER.into());
+            }
+            let inner = self.inner.cast::<IObjectWithSite>()?;
+            (inner.vtable().GetSite)(inner.as_raw(), iid, out).ok()
+        }
+    }
 }
 #[cfg(test)]
 pub fn wrap(
@@ -153,10 +175,50 @@ mod tests {
     use std::{cell::Cell, rc::Rc};
     use windows::core::PCSTR;
 
-    #[implement(IContextMenu)]
+    #[implement(IContextMenu, IObjectWithSite)]
     struct Fixture {
+        site: std::cell::RefCell<Option<IUnknown>>,
         invoked: Rc<Cell<usize>>,
         fail: Rc<Cell<bool>>,
+    }
+    impl IObjectWithSite_Impl for Fixture_Impl {
+        fn SetSite(&self, site: Ref<IUnknown>) -> Result<()> {
+            *self.site.borrow_mut() = site.as_ref().cloned();
+            Ok(())
+        }
+        fn GetSite(&self, iid: *const GUID, out: *mut *mut std::ffi::c_void) -> Result<()> {
+            let site = self.site.borrow();
+            let site = site.as_ref().ok_or(windows::Win32::Foundation::E_FAIL)?;
+            unsafe { (site.vtable().QueryInterface)(site.as_raw(), iid, out).ok() }
+        }
+    }
+    #[test]
+    fn wrapper_preserves_site_identity_replacement_and_release() {
+        let inner: IContextMenu = Fixture {
+            site: Default::default(),
+            invoked: Rc::new(Cell::new(0)),
+            fail: Rc::new(Cell::new(false)),
+        }.into();
+        let native_site: IObjectWithSite = inner.cast().unwrap();
+        let menu = wrap(inner, HWND::default(), Rc::new(Cell::new(None)));
+        let forwarded: IObjectWithSite = menu.cast().unwrap();
+        unsafe {
+            assert!(forwarded.GetSite::<IUnknown>().is_err());
+            for _ in 0..2 {
+                let host: IContextMenu = Fixture {
+                    site: Default::default(),
+                    invoked: Rc::new(Cell::new(0)),
+                    fail: Rc::new(Cell::new(false)),
+                }.into();
+                forwarded.SetSite(&host).unwrap();
+                assert_eq!(native_site.GetSite::<IUnknown>().unwrap(), host.cast::<IUnknown>().unwrap());
+                assert_eq!(forwarded.GetSite::<IContextMenu>().unwrap(), host);
+                assert_eq!(forwarded.cast::<IUnknown>().unwrap(), menu.cast::<IUnknown>().unwrap());
+            }
+            forwarded.SetSite(None::<&IUnknown>).unwrap();
+            assert!(native_site.GetSite::<IUnknown>().is_err());
+            assert!(forwarded.GetSite::<IUnknown>().is_err());
+        }
     }
     impl IContextMenu_Impl for Fixture_Impl {
         fn QueryContextMenu(&self, _: HMENU, _: u32, _: u32, _: u32, _: u32) -> HRESULT {
@@ -194,6 +256,7 @@ mod tests {
     fn rename_tracks_each_menu_id_range_and_rejects_missing_or_failed_ranges() {
         let fail = Rc::new(Cell::new(false));
         let inner: IContextMenu = Fixture {
+            site: Default::default(),
             invoked: Rc::new(Cell::new(0)),
             fail: fail.clone(),
         }
@@ -224,6 +287,7 @@ mod tests {
     fn wrapper_forwards_other_commands_and_intercepts_canonical_rename() {
         let invoked = Rc::new(Cell::new(0));
         let inner: IContextMenu = Fixture {
+            site: Default::default(),
             invoked: invoked.clone(),
             fail: Rc::new(Cell::new(false)),
         }
@@ -255,6 +319,7 @@ mod tests {
         let first = Rc::new(Cell::new(None));
         let menu = wrap_cancellable(
             Fixture {
+                site: Default::default(),
                 invoked: invoked.clone(),
                 fail: Rc::new(Cell::new(false)),
             }

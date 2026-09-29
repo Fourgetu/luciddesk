@@ -886,7 +886,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     show_hotkey::settings(&state.borrow().store), show_hotkey::status()),
                 unsafe { IsZoomed(hwnd) } != 0,
                 search_visible,
-                (desktop_status.clone(), header_divider::enabled()),
+                (desktop_status.clone(), header_divider::enabled(), compact_menu::enabled()),
             );
             if scroll_page != page { scroll_offset = 0.0; scroll_page = page; }
             let scene_changed = snapshot_changed || scene_key.as_ref() != Some(&key);

@@ -80,6 +80,7 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
     super::peek::load(&store)?;
     fonts::load(&store)?;
     header_divider::load(&store)?;
+    compact_menu::load(&store)?;
     search_hotkey::load(&store)?;
     everything_settings::load(&store)?;
     let mut workspace = store.load_workspace().map_err(|e| e.to_string())?;

@@ -1186,3 +1186,8 @@ font-load-failed = 字体加载失败，请重新进入此页面重试。
 tray-search = 搜索文件
 tray-refresh-all = 刷新所有面板
 tray-open-config = 打开配置目录
+
+ui-rename-panel = { "重命名面板…" }
+
+compact-menu-title = 使用 Windows 11 风格右键菜单
+compact-menu-description = 普通面板中的项目使用精简菜单。关闭后使用普通菜单，下次打开菜单生效。

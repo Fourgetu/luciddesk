@@ -79,6 +79,34 @@ fn api() -> Option<&'static ThemeApi> {
 // Refresh on opening, so changing Windows' default app mode takes effect on the
 // next popup without restarting or polling. This changes only this process.
 pub(crate) fn apply(owner: HWND) -> Option<bool> {
+    configure(owner).map(|(dark, _)| dark)
+}
+
+// Explorer hosts the desktop fallback menu. Restore process-wide opt-in after
+// its popup loop rather than leaving our preference in the host process.
+#[allow(dead_code)] // Used when compiled into the Explorer fallback host.
+pub(crate) struct ScopedTheme {
+    preferred: i32,
+}
+
+#[allow(dead_code)] // Folder menus use persistent opt-in in our own process.
+pub(crate) fn apply_scoped(owner: HWND) -> Option<ScopedTheme> {
+    let (_, preferred) = configure(owner)?;
+    Some(ScopedTheme { preferred })
+}
+
+impl Drop for ScopedTheme {
+    fn drop(&mut self) {
+        if let Some(api) = api() {
+            unsafe {
+                (api.preferred)(self.preferred);
+                (api.flush)();
+            }
+        }
+    }
+}
+
+fn configure(owner: HWND) -> Option<(bool, i32)> {
     let api = api()?;
     unsafe {
         let mut contrast = HIGHCONTRASTW {
@@ -98,7 +126,7 @@ pub(crate) fn apply(owner: HWND) -> Option<bool> {
         let high_contrast = contrast.dwFlags & HCF_HIGHCONTRASTON != 0;
         let dark = !high_contrast && (api.should_use_dark)();
         // Default in high contrast lets the accessibility theme draw the menu.
-        (api.preferred)(if high_contrast {
+        let preferred = (api.preferred)(if high_contrast {
             0
         } else if dark {
             2
@@ -107,6 +135,6 @@ pub(crate) fn apply(owner: HWND) -> Option<bool> {
         });
         (api.allow_window)(owner, dark);
         (api.flush)();
-        Some(dark)
+        Some((dark, preferred))
     }
 }

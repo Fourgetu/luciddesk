@@ -1186,3 +1186,8 @@ font-load-failed = フォントを読み込めませんでした。このペー�
 tray-search = ファイルを検索
 tray-refresh-all = すべてのパネルを更新
 tray-open-config = 設定フォルダーを開く
+
+ui-rename-panel = { "パネルの名前を変更…" }
+
+compact-menu-title = Windows 11 スタイルのメニューを使用
+compact-menu-description = 通常パネルの項目にコンパクトメニューを使用します。オフにすると、次回から従来のメニューを表示します。

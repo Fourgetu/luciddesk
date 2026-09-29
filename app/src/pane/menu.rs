@@ -69,50 +69,61 @@ pub fn show(
     backdrop: Backdrop,
     folder: (bool, bool),
     visible_columns: u8,
+    collapsed: bool,
 ) -> i32 {
     let topmost = super::quick_reveal::permanent_topmost(owner);
     show_entries(owner, anchor, anchored, theme, backdrop,
-        pane_entries(folder, visible_columns, auto_hide, locked, topmost))
+        pane_entries(folder, visible_columns, auto_hide, locked, topmost, collapsed))
 }
 
 fn pane_entries(folder: (bool, bool), visible_columns: u8,
-    auto_hide: bool, locked: bool, topmost: bool) -> Vec<Entry> {
+    auto_hide: bool, locked: bool, topmost: bool, collapsed: bool) -> Vec<Entry> {
     let mut rows = Vec::new();
     if folder.0 {
-        rows.extend([
-            entry(20, crate::i18n::text("ui-open-in-file-explorer"), "", ""),
-            entry(9, crate::i18n::text("ui-refresh"), "", "F5"),
-            entry(21, crate::i18n::text("ui-change-folder"), "", ""),
-            entry(0, "", "", ""),
-        ]);
+        rows.push(entry(20, crate::i18n::text("ui-open-in-file-explorer"), "", ""));
     }
+    rows.push(entry(9, crate::i18n::text("ui-refresh"), "", "F5"));
+    if !locked {
+        rows.push(entry(43, crate::i18n::text("ui-rename-panel"), "", ""));
+    }
+    if folder.0 {
+        rows.push(entry(21, crate::i18n::text("ui-change-folder"), "", ""));
+    }
+    rows.push(entry(0, "", "", ""));
     let mut view = entry(22, crate::i18n::text("ui-view"), "", "");
     view.children = vec![
         entry(25, crate::i18n::text("ui-icons"), if folder.1 { "" } else { "✓" }, ""),
         entry(26, crate::i18n::text("ui-list"), if folder.1 { "✓" } else { "" }, ""),
     ];
-    rows.push(view);
     if folder.0 && folder.1 {
+        view.children.push(entry(0, "", "", ""));
         let mut columns = entry(24, crate::i18n::text("ui-columns"), "", "");
         columns.children = column_entries(visible_columns);
-        rows.push(columns);
+        view.children.push(columns);
+    }
+    rows.push(view);
+    rows.extend([
+        entry(48, crate::i18n::text(if collapsed { "ui-expand-panel" } else { "ui-collapse-panel" }), "", ""),
+        entry(7, crate::i18n::text("ui-auto-collapse"), if auto_hide { "✓" } else { "" }, ""),
+        entry(10, crate::i18n::text("ui-lock-panel"), if locked { "✓" } else { "" }, ""),
+        entry(12, crate::i18n::text("ui-always-on-top"), if topmost { "✓" } else { "" }, ""),
+        entry(0, "", "", ""),
+    ]);
+    let mut create = entry(50, crate::i18n::text("ui-new-group"), "", "");
+    create.children = vec![
+        entry(1, crate::i18n::text("ui-new-group-panel"), "", ""),
+        entry(19, crate::i18n::text("ui-new-folder-panel"), "", ""),
+    ];
+    rows.push(create);
+    if !folder.0 {
+        rows.push(Entry { children: tab_entries(), ..entry(39, crate::i18n::text("ui-tabs"), "", "") });
     }
     rows.extend([
         entry(0, "", "", ""),
-        entry(48, crate::i18n::text("ui-expand-collapse-panel"), "", ""),
-        entry(10, crate::i18n::text("ui-lock-panel"), if locked { "✓" } else { "" }, ""),
-        entry(7, crate::i18n::text("ui-auto-collapse"), if auto_hide { "✓" } else { "" }, ""),
-        entry(12, crate::i18n::text("ui-always-on-top"), if topmost { "✓" } else { "" }, ""),
-        entry(0, "", "", ""),
-        entry(1, crate::i18n::text("ui-new-group-panel"), "", ""),
-        entry(19, crate::i18n::text("ui-new-folder-panel"), "", ""),
-        Entry { children: tab_entries(), ..entry(39, crate::i18n::text("ui-tabs"), "", "") },
-        entry(0, "", "", ""),
         entry(18, crate::i18n::text("ui-settings-9497"), "", ""),
+        entry(0, "", "", ""),
         entry(11, crate::i18n::text("ui-close-panel"), "", ""),
-        entry(4, crate::i18n::text("ui-exit-luciddesk"), "", ""),
     ]);
-    if folder.0 { rows.retain(|row| row.id != 39); }
     rows
 }
 
@@ -122,7 +133,6 @@ pub(super) fn tab_entries() -> Vec<Entry> {
         entry(0, "", "", ""),
         entry(46, crate::i18n::text("ui-previous-tab"), "", "Ctrl+Shift+Tab"),
         entry(47, crate::i18n::text("ui-next-tab"), "", "Ctrl+Tab"),
-        entry(43, crate::i18n::text("ui-rename-tab"), "", ""),
         entry(44, crate::i18n::text("ui-move-left"), "", ""),
         entry(45, crate::i18n::text("ui-move-right"), "", ""),
         entry(49, crate::i18n::text("ui-detach-as-panel"), "", ""),
@@ -134,11 +144,14 @@ pub(super) fn tab_entries() -> Vec<Entry> {
 pub(super) fn tab_context_entries(model: &super::GroupModel, topmost: bool) -> Vec<Entry> {
     // Keep every ordinary pane command directly accessible from a tab.
     let mut entries = pane_entries((model.folder.is_some(), model.is_list()),
-        model.folder_visible_columns, model.auto_hide, model.locked, topmost);
-    for row in &mut entries {
-        if row.id == 48 { row.label = if model.collapsed { crate::i18n::text("ui-expand-panel") } else { crate::i18n::text("ui-collapse-panel") }; }
+        model.folder_visible_columns, model.auto_hide, model.locked, topmost, model.collapsed);
+    entries.retain(|row| row.id != 43);
+    let mut tab_actions = vec![entry(49, crate::i18n::text("ui-detach-as-panel"), "", "")];
+    if !model.locked {
+        tab_actions.push(entry(43, crate::i18n::text("ui-rename-tab"), "", ""));
     }
-    entries.splice(0..0, [entry(49, crate::i18n::text("ui-detach-as-panel"), "", ""), entry(43, crate::i18n::text("ui-rename-tab"), "", ""), entry(42, crate::i18n::text("ui-close-tab"), "", "Ctrl+W"), entry(0, "", "", "")]);
+    tab_actions.extend([entry(42, crate::i18n::text("ui-close-tab"), "", "Ctrl+W"), entry(0, "", "", "")]);
+    entries.splice(0..0, tab_actions);
     entries
 }
 
@@ -172,11 +185,8 @@ fn show_level(
     unsafe {
         SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, (&raw mut animate).cast(), 0);
     }
-    let menu_width = if rows.iter().any(|row| !row.trailing.is_empty()) {
-        232.0
-    } else {
-        216.0
-    };
+    let Ok(renderer) = Renderer::new() else { return 0; };
+    let menu_width = renderer.menu_width(&rows);
     let width = (menu_width * scale).round() as i32;
     let height = ((row_top(&rows, rows.len()) + 4.0) * scale).round() as i32;
     let mut monitor = MONITORINFO {
@@ -205,9 +215,6 @@ fn show_level(
     let pending = Rc::new(Cell::new(None));
     let pending_handler = Rc::clone(&pending);
     let child_rows = rows.clone();
-    let Ok(renderer) = Renderer::new() else {
-        return 0;
-    };
     let mut surface: Option<Surface> = None;
     let mut selected: Option<usize> = None;
     let mut down: Option<usize> = None;
@@ -531,9 +538,27 @@ mod tests {
     use windows_sys::Win32::System::{ProcessStatus::*, Threading::*};
 
     #[test]
+    fn pane_actions_follow_state_and_keep_exit_in_tray() {
+        let open = pane_entries((false, false), 7, false, false, false, false);
+        let locked = pane_entries((false, false), 7, true, true, true, true);
+        assert!(open.iter().any(|row| row.id == 9));
+        assert!(open.iter().any(|row| row.id == 43));
+        assert!(!locked.iter().any(|row| row.id == 43));
+        assert_eq!(open.iter().find(|row| row.id == 48).unwrap().label,
+            crate::i18n::text("ui-collapse-panel"));
+        assert_eq!(locked.iter().find(|row| row.id == 48).unwrap().label,
+            crate::i18n::text("ui-expand-panel"));
+        for rows in [&open, &locked] {
+            assert!(!rows.iter().any(|row| row.id == 4));
+            assert_eq!(rows.last().unwrap().id, 11);
+            assert!(!rows.windows(2).any(|pair| pair[0].id == 0 && pair[1].id == 0));
+        }
+    }
+
+    #[test]
     fn folder_menus_exclude_tabs_and_ordinary_tabs_exclude_folders() {
-        assert!(!pane_entries((true, false), 7, false, false, false).iter().any(|r| r.id == 39));
-        assert!(pane_entries((false, false), 7, false, false, false).iter().any(|r| r.id == 39));
+        assert!(!pane_entries((true, false), 7, false, false, false, false).iter().any(|r| r.id == 39));
+        assert!(pane_entries((false, false), 7, false, false, false, false).iter().any(|r| r.id == 39));
         assert!(!tab_entries().iter().any(|r| r.id == 41));
     }
 
@@ -690,7 +715,7 @@ mod tests {
                 false,
                 desktop_core::PanelTheme::Dark,
                 Backdrop::Acrylic,
-                (false, false), 15
+                (false, false), 15, false
             ),
             0
         );
@@ -748,7 +773,7 @@ mod tests {
                         false,
                         desktop_core::PanelTheme::Dark,
                         Backdrop::Mica,
-                        (false, false), 15
+                        (false, false), 15, false
                     ),
                     0
                 );

@@ -106,6 +106,10 @@ pub(super) fn handle(
     id: PanelId,
     event: Event,
 ) -> Result<bool, String> {
+    if matches!(event, Event::ToggleCompactMenu | Event::ResetPaneOptions) {
+        compact_menu::save(&state.borrow().store, matches!(event, Event::ResetPaneOptions) || !compact_menu::enabled())?;
+        if matches!(event, Event::ToggleCompactMenu) { return Ok(false); }
+    }
     if matches!(event, Event::ToggleHeaderDivider | Event::ResetPaneOptions) {
         let s = state.borrow();
         header_divider::save(&s.store, matches!(event, Event::ResetPaneOptions) || !header_divider::enabled())?;
@@ -730,7 +734,7 @@ pub(super) fn handle(
     }
     let mut s = state.borrow_mut();
     match event {
-        Event::DetachTab(_) | Event::PreviewPaneMove | Event::FinishPaneMove(_) | Event::RenameTab(_) | Event::MoveTabId(..) | Event::ToggleHeaderDivider
+        Event::DetachTab(_) | Event::PreviewPaneMove | Event::FinishPaneMove(_) | Event::RenameTab(_) | Event::MoveTabId(..) | Event::ToggleHeaderDivider | Event::ToggleCompactMenu
         | Event::NewTab(_) | Event::SelectTab(_) | Event::CloseTab | Event::CloseTabId(_)
         | Event::MoveTab(_) => unreachable!("Tabs handled before borrowing PaneApp"),
         Event::SortFolder(_)

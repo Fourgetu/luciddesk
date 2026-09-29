@@ -1186,3 +1186,8 @@ font-load-failed = 글꼴을 불러오지 못했습니다. 이 페이지를 다�
 tray-search = 파일 검색
 tray-refresh-all = 모든 패널 새로 고침
 tray-open-config = 설정 폴더 열기
+
+ui-rename-panel = { "패널 이름 바꾸기…" }
+
+compact-menu-title = Windows 11 스타일 메뉴 사용
+compact-menu-description = 일반 패널 항목에 간소화된 메뉴를 사용합니다. 끄면 다음부터 기존 메뉴가 표시됩니다.

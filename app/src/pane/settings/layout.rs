@@ -365,6 +365,11 @@ fn scene_with_mica(
         ] {
             form.toggle(title, description, value, Action::Change(event));
         }
+        if show_mica {
+            form.toggle(crate::i18n::text("compact-menu-title"),
+                crate::i18n::text("compact-menu-description"), compact_menu::enabled(),
+                Action::Change(Event::ToggleCompactMenu));
+        }
         form.section(crate::i18n::text("ui-text-icons"));
         form.choices(
             crate::i18n::text("ui-panel-text"),

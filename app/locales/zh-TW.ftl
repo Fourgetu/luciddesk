@@ -1186,3 +1186,8 @@ font-load-failed = 字型載入失敗，請重新進入此頁面重試。
 tray-search = 搜尋檔案
 tray-refresh-all = 重新整理所有面板
 tray-open-config = 開啟設定目錄
+
+ui-rename-panel = { "重新命名面板…" }
+
+compact-menu-title = 使用 Windows 11 風格快顯功能表
+compact-menu-description = 一般面板中的項目使用精簡功能表。關閉後使用傳統功能表，下次開啟時生效。

@@ -76,6 +76,15 @@ pub struct Renderer {
 }
 
 impl Renderer {
+    pub(super) fn menu_width(&self, rows: &[super::menu::Entry]) -> f32 {
+        rows.iter().filter(|row| row.id != 0).fold(216.0_f32, |width, row| {
+            let trailing = if !row.children.is_empty() { 24.0 } else if row.trailing.is_empty() { 0.0 } else { 72.0 };
+            let measured = windows_canvas::TextLayout::new(row.label, &self.title, 4096.0, 64.0)
+                .map(|layout| layout.metrics().width_including_trailing_whitespace).unwrap_or(166.0);
+            width.max((measured + 54.0 + trailing).ceil())
+        }).min(480.0)
+    }
+
     #[cfg(test)]
     pub fn flyout(
         &mut self,
