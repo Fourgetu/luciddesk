@@ -119,9 +119,9 @@ fn reconcile_committed(
     let published = publish(&names);
     if let Some(h) = &state.borrow().session {
         if published.is_ok() {
-            *h.published.borrow_mut() = names;
+            *h.published.borrow_mut() = Some(names);
         } else {
-            h.published.borrow_mut().clear();
+            *h.published.borrow_mut() = None;
         }
         h.dirty.set(true);
     }

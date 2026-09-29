@@ -39,7 +39,8 @@ pub(super) struct Session {
     last_tick: Instant,
     tick_deferred: bool,
     last_icon_scan: Instant,
-    published: RefCell<Vec<String>>,
+    published: RefCell<Option<Vec<String>>>,
+    membership_pending: Option<Instant>,
     sender: mpsc::Sender<Loaded>,
     requested: std::collections::HashSet<String>,
     icon_failures: HashMap<String, (u32, Instant)>,
@@ -217,9 +218,15 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
         settings::show(&state, PanelId::new(0))?;
     }
     windows_window::run();
+    crate::diagnostics::render_trace(format_args!("shutdown: stop supervisor"));
     drop(supervisor);
     drop(tray);
-    state.borrow_mut().session.take();
+    // DETACH restores Explorer's Shell view and can synchronously call back
+    // into our windows. Do not hold PaneApp's RefMut across native teardown.
+    let session = state.borrow_mut().session.take();
+    crate::diagnostics::render_trace(format_args!("shutdown: detach Explorer begin"));
+    drop(session);
+    crate::diagnostics::render_trace(format_args!("shutdown: detach Explorer returned"));
     Ok(())
 }
 
@@ -331,7 +338,8 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), S
         last_tick: Instant::now() - Duration::from_millis(20),
         tick_deferred: false,
         last_icon_scan: Instant::now() - Duration::from_secs(1),
-        published: RefCell::new(Vec::new()),
+        published: RefCell::new(Some(Vec::new())),
+        membership_pending: None,
         sender,
         requested: Default::default(),
         icon_failures: HashMap::new(),
@@ -462,9 +470,12 @@ pub(super) fn register_drop(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result
                         });
                     at += 1;
                 }
-                if let Err(error) = save(&mut s) {
+                if let Err(error) = save_placement(&mut s) {
                     s.workspace = old;
-                    let _ = sync(&mut s);
+                    let restored = sync(&mut s);
+                    crate::diagnostics::render_trace(format_args!(
+                        "collection rollback: save={error}; restored={}", restored.is_ok()
+                    ));
                     eprintln!("Desktop collection rejected: {error}");
                 }
                 refresh_views(&mut s);
@@ -564,6 +575,23 @@ fn hidden_names(s: &PaneApp) -> Vec<String> {
     names
 }
 
+// An IPC error does not cancel a request already accepted by Explorer.
+// Invalidate before sending so even a rollback to the previous (possibly empty)
+// set must be published again after a timeout or partial native update.
+fn publish_membership(
+    published: &RefCell<Option<Vec<String>>>,
+    names: Vec<String>,
+    send: impl FnOnce(&[String]) -> Result<(), String>,
+) -> Result<(), String> {
+    if published.borrow().as_ref() == Some(&names) {
+        return Ok(());
+    }
+    published.replace(None);
+    send(&names)?;
+    published.replace(Some(names));
+    Ok(())
+}
+
 pub(super) fn sync(s: &mut PaneApp) -> Result<(), String> {
     let Some(h) = s.session.as_ref() else {
         return Ok(());
@@ -575,6 +603,24 @@ pub(super) fn sync(s: &mut PaneApp) -> Result<(), String> {
         return Err("Explorer 视图过滤连接已断开".into());
     }
     let h = s.session.as_mut().unwrap();
+    if let Some(started) = h.membership_pending {
+        match h.hook.poll_hidden() {
+            Ok(false) => return Ok(()),
+            Ok(true) => {
+                h.membership_pending = None;
+                h.audit.invalidate();
+                crate::diagnostics::render_trace(format_args!(
+                    "membership confirmed elapsed={}ms", started.elapsed().as_millis()
+                ));
+            }
+            Err(error) => {
+                h.membership_pending = None;
+                h.published.replace(None);
+                h.dirty.set(true);
+                return Err(error);
+            }
+        }
+    }
     if h.dirty.get() || !h.icons_dirty.borrow().is_empty() {
         h.image_retention.invalidate(&mut s.images);
     }
@@ -586,9 +632,18 @@ pub(super) fn sync(s: &mut PaneApp) -> Result<(), String> {
     );
     let names = hidden_names(s);
     let h = s.session.as_mut().unwrap();
-    if *h.published.borrow() != names {
-        h.hook.set_hidden(&names)?;
-        *h.published.borrow_mut() = names;
+    if let Err(error) = publish_membership(&h.published, names, |names| {
+        h.hook.submit_hidden(names)?;
+        h.audit.membership_changed();
+        h.membership_pending = Some(Instant::now());
+        crate::diagnostics::render_trace(format_args!("membership submitted count={}", names.len()));
+        Ok(())
+    }) {
+        // A failed immediate rollback may meet the same busy Explorer. Ensure
+        // the supervisor retries the authoritative workspace after Drop returns.
+        h.dirty.set(true);
+        h.wake.notify();
+        return Err(error);
     }
     h.icon_failures.retain(|key, _| live.contains(key));
     queue_pane_icons(s, true);
@@ -599,7 +654,7 @@ pub(super) fn clear_desktop_selection(s: &PaneApp) -> Result<(), String> {
     if let Some(h) = &s.session {
         h.last_pane_input
             .set(Some(unsafe { GetMessageTime() } as u32));
-        if !h.menu_active.get() {
+        if !h.menu_active.get() && h.membership_pending.is_none() {
             h.hook.clear_selection()?;
         }
     }
@@ -656,6 +711,9 @@ pub(super) fn pause_for_preview(s: &PaneApp, allow: bool) -> Result<(), String> 
 
 pub(super) fn begin_item_menu(s: &PaneApp) -> Result<Rc<FilterSession>, String> {
     let h = s.session.as_ref().ok_or("桌面过滤连接尚未就绪")?;
+    if h.membership_pending.is_some() {
+        return Err("桌面分组正在同步，请稍后重试".into());
+    }
     if h.menu_active.replace(true) {
         return Err("已有活动菜单或预览".into());
     }
@@ -732,6 +790,7 @@ fn tick_once(s: &mut PaneApp) -> Result<(), String> {
     }
     urgent |= icons::tick(s, urgent);
     urgent |= poll_inventory(s, urgent)?;
+    urgent |= s.session.as_ref().unwrap().membership_pending.is_some();
     // The Hook repairs its retained desired set. Publish only when application
     // state changed, rather than duplicating its watchdog with periodic SETs.
     if urgent {
@@ -743,6 +802,9 @@ fn tick_once(s: &mut PaneApp) -> Result<(), String> {
 
 fn poll_inventory(s: &mut PaneApp, urgent: bool) -> Result<bool, String> {
     let h = s.session.as_ref().unwrap();
+    if h.membership_pending.is_some() || h.published.borrow().is_none() {
+        return Ok(false);
+    }
     if h.audit.due(h.last_reconcile.elapsed()) {
         let managed = managed_identities(s);
         s.session.as_mut().unwrap().audit.submit(managed, urgent)?;
@@ -791,6 +853,7 @@ pub(super) fn next_work(s: &PaneApp) -> Option<u32> {
         return None;
     }
     if h.tick_deferred
+        || h.membership_pending.is_some()
         || h.dirty.get()
         || h.pending_desktop_input.get().is_some()
         || h.audit.due(Duration::ZERO)
@@ -816,6 +879,20 @@ pub(super) fn next_work(s: &PaneApp) -> Option<u32> {
                 .as_millis()
                 .clamp(25, u32::MAX as u128) as u32
         })
+}
+
+// Persist drag intent and present it before asking Explorer to update its view.
+// A slow Shell operation must not roll back a successfully saved user action.
+fn save_placement(s: &mut PaneApp) -> Result<(), String> {
+    s.workspace.sync_tab_windows();
+    s.store.save_workspace(&s.workspace).map_err(|error| error.to_string())?;
+    refresh_views(s);
+    if let Some(h) = &mut s.session {
+        h.audit.membership_changed();
+        h.dirty.set(true);
+        h.wake.notify();
+    }
+    Ok(())
 }
 
 pub(super) fn release(
@@ -844,7 +921,7 @@ pub(super) fn release(
             entry.set_placement(DesktopPlacement::default());
         }
     }
-    if let Err(error) = save(s) {
+    if let Err(error) = save_placement(s) {
         s.workspace = old;
         return Err(error);
     }
@@ -854,6 +931,61 @@ pub(super) fn release(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn drag_round_trip_saves_all_placements_without_shell_confirmation() {
+        let mut s = crate::pane::tests::test_state();
+        let id = PanelId::new(1);
+        let identities: Vec<_> = s.workspace.desktop_items().iter()
+            .map(|item| item.identity().clone()).collect();
+        for identity in &identities {
+            s.workspace.desktop_item_mut(identity).unwrap().set_placement(DesktopPlacement::default());
+        }
+        save_placement(&mut s).unwrap();
+        assert!(items_for(&s, id).is_empty(), "released items must leave the pane immediately");
+        assert_eq!(s.store.load_workspace().unwrap(), s.workspace);
+        for (index, identity) in identities.iter().enumerate() {
+            s.workspace.desktop_item_mut(identity).unwrap().set_placement(DesktopPlacement::Pane {
+                pane_id: id, position: GridPosition::new(index as u32, 0),
+            });
+        }
+        save_placement(&mut s).unwrap();
+        assert_eq!(items_for(&s, id).len(), identities.len());
+        assert_eq!(s.store.load_workspace().unwrap(), s.workspace);
+    }
+
+    #[test]
+    fn timed_out_collection_republishes_rollback_after_partial_or_late_hiding() {
+        for original in [Vec::new(), vec!["existing".to_string()]] {
+            for applied in [0, 2, 3] {
+                let published = RefCell::new(Some(original.clone()));
+                let requested = vec!["A".to_string(), "B".to_string(), "C".to_string()];
+                let mut native = original.clone();
+                assert!(publish_membership(&published, requested.clone(), |names| {
+                    native = names[..applied].to_vec();
+                    Err("injected timeout after accepting SET".into())
+                }).is_err());
+                assert!(published.borrow().is_none());
+                // The first rollback can be rejected while that SET is pending.
+                assert!(publish_membership(&published, original.clone(), |_| {
+                    Err("Explorer still busy".into())
+                }).is_err());
+                // The timed-out SET completes later, after the app rolled back.
+                native = requested;
+                let mut sent = false;
+                publish_membership(&published, original.clone(), |names| {
+                    sent = true;
+                    native = names.to_vec();
+                    Ok(())
+                }).unwrap();
+                assert!(sent, "rollback must not be skipped by the old cache");
+                assert_eq!(native, original);
+                publish_membership(&published, original.clone(), |_| {
+                    panic!("an acknowledged unchanged set must not be resent")
+                }).unwrap();
+            }
+        }
+    }
 
     #[test]
     fn reconnect_membership_uses_cached_images_and_waits_only_for_missing_ones() {

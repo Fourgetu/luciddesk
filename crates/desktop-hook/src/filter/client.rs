@@ -17,6 +17,7 @@ pub struct FilterSession {
     hook: HHOOK,
     module: HMODULE,
     sequence: Cell<u32>,
+    pending_hidden: Cell<Option<u32>>,
     update: Cell<Option<u32>>,
     explorer_watch: Option<explorer::ExplorerWatch>,
 }
@@ -137,6 +138,7 @@ impl FilterSession {
                 hook,
                 module,
                 sequence: Cell::new(0),
+                pending_hidden: Cell::new(None),
                 update: Cell::new(None),
                 explorer_watch: None,
             };
@@ -163,6 +165,38 @@ impl FilterSession {
     pub fn set_hidden(&self, names: &[String]) -> Result<(), String> {
         self.request(wire::SET, names)
     }
+    /// Submit membership without waiting for Shell enumeration and updates.
+    /// Call poll_hidden until complete before submitting another transaction.
+    pub fn submit_hidden(&self, names: &[String]) -> Result<(), String> {
+        if self.pending_hidden.get().is_some() {
+            return Err("桌面分组同步尚未完成".into());
+        }
+        let sequence = self.next_sequence();
+        let bytes = wire::encode(wire::SET, sequence, names)?;
+        self.transmit(&bytes)?;
+        self.pending_hidden.set(Some(sequence));
+        Ok(())
+    }
+
+    /// Returns false while Explorer is still processing the submitted set.
+    pub fn poll_hidden(&self) -> Result<bool, String> {
+        let Some(sequence) = self.pending_hidden.get() else { return Ok(true); };
+        unsafe {
+            if !self.is_alive() {
+                self.pending_hidden.set(None);
+                return Err("桌面过滤连接已断开".into());
+            }
+            if GetPropW(self.view, ACK) as usize != sequence as usize {
+                return Ok(false);
+            }
+            self.pending_hidden.set(None);
+            let error = GetPropW(self.view, REQUEST_ERROR) as usize as u32;
+            if error != 0 {
+                return Err(format!("桌面快照暂不可用，等待重试 (0x{error:08x})"));
+            }
+        }
+        Ok(true)
+    }
     /// Request fallback repair after the app's shared desktop audit.
     pub fn repair(&self) -> Result<(), String> {
         if !self.is_alive() { return Err("桌面过滤连接已断开".into()); }
@@ -179,6 +213,9 @@ impl FilterSession {
     /// Freeze presentation while a managed Shell identity changes. Membership
     /// remains filtered; the caller must finish even if the operation fails.
     pub fn begin_update(&self) -> Result<(), String> {
+        if self.pending_hidden.get().is_some() {
+            return Err("桌面分组同步尚未完成，请稍后重试".into());
+        }
         if self.update.get().is_some() {
             if unsafe { GetPropW(self.view, UPDATE_RELEASE) as usize }
                 != self.update.get().unwrap() as usize
@@ -281,7 +318,7 @@ impl FilterSession {
         let bytes = wire::encode(op, sequence, names)?;
         self.send(op, sequence, &bytes)
     }
-    fn send(&self, op: u32, sequence: u32, bytes: &[u8]) -> Result<(), String> {
+    fn transmit(&self, bytes: &[u8]) -> Result<(), String> {
         unsafe {
             if GetPropW(self.view, OWNER) != self.owner {
                 return Err("桌面过滤连接已断开".into());
@@ -305,6 +342,17 @@ impl FilterSession {
             {
                 return Err("Explorer 拒绝桌面过滤请求".into());
             }
+        }
+        Ok(())
+    }
+    fn send(&self, op: u32, sequence: u32, bytes: &[u8]) -> Result<(), String> {
+        // Do not overwrite the ACK/error of an asynchronous SET before its
+        // caller has consumed it. Detach remains available during shutdown.
+        if op != wire::DETACH && self.pending_hidden.get().is_some() {
+            return Err("桌面分组同步尚未完成，请稍后重试".into());
+        }
+        self.transmit(bytes)?;
+        unsafe {
             let started = Instant::now();
             // The menu worker itself allows three seconds to prepare. Give
             // its reply time to reach this outer IPC boundary before timing out.
@@ -362,7 +410,14 @@ impl FilterSession {
                         MWMO_INPUTAVAILABLE,
                     );
                 } else {
-                    std::thread::sleep(Duration::from_millis(5));
+                    // Shell view updates may synchronously query an owner HWND.
+                    // Service sent messages without dispatching queued app actions
+                    // while the caller still owns its workspace/model borrow.
+                    let mut message = MSG::default();
+                    PeekMessageW(&raw mut message, null_mut(), 0, 0, PM_NOREMOVE | PM_QS_SENDMESSAGE);
+                    MsgWaitForMultipleObjectsEx(
+                        0, std::ptr::null(), 5, QS_SENDMESSAGE, MWMO_INPUTAVAILABLE,
+                    );
                 }
             }
             Err(if wire::is_menu_transaction(op) {
@@ -428,6 +483,120 @@ impl Drop for FilterSession {
 mod update_tests {
     use super::*;
     #[test]
+    fn asynchronous_membership_waits_without_blocking_or_overwriting_ack() {
+        unsafe extern "system" fn accept(hwnd: HWND, msg: u32, wp: usize, lp: isize) -> isize {
+            if msg == WM_COPYDATA { MAGIC as isize }
+            else { unsafe { DefWindowProcW(hwnd, msg, wp, lp) } }
+        }
+        unsafe {
+            let class = windows_sys::w!("LucidPaneAsyncMembershipTest");
+            let instance = GetModuleHandleW(null_mut());
+            assert_ne!(RegisterClassW(&WNDCLASSW { lpfnWndProc: Some(accept), hInstance: instance,
+                lpszClassName: class, ..Default::default() }), 0);
+            let hwnd = CreateWindowExW(0, class, class, WS_POPUP, 0, 0, 1, 1,
+                null_mut(), null_mut(), instance, null_mut());
+            assert!(!hwnd.is_null());
+            SetPropW(hwnd, OWNER, hwnd);
+            let session = std::mem::ManuallyDrop::new(FilterSession {
+                view: hwnd, owner: hwnd, hook: null_mut(), module: null_mut(),
+                sequence: Cell::new(0), pending_hidden: Cell::new(None),
+                update: Cell::new(None), explorer_watch: None,
+            });
+            let names: Vec<_> = (0..100).map(|i| format!("test:{i}")).collect();
+            session.submit_hidden(&names).unwrap();
+            let sequence = session.pending_hidden.get().unwrap();
+            for _ in 0..100 { assert!(!session.poll_hidden().unwrap()); }
+            assert!(session.submit_hidden(&[]).is_err());
+            assert!(session.clear_selection().is_err(), "must preserve outstanding ACK");
+            let next_sequence = session.sequence.get();
+            assert!(session.begin_update().is_err());
+            assert!(session.update.get().is_none(), "busy rejection must not create a freeze token");
+            assert_eq!(session.sequence.get(), next_sequence);
+            assert!(GetPropW(hwnd, UPDATE_RELEASE).is_null());
+            SetPropW(hwnd, ACK, sequence as usize as _);
+            assert!(session.poll_hidden().unwrap());
+            session.submit_hidden(&[]).unwrap();
+            let sequence = session.pending_hidden.get().unwrap();
+            SetPropW(hwnd, REQUEST_ERROR, 123usize as _);
+            SetPropW(hwnd, ACK, sequence as usize as _);
+            assert!(session.poll_hidden().is_err());
+            assert!(session.pending_hidden.get().is_none(), "errors must permit retry");
+            RemovePropW(hwnd, REQUEST_ERROR);
+            session.submit_hidden(&names).unwrap();
+            RemovePropW(hwnd, OWNER);
+            assert!(session.poll_hidden().is_err());
+            DestroyWindow(hwnd);
+            UnregisterClassW(class, instance);
+        }
+    }
+
+    #[test]
+    fn membership_wait_services_sent_callbacks_without_running_posted_actions() {
+        const WORK: u32 = WM_APP + 77;
+        const ACTION: u32 = WM_APP + 78;
+        unsafe extern "system" fn peer(hwnd: HWND, msg: u32, wp: usize, lp: isize) -> isize {
+            unsafe {
+                match msg {
+                    WM_COPYDATA => {
+                        let data = &*(lp as *const COPYDATASTRUCT);
+                        let bytes = std::slice::from_raw_parts(data.lpData.cast::<u8>(), data.cbData as usize);
+                        let request = wire::decode(bytes).unwrap();
+                        PostMessageW(hwnd, WORK, request.sequence as usize, wp as isize);
+                        MAGIC as isize
+                    }
+                    WORK => {
+                        // Ensure the original SendMessageTimeout has returned.
+                        std::thread::sleep(Duration::from_millis(30));
+                        let mut answer = 0;
+                        if SendMessageTimeoutW(lp as HWND, WM_NULL, 0, 0, SMTO_ABORTIFHUNG,
+                            1000, &raw mut answer) != 0 {
+                            SetPropW(hwnd, ACK, wp as _);
+                        }
+                        0
+                    }
+                    WM_CLOSE => { DestroyWindow(hwnd); PostQuitMessage(0); 0 }
+                    _ => DefWindowProcW(hwnd, msg, wp, lp),
+                }
+            }
+        }
+        unsafe {
+            let owner = CreateWindowExW(0, windows_sys::w!("STATIC"), windows_sys::w!(""),
+                WS_POPUP, 0, 0, 1, 1, null_mut(), null_mut(), null_mut(), null_mut());
+            assert!(!owner.is_null());
+            let (sender, receiver) = std::sync::mpsc::channel();
+            let worker = std::thread::spawn(move || {
+                let class = windows_sys::w!("LucidPaneMembershipCallbackTest");
+                let instance = GetModuleHandleW(null_mut());
+                assert_ne!(RegisterClassW(&WNDCLASSW { lpfnWndProc: Some(peer), hInstance: instance,
+                    lpszClassName: class, ..Default::default() }), 0);
+                let hwnd = CreateWindowExW(0, class, class, WS_POPUP, 0, 0, 1, 1,
+                    null_mut(), null_mut(), instance, null_mut());
+                sender.send(hwnd as usize).unwrap();
+                let mut message = MSG::default();
+                while GetMessageW(&raw mut message, null_mut(), 0, 0) > 0 {
+                    DispatchMessageW(&message);
+                }
+                UnregisterClassW(class, instance);
+            });
+            let view = receiver.recv_timeout(Duration::from_secs(2)).unwrap() as HWND;
+            SetPropW(view, OWNER, owner);
+            PostMessageW(owner, ACTION, 0, 0);
+            let session = std::mem::ManuallyDrop::new(FilterSession {
+                view, owner, hook: null_mut(), module: null_mut(), sequence: Cell::new(0), pending_hidden: Cell::new(None),
+                update: Cell::new(None), explorer_watch: None,
+            });
+            let result = session.set_hidden(&["test:item".into()]);
+            let mut message = MSG::default();
+            let queued = PeekMessageW(&raw mut message, owner, ACTION, ACTION, PM_REMOVE);
+            PostMessageW(view, WM_CLOSE, 0, 0);
+            worker.join().unwrap();
+            DestroyWindow(owner);
+            assert!(result.is_ok(), "sent callback must not deadlock ACK: {result:?}");
+            assert_ne!(queued, 0, "posted application actions must remain queued");
+        }
+    }
+
+    #[test]
     fn accepted_request_aborts_when_connection_disappears_before_ack() {
         unsafe extern "system" fn disconnected(hwnd: HWND, msg: u32, wp: usize, lp: isize) -> isize {
             if msg == WM_COPYDATA {
@@ -445,7 +614,7 @@ mod update_tests {
             assert!(!hwnd.is_null());
             let session = std::mem::ManuallyDrop::new(FilterSession {
                 view: hwnd, owner: hwnd, hook: null_mut(), module: null_mut(),
-                sequence: Cell::new(0), update: Cell::new(None), explorer_watch: None,
+                sequence: Cell::new(0), pending_hidden: Cell::new(None), update: Cell::new(None), explorer_watch: None,
             });
             SetPropW(hwnd, OWNER, hwnd);
             let started = Instant::now();
@@ -483,7 +652,7 @@ mod update_tests {
                 owner: hwnd,
                 hook: null_mut(),
                 module: null_mut(),
-                sequence: Cell::new(42),
+                sequence: Cell::new(42), pending_hidden: Cell::new(None),
                 update: Cell::new(Some(42)),
                 explorer_watch: None,
             });

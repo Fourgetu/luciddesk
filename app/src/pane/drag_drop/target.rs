@@ -122,7 +122,7 @@ impl IDropTarget_Impl for Target_Impl {
         unsafe {
             *effect = if !items.is_empty()
                 && (*effect & self.effect) != DROPEFFECT_NONE
-                && (self.accept)(&items, true)
+                && (self.accept)(&items, false)
             {
                 self.effect
             } else {
@@ -139,6 +139,15 @@ impl IDropTarget_Impl for Target_Impl {
             }
         }
         drop(self.description.take());
+        // Helper::Drop and restoring IDataObject descriptions can pump messages.
+        // Queue the membership change only after both have finished, otherwise
+        // our posted action can run while Explorer is still waiting for Drop.
+        // Do not make any more outgoing COM calls after committing.
+        unsafe {
+            if *effect != DROPEFFECT_NONE && !(self.accept)(&items, true) {
+                *effect = DROPEFFECT_NONE;
+            }
+        }
         Ok(())
     }
 }
@@ -233,6 +242,37 @@ mod tests {
             Ok(())
         }
     }
+    #[test]
+    fn drop_commits_only_after_shell_helper_cleanup() {
+        let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        for accepted in [true, false] {
+            let events = Rc::new(RefCell::new(Vec::new()));
+            let observed = events.clone();
+            let target: IDropTarget = Target {
+                effect: DROPEFFECT_LINK,
+                hwnd: HWND::default(),
+                helper: Some(Helper(events.clone()).into()),
+                accept: Rc::new(move |_, commit| {
+                    if commit {
+                        observed.borrow_mut().push(("commit", 0, 0));
+                        accepted
+                    } else { true }
+                }),
+                items: RefCell::new(vec![ShellIdentity::Namespace {
+                    parsing_name: "test:dragged".into(),
+                }]),
+                description: RefCell::new(None),
+            }.into();
+            unsafe {
+                let data: IDataObject = SHCreateDataObject(None, None, None).unwrap();
+                let mut effect = DROPEFFECT_LINK;
+                target.Drop(&data, MODIFIERKEYS_FLAGS(0), POINTL { x: 10, y: 20 }, &raw mut effect).unwrap();
+                assert_eq!(effect, if accepted { DROPEFFECT_LINK } else { DROPEFFECT_NONE });
+            }
+            assert_eq!(*events.borrow(), [("drop", 10, 20), ("commit", 0, 0)]);
+        }
+    }
+
     #[test]
     fn drag_image_helper_receives_screen_coordinates_and_full_lifecycle() {
         let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();

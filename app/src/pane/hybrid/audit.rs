@@ -16,6 +16,7 @@ pub(super) struct DesktopAudit {
     requests: mpsc::Sender<(Vec<ShellIdentity>, bool)>,
     results: mpsc::Receiver<AuditResult>,
     pending: bool,
+    discard_pending: bool,
     schedule: AuditSchedule,
     wake: wake::Wake,
     restart_needed: bool,
@@ -71,6 +72,7 @@ impl DesktopAudit {
             requests,
             results,
             pending: false,
+            discard_pending: false,
             schedule: Default::default(),
             wake,
             restart_needed: false,
@@ -78,6 +80,13 @@ impl DesktopAudit {
     }
 
     pub(super) fn invalidate(&mut self) {
+        self.schedule.invalidate();
+    }
+
+    // Membership can change and return to the same identity set while a slow
+    // snapshot is running. Equality of member keys cannot detect that round trip.
+    pub(super) fn membership_changed(&mut self) {
+        self.discard_pending |= self.pending;
         self.schedule.invalidate();
     }
 
@@ -123,6 +132,10 @@ impl DesktopAudit {
         match self.results.try_recv() {
             Ok(result) => {
                 self.pending = false;
+                if std::mem::take(&mut self.discard_pending) {
+                    self.schedule.invalidate();
+                    return Ok(None);
+                }
                 Ok(Some(result))
             }
             Err(mpsc::TryRecvError::Disconnected) => Err(self.disconnected()),
@@ -132,6 +145,7 @@ impl DesktopAudit {
 
     fn disconnected(&mut self) -> String {
         self.pending = false;
+        self.discard_pending = false;
         self.restart_needed = true;
         self.schedule.invalidate();
         "桌面检查线程已退出，将重建检查线程".into()
@@ -158,6 +172,7 @@ mod tests {
                 requests,
                 results,
                 pending: false,
+                discard_pending: false,
                 schedule: Default::default(),
                 wake: Default::default(),
                 restart_needed: false,
@@ -165,6 +180,28 @@ mod tests {
             receive,
             send,
         )
+    }
+
+    #[test]
+    fn membership_round_trip_discards_old_result_even_when_keys_match() {
+        let (mut audit, requests, results) = fixture();
+        audit.submit(Vec::new(), false).unwrap();
+        requests.recv().unwrap();
+        audit.membership_changed();
+        audit.membership_changed();
+        results.send(AuditResult { member_keys: Vec::new(), inventory: Ok(None) }).unwrap();
+        assert!(audit.poll().unwrap().is_none(), "same keys do not make a pre-drag snapshot current");
+        assert!(audit.due(Duration::ZERO));
+        audit.submit(Vec::new(), false).unwrap();
+        assert!(requests.recv().unwrap().1, "replacement capture must be forced");
+        results.send(AuditResult { member_keys: Vec::new(), inventory: Ok(None) }).unwrap();
+        assert!(audit.poll().unwrap().is_some());
+        // With no snapshot in flight, invalidation must not discard the next one.
+        audit.membership_changed();
+        audit.submit(Vec::new(), false).unwrap();
+        assert!(requests.recv().unwrap().1);
+        results.send(AuditResult { member_keys: Vec::new(), inventory: Ok(None) }).unwrap();
+        assert!(audit.poll().unwrap().is_some());
     }
 
     #[test]
