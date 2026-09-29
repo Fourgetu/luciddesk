@@ -87,7 +87,8 @@ impl RestoreInput {
 }
 enum Outcome {
     Saved(String),
-    Unchanged,
+    BackupSaved(String, u64),
+    Unchanged(u64),
     Inspect(RestoreInput),
     ReadyRestore(RestoreInput, PathBuf),
 }
@@ -95,6 +96,7 @@ pub(super) struct Manager {
     pub view: View,
     receiver: Option<mpsc::Receiver<Completed>>,
     observed: u64,
+    checked: Option<u64>,
     changed: Instant,
     attempted: Instant,
     initialized: bool,
@@ -105,6 +107,7 @@ impl Default for Manager {
             view: View::default(),
             receiver: None,
             observed: 0,
+            checked: None,
             changed: Instant::now(),
             attempted: Instant::now() - Duration::from_secs(3600),
             initialized: false,
@@ -295,7 +298,14 @@ pub(super) fn maintain(state: &Rc<RefCell<PaneApp>>) {
         }
         match completed.result {
             Ok(Outcome::Saved(message)) => set_status(state, &message),
-            Ok(Outcome::Unchanged) => set_status(state, crate::i18n::text("ui-configuration-unchanged-no-new-backup-needed")),
+            Ok(Outcome::BackupSaved(message, revision)) => {
+                state.borrow_mut().runtime.as_mut().unwrap().backup.checked = Some(revision);
+                set_status(state, &message);
+            }
+            Ok(Outcome::Unchanged(revision)) => {
+                state.borrow_mut().runtime.as_mut().unwrap().backup.checked = Some(revision);
+                set_status(state, crate::i18n::text("ui-configuration-unchanged-no-new-backup-needed"));
+            }
             Ok(Outcome::Inspect(input)) => {
                 state
                     .borrow_mut()
@@ -358,6 +368,7 @@ pub(super) fn maintain(state: &Rc<RefCell<PaneApp>>) {
             return;
         } else {
             policy.enabled
+                && m.checked != Some(changes)
                 && m.changed.elapsed() >= Duration::from_secs(10)
                 && m.attempted.elapsed() >= Duration::from_secs(policy.minutes * 60)
         }
@@ -380,7 +391,7 @@ pub(super) fn deadline(s: &PaneApp) -> Option<Instant> {
         return Some(Instant::now());
     }
     let policy = Policy::load(&s.store);
-    policy.enabled.then(|| {
+    (policy.enabled && manager.checked != Some(s.store.change_count())).then(|| {
         (manager.changed + Duration::from_secs(10))
             .max(manager.attempted + Duration::from_secs(policy.minutes * 60))
     })
@@ -404,11 +415,12 @@ pub(super) fn create(state: &Rc<RefCell<PaneApp>>, automatic: bool) -> Result<()
     if view(&state.borrow()).busy {
         return Err(crate::i18n::text("ui-a-backup-task-is-running-please-wait").into());
     }
-    let (snapshot, policy) = {
+    let (snapshot, policy, revision) = {
         let s = state.borrow();
         (
             s.store.backup_snapshot().map_err(|e| e.to_string())?,
             Policy::load(&s.store),
+            s.store.change_count(),
         )
     };
     begin(state, crate::i18n::text("ui-creating-backup"), move |directory| {
@@ -419,7 +431,7 @@ pub(super) fn create(state: &Rc<RefCell<PaneApp>>, automatic: bool) -> Result<()
                     .as_ref()
                     == Some(&snapshot.backup_content().map_err(|e| e.to_string())?)
                 {
-                    return Ok(Outcome::Unchanged);
+                    return Ok(Outcome::Unchanged(revision));
                 }
             }
         }
@@ -429,7 +441,7 @@ pub(super) fn create(state: &Rc<RefCell<PaneApp>>, automatic: bool) -> Result<()
             if automatic { "auto" } else { "manual" },
             policy.keep,
         )?;
-        Ok(Outcome::Saved(crate::i18n::format("ui-backup-completed", &[("arg0", format!("{}", if automatic { crate::i18n::text("ui-automatic") } else { crate::i18n::text("ui-manual") })), ("warning", format!("{}", warning))])))
+        Ok(Outcome::BackupSaved(crate::i18n::format("ui-backup-completed", &[("arg0", format!("{}", if automatic { crate::i18n::text("ui-automatic") } else { crate::i18n::text("ui-manual") })), ("warning", format!("{}", warning))]), revision))
     })
 }
 fn choose(owner: isize, export: bool) -> Result<Option<PathBuf>, String> {
@@ -751,6 +763,7 @@ mod tests {
         let state = state(root.path());
         state.borrow_mut().workspace = Workspace::default();
         Policy { enabled: false, ..Default::default() }.save(&state.borrow().store).unwrap();
+        state.borrow_mut().runtime.as_mut().unwrap().backup.initialized = true;
         let supervisor = runtime::supervisor(&state).unwrap();
         begin(&state, "waiting", |_| Ok(Outcome::Saved("event delivered".into()))).unwrap();
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -798,6 +811,27 @@ mod tests {
             std::thread::sleep(Duration::from_millis(5));
         }
     }
+    #[test]
+    fn unchanged_scheduler_sleeps_and_changes_during_backup_are_not_lost() {
+        let root = tempfile::tempdir().unwrap();
+        let state = state(root.path());
+        state.borrow_mut().runtime.as_mut().unwrap().backup.initialized = true;
+        create(&state, true).unwrap();
+        // A later change must not be marked as included in the running snapshot.
+        state.borrow().store.save_preference("during_backup", "new").unwrap();
+        finish(&state);
+        assert!(deadline(&state.borrow()).is_some());
+        create(&state, true).unwrap();
+        finish(&state);
+        assert!(deadline(&state.borrow()).is_none());
+        let count = view(&state.borrow()).records.len();
+        maintain(&state);
+        assert!(!view(&state.borrow()).busy);
+        assert_eq!(view(&state.borrow()).records.len(), count);
+        state.borrow().store.save_preference("after_backup", "new").unwrap();
+        assert!(deadline(&state.borrow()).is_some());
+    }
+
     #[test]
     fn worker_serializes_jobs_deduplicates_content_and_rejects_corrupt_restore() {
         let root = tempfile::tempdir().unwrap();

@@ -45,7 +45,6 @@ pub(super) enum ControlKind {
     Button,
     BackButton,
     Row,
-    BackRow,
     ForwardRow,
     Navigation,
     Caption,
@@ -55,10 +54,10 @@ pub(super) enum ControlKind {
 }
 impl ControlKind {
     pub fn is_row(self) -> bool {
-        matches!(self, Self::Row | Self::BackRow | Self::ForwardRow)
+        matches!(self, Self::Row | Self::ForwardRow)
     }
     pub fn is_back(self) -> bool {
-        matches!(self, Self::BackButton | Self::BackRow)
+        matches!(self, Self::BackButton)
     }
 }
 
@@ -116,15 +115,6 @@ impl Scene {
     pub fn row(&mut self, x: f32, y: f32, width: f32, label: &str, action: Action) {
         self.control(
             ControlKind::Row,
-            Rect::from_xywh(x, y, width, Style::ROW_HEIGHT),
-            label,
-            action,
-            false,
-        );
-    }
-    pub fn back_row(&mut self, x: f32, y: f32, width: f32, label: &str, action: Action) {
-        self.control(
-            ControlKind::BackRow,
             Rect::from_xywh(x, y, width, Style::ROW_HEIGHT),
             label,
             action,

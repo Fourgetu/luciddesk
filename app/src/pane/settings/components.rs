@@ -276,10 +276,10 @@ impl<'a> SettingsForm<'a> {
         self.scene
             .control(ControlKind::Combo, r, label, action, false);
     }
-    pub fn back(&mut self, label: &str, action: Action) {
-        self.scene
-            .back_row(self.x, self.y, self.width, label, action);
-        self.y += Tokens::ROW_HEIGHT + Tokens::GAP;
+    pub fn back(&mut self, _label: &str, action: Action) {
+        self.scene.control(ControlKind::BackButton,
+            Rect::from_xywh(self.x + self.width - 86.0, 34.0, 86.0, 32.0),
+            crate::i18n::text("ui-back"), action, false);
     }
     pub fn option(&mut self, label: &str, action: Action, selected: bool) {
         self.scene.row(self.x, self.y, self.width, label, action);

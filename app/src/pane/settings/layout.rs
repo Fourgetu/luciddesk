@@ -175,15 +175,9 @@ fn scene_with_mica(
         let Backdrop::Solid { color, opacity } = appearance.1 else {
             return s;
         };
-        s.control(
-            ControlKind::BackButton,
-            Rect::from_xywh(x + w - 86.0, 34.0, 86.0, 32.0),
-            crate::i18n::text("ui-back"),
-            Action::Page(0),
-            false,
-        );
         let mut form =
             SettingsForm::new(&mut s, width, crate::i18n::text("ui-choose-a-preset-or-adjust-rgb-changes-apply-immediately"));
+        form.back(crate::i18n::text("ui-back"), Action::Page(0));
         form.preview(
             &crate::i18n::format("ui-panel-preview", &[("arg0", format!("{}", (opacity * 100.0).round() as u8))]),
             color,
@@ -579,6 +573,20 @@ pub(super) fn backup_page(
         } else {
             form.info(crate::i18n::text("ui-backup-status"), status);
         }
+        form.section(crate::i18n::text("ui-backup-restore"));
+        form.actions(
+            crate::i18n::text("ui-manual-actions"),
+            crate::i18n::text("ui-create-a-backup-now-or-restore-an-existing-one"),
+            vec![
+                (crate::i18n::text("ui-back-up-now"), Action::Change(Event::CreateBackup)),
+                (crate::i18n::text("ui-restore-from-file"), Action::Change(Event::RestoreBackup)),
+            ],
+        );
+        form.link(
+            crate::i18n::text("ui-manage-backups"),
+            crate::i18n::text("ui-view-restore-export-or-delete-existing-backups"),
+            Action::Page(9),
+        );
         form.section(crate::i18n::text("ui-automatic-backups"));
         form.toggle(
             crate::i18n::text("ui-automatic-backups"),
@@ -597,20 +605,6 @@ pub(super) fn backup_page(
             crate::i18n::text("ui-older-automatic-backups-beyond-this-limit-are-removed"),
             &crate::i18n::format("ui-last-backups", &[("arg0", format!("{}", policy.keep))]),
             Action::BackupPolicy(2),
-        );
-        form.section(crate::i18n::text("ui-backup-restore"));
-        form.actions(
-            crate::i18n::text("ui-manual-actions"),
-            crate::i18n::text("ui-create-a-backup-now-or-restore-an-existing-one"),
-            vec![
-                (crate::i18n::text("ui-back-up-now"), Action::Change(Event::CreateBackup)),
-                (crate::i18n::text("ui-restore-from-file"), Action::Change(Event::RestoreBackup)),
-            ],
-        );
-        form.link(
-            crate::i18n::text("ui-manage-backups"),
-            crate::i18n::text("ui-view-restore-export-or-delete-existing-backups"),
-            Action::Page(9),
         );
         if let Some(path) = &view.undo {
             form.button(
@@ -665,11 +659,13 @@ pub(super) fn backup_history(s: &mut Scene, width: f32, view: &recovery::View, o
     if view.records.is_empty() {
         form.info(crate::i18n::text("ui-no-backups"), crate::i18n::text("ui-your-backups-will-appear-here-after-the-first-one-is-created"));
     }
+    if view.records.len() > 6 {
     form.pager(
         &crate::i18n::format("ui-total", &[("arg0", format!("{}", offset / 6 + 1)), ("arg1", format!("{}", view.records.len().div_ceil(6).max(1))), ("arg2", format!("{}", view.records.len()))]),
         (Action::BackupPage(-1), offset > 0),
         (Action::BackupPage(1), offset + 6 < view.records.len()),
     );
+    }
     if view.busy {
         for c in &mut s.controls {
             if matches!(c.action, Action::BackupRecord(_)) {
