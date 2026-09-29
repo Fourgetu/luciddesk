@@ -479,6 +479,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
     let mut search_font_style = (String::new(), 0u32);
     let mut font_search: windows_sys::Win32::Foundation::HWND = std::ptr::null_mut();
     let mut painter_family = fonts::family();
+    let mut painter_language = crate::i18n::language();
     let mut painter = Painter::new().map_err(|e| e.to_string())?;
     let mut surface: Option<composition::Surface> = None;
     let mut reveal: Option<PendingReveal> = None;
@@ -581,12 +582,14 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 scene_key = None;
                 font_load = None; fonts_loaded = false; font_load_failed = false;
                 all_fonts.clear(); font_choices.clear();
-                if !font_search.is_null() { unsafe { SetWindowTextW(font_search, windows_sys::w!("")); } }
-
-                scroll_offset = 0.0;
+                // Keep the query and page position. The new language's background
+                // scan reapplies the current query when its results arrive.
+                unsafe { KillTimer(hwnd, FONT_LOAD_TIMER); }
                 focus = None;
+                hover = None;
+                pressed = None;
+                scroll_drag = None;
                 toggle_motion.clear();
-                if let Ok(fresh) = Painter::new() { painter = fresh; painter_family = fonts::family(); }
                 unsafe {
                     SetWindowTextW(hwnd, crate::i18n::wide("ui-luciddesk-settings"));
                     InvalidateRect(hwnd, std::ptr::null(), 0);
@@ -826,10 +829,11 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 return None;
             }
             let mut snapshot_changed = false;
-            if painter_family != fonts::family() {
+            if painter_family != fonts::family() || painter_language != crate::i18n::language() {
                 if let Ok(fresh) = Painter::new() {
                     painter = fresh;
                     painter_family = fonts::family();
+                    painter_language = crate::i18n::language();
                     snapshot_changed = true;
                 }
             }

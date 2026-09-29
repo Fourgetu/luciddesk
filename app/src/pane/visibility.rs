@@ -65,6 +65,11 @@ impl Transition {
         // Activation/z-order changes may repeat SHOWWINDOW for an already
         // visible HWND. Only a real hidden-to-visible transition starts a fade.
         let showing = flags & SWP_SHOWWINDOW != 0 && unsafe { IsWindowVisible(hwnd) } == 0;
+        // Only request_close may initiate a close. Ignore unsolicited or stale
+        // notifications rather than turning a broadcast into a persisted delete.
+        if msg == CLOSE && (unsafe { GetPropW(hwnd, CLOSE_STATE) } as usize != 1 || self.closing) {
+            return true;
+        }
         if msg == CLOSE || (showing && !self.closing) {
             self.closing = msg == CLOSE;
             self.from = if self.closing { self.opacity() } else { 0.0 };
@@ -113,6 +118,24 @@ impl Transition {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn language_notification_and_unsolicited_close_preserve_visibility() {
+        assert!(![CLOSE, CLOSED, RESTORE].contains(&crate::i18n::CHANGED));
+        let window = windows_window::Window::new("Language visibility regression")
+            .size(1, 1).style(WS_POPUP)
+            .on_message(|_, msg, _, _| (msg == WM_DESTROY).then_some(0))
+            .create().unwrap();
+        let hwnd = window.hwnd().cast();
+        let mut transition = Transition::default();
+        assert!(!transition.message(hwnd, crate::i18n::CHANGED, 0, 0, None,
+            |_| panic!("language notification changed opacity")));
+        assert!(transition.message(hwnd, CLOSE, 0, 0, None,
+            |_| panic!("unsolicited close changed opacity")));
+        assert_eq!(transition.opacity(), 1.0);
+        assert!(!transition.closing);
+        assert!(unsafe { GetPropW(hwnd, CLOSE_STATE) }.is_null());
+    }
 
     #[test]
     fn repeated_show_and_move_preserve_visible_surface_opacity() {

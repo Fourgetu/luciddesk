@@ -332,12 +332,23 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
                     unsafe { KillTimer(raw.cast(), 2); }
                     if std::mem::take(&mut language_dirty) {
                         let result = (|| -> Result<(), String> {
-                            let mut s = state.borrow_mut();
-                            if crate::i18n::initialize(&s.store)? {
-                                fonts::load(&s.store)?;
-                                for view in &s.views { rename::cancel(view.window.hwnd().cast()); }
-                                refresh_changed_views(&mut s, true);
-                                // Post after the borrow is released, including owned settings/search windows.
+                            let changed = {
+                                let s = state.borrow();
+                                let changed = crate::i18n::initialize(&s.store)?;
+                                if changed {
+                                    // A font preference read failure must not swallow the
+                                    // notification after the active language has changed.
+                                    if let Err(error) = fonts::load(&s.store) {
+                                        eprintln!("Language font refresh: {error}");
+                                    }
+                                }
+                                changed
+                            };
+                            if changed {
+                                // Text renderers refresh their language-dependent formats
+                                // on repaint. Keep item snapshots, selection, scroll and
+                                // any uncommitted rename intact; no data reload is needed.
+                                // Notify after releasing PaneApp, including owned windows.
                                 unsafe extern "system" fn notify(hwnd: windows_sys::Win32::Foundation::HWND, _: isize) -> i32 {
                                     unsafe { PostMessageW(hwnd, crate::i18n::CHANGED, 0, 0); InvalidateRect(hwnd, std::ptr::null(), 0); }
                                     1

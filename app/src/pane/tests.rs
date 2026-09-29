@@ -2,6 +2,74 @@ use super::search::everything_settings;
 use super::*;
 
 #[test]
+fn changing_language_keeps_all_panel_windows_and_saved_panels() {
+    use windows_sys::Win32::UI::WindowsAndMessaging::*;
+    let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    crate::i18n::with_locale(0, || {
+        let state = Rc::new(RefCell::new(test_state()));
+        create_view(&state, PanelId::new(1)).unwrap();
+        let folder = tempfile::tempdir().unwrap();
+        handle(&state, PanelId::new(0), Event::MapFolder(folder.path().into())).unwrap();
+        handle(&state, PanelId::new(0), Event::EnableSearch).unwrap();
+        let windows: Vec<_> = state.borrow().views.iter().map(|v| v.window.hwnd().cast()).collect();
+        assert_eq!(windows.len(), 3);
+        let saved_ids = || state.borrow().store.load_workspace().unwrap().panels()
+            .iter().map(Panel::id).collect::<Vec<_>>();
+        let original = saved_ids();
+        let runtime = runtime::supervisor(&state).unwrap();
+        for language in ["en-US", "zh-TW", "ja-JP", "ko-KR", "de-DE", "ru-RU", "zh-CN"] {
+            state.borrow().store.save_preference("language", language).unwrap();
+            unsafe { SendMessageW(runtime.hwnd().cast(), wake::READY, 0, 0); }
+            let deadline = std::time::Instant::now() + std::time::Duration::from_millis(350);
+            while std::time::Instant::now() < deadline {
+                unsafe {
+                    let mut msg = MSG::default();
+                    while PeekMessageW(&mut msg, std::ptr::null_mut(), 0, 0, PM_REMOVE) != 0 {
+                        TranslateMessage(&msg);
+                        DispatchMessageW(&msg);
+                    }
+                }
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+            assert_eq!(crate::i18n::language(), language);
+            assert_eq!(state.borrow().views.len(), 3);
+            assert_eq!(saved_ids(), original);
+            for &hwnd in &windows {
+                assert_ne!(unsafe { IsWindowVisible(hwnd) }, 0);
+                assert_eq!(unsafe { SendMessageW(hwnd, WM_APP + 199, 0, 0) }, 1000);
+            }
+        }
+    });
+}
+
+#[test]
+#[ignore = "Native composition window; run alone to isolate STA graphics lifetime"]
+fn language_switch_preserves_panel_items_selection_and_scroll() {
+    use windows_sys::Win32::UI::WindowsAndMessaging::*;
+    let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    crate::i18n::with_locale(0, || {
+        let state = Rc::new(RefCell::new(test_state()));
+        create_view(&state, PanelId::new(1)).unwrap();
+        let model = state.borrow().views[0].model.clone();
+        {
+            let mut m = model.borrow_mut();
+            m.items = (0..100).map(|i| Item {
+                identity: ShellIdentity::Namespace { parsing_name: format!("test:{i}") },
+                label: format!("Item {i}"), image: None, details: Default::default(),
+            }).collect();
+            m.select_item(2, false, false);
+            m.scroll = 40;
+        }
+        let runtime = runtime::supervisor(&state).unwrap();
+        state.borrow().store.save_preference("language", "en-US").unwrap();
+        unsafe { SendMessageW(runtime.hwnd().cast(), wake::READY, 0, 0); }
+        assert_eq!(model.borrow().items.len(), 100);
+        assert_eq!(model.borrow().selected, Some(2));
+        assert_eq!(model.borrow().scroll, 40);
+    });
+}
+
+#[test]
 fn all_pane_types_fade_and_close_after_the_transition() {
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
     let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();

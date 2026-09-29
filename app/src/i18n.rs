@@ -25,7 +25,8 @@ const SOURCES: [&str; 7] = [
     include_str!("../locales/ru-RU.ftl"),
 ];
 static ACTIVE: AtomicUsize = AtomicUsize::new(usize::MAX);
-pub const CHANGED: u32 = 0x8000 + 198;
+// Keep separate from pane visibility's WM_APP + 196..=198 lifecycle messages.
+pub const CHANGED: u32 = 0x8000 + 200;
 struct Catalog {
     bundle: FluentBundle<FluentResource>,
     text: HashMap<String, String>,

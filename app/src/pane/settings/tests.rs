@@ -1255,6 +1255,15 @@ fn native_font_search_tracks_window_and_handles_clear_and_page_leave() {
         assert_ne!(IsWindowVisible(editor), 0);
         SetWindowTextW(editor, windows_sys::w!("微软雅黑"));
         assert_eq!(GetWindowTextLengthW(editor), 4);
+        crate::i18n::with_locale(2, || {
+            SendMessageW(hwnd, crate::i18n::CHANGED, 0, 0);
+            SendMessageW(hwnd, WM_PAINT, 0, 0);
+            assert_eq!(GetPropW(hwnd, windows_sys::w!("LucidDesk.FontSearch")), editor);
+            let mut query = [0u16; 32];
+            let count = GetWindowTextW(editor, query.as_mut_ptr(), query.len() as i32);
+            assert_eq!(String::from_utf16_lossy(&query[..count as usize]), "微软雅黑");
+        });
+
         SendMessageW(editor, WM_KEYDOWN, VK_ESCAPE as usize, 0);
         assert_eq!(GetWindowTextLengthW(editor), 0);
         SetWindowTextW(editor, windows_sys::w!("missing-font"));
