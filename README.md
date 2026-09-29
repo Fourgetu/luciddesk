@@ -40,12 +40,22 @@ LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。将零散图标�
 
 ## 开始使用
 
-### 启动便携版
+### 选择下载版本
 
-在 [GitHub Releases](https://github.com/Yuch3nE/luciddesk/releases) 查看已发布的构建，选择名称含 `windows-x64-portable` 的 ZIP；若尚无发布包，可按[源码构建](#源码构建)自行打包。准备好便携版后：
+在 [GitHub Releases](https://github.com/Yuch3nE/luciddesk/releases) 下载 ZIP。**普通版和便携版均免安装，功能相同，区别在于配置保存位置。**
+
+| 版本 | 如何识别发布包 | 默认配置位置 | 适合场景 |
+| --- | --- | --- | --- |
+| 普通版（非便携版） | 名称含 `windows-x64`，不含 `portable` | `%LOCALAPPDATA%\LucidDesk` | 在同一 Windows 账户下使用，程序与配置分开保存 |
+| 便携版 | 名称含 `windows-x64-portable` | 程序目录中的 `data` 文件夹 | 希望配置随程序目录一起携带 |
+
+普通版说明见[发布包说明](docs/package.md)，便携版说明见[便携版说明](docs/portable.md)。若尚无发布包，可按[源码构建](#源码构建)自行打包。
+
+### 解压并启动
 
 1. 退出正在运行的旧版，将压缩包完整解压到有写入权限的文件夹。
 2. 双击 `luciddesk.exe` 启动。请保留包内其他文件，不要只复制 EXE，也不要直接在压缩包中运行。
+   便携版还需保留 `portable.marker`，以启用程序目录内的配置存储。
 3. 将桌面图标拖入分组；右键托盘图标，选择“新建分组”或“新建文件夹面板…”添加更多内容。
 
 找不到面板时，点击托盘图标或选择“显示面板”，即可将面板提到前面。切换到其他应用后，普通面板仍可正常被遮挡；已设置“始终置顶”的面板保持置顶。退出时选择托盘菜单中的“退出 LucidDesk”。
@@ -59,11 +69,14 @@ LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。将零散图标�
 | 文件搜索 | 安装并运行 Everything，在“设置 → Everything 搜索”中启用搜索面板 |
 | 空格预览 | 安装 PowerToys Peek 或 QuickLook，在“设置 → 文件预览”中选择程序并启用 |
 
-这些软件不包含在 LucidDesk 便携包中。更多操作和快捷键见[使用说明](docs/usage.md)。
+这些软件不包含在 LucidDesk 的任何发布包中。更多操作和快捷键见[使用说明](docs/usage.md)。
 
 ## 升级与备份
 
-**升级便携版时，保留原目录中的 `data` 文件夹。** 先退出程序，再更新包内运行文件；`data` 保存你的配置、面板和布局。便携包中的 `portable.marker` 用于启用此模式，请一并保留。
+升级前先退出程序，再完整更新包内运行文件，避免混用不同版本的 EXE 与 DLL。
+
+- **普通版**：配置与程序目录分开保存，替换程序文件时保留原配置目录即可。
+- **便携版**：保留原目录中的 `data` 文件夹和 `portable.marker`；`data` 保存你的配置、面板和布局。
 
 在“设置 → 备份与恢复”中可以打开配置目录、导出配置或恢复备份。备份只包含设置与布局，**不包含分组引用的原文件**；复制便携目录时，原文件也不会自动跟随。
 
@@ -107,13 +120,14 @@ cargo build -p luciddesk -p desktop-hook --locked
 .\target\debug\luciddesk.exe
 ```
 
-主程序和 `desktop_hook.dll` 必须来自同次构建并放在同一目录。生成便携包：
+主程序和 `desktop_hook.dll` 必须来自同次构建并放在同一目录。分别生成普通版与便携版 ZIP：
 
 ```powershell
+.\tools\package.ps1
 .\tools\package.ps1 -Portable
 ```
 
-产物位于 `target/portable/时间戳/`。测试命令、诊断构建和绑定生成见[构建指南](docs/development/build.md)。
+普通版产物位于 `target/packages/`，便携版位于 `target/portable/时间戳/`。测试命令、诊断构建和绑定生成见[构建指南](docs/development/build.md)。
 
 ## 参与开发
 

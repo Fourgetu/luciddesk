@@ -38,10 +38,22 @@ Panels can move, resize, collapse, snap to edges, lock, or stay on top. Folder a
 
 ## Getting started
 
-1. Download a ZIP from [GitHub Releases](https://github.com/Yuch3nE/luciddesk/releases). Choose `windows-x64-portable` to keep settings beside the app.
-2. Exit any running copy and extract the entire ZIP to a writable folder.
-3. Run `luciddesk.exe`. Keep `desktop_hook.dll` beside it; portable mode also requires `portable.marker`.
-4. Drag desktop icons into a group. Use the tray menu to create groups or folder panels and open Settings.
+### Choose a package
+
+Download a ZIP from [GitHub Releases](https://github.com/Yuch3nE/luciddesk/releases). **Both packages run without installation and provide the same features; they differ in where settings are stored.**
+
+| Package | File name | Default settings location | Best suited for |
+| --- | --- | --- | --- |
+| Standard (non-portable) | Contains `windows-x64`, without `portable` | `%LOCALAPPDATA%\LucidDesk` | Keeping settings separate from app files under one Windows account |
+| Portable | Contains `windows-x64-portable` | The `data` folder beside the executable | Carrying settings with the app folder |
+
+See the [standard package guide](docs/package.md) or [portable guide](docs/portable.md) (Chinese). If no release is available, [build from source](#build-from-source).
+
+### Extract and launch
+
+1. Exit any running copy and extract the entire ZIP to a writable folder.
+2. Run `luciddesk.exe`. Keep `desktop_hook.dll` beside it; portable mode also requires `portable.marker`. Do not run the app inside the ZIP.
+3. Drag desktop icons into a group. Use the tray menu to create groups or folder panels and open Settings.
 
 Search and preview are disabled by default. Install Everything, PowerToys Peek or QuickLook separately, then enable the corresponding integration in Settings. These tools are not bundled.
 
@@ -53,7 +65,12 @@ Translations are embedded in the executable. Saved group names and file names ar
 
 ## Upgrading and backups
 
-Exit the app before upgrading. **Preserve the `data` folder when replacing portable app files.** The standard package stores settings in `%LOCALAPPDATA%\LucidDesk`; portable mode stores them in `data` beside the executable. Upgrades may continue using an existing `LucidPane` data directory. To switch from standard to portable mode, export and restore your configuration.
+Exit the app before upgrading and replace the complete set of app files so the executable and DLL come from the same build.
+
+- **Standard:** keep the settings directory, which is separate from the app folder and defaults to `%LOCALAPPDATA%\LucidDesk`.
+- **Portable:** preserve the `data` folder and `portable.marker` beside the executable.
+
+Upgrades may continue using an existing `LucidPane` data directory. To switch from standard to portable mode, export and restore your configuration.
 
 Use **Settings → Backup & restore** to export or restore your configuration. Backups contain settings and layouts, not the original files referenced by groups. Moving a portable folder does not move those original files.
 
@@ -87,7 +104,7 @@ Build packages from the repository root:
 .\tools\package.ps1 -Portable
 ```
 
-Keep the executable and Hook DLL from the same build together. See the [build guide](docs/development/build.md) for checks and diagnostic builds.
+Standard ZIPs are written to `target/packages/`; portable ZIPs are written to `target/portable/<timestamp>/`. Keep the executable and Hook DLL from the same build together. See the [build guide](docs/development/build.md) for checks and diagnostic builds.
 
 ## Contributing
 
