@@ -18,9 +18,10 @@
   </style>
   <rect width="1200" height="680" rx="24" fill="url(#bg)"/>
   <circle cx="1010" cy="80" r="230" fill="#29606a" opacity=".17"/>
-  <text x="54" y="61" font-size="18" letter-spacing="3" class="accent">LUCIDPANE</text>
-  <text x="54" y="114" font-size="38" font-weight="600">桌面有分组，工作有条理。</text>
-  <text x="54" y="151" class="muted">收纳桌面图标 · 浏览常用目录 · 随时搜索文件</text>
+  <path d="M870 40h108v76H870zM990 64h74v106h-74zM1076 90h64v80h-64z" fill="#7ee8ea" fill-opacity=".06" stroke="#7ee8ea" stroke-opacity=".18" stroke-width="2"/>
+  <text x="54" y="61" font-size="18" letter-spacing="3" class="accent">LUCIDDESK</text>
+  <text x="54" y="114" font-size="38" font-weight="600">让桌面，回到你的节奏。</text>
+  <text x="54" y="151" class="muted">分组与标签收纳图标，常用目录和文件搜索就在手边。</text>
   <rect x="44" y="191" width="1112" height="383" rx="20" fill="#0e192a" fill-opacity=".55" stroke="#426171"/>
   <text x="72" y="232" class="muted">桌面 · 收纳前</text>
   <use xlink:href="#file" x="87" y="268"/><text x="103" y="337" class="label">方案</text>
@@ -29,16 +30,18 @@
   <use xlink:href="#file" x="197" y="385"/><text x="213" y="453" class="label">笔记</text>
   <path d="M255 360 C292 360 293 303 333 303" fill="none" stroke="#6de4eb" stroke-width="3" stroke-dasharray="6 6" marker-end="url(#arrow)"/>
   <text x="273" y="398" font-size="16" class="accent">拖入</text>
+  <text x="73" y="532" class="muted">原文件保留在桌面目录</text>
   <rect x="351" y="223" width="358" height="251" rx="16" fill="url(#pane)" stroke="#6a9ba8"/>
-  <text x="376" y="262" class="heading">工作</text><text x="664" y="260" font-size="24">···</text>
+  <rect x="367" y="238" width="81" height="34" rx="8" fill="#7ee8ea" fill-opacity=".14"/>
+  <text x="385" y="262" font-size="20" font-weight="600">工作</text><text x="471" y="262" class="muted">日常</text><path d="M385 276h45" stroke="#7ee8ea" stroke-width="3" stroke-linecap="round"/><text x="664" y="260" font-size="24">···</text>
   <path d="M371 281h318" stroke="#476575"/>
   <use xlink:href="#file" x="392" y="310"/><text x="408" y="378" class="label">方案</text>
   <use xlink:href="#folder" x="492" y="310"/><text x="515" y="378" class="label">项目</text>
   <use xlink:href="#file" x="604" y="310"/><text x="620" y="378" class="label">笔记</text>
-  <text x="376" y="436" class="muted">移动 · 缩放 · 折叠 · 调整外观</text>
+  <text x="376" y="436" class="muted">标签切换 · 自由布局 · 个性外观</text>
   <rect x="739" y="223" width="383" height="251" rx="16" fill="url(#pane)" stroke="#527b8d"/>
   <text x="764" y="262" class="heading">项目文件夹</text>
-  <text x="764" y="294" class="muted">映射目录，随文件变化刷新</text>
+  <text x="764" y="294" class="muted">浏览常用目录，随文件变化刷新</text>
   <path d="M760 309h341" stroke="#476575"/>
   <use xlink:href="#folder" transform="translate(764 326) scale(.55)"/><text x="805" y="345" font-size="18">设计素材</text>
   <use xlink:href="#file" transform="translate(770 367) scale(.5)"/><text x="805" y="385" font-size="18">项目说明.md</text>

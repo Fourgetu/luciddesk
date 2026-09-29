@@ -11,7 +11,7 @@ LucidDesk 为 Windows 桌面提供分组、文件夹和 Everything 搜索面板�
 | 调整文字、圆角与背景 | [外观设置](usage.md#外观设置) |
 | 找到配置、导出和恢复备份 | [数据与备份](usage.md#数据与备份) · [配置示例](config.example.toml) |
 | 排查连接与启动问题 | [常见问题](usage.md#常见问题) |
-| 了解预览包与版本变化 | [预览包说明](preview.md) · [版本记录](../CHANGELOG.md) |
+| 了解发布包与版本变化 | [发布包说明](package.md) · [版本记录](../CHANGELOG.md) |
 
 ## 开发与维护
 

@@ -1,18 +1,28 @@
+<div align="center">
+
 # LucidDesk
 
 **把 Windows 桌面整理成顺手的工作区。**
 
-将桌面图标按用途分组，把常用文件夹留在手边，随时搜索和预览文件。LucidDesk 支持自由布局、标签分组和多种主题材质，让文件更好找、桌面更整齐。
+桌面分组 · 文件夹面板 · Everything 搜索 · 空格预览
 
-**当前预览版：0.10.5** · **Windows 11 x64** · 开发者：**Yuchen95**
+[![Windows CI](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml/badge.svg)](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml)
+[![版本](https://img.shields.io/badge/version-0.10.5-087EA4?style=flat-square)](CHANGELOG.md)
+[![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square)](#系统与兼容性)
+[![架构](https://img.shields.io/badge/arch-x64-475569?style=flat-square)](docs/portable.md)
+[![Rust](https://img.shields.io/badge/Rust-1.95%2B-CE6F32?style=flat-square)](Cargo.toml)
 
-[开始使用](#开始使用) · [使用说明](docs/usage.md) · [更新记录](CHANGELOG.md) · [便携版说明](docs/portable.md)
+[下载发布包](https://github.com/Yuch3nE/luciddesk/releases) · [开始使用](#开始使用) · [使用指南](docs/usage.md) · [更新记录](CHANGELOG.md) · [参与开发](#参与开发)
 
-![LucidDesk 功能示意：桌面图标按用途收纳，文件夹面板展示常用目录，搜索面板查找本机文件。](docs/images/overview.svg)
+</div>
 
-*功能示意图，非实际界面截图。当前为预览版，尚未提供稳定发行版。*
+![LucidDesk 功能示意：以标签收纳桌面图标，通过文件夹面板浏览目录，并用 Everything 搜索本机文件。](docs/images/overview.svg)
 
-## 用你习惯的方式整理桌面
+> 上图为功能示意，并非实际界面截图。
+
+LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。将零散图标收进分组，把常用目录放到桌面，再按自己的习惯调整面板位置、标签和外观。
+
+## 功能
 
 | 功能 | 你可以做什么 |
 | --- | --- |
@@ -30,7 +40,7 @@
 
 ### 启动便携版
 
-取得便携版 ZIP 后：
+在 [GitHub Releases](https://github.com/Yuch3nE/luciddesk/releases) 查看已发布的构建，选择名称含 `windows-x64-portable` 的 ZIP；若尚无发布包，可按[源码构建](#源码构建)自行打包。准备好便携版后：
 
 1. 退出正在运行的旧版，将压缩包完整解压到有写入权限的文件夹。
 2. 双击 `luciddesk.exe` 启动。请保留包内其他文件，不要只复制 EXE，也不要直接在压缩包中运行。
@@ -57,18 +67,59 @@
 
 普通版的设置默认位于 `%LOCALAPPDATA%\LucidDesk`。从旧版升级时会按条件继续使用原来的 `LucidPane` 数据目录；从普通版改用便携版时，可通过备份与恢复转入配置。自定义数据位置和详细升级步骤见[便携版说明](docs/portable.md)与[使用说明](docs/usage.md)。
 
-## 常见问题
+## 系统与兼容性
 
-**支持哪些系统？** Windows 11 x64 为优先维护平台，Windows 10 已由用户完成实机验证。系统不支持所选背景效果时，会自动使用可用的背景样式。
+| 环境 | 支持情况 |
+| --- | --- |
+| Windows 11 x64 | 优先维护与验证平台，提供纯色、亚克力、Mica 和 Mica Alt |
+| Windows 10 x64 | 已由用户完成实机验证，提供纯色和亚克力；图标字体与圆角包含兼容处理 |
+| ARM64、远程桌面 | 尚未完整验证 |
+
+系统停用背景效果时，材质会回退为随深浅主题变化的底色，保留原来的材质设置。系统重新允许效果后恢复。具体验证范围见[验证记录](docs/development/validation.md)。
+
+## 常见问题
 
 **桌面分组无法连接怎么办？** 在“设置 → 关于”查看连接状态并尝试重新连接。程序会保留分组配置并自动重试；文件夹与搜索面板仍可独立使用。
 
 **如何反馈问题？** 请提供复现步骤、预期与实际表现，以及“设置 → 关于 → 复制诊断”中的信息。显示异常时，附上截图、屏幕缩放比例和所选材质，便于定位。
 
-## 继续了解
+## 源码构建
+
+准备 Windows、Rust 1.95 或更新的 MSVC 工具链，以及 Visual Studio C++ 构建工具和 Windows SDK。先获取公开仓库：
+
+```powershell
+git clone https://github.com/Yuch3nE/luciddesk.git
+cd luciddesk
+```
+
+在仓库根目录执行：
+
+```powershell
+cargo build -p luciddesk -p desktop-hook --locked
+.\target\debug\luciddesk.exe
+```
+
+主程序和 `desktop_hook.dll` 必须来自同次构建并放在同一目录。生成便携包：
+
+```powershell
+.\tools\package.ps1 -Portable
+```
+
+产物位于 `target/portable/时间戳/`。测试命令、诊断构建和绑定生成见[构建指南](docs/development/build.md)。
+
+## 参与开发
+
+公开仓库位于 [Yuch3nE/luciddesk](https://github.com/Yuch3nE/luciddesk)，由维护者从本地开发仓库同步。欢迎通过 [Issue](https://github.com/Yuch3nE/luciddesk/issues) 和 [Pull Request](https://github.com/Yuch3nE/luciddesk/pulls) 提交问题、改进建议或代码。
+
+- **反馈问题**：附上复现步骤、系统版本和“设置 → 关于 → 复制诊断”的信息；界面问题请附截图与缩放比例。
+- **提出功能**：说明使用场景和期望的操作方式，便于讨论是否适合桌面工作流。
+- **提交代码**：先阅读[架构说明](docs/development/architecture.md)，保持改动聚焦，并提供相应验证结果。涉及可见行为时同步更新文档。
+
+提交日志前请检查其中的个人文件路径等信息。项目作者：**Yuchen95**。
+
+## 文档
 
 - [使用说明](docs/usage.md)：面板操作、快捷键、外观与故障处理。
 - [更新记录](CHANGELOG.md)：各版本的新功能与修复。
 - [便携版说明](docs/portable.md)：启动、升级与配置携带。
-
-如需参与开发或自行构建，请查看[开发文档](docs/development/README.md)与[构建指南](docs/development/build.md)。
+- [开发文档](docs/development/README.md)：架构、绘图、存储与验证。

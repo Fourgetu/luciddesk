@@ -310,7 +310,7 @@ impl<'a> SettingsForm<'a> {
         );
         self.scene.text(
             Rect::from_xywh(self.x + 96.0, self.y + 92.0, self.width - 112.0, 24.0),
-            concat!("v", env!("CARGO_PKG_VERSION"), " · 预览版"),
+            concat!("v", env!("CARGO_PKG_VERSION")),
             6,
         );
         self.y += 144.0;

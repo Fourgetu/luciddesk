@@ -1,6 +1,6 @@
-# LucidDesk 免安装预览版
+# LucidDesk 免安装版
 
-主要验证平台为 Windows 11 x64。本包用于试用，尚不是稳定发行版。
+主要验证平台为 Windows 11 x64。
 
 开发者：**Yuchen95**
 

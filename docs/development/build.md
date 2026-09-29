@@ -39,7 +39,7 @@ cargo build -p desktop-shell --example desktop_menu_service_probe --features des
 cargo build -p luciddesk -p desktop-hook --release --features luciddesk/menu-diagnostics --target-dir target\menu-diagnostics --locked --offline
 ```
 
-`tools/package-preview.ps1` 在 `target\production` 构建并取件，显式禁用默认 feature；不要用 `--all-features` 生成发布包，以免启用诊断入口和计时。
+`tools/package.ps1` 在 `target\production` 构建并取件，显式禁用默认 feature；不要用 `--all-features` 生成发布包，以免启用诊断入口和计时。
 
 `LUCIDDESK_DATA_DIR` 仅影响该环境下启动的程序。无需自定义目录时，在启动前移除该环境变量，程序会使用 LocalAppData。
 
@@ -59,20 +59,20 @@ cargo build -p luciddesk -p desktop-hook --locked --offline --target-dir target\
 
 ## 自动检查
 
-生成包含同次构建的 EXE、Hook DLL、使用说明、构建信息与校验值的免安装预览包：
+生成包含同次构建的 EXE、Hook DLL、使用说明、构建信息与校验值的免安装发布包：
 
 ```powershell
-.\tools\package-preview.ps1 -Offline
+.\tools\package.ps1 -Offline
 ```
 
-产物位于 `target\preview`。包内配置仍默认保存在 LocalAppData；未提交代码会在包名和 `build.json` 中标记为 dirty。GitHub Actions 的 Windows preview 工作流执行全目标编译、核心和存储测试后上传 ZIP；原生桌面 UI 测试仍在交互会话运行。
+产物位于 `target\packages`。包内配置仍默认保存在 LocalAppData；未提交代码会在包名和 `build.json` 中标记为 dirty。GitHub Actions 的 Windows build 工作流执行全目标编译、核心和存储测试后上传 ZIP；原生桌面 UI 测试仍在交互会话运行。
 
 便携版使用以下命令，产物位于 `target\portable\时间戳`，含 `portable.marker`，配置保存在包旁的 `data` 中：
 
 ```powershell
-.\tools\package-preview.ps1 -Portable -Offline
+.\tools\package.ps1 -Portable -Offline
 # 排查问题时另行生成带诊断脚本的便携包
-.\tools\package-preview.ps1 -Portable -RenderDiagnostics -Offline
+.\tools\package.ps1 -Portable -RenderDiagnostics -Offline
 ```
 
 诊断包提供 A（当前渲染路径）、B（共享合成树）、C（禁用背景特效）三个启动入口，具体开关与日志见[渲染诊断说明](../../tools/render-diagnostics/RENDER-TEST.md)。崩溃采集、可选转储配置及恢复步骤见[崩溃转储说明](../../tools/render-diagnostics/CRASH-DUMPS.md)。这些脚本不随常规便携包分发。分析转储前保留同次构建的 EXE、DLL 和 PDB；之后重新构建会覆盖 `target\production` 中的符号文件。

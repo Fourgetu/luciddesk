@@ -13,7 +13,7 @@ try {
     $env:LUCIDPANE_BUILD_REVISION = $revisionLabel
     $hostInfo = & rustc -vV
     if ($LASTEXITCODE -ne 0 -or $hostInfo -notcontains 'host: x86_64-pc-windows-msvc') {
-        throw 'Preview packaging requires the Windows x64 MSVC Rust toolchain.'
+        throw 'Packaging requires the Windows x64 MSVC Rust toolchain.'
     }
     # Keep release artifacts separate from explicitly enabled diagnostic backends.
     $productionTarget = Join-Path $repoRoot 'target\production'
@@ -25,16 +25,16 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Could not read package metadata.' }
     $version = ($metadata.packages | Where-Object name -eq 'luciddesk').version
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
-    $name = "LucidDesk-$version-preview-$revisionLabel-windows-x64-$stamp"
+    $name = "LucidDesk-$version-$revisionLabel-windows-x64-$stamp"
     if ($Portable) { $name = "LucidDesk-$version-windows-x64-portable" }
     if ($RenderDiagnostics) { $name += '-render-test' }
-    $outRoot = Join-Path $repoRoot $(if ($Portable) { "target\portable\$stamp" } else { 'target\preview' })
+    $outRoot = Join-Path $repoRoot $(if ($Portable) { "target\portable\$stamp" } else { 'target\packages' })
     $stage = Join-Path $outRoot $name
     New-Item -ItemType Directory -Path $stage | Out-Null
     foreach ($file in @('luciddesk.exe', 'desktop_hook.dll')) {
         Copy-Item -LiteralPath (Join-Path $productionTarget "release\$file") -Destination $stage
     }
-    $readme = if ($Portable) { 'docs\portable.md' } else { 'docs\preview.md' }
+    $readme = if ($Portable) { 'docs\portable.md' } else { 'docs\package.md' }
     Copy-Item -LiteralPath (Join-Path $repoRoot $readme) -Destination (Join-Path $stage 'README.md')
     if ($Portable) {
         'LucidDesk portable mode: store configuration in ./data.' | Set-Content -LiteralPath (Join-Path $stage 'portable.marker') -Encoding ASCII
@@ -52,7 +52,7 @@ try {
         [ordered]@{ file = $_; sha256 = $fileHash.Hash.ToLowerInvariant() }
     }
     [ordered]@{
-        version = $version; channel = 'preview'; revision = $revision; uncommittedChanges = $dirty
+        version = $version; channel = 'release'; revision = $revision; uncommittedChanges = $dirty
         portable = [bool]$Portable
         renderingDiagnostics = [bool]$RenderDiagnostics
         builtAt = (Get-Date).ToUniversalTime().ToString('o'); architecture = 'windows-x64'

@@ -15,7 +15,7 @@
 
 沿用已选定的蓝青色三面板图标，EXE、窗口、托盘和关于页共用同一资源。图标原稿和资源文件保留原文件名，以保证可追溯性。
 
-应用文件名与 Cargo 包名为 `luciddesk`；可执行文件为 `luciddesk.exe`。预览包使用 `LucidDesk-版本-preview-构建标识-windows-x64-时间戳`。作者为 Yuchen95，版本号从 Cargo 自动写入 EXE 文件属性。
+应用文件名与 Cargo 包名为 `luciddesk`；可执行文件为 `luciddesk.exe`。发布包使用 `LucidDesk-版本-构建标识-windows-x64-时间戳`。作者为 Yuchen95，版本号从 Cargo 自动写入 EXE 文件属性。
 
 ## 兼容约定
 
