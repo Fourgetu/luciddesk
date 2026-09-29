@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1200" height="740" viewBox="0 0 1200 740" role="img" aria-labelledby="title desc">
-  <title id="title">LucidDesk — 桌面有序，专注随行。</title>
-  <desc id="desc">用分组整理图标，让常用目录与文件搜索触手可及。 分组只保存引用，原文件留在原处。 功能示意 · 非实际界面截图</desc>
+  <title id="title">LucidDesk — Less clutter. More focus.</title>
+  <desc id="desc">Organize icons, keep folders close, and find files from your desktop. Groups keep references. Your files stay in place. Feature illustration · Not a screenshot</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop stop-color="#101d32"/>
@@ -53,24 +53,24 @@
   <text x="86" y="60" font-size="17" font-weight="600" letter-spacing="2.8">LUCIDDESK</text>
   <rect x="1027" y="38" width="125" height="30" rx="15" fill="#80dcd6" fill-opacity=".08" stroke="#80dcd6" stroke-opacity=".18"/>
   <text x="1089" y="58" text-anchor="middle" font-size="13" fill="#b2d9de">Windows 10 / 11</text>
-  <text x="48" y="125" class="" font-size="42" font-weight="600">桌面有序，专注随行。</text>
-  <text x="50" y="164" class="body" style="fill:#afc6d4">用分组整理图标，让常用目录与文件搜索触手可及。</text>
+  <text x="48" y="125" class="" font-size="42" font-weight="600">Less clutter. More focus.</text>
+  <text x="50" y="164" class="body" style="fill:#afc6d4">Organize icons, keep folders close, and find files from your desktop.</text>
   <rect x="32" y="204" width="1136" height="422" rx="24" fill="#071420" fill-opacity=".38" stroke="#779bac" stroke-opacity=".2"/>
   <path d="M290 251v321" stroke="#7995a6" stroke-opacity=".15" stroke-dasharray="3 7"/>
-  <text x="60" y="243" class="caption">你的桌面</text>
-  <text x="330" y="243" class="caption">桌面分组</text>
-  <text x="766" y="243" class="caption">文件夹面板</text>
+  <text x="60" y="243" class="caption">YOUR DESKTOP</text>
+  <text x="330" y="243" class="caption">DESKTOP GROUPS</text>
+  <text x="766" y="243" class="caption">FOLDER PANELS</text>
   <use xlink:href="#file" x="82" y="288"/>
-  <text x="103" y="364" class="label">方案</text>
+  <text x="103" y="364" class="label">Plan</text>
   <use xlink:href="#folder" x="200" y="288"/>
-  <text x="225" y="364" class="label">项目</text>
+  <text x="225" y="364" class="label">Projects</text>
   <use xlink:href="#app" x="79" y="414"/>
-  <text x="100" y="490" class="label">工具</text>
+  <text x="100" y="490" class="label">Tools</text>
   <use xlink:href="#file" x="206" y="414"/>
-  <text x="227" y="490" class="label">笔记</text>
+  <text x="227" y="490" class="label">Notes</text>
   <path d="M245 386h63m-7-6 7 6-7 6" fill="none" stroke="#8be0de" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
   <rect x="64" y="537" width="192" height="35" rx="17" fill="#86e1dd" fill-opacity=".08"/>
-  <text x="160" y="560" class="teal" text-anchor="middle">拖入分组</text>
+  <text x="160" y="560" class="teal" text-anchor="middle">Drag in</text>
   <rect x="320" y="277" width="418" height="258" rx="18" fill="#030c16" fill-opacity=".3"/>
   <rect x="320" y="269" width="418" height="258" rx="18" fill="url(#glass)" stroke="#88b9cb" stroke-opacity=".35"/>
   <rect x="756" y="277" width="380" height="258" rx="18" fill="#030c16" fill-opacity=".3"/>
@@ -83,36 +83,36 @@
     <circle cx="700" cy="301" r="2"/>
     <circle cx="708" cy="301" r="2"/>
   </g>
-  <text x="384" y="307" class="body" text-anchor="middle" font-weight="600">工作</text>
-  <text x="454" y="307" class="small">日常</text>
+  <text x="384" y="307" class="body" text-anchor="middle" font-weight="600">Work</text>
+  <text x="454" y="307" class="small">Personal</text>
   <use xlink:href="#file" x="366" y="361"/>
-  <text x="387" y="437" class="label">方案</text>
+  <text x="387" y="437" class="label">Plan</text>
   <use xlink:href="#folder" x="504" y="361"/>
-  <text x="529" y="437" class="label">项目</text>
+  <text x="529" y="437" class="label">Projects</text>
   <use xlink:href="#file" x="648" y="361"/>
-  <text x="669" y="437" class="label">笔记</text>
+  <text x="669" y="437" class="label">Notes</text>
   <path d="M341 465h376" stroke="#94bfce" stroke-opacity=".12"/>
-  <text x="344" y="500" class="small">切换标签，保持专注</text>
-  <text x="780" y="308" class="heading">项目文件夹</text>
-  <text x="780" y="338" class="small">项目 / 设计</text>
+  <text x="344" y="500" class="small">Switch tabs. Stay focused.</text>
+  <text x="780" y="308" class="heading">Project folder</text>
+  <text x="780" y="338" class="small">Projects / Design</text>
   <path d="M780 352h332" stroke="#94bfce" stroke-opacity=".15"/>
   <rect x="771" y="362" width="350" height="42" rx="8" fill="#91d6d6" fill-opacity=".08"/>
   <use xlink:href="#folder" transform="translate(783 373) scale(.45)"/>
-  <text x="821" y="391" class="body">设计素材</text>
+  <text x="821" y="391" class="body">Design assets</text>
   <use xlink:href="#file" transform="translate(783 417) scale(.45)"/>
-  <text x="821" y="435" class="body">项目说明.md</text>
+  <text x="821" y="435" class="body">Project notes.md</text>
   <use xlink:href="#file" transform="translate(783 461) scale(.45)"/>
-  <text x="821" y="479" class="body">进度清单.xlsx</text>
+  <text x="821" y="479" class="body">Progress.xlsx</text>
   <path d="m1097 379 5 5-5 5" fill="none" stroke="#a9c7d1" stroke-width="1.5" stroke-linecap="round"/>
   <rect x="320" y="547" width="816" height="55" rx="13" fill="#243e4c" stroke="#85b5c5" stroke-opacity=".3"/>
   <circle cx="346" cy="573" r="7" fill="none" stroke="#9de6e2" stroke-width="2"/>
   <path d="m351 579 5 5" stroke="#9de6e2" stroke-width="2" stroke-linecap="round"/>
   <text x="372" y="581" font-size="17">ext:pdf</text>
   <path d="M461 563v23" stroke="#8eb1bf" stroke-opacity=".25"/>
-  <text x="481" y="581" class="small">Everything 搜索</text>
-  <text x="1113" y="581" class="small" text-anchor="end">快速找到本机文件</text>
+  <text x="481" y="581" class="small">Everything search</text>
+  <text x="1113" y="581" class="small" text-anchor="end">Find files on your PC</text>
   <circle cx="61" cy="667" r="12" fill="#8fe2d9" fill-opacity=".14"/>
   <path d="m56 667 4 4 7-8" fill="none" stroke="#9ae8de" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-  <text x="84" y="673" class="body">分组只保存引用，原文件留在原处。</text>
-  <text x="1150" y="710" class="small" text-anchor="end">功能示意 · 非实际界面截图</text>
+  <text x="84" y="673" class="body">Groups keep references. Your files stay in place.</text>
+  <text x="1150" y="710" class="small" text-anchor="end">Feature illustration · Not a screenshot</text>
 </svg>

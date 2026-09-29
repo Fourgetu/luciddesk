@@ -2,11 +2,13 @@
 
 # LucidDesk
 
+简体中文 · [English](README.en.md)
+
 **把 Windows 桌面整理成顺手的工作区。**
 
 桌面分组 · 文件夹面板 · Everything 搜索 · 空格预览
 
-[![Windows CI](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml/badge.svg)](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml)
+[![Build CI](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml/badge.svg)](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml)
 [![版本](https://img.shields.io/badge/version-0.10.5-087EA4?style=flat-square)](CHANGELOG.md)
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square)](#系统与兼容性)
 [![架构](https://img.shields.io/badge/arch-x64-475569?style=flat-square)](docs/portable.md)
@@ -66,6 +68,12 @@ LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。将零散图标�
 在“设置 → 备份与恢复”中可以打开配置目录、导出配置或恢复备份。备份只包含设置与布局，**不包含分组引用的原文件**；复制便携目录时，原文件也不会自动跟随。
 
 普通版的设置默认位于 `%LOCALAPPDATA%\LucidDesk`。从旧版升级时会按条件继续使用原来的 `LucidPane` 数据目录；从普通版改用便携版时，可通过备份与恢复转入配置。自定义数据位置和详细升级步骤见[便携版说明](docs/portable.md)与[使用说明](docs/usage.md)。
+
+## 界面语言
+
+支持简体中文、繁體中文、English、日本語、한국어、Deutsch 和 Русский。默认跟随 Windows 显示语言，其他语言回退到英语。在“设置 → 语言”中手动选择，重启 LucidDesk 后生效。
+
+语言资源内置于程序，无需下载语言包。用户命名的分组、文件名和 Windows 原生文件菜单保持原样。
 
 ## 系统与兼容性
 
