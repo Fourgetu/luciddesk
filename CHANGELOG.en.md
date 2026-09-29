@@ -6,6 +6,13 @@ User-facing changes in each release. The current version is **0.12.0**. Windows 
 
 Exit the app before upgrading a portable installation and preserve its `data` folder. See the [portable guide](docs/portable.md) (Chinese).
 
+## Unreleased
+
+- Fix language changes incorrectly closing panels, and require an explicit close request before starting the close animation.
+- Refresh language-dependent text and fonts in place, preserving panel items, selection, scroll positions and font search text without explicitly cancelling renames.
+- Stop the font-loading timer when cancelling a previous language's task; retry language-dependent settings renderer refreshes and clear interaction state tied to the old layout.
+- Forward the file menu wrapper's site interface to address the null host used while enumerating Open with commands, which caused Explorer crashes. Live compact-menu regression testing remains pending.
+
 ## 0.12.0 · 2026-09-30
 
 - Add font-name search with multiple keywords, full-width Latin letters and digits, and common separators. Replace candidate previews with a continuously scrolling list that marks the current and default fonts.
