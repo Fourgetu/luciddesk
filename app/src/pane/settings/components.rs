@@ -12,6 +12,7 @@ impl Tokens {
     pub const INSET: f32 = 16.0;
     pub const CARD_RADIUS: f32 = 8.0;
     pub const CONTROL_HEIGHT: f32 = 32.0;
+    pub const ROW_HEIGHT: f32 = 40.0;
     pub const MAX_WIDTH: f32 = 1000.0;
     pub const VALUE_TEXT: usize = 7;
 }
@@ -146,7 +147,7 @@ impl<'a> SettingsForm<'a> {
             } else {
                 0.0
             })
-        .max(80.0);
+        .max(72.0);
         self.scene
             .cards
             .push(Rect::from_xywh(self.x, self.y, self.width, height));
@@ -278,21 +279,20 @@ impl<'a> SettingsForm<'a> {
     pub fn back(&mut self, label: &str, action: Action) {
         self.scene
             .back_row(self.x, self.y, self.width, label, action);
-        self.y += 48.0;
+        self.y += Tokens::ROW_HEIGHT + Tokens::GAP;
     }
     pub fn option(&mut self, label: &str, action: Action, selected: bool) {
         self.scene.row(self.x, self.y, self.width, label, action);
         let control = self.scene.controls.last_mut().unwrap();
         control.selected = selected;
-        control.bounds.bottom = self.y + 40.0;
+        control.bounds.bottom = self.y + Tokens::ROW_HEIGHT;
         self.y += 48.0;
     }
     pub fn font_option(&mut self, name: &str, selected: bool) {
-        self.scene.row(self.x, self.y, self.width, name, Action::Font(name.into()));
-        let control = self.scene.controls.last_mut().unwrap();
-        control.selected = selected;
-        control.bounds.bottom = self.y + 68.0;
-        self.y += 76.0;
+        let label = if name == crate::i18n::default_font() {
+            format!("{} · {}", name, crate::i18n::text("ui-default"))
+        } else { name.into() };
+        self.option(&label, Action::Font(name.into()), selected);
     }
     pub fn pager(&mut self, label: &str, previous: (Action, bool), next: (Action, bool)) {
         let r = self.card(crate::i18n::text("ui-pages"), label, 232.0);
@@ -450,7 +450,30 @@ impl<'a> SettingsForm<'a> {
 }
 
 impl Scene {
+    pub fn fixed_list(&self) -> bool {
+        self.controls.iter().any(|c| matches!(c.action, Action::FontSearch))
+    }
+    pub fn list_row(c: &Control) -> bool {
+        matches!(c.action, Action::Font(_)) && c.kind.is_row()
+    }
     pub fn scroll_to(&mut self, width: f32, height: f32, offset: &mut f32) {
+        if self.fixed_list() {
+            let top = self.controls.iter().filter(|c| Self::list_row(c)).map(|c| c.bounds.top)
+                .fold(height - Tokens::MARGIN, f32::min);
+            let bottom = (height - Tokens::MARGIN).max(top + Tokens::ROW_HEIGHT);
+            let content_bottom = self.controls.iter().filter(|c| Self::list_row(c))
+                .map(|c| c.bounds.bottom).fold(top, f32::max);
+            self.viewport = Some(Rect::from_xywh(Tokens::content_x(), top,
+                (width - Tokens::content_x() - Tokens::MARGIN).min(Tokens::MAX_WIDTH), bottom - top));
+            self.scroll_max = (content_bottom - bottom).max(0.0);
+            *offset = offset.clamp(0.0, self.scroll_max);
+            self.scroll_offset = *offset;
+            for c in self.controls.iter_mut().filter(|c| Self::list_row(c)) {
+                c.bounds.top -= *offset; c.bounds.bottom -= *offset;
+                c.bounds.right -= 16.0;
+            }
+            return;
+        }
         let viewport = Rect::from_xywh(
             Tokens::content_x(),
             TITLE_HEIGHT,
@@ -514,6 +537,7 @@ impl Scene {
         contains(&c.bounds, x, y)
             && (matches!(c.kind, ControlKind::Caption)
                 || c.bounds.left < Tokens::content_x()
+                || (self.fixed_list() && !Self::list_row(c))
                 || self.viewport.is_none_or(|v| contains(&v, x, y)))
     }
 }
@@ -546,9 +570,15 @@ fn text_width(text: &str, size: f32) -> f32 {
 fn text_height(text: &str, size: f32, width: f32) -> f32 {
     measured_text(text, size, width).1.ceil()
 }
+type MetricsKey = (String, String, String, u32, u32);
+thread_local! { static METRICS: std::cell::RefCell<std::collections::HashMap<MetricsKey, (f32, f32)>> = std::cell::RefCell::new(std::collections::HashMap::new()); }
+
+pub(super) fn release_text_metrics() {
+    // Replace rather than clear: closing settings also returns the map's capacity.
+    let _ = METRICS.try_with(|cache| *cache.borrow_mut() = std::collections::HashMap::new());
+}
+
 fn measured_text(text: &str, size: f32, width: f32) -> (f32, f32) {
-    type Key = (String, String, String, u32, u32);
-    thread_local! { static METRICS: std::cell::RefCell<std::collections::HashMap<Key, (f32, f32)>> = std::cell::RefCell::new(std::collections::HashMap::new()); }
     let family = super::super::fonts::family();
     let key = (family.clone(), crate::i18n::default_font().into(), text.to_owned(), size.to_bits(), width.to_bits());
     if let Some(metrics) = METRICS.with(|cache| cache.borrow().get(&key).copied()) { return metrics; }
@@ -568,4 +598,24 @@ fn measured_text(text: &str, size: f32, width: f32) -> (f32, f32) {
         cache.insert(key, metrics);
     });
     metrics
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::*;
+    #[test]
+    fn dropping_settings_painter_releases_text_metrics_and_capacity() {
+        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let painter = super::super::Painter::new().unwrap();
+        measured_text("Settings cache lifetime", 14.0, 300.0);
+        assert!(METRICS.with(|cache| !cache.borrow().is_empty()));
+        drop(painter);
+        METRICS.with(|cache| {
+            let cache = cache.borrow();
+            assert!(cache.is_empty());
+            assert_eq!(cache.capacity(), 0);
+        });
+        assert!(measured_text("Reopened settings", 14.0, 300.0).0 > 0.0);
+        release_text_metrics();
+    }
 }

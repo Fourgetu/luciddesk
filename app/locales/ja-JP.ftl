@@ -1176,3 +1176,9 @@ show-panels-enable = グローバルショートカットを有効にする
 show-panels-description = トレイの「パネルを表示」と同じ動作です。最前面の設定を維持し、すべてのパネルを一度前面に移動します。
 
 show-panels-disabled = 既定では無効です。有効にすると他のアプリからすべてのパネルを表示できます。
+
+font-search = フォント名を検索
+font-search-empty = 一致するフォントがありません。検索内容を変更または消去してください。
+
+font-loading = フォントを読み込み中…
+font-load-failed = フォントを読み込めませんでした。このページを開き直してください。

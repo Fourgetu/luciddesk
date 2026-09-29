@@ -1176,3 +1176,9 @@ show-panels-enable = Globales Tastenkürzel aktivieren
 show-panels-description = Wie Panels anzeigen im Infobereich: alle Panels einmal nach vorne holen und ihre Vordergrund-Einstellungen beibehalten.
 
 show-panels-disabled = Standardmäßig deaktiviert. Aktivieren, um alle Panels aus anderen Apps anzuzeigen.
+
+font-search = Schriftnamen suchen
+font-search-empty = Keine passenden Schriften. Suche ändern oder leeren.
+
+font-loading = Schriftarten werden geladen…
+font-load-failed = Schriftarten konnten nicht geladen werden. Öffnen Sie diese Seite erneut.

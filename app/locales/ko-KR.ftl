@@ -1176,3 +1176,9 @@ show-panels-enable = 전역 단축키 사용
 show-panels-description = 트레이의 패널 표시와 동일합니다. 항상 위 설정을 유지하며 모든 패널을 한 번 앞으로 가져옵니다.
 
 show-panels-disabled = 기본적으로 꺼져 있습니다. 켜면 다른 앱에서 모든 패널을 표시할 수 있습니다.
+
+font-search = 글꼴 이름 검색
+font-search-empty = 일치하는 글꼴이 없습니다. 검색어를 변경하거나 지우세요.
+
+font-loading = 글꼴 불러오는 중…
+font-load-failed = 글꼴을 불러오지 못했습니다. 이 페이지를 다시 열어 주세요.

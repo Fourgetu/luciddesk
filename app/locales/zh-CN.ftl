@@ -1176,3 +1176,9 @@ show-panels-enable = 启用全局快捷键
 show-panels-description = 与托盘“显示面板”相同，一次提升所有面板；保留原有置顶设置。
 
 show-panels-disabled = 默认关闭。启用后可从其他应用显示所有面板。
+
+font-search = 搜索字体名称
+font-search-empty = 没有匹配的字体，请修改或清空搜索内容。
+
+font-loading = 正在加载字体…
+font-load-failed = 字体加载失败，请重新进入此页面重试。

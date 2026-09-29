@@ -674,7 +674,12 @@ pub(super) fn backup_history(s: &mut Scene, width: f32, view: &recovery::View, o
     }
 }
 
-pub(super) fn fonts(s: &mut Scene, width: f32, choices: &[String], offset: usize) {
+#[cfg(test)]
+pub(super) fn fonts(s: &mut Scene, width: f32, choices: &[String], _offset: usize) {
+    fonts_status(s, width, choices, None);
+}
+
+pub(super) fn fonts_status(s: &mut Scene, width: f32, choices: &[String], status: Option<&'static str>) {
     let selected = super::super::fonts::family();
     let mut form = SettingsForm::new(s, width, crate::i18n::text("font-description"));
     form.button(
@@ -683,18 +688,17 @@ pub(super) fn fonts(s: &mut Scene, width: f32, choices: &[String], offset: usize
         crate::i18n::text("ui-reset"),
         Action::Font(crate::i18n::default_font().into()),
     );
-    form.section(crate::i18n::text("ui-available-fonts"));
-    for name in choices.iter().skip(offset).take(7) {
+    form.option(crate::i18n::text("font-search"), Action::FontSearch, false);
+    form.section(&format!("{} · {}", crate::i18n::text("ui-available-fonts"), choices.len()));
+    for name in choices {
         form.font_option(name, name == &selected);
     }
-    if choices.is_empty() {
-        form.info(crate::i18n::text("ui-no-fonts-available"), crate::i18n::text("ui-reset-to-the-default-font-to-continue"));
+    if let Some(status) = status {
+        form.info(crate::i18n::text(status), "");
+    } else if choices.is_empty() {
+        form.info(crate::i18n::text("ui-no-fonts-available"), crate::i18n::text("font-search-empty"));
     }
-    form.pager(
-        &crate::i18n::format("ui-fonts-7446", &[("arg0", format!("{}", offset / 7 + 1)), ("arg1", format!("{}", choices.len().div_ceil(7).max(1))), ("arg2", format!("{}", choices.len()))]),
-        (Action::FontPage(-1), offset > 0),
-        (Action::FontPage(1), offset + 7 < choices.len()),
-    );
+
 
 }
 

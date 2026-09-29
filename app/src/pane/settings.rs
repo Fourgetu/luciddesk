@@ -16,6 +16,7 @@ use windows_sys::Win32::{
     Graphics::Gdi::*,
     UI::{HiDpi::GetDpiForWindow, Input::KeyboardAndMouse::*, WindowsAndMessaging::*},
 };
+const FONT_LOAD_TIMER: usize = 0x4c5046;
 const SELECT_PANEL: u32 = WM_APP + 95;
 const PREPARE_REVEAL: u32 = WM_APP + 96;
 const REVEAL_TIMER: usize = 0x4c5055;
@@ -47,7 +48,7 @@ use windows_sys::Win32::UI::Controls::WM_MOUSELEAVE;
 #[derive(Clone)]
 enum Action {
     Font(String),
-    FontPage(isize),
+    FontSearch,
     FolderDefaults(folder::Defaults),
     FolderEntryMode(folder::EntryMode),
     BackupPolicy(u8),
@@ -102,6 +103,118 @@ struct Scene {
     controls: Vec<Control>,
     previews: Vec<(Rect, Backdrop)>,
     app_icon: Option<Rect>,
+}
+
+struct SearchFont(HFONT);
+impl Drop for SearchFont {
+    fn drop(&mut self) { unsafe { DeleteObject(self.0); } }
+}
+type SearchFontOwner = Rc<RefCell<Option<SearchFont>>>;
+
+fn attach_search_lifetime(editor: windows_sys::Win32::Foundation::HWND, font: &SearchFontOwner) -> bool {
+    let reference = Rc::into_raw(Rc::clone(font));
+    if unsafe { windows_sys::Win32::UI::Shell::SetWindowSubclass(editor, Some(font_search_focus), 0x4c46, reference as usize) } == 0 {
+        unsafe { drop(Rc::from_raw(reference)); }
+        return false;
+    }
+    true
+}
+
+fn create_font_search(owner: windows_sys::Win32::Foundation::HWND) -> windows_sys::Win32::Foundation::HWND {
+    // The settings backdrop is a composition surface. An owned popup keeps
+    // the native EDIT above that surface, as with the search panel's editor.
+    unsafe {
+        CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_LAYERED, windows_sys::w!("EDIT"), windows_sys::w!(""),
+            WS_POPUP | ES_AUTOHSCROLL as u32,
+            0, 0, 1, 1, owner, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null())
+    }
+}
+
+unsafe extern "system" fn font_search_colors(
+    hwnd: windows_sys::Win32::Foundation::HWND, msg: u32, wp: usize, lp: isize, _: usize, _: usize,
+) -> isize {
+    use windows_sys::Win32::UI::Shell::DefSubclassProc;
+    unsafe {
+        let editor = GetPropW(hwnd, windows_sys::w!("LucidDesk.FontSearch"));
+        if matches!(msg, WM_CTLCOLOREDIT | WM_CTLCOLORSTATIC) && !editor.is_null() && lp == editor as isize {
+            let mut key = 0;
+            GetLayeredWindowAttributes(editor, &raw mut key, std::ptr::null_mut(), std::ptr::null_mut());
+            let dc = wp as HDC;
+            SetTextColor(dc, if key == 0x202020 { 0xf0f0f0 } else { 0x202020 });
+            SetBkColor(dc, key); SetDCBrushColor(dc, key);
+            return GetStockObject(DC_BRUSH) as isize;
+        }
+        DefSubclassProc(hwnd, msg, wp, lp)
+    }
+}
+
+unsafe extern "system" fn font_search_focus(
+    hwnd: windows_sys::Win32::Foundation::HWND, msg: u32, wp: usize, lp: isize, id: usize, reference: usize,
+) -> isize {
+    unsafe {
+        if msg == WM_NCDESTROY {
+            // The editor owns a reference even if its owner's Rust callback was
+            // detached before destruction. Release only after native teardown.
+            let font = Rc::from_raw(reference as *const RefCell<Option<SearchFont>>);
+            let owner = GetWindow(hwnd, GW_OWNER);
+            if GetPropW(owner, windows_sys::w!("LucidDesk.FontSearch")) == hwnd {
+                RemovePropW(owner, windows_sys::w!("LucidDesk.FontSearch"));
+            }
+            windows_sys::Win32::UI::Shell::RemoveWindowSubclass(hwnd, Some(font_search_focus), id);
+            let result = windows_sys::Win32::UI::Shell::DefSubclassProc(hwnd, msg, wp, lp);
+            font.borrow_mut().take();
+            return result;
+        }
+        if msg == WM_SETCURSOR {
+            SetCursor(LoadCursorW(std::ptr::null_mut(), IDC_IBEAM));
+            return 1;
+        }
+        let owner = GetWindow(hwnd, GW_OWNER);
+        if msg == WM_MOUSEWHEEL {
+            PostMessageW(owner, msg, wp, lp);
+            return 0;
+        }
+        if msg == WM_KEYDOWN && matches!(wp as u16, VK_TAB | VK_DOWN) {
+            SetFocus(owner);
+            PostMessageW(owner, WM_KEYDOWN, wp, lp);
+            return 0;
+        }
+        if msg == WM_KEYDOWN && wp == VK_ESCAPE as usize {
+            SetWindowTextW(hwnd, windows_sys::w!(""));
+            return 0;
+        }
+        if msg == WM_CHAR && matches!(wp, 9 | 27) { return 0; }
+        if matches!(msg, WM_SETFOCUS | WM_KILLFOCUS) { InvalidateRect(GetWindow(hwnd, GW_OWNER), std::ptr::null(), 0); }
+        windows_sys::Win32::UI::Shell::DefSubclassProc(hwnd, msg, wp, lp)
+    }
+}
+
+fn font_search_hit(scene: &Scene, x: f32, y: f32) -> bool {
+    (scene.fixed_list() || scene.viewport.as_ref().is_none_or(|viewport| contains(viewport, x, y)))
+        && scene.controls.iter().any(|control| matches!(control.action, Action::FontSearch)
+            && contains(&control.bounds, x, y))
+}
+
+fn normalized_font_name(value: &str) -> String {
+    let mut normalized = String::with_capacity(value.len());
+    for c in value.chars() {
+        let c = if ('\u{ff01}'..='\u{ff5e}').contains(&c) {
+            char::from_u32(c as u32 - 0xfee0).unwrap()
+        } else { c };
+        if c.is_alphanumeric() { normalized.extend(c.to_lowercase()); }
+        else { normalized.push(' '); }
+    }
+    normalized
+}
+fn filter_fonts(names: &[String], query: &str) -> Vec<String> {
+    let query = normalized_font_name(query);
+    let tokens: Vec<_> = query.split_whitespace().collect();
+    if tokens.is_empty() { return names.to_vec(); }
+    names.iter().filter(|name| {
+        let name = normalized_font_name(name);
+        let compact: String = name.chars().filter(|c| !c.is_whitespace()).collect();
+        tokens.iter().all(|token| name.contains(token) || compact.contains(token))
+    }).cloned().collect()
 }
 
 fn grid_range() -> (f32, f32) {
@@ -358,7 +471,13 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
     let mut folder_defaults = folder::Defaults::load(&state.borrow().store)?;
     let mut folder_entry_mode = folder::EntryMode::load(&state.borrow().store)?;
     let mut font_choices = Vec::<String>::new();
-    let mut font_offset = 0usize;
+    let mut all_fonts = Vec::<String>::new();
+    let mut font_load: Option<fonts::CandidateLoad> = None;
+    let mut fonts_loaded = false;
+    let mut font_load_failed = false;
+    let search_font: SearchFontOwner = Rc::new(RefCell::new(None));
+    let mut search_font_style = (String::new(), 0u32);
+    let mut font_search: windows_sys::Win32::Foundation::HWND = std::ptr::null_mut();
     let mut painter_family = fonts::family();
     let mut painter = Painter::new().map_err(|e| e.to_string())?;
     let mut surface: Option<composition::Surface> = None;
@@ -418,10 +537,52 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
             let Some(state) = weak.upgrade() else {
                 return Some(0);
             };
+            if msg == WM_TIMER && wp == FONT_LOAD_TIMER {
+                if let Some(load) = &font_load {
+                    match load.poll() {
+                        Err(std::sync::mpsc::TryRecvError::Empty) => return Some(0),
+                        result => {
+                            font_load_failed = result.is_err();
+                            all_fonts = result.unwrap_or_default();
+                            let mut query = vec![0u16; if font_search.is_null() { 1 } else { unsafe { GetWindowTextLengthW(font_search) }.max(0) as usize + 1 }];
+                            let len = if font_search.is_null() { 0 } else { unsafe { GetWindowTextW(font_search, query.as_mut_ptr(), query.len() as i32) }.max(0) as usize };
+                            font_choices = filter_fonts(&all_fonts, &String::from_utf16_lossy(&query[..len]));
+                            fonts_loaded = true; font_load = None; scene_key = None;
+                        }
+                    }
+                }
+                unsafe { KillTimer(hwnd, FONT_LOAD_TIMER); InvalidateRect(hwnd, std::ptr::null(), 0); }
+                return Some(0);
+            }
+            if page == 11 && !fonts_loaded && font_load.is_none() && msg == WM_PAINT {
+                match fonts::CandidateLoad::start() {
+                    Ok(load) => {
+                        if unsafe { SetTimer(hwnd, FONT_LOAD_TIMER, 100, None) } != 0 { font_load = Some(load); }
+                        else { fonts_loaded = true; font_load_failed = true; }
+                    }
+                    Err(_) => { fonts_loaded = true; font_load_failed = true; }
+                }
+                scene_key = None;
+            }
+            if msg == WM_FONTCHANGE {
+                font_load = None; fonts_loaded = false; font_load_failed = false;
+                all_fonts.clear();
+                let query = if font_search.is_null() { String::new() } else {
+                    let mut text = vec![0u16; unsafe { GetWindowTextLengthW(font_search) }.max(0) as usize + 1];
+                    let len = unsafe { GetWindowTextW(font_search, text.as_mut_ptr(), text.len() as i32) };
+                    String::from_utf16_lossy(&text[..len.max(0) as usize])
+                };
+                font_choices = filter_fonts(&all_fonts, &query);
+                scroll_offset = 0.0; focus = None; scene_key = None;
+                unsafe { InvalidateRect(hwnd, std::ptr::null(), 0); }
+                return Some(0);
+            }
             if msg == crate::i18n::CHANGED {
                 scene_key = None;
-                font_choices = fonts::installed();
-                font_offset = 0;
+                font_load = None; fonts_loaded = false; font_load_failed = false;
+                all_fonts.clear(); font_choices.clear();
+                if !font_search.is_null() { unsafe { SetWindowTextW(font_search, windows_sys::w!("")); } }
+
                 scroll_offset = 0.0;
                 focus = None;
                 toggle_motion.clear();
@@ -430,6 +591,16 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     SetWindowTextW(hwnd, crate::i18n::wide("ui-luciddesk-settings"));
                     InvalidateRect(hwnd, std::ptr::null(), 0);
                 }
+                return Some(0);
+            }
+            if msg == WM_COMMAND && !font_search.is_null() && lp == font_search as isize
+                && (wp >> 16) as u32 == EN_CHANGE {
+                let mut text = vec![0u16; unsafe { GetWindowTextLengthW(font_search) }.max(0) as usize + 1];
+                let len = unsafe { GetWindowTextW(font_search, text.as_mut_ptr(), text.len() as i32) };
+                let query = String::from_utf16_lossy(&text[..len.max(0) as usize]);
+                font_choices = filter_fonts(&all_fonts, &query);
+                 scroll_offset = 0.0; scene_key = None;
+                unsafe { InvalidateRect(hwnd, std::ptr::null(), 0); }
                 return Some(0);
             }
             if let Some((percentage, text)) = &mut style_input {
@@ -539,6 +710,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 drop(owner);
                 unsafe {
                     KillTimer(hwnd, TOGGLE_TIMER);
+                    KillTimer(hwnd, FONT_LOAD_TIMER);
                 }
                 // Drop outside the PaneApp borrow: native destruction can send
                 // focus messages to other panes. The callback's render resources
@@ -614,6 +786,20 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 }
                 return Some(0);
             }
+            if msg == WM_SETCURSOR && (lp as u16) as u32 == HTCLIENT && page == 11 {
+                if let Some(scene) = cached_scene.as_ref() {
+                    let mut point = windows_sys::Win32::Foundation::POINT::default();
+                    unsafe { GetCursorPos(&raw mut point); ScreenToClient(hwnd, &raw mut point); }
+                    let x = point.x as f32 / scale;
+                    let y = point.y as f32 / scale;
+                    if font_search_hit(scene, x, y) {
+                        let clear = scene.controls.iter().any(|c| matches!(c.action, Action::FontSearch)
+                            && c.selected && x >= c.bounds.right - 40.0);
+                        unsafe { SetCursor(LoadCursorW(std::ptr::null_mut(), if clear { IDC_ARROW } else { IDC_IBEAM })); }
+                        return Some(1);
+                    }
+                }
+            }
             // Hook synchronization can repaint/activate this window while the
             // workspace is mutably borrowed. Render the last complete snapshot
             // during that reentry; unrelated native messages need no snapshot.
@@ -623,6 +809,8 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     | WM_ERASEBKGND
                     | WM_SIZE
                     | WM_ACTIVATE
+                    | WM_WINDOWPOSCHANGED
+                    | WM_SHOWWINDOW
                     | WM_MOUSEWHEEL
                     | WM_MOUSEMOVE
                     | WM_MOUSELEAVE
@@ -716,7 +904,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     layout::language(&mut body, w, &chosen);
                 }
                 if page == 1 { layout::show_panels_shortcut(&mut body, w, &state.borrow().store); }
-                if page == 11 { layout::fonts(&mut body, w, &font_choices, font_offset); }
+                if page == 11 { layout::fonts_status(&mut body, w, &font_choices, if !fonts_loaded { Some("font-loading") } else if font_load_failed { Some("font-load-failed") } else { None }); }
                 if page == 8 { layout::folder_defaults(&mut body, w, folder_defaults, folder_entry_mode); }
                 if matches!(page,6|9|10) {
                     if page==9 {layout::backup_history(&mut body,w,&backup_view,backup_offset);} else {layout::backup_page(&mut body,w,&backup_view,backup_policy,page==10);}
@@ -739,7 +927,58 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     if matches!(control.action, Action::StyleInput(p) if p == *percentage) { control.label = format!("{text}|"); }
                 }
             }
+            for control in &mut cached_scene.as_mut().unwrap().controls {
+                if matches!(control.action, Action::FontSearch) {
+                    let empty = font_search.is_null() || unsafe { GetWindowTextLengthW(font_search) } == 0;
+                    let focused = !font_search.is_null() && unsafe { GetFocus() } == font_search;
+                    control.selected = !empty;
+                    control.label = if empty && !focused { crate::i18n::text("font-search").into() } else { String::new() };
+                }
+            }
             let scene = cached_scene.as_ref().unwrap();
+            if page == 11 {
+                if let Some(control) = scene.controls.iter().find(|c| matches!(c.action, Action::FontSearch)) {
+                    let r = control.bounds;
+                    unsafe {
+                        if font_search.is_null() {
+                            font_search = create_font_search(hwnd);
+                            if font_search.is_null() { return Some(0); }
+                            SetPropW(hwnd, windows_sys::w!("LucidDesk.FontSearch"), font_search);
+                            windows_sys::Win32::UI::Shell::SetWindowSubclass(hwnd, Some(font_search_colors), 0x4c46, 0);
+                            if !attach_search_lifetime(font_search, &search_font) {
+                                RemovePropW(hwnd, windows_sys::w!("LucidDesk.FontSearch"));
+                                DestroyWindow(font_search); font_search = std::ptr::null_mut();
+                                return Some(0);
+                            }
+                            SendMessageW(font_search, windows_sys::Win32::UI::Controls::EM_SETLIMITTEXT, 128, 0);
+                        }
+                        let font_style = (fonts::family(), (scale * 96.0).round() as u32);
+                        if search_font_style != font_style {
+                            let face: Vec<u16> = font_style.0.encode_utf16().chain(Some(0)).collect();
+                            let font = CreateFontW(-(14.0 * scale).round() as i32, 0, 0, 0, FW_NORMAL as i32,
+                                0, 0, 0, DEFAULT_CHARSET as u32, 0, 0, ANTIALIASED_QUALITY as u32, 0, face.as_ptr());
+                            if !font.is_null() {
+                                SendMessageW(font_search, WM_SETFONT, font as usize, 1);
+                                *search_font.borrow_mut() = Some(SearchFont(font));
+                                search_font_style = font_style;
+                            }
+                        }
+                        SetLayeredWindowAttributes(font_search, if dark { 0x202020 } else { 0xf5f5f5 }, 255, LWA_COLORKEY);
+                        SendMessageW(font_search, windows_sys::Win32::UI::Controls::EM_SETCUEBANNER, 0, windows_sys::w!("") as isize);
+                        let mut origin = windows_sys::Win32::Foundation::POINT {
+                            x: ((r.left + 16.0)*scale) as i32, y: ((r.top + 10.0)*scale) as i32,
+                        };
+                        ClientToScreen(hwnd, &raw mut origin);
+                        SetWindowPos(font_search, std::ptr::null_mut(), origin.x, origin.y,
+                            ((r.right-r.left-56.0)*scale) as i32, ((r.bottom-r.top-20.0)*scale) as i32,
+                            SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOOWNERZORDER);
+                        let visible = IsWindowVisible(hwnd) != 0 && IsIconic(hwnd) == 0
+                            && (scene.fixed_list() || scene.viewport.as_ref().is_none_or(|v| r.top >= v.top && r.bottom <= v.bottom));
+                        ShowWindow(font_search, if visible { SW_SHOWNOACTIVATE } else { SW_HIDE });
+                    }
+                }
+            } else if !font_search.is_null() { unsafe { ShowWindow(font_search, SW_HIDE); } }
+
             let interaction_before = (hover, focus, keyboard_focus, pressed);
             let mut activate = None;
             let mut radius_change = None;
@@ -856,6 +1095,27 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     }
                     let x = (lp as u16 as i16) as f32 / scale;
                     let y = ((lp >> 16) as u16 as i16) as f32 / scale;
+                    if msg == WM_LBUTTONDOWN && !font_search.is_null() && font_search_hit(scene, x, y) {
+                        if scene.controls.iter().any(|c| matches!(c.action, Action::FontSearch) && c.selected && x >= c.bounds.right - 40.0) {
+                            unsafe { SetWindowTextW(font_search, windows_sys::w!("")); SetFocus(font_search); }
+                            font_choices = all_fonts.clone(); scroll_offset = 0.0; scene_key = None;
+                            unsafe { InvalidateRect(hwnd, std::ptr::null(), 0); }
+                            return Some(0);
+                        }
+                        // Color-keyed EDIT pixels hit the owner; forward the click so
+                        // the native editor can position the caret and capture dragging.
+                        focus = scene.controls.iter().position(|c| matches!(c.action, Action::FontSearch));
+                        let mut point = windows_sys::Win32::Foundation::POINT {
+                            x: lp as u16 as i16 as i32, y: (lp >> 16) as u16 as i16 as i32,
+                        };
+                        unsafe {
+                            MapWindowPoints(hwnd, font_search, &raw mut point, 1);
+                            SetFocus(font_search);
+                            SendMessageW(font_search, WM_LBUTTONDOWN, wp,
+                                ((point.x as u16 as u32) | ((point.y as u16 as u32) << 16)) as isize);
+                        }
+                        return Some(0);
+                    }
                     if let Some(thumb) = scene.scroll_thumb() {
                         let viewport = scene.viewport.unwrap();
                         if msg == WM_LBUTTONDOWN && x >= viewport.right - 16.0 && y >= viewport.top && y <= viewport.bottom {
@@ -999,7 +1259,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         }
                     }
                     if scene.viewport.is_some() && (wp == VK_NEXT as usize || wp == VK_PRIOR as usize) {
-                        let step = scene.viewport.unwrap().bottom - TITLE_HEIGHT - 32.0;
+                        let step = scene.viewport.unwrap().bottom - scene.viewport.unwrap().top - 16.0;
                         scroll_offset = (scroll_offset + if wp == VK_NEXT as usize { step } else { -step }).clamp(0.0, scene.scroll_max);
                         scene_key = None;
                         unsafe { InvalidateRect(hwnd, std::ptr::null(), 0); }
@@ -1027,7 +1287,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         }
                         if let (Some(index), Some(viewport)) = (focus, scene.viewport) {
                             let c = &scene.controls[index];
-                            if !matches!(c.kind, ControlKind::Caption) && c.bounds.left >= Tokens::content_x() {
+                            if !matches!(c.kind, ControlKind::Caption) && c.bounds.left >= Tokens::content_x() && (!scene.fixed_list() || Scene::list_row(c)) {
                                 let delta = if c.bounds.top < viewport.top + 8.0 { c.bounds.top - viewport.top - 8.0 }
                                     else if c.bounds.bottom > viewport.bottom - 8.0 { c.bounds.bottom - viewport.bottom + 8.0 } else { 0.0 };
                                 if delta != 0.0 { scroll_offset = (scroll_offset + delta).clamp(0.0, scene.scroll_max); scene_key = None; }
@@ -1263,6 +1523,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         };
                         PostMessageW(hwnd, WM_SYSCOMMAND, command as usize, 0);
                     },
+                    Action::FontSearch => { unsafe { SetFocus(font_search); } }
                     Action::Font(name) => {
                         let result = (|| -> Result<(), String> {
                             fonts::save(&state.borrow().store, name)?;
@@ -1277,13 +1538,13 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         if let Err(error) = result { window::error(&error); }
                         scene_key = None;
                     }
-                    Action::FontPage(step) => {
-                        font_offset = font_offset.saturating_add_signed(*step * 7).min(font_choices.len().saturating_sub(1) / 7 * 7);
-                        scroll_offset = 0.0; focus = None;
-                        scene_key = None;
-                    }
                     Action::Page(value) => {
-                        if *value == 11 { font_choices = fonts::installed(); font_offset = 0; }
+                        if *value == 11 {
+                            font_choices = all_fonts.clone();
+                            if font_load_failed { fonts_loaded = false; font_load_failed = false; }
+                            if !font_search.is_null() { unsafe { SetWindowTextW(font_search, windows_sys::w!("")); } }
+
+                        }
                         recording_peek = false;
                         recording_search = false;
                         recording_show_panels = false;

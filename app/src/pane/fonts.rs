@@ -84,45 +84,72 @@ unsafe extern "system" fn collect(
 fn regular_face(font: &LOGFONTW) -> bool {
     font.lfWeight == FW_NORMAL as i32 && font.lfItalic == 0
 }
-fn readable(name: &str) -> bool {
-    if name.encode_utf16().count() >= 32 || name.contains('\0') {
-        return false;
+// Reuse a single DC and glyph buffer for one scan; no native handles are cached.
+struct CoverageProbe {
+    dc: HDC,
+    sample: Vec<u16>,
+    glyphs: Vec<u16>,
+}
+impl CoverageProbe {
+    fn new(sample: &str) -> Option<Self> {
+        let dc = unsafe { CreateCompatibleDC(std::ptr::null_mut()) };
+        if dc.is_null() { return None; }
+        let sample: Vec<u16> = sample.encode_utf16().collect();
+        let glyphs = vec![0; sample.len()];
+        Some(Self { dc, sample, glyphs })
     }
-    unsafe {
-        let dc = CreateCompatibleDC(std::ptr::null_mut());
-        if dc.is_null() {
-            return false;
+    fn supports(&mut self, name: &str) -> bool {
+        if name.encode_utf16().count() >= 32 || name.contains('\0') { return false; }
+        unsafe {
+            let mut lf = LOGFONTW { lfHeight: -16, lfWeight: FW_NORMAL as i32, ..Default::default() };
+            for (out, unit) in lf.lfFaceName.iter_mut().zip(name.encode_utf16()) { *out = unit; }
+            let font = CreateFontIndirectW(&lf);
+            if font.is_null() { return false; }
+            let old = SelectObject(self.dc, font);
+            self.glyphs.fill(0xffff);
+            let count = GetGlyphIndicesW(self.dc, self.sample.as_ptr(), self.sample.len() as i32,
+                self.glyphs.as_mut_ptr(), GGI_MARK_NONEXISTING_GLYPHS);
+            SelectObject(self.dc, old);
+            DeleteObject(font);
+            count != u32::MAX && self.glyphs.iter().all(|g| *g != 0xffff && *g != 0)
         }
-        let mut lf = LOGFONTW {
-            lfHeight: -16,
-            lfWeight: FW_NORMAL as i32,
-            ..Default::default()
-        };
-        for (out, unit) in lf.lfFaceName.iter_mut().zip(name.encode_utf16()) {
-            *out = unit;
-        }
-        let font = CreateFontIndirectW(&lf);
-        if font.is_null() {
-            DeleteDC(dc);
-            return false;
-        }
-        let old = SelectObject(dc, font);
-        let probe: Vec<u16> = crate::i18n::font_sample().encode_utf16().collect();
-        let mut glyphs = vec![0; probe.len()];
-        let count = GetGlyphIndicesW(
-            dc,
-            probe.as_ptr(),
-            probe.len() as i32,
-            glyphs.as_mut_ptr(),
-            GGI_MARK_NONEXISTING_GLYPHS,
-        );
-        SelectObject(dc, old);
-        DeleteObject(font);
-        DeleteDC(dc);
-        count != u32::MAX && glyphs.iter().all(|g| *g != 0xffff && *g != 0)
     }
 }
+impl Drop for CoverageProbe {
+    fn drop(&mut self) { unsafe { DeleteDC(self.dc); } }
+}
+#[cfg(test)]
+fn readable(name: &str) -> bool { CoverageProbe::new(crate::i18n::font_sample()).is_some_and(|mut probe| probe.supports(name)) }
+
+#[cfg(test)]
 pub(super) fn installed() -> Vec<String> {
+    enumerate_candidates(crate::i18n::font_sample(), crate::i18n::default_font(), &std::sync::atomic::AtomicBool::new(false))
+}
+
+pub(super) struct CandidateLoad {
+    cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    receiver: std::sync::mpsc::Receiver<Vec<String>>,
+}
+impl CandidateLoad {
+    pub(super) fn start() -> Result<Self, String> {
+        let sample = crate::i18n::font_sample();
+        let default = crate::i18n::default_font();
+        let cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stop = cancelled.clone();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::Builder::new().name("font-candidates".into()).spawn(move || {
+            let names = enumerate_candidates(sample, default, &stop);
+            if !stop.load(std::sync::atomic::Ordering::Relaxed) { let _ = sender.send(names); }
+        }).map_err(|error| error.to_string())?;
+        Ok(Self { cancelled, receiver })
+    }
+    pub(super) fn poll(&self) -> Result<Vec<String>, std::sync::mpsc::TryRecvError> { self.receiver.try_recv() }
+}
+impl Drop for CandidateLoad {
+    fn drop(&mut self) { self.cancelled.store(true, std::sync::atomic::Ordering::Relaxed); }
+}
+fn enumerate_candidates(sample: &str, default: &str, cancelled: &std::sync::atomic::AtomicBool) -> Vec<String> {
+    if cancelled.load(std::sync::atomic::Ordering::Relaxed) { return Vec::new(); }
     let mut names = Vec::<String>::new();
     unsafe {
         let dc = CreateCompatibleDC(std::ptr::null_mut());
@@ -142,14 +169,30 @@ pub(super) fn installed() -> Vec<String> {
         );
         DeleteDC(dc);
     }
-    names.sort_by_key(|name| name.to_lowercase());
-    names.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
-    names.retain(|name| readable(name));
-    if let Some(index) = names.iter().position(|name| name == crate::i18n::default_font()) {
+    names.sort_by_cached_key(|name| name.to_lowercase());
+    names.dedup_by(|a, b| a.to_lowercase() == b.to_lowercase());
+    let Some(mut probe) = CoverageProbe::new(sample) else { return Vec::new(); };
+    let mut supported = Vec::new();
+    for name in names {
+        if cancelled.load(std::sync::atomic::Ordering::Relaxed) { return Vec::new(); }
+        if probe.supports(&name) { supported.push(name); }
+    }
+    let mut names = supported;
+    if let Some(index) = names.iter().position(|name| name == default) {
         let default = names.remove(index);
         names.insert(0, default);
     }
     names
+}
+// Validate only the selected family; saving or startup never scans all fonts.
+fn available(name: &str) -> bool {
+    if name.starts_with('@') || name.encode_utf16().count() >= 32 || name.contains('\0') { return false; }
+    let Some(mut probe) = CoverageProbe::new(crate::i18n::font_sample()) else { return false; };
+    let mut lf = LOGFONTW { lfCharSet: DEFAULT_CHARSET, ..Default::default() };
+    for (out, unit) in lf.lfFaceName.iter_mut().zip(name.encode_utf16()) { *out = unit; }
+    let mut names = Vec::<String>::new();
+    unsafe { EnumFontFamiliesExW(probe.dc, &lf, Some(collect), (&mut names as *mut Vec<String>) as isize, 0); }
+    names.iter().any(|candidate| candidate == name) && probe.supports(name)
 }
 pub(super) fn load(store: &desktop_storage::WorkspaceStore) -> Result<(), String> {
     let saved = store
@@ -159,15 +202,12 @@ pub(super) fn load(store: &desktop_storage::WorkspaceStore) -> Result<(), String
     if saved.is_empty() {
         set(String::new());
     } else {
-        set(installed()
-            .into_iter()
-            .find(|name| name == &saved)
-            .unwrap_or_default());
+        set(if available(&saved) { saved } else { String::new() });
     }
     Ok(())
 }
 pub(super) fn save(store: &desktop_storage::WorkspaceStore, name: &str) -> Result<(), String> {
-    if name != crate::i18n::default_font() && !installed().iter().any(|candidate| candidate == name) {
+    if name != crate::i18n::default_font() && !available(name) {
         return Err(crate::i18n::text("font-unavailable").into());
     }
     let saved = if name == crate::i18n::default_font() { "" } else { name };
@@ -178,6 +218,18 @@ pub(super) fn save(store: &desktop_storage::WorkspaceStore, name: &str) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn background_load_uses_requested_language_and_can_be_cancelled() {
+        let expected = crate::i18n::with_locale(5, installed);
+        let load = crate::i18n::with_locale(5, || CandidateLoad::start().unwrap());
+        let names = load.receiver.recv_timeout(std::time::Duration::from_secs(10)).unwrap();
+        assert_eq!(names, expected);
+        let cancelled = load.cancelled.clone();
+        drop(load);
+        assert!(cancelled.load(std::sync::atomic::Ordering::Relaxed));
+        assert!(enumerate_candidates("Aa", "Segoe UI", &cancelled).is_empty());
+    }
+
     #[test]
     fn candidates_follow_language_and_prefer_its_default() {
         for locale in 0..7 {

@@ -1176,3 +1176,9 @@ show-panels-enable = Enable global shortcut
 show-panels-description = Same as Show panels in the tray: raise all panels once and preserve their always-on-top settings.
 
 show-panels-disabled = Off by default. Enable to show all panels from other apps.
+
+font-search = Search font names
+font-search-empty = No matching fonts. Change or clear the search.
+
+font-loading = Loading fonts…
+font-load-failed = Could not load fonts. Reopen this page to retry.

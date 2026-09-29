@@ -402,6 +402,7 @@ fn about_page_stays_within_minimum_width() {
         desktop_core::PaneOptions::default(),
     );
     layout::about_status(&mut body, width, "桌面面板已连接", true);
+    assert!(body.text.iter().any(|(_, text, _)| text == concat!("v", env!("CARGO_PKG_VERSION"))));
     let s = with_titlebar(body, width, false);
     for bounds in s
         .text
@@ -661,7 +662,7 @@ fn settings_layout_and_rendering_at_multiple_scales() {
 }
 
 #[test]
-fn font_picker_fits_minimum_window_and_exposes_paging_and_reset() {
+fn font_picker_fits_minimum_window_and_exposes_list_and_reset() {
     let names: Vec<_> = (0..19).map(|i| format!("Font {i}")).collect();
     for offset in [0, 7, 14] {
         let mut body = scene(
@@ -687,7 +688,7 @@ fn font_picker_fits_minimum_window_and_exposes_paging_and_reset() {
                 .iter()
                 .filter(|c| matches!(&c.action, Action::Font(name) if name.starts_with("Font ")))
                 .count(),
-            (names.len() - offset).min(7)
+            names.len()
         );
         assert!(
             s.controls
@@ -766,7 +767,10 @@ fn setting_cards_scroll_without_moving_navigation_or_hitting_caption() {
                     continue;
                 }
                 let mut body = build();
-                let mut offset = (control.bounds.top - TITLE_HEIGHT - 16.0).max(0.0);
+                let origin = if body.fixed_list() && Scene::list_row(control) {
+                    body.controls.iter().filter(|c| Scene::list_row(c)).map(|c| c.bounds.top).fold(f32::MAX, f32::min)
+                } else { TITLE_HEIGHT + 16.0 };
+                let mut offset = (control.bounds.top - origin).max(0.0);
                 body.scroll_to(width, 560.0, &mut offset);
                 assert_eq!(body.controls[0].bounds.top, original.controls[0].bounds.top);
                 let c = &body.controls[index];
@@ -868,34 +872,6 @@ fn settings_cards_align_and_long_paths_do_not_overlap_actions() {
 
 #[test]
 fn pagination_disables_unavailable_directions_and_short_pages_do_not_scroll() {
-    for offset in [0, 7, 14] {
-        let mut s = scene(
-            800.0,
-            520.0,
-            11,
-            false,
-            (PanelTheme::Dark, Backdrop::Mica),
-            Default::default(),
-        );
-        layout::fonts(
-            &mut s,
-            800.0,
-            &(0..19).map(|i| format!("Font {i}")).collect::<Vec<_>>(),
-            offset,
-        );
-        for c in &s.controls {
-            if let Action::FontPage(step) = c.action {
-                assert_eq!(
-                    c.enabled,
-                    if step < 0 {
-                        offset > 0
-                    } else {
-                        offset + 7 < 19
-                    }
-                );
-            }
-        }
-    }
     let mut s = with_titlebar(
         scene(
             940.0,
@@ -1198,5 +1174,169 @@ fn show_panels_shortcut_is_off_and_accessible_in_every_language() {
                 assert!(s.accepts_pointer(c, c.bounds.left + 1.0, c.bounds.top + 1.0));
             }
         });
+    }
+}
+
+#[test]
+fn font_search_filters_names_without_changing_order() {
+    let names: Vec<String> = ["Microsoft YaHei UI", "Segoe UI", "微软雅黑"].into_iter().map(String::from).collect();
+    assert_eq!(super::filter_fonts(&names, "  UI  "), names[..2]);
+    assert_eq!(super::filter_fonts(&names, "雅黑"), names[2..]);
+    assert_eq!(super::filter_fonts(&names, ""), names);
+    assert!(super::filter_fonts(&names, "missing-font").is_empty());
+}
+
+#[test]
+fn font_search_uses_owned_surface_and_accepts_unicode_text() {
+    use windows_sys::Win32::UI::WindowsAndMessaging::*;
+    let owner = windows_window::Window::new("Font search test").style(WS_POPUP)
+        .on_message(|_, message, _, _| (message == WM_DESTROY).then_some(0)).create().unwrap();
+    let hwnd = super::create_font_search(owner.hwnd().cast());
+    assert!(!hwnd.is_null());
+    unsafe {
+        assert_eq!(GetWindow(hwnd, GW_OWNER), owner.hwnd().cast());
+        assert_eq!(GetWindowLongW(hwnd, GWL_STYLE) as u32 & WS_CHILD, 0);
+        assert_ne!(GetWindowLongW(hwnd, GWL_STYLE) as u32 & WS_POPUP, 0);
+        SetWindowTextW(hwnd, windows_sys::w!("微软雅黑 UI"));
+        let mut text = [0u16; 64];
+        let length = GetWindowTextW(hwnd, text.as_mut_ptr(), text.len() as i32);
+        assert_eq!(String::from_utf16_lossy(&text[..length as usize]), "微软雅黑 UI");
+        DestroyWindow(hwnd);
+    }
+}
+
+#[test]
+fn font_list_scroll_keeps_search_and_current_font_fixed() {
+    let names: Vec<_> = (0..200).map(|i| format!("Font {i}")).collect();
+    let make = || {
+        let mut body = scene(940.0, 588.0, 11, false, (PanelTheme::Dark, Backdrop::Mica), Default::default());
+        layout::fonts(&mut body, 940.0, &names, 0);
+        with_titlebar(body, 940.0, false)
+    };
+    let mut first = make(); first.scroll_to(940.0, 620.0, &mut 0.0);
+    let mut scrolled = make(); scrolled.scroll_to(940.0, 620.0, &mut 480.0);
+    let field = |s: &Scene| s.controls.iter().find(|c| matches!(c.action, Action::FontSearch)).unwrap().bounds;
+    assert_eq!(field(&first), field(&scrolled));
+    assert_eq!(first.cards, scrolled.cards);
+    assert!(scrolled.scroll_max > 0.0);
+    let r = field(&scrolled);
+    assert!(font_search_hit(&scrolled, r.left + 10.0, r.top + 10.0));
+    let row = scrolled.controls.iter().find(|c| Scene::list_row(c)).unwrap();
+    assert!(!scrolled.accepts_pointer(row, row.bounds.left + 1.0, row.bounds.top + 1.0));
+    let visible = scrolled.controls.iter().filter(|c| Scene::list_row(c)
+        && scrolled.viewport.is_some_and(|v| c.bounds.bottom > v.top && c.bounds.top < v.bottom)).count();
+    assert!(visible > 0 && visible < 10);
+}
+
+#[test]
+#[ignore = "Native composition window; run alone to isolate STA graphics lifetime"]
+fn native_font_search_tracks_window_and_handles_clear_and_page_leave() {
+    let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let state = Rc::new(RefCell::new(super::super::tests::test_state()));
+    show(&state, PanelId::new(1)).unwrap();
+    let hwnd = state.borrow().settings.as_ref().unwrap().hwnd().cast();
+    unsafe {
+        ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+        let mut bounds = RECT::default(); GetClientRect(hwnd, &raw mut bounds);
+        let scale = GetDpiForWindow(hwnd).max(96) as f32 / 96.0;
+        let width = bounds.right as f32 / scale;
+        let nav = with_titlebar(scene(width, bounds.bottom as f32 / scale - TITLE_HEIGHT, 0,
+            false, (PanelTheme::Dark, Backdrop::Mica), Default::default()), width, false);
+        let click = |rect: Rect| {
+            let x = ((rect.left + rect.right) * 0.5 * scale) as u16;
+            let y = ((rect.top + rect.bottom) * 0.5 * scale) as u16;
+            let lp = (u32::from(x) | (u32::from(y) << 16)) as isize;
+            SendMessageW(hwnd, WM_LBUTTONDOWN, 1, lp); SendMessageW(hwnd, WM_LBUTTONUP, 0, lp);
+            SendMessageW(hwnd, WM_PAINT, 0, 0);
+        };
+        click(nav.controls.iter().find(|c| matches!(c.action, Action::Page(11))).unwrap().bounds);
+        let editor = GetPropW(hwnd, windows_sys::w!("LucidDesk.FontSearch"));
+        assert!(!editor.is_null());
+        assert_ne!(IsWindowVisible(editor), 0);
+        SetWindowTextW(editor, windows_sys::w!("微软雅黑"));
+        assert_eq!(GetWindowTextLengthW(editor), 4);
+        SendMessageW(editor, WM_KEYDOWN, VK_ESCAPE as usize, 0);
+        assert_eq!(GetWindowTextLengthW(editor), 0);
+        SetWindowTextW(editor, windows_sys::w!("missing-font"));
+        SendMessageW(hwnd, WM_PAINT, 0, 0);
+        let mut field = RECT::default(); GetWindowRect(editor, &raw mut field);
+        let mut point = windows_sys::Win32::Foundation::POINT { x: field.right + (16.0 * scale) as i32, y: (field.top + field.bottom) / 2 };
+        ScreenToClient(hwnd, &raw mut point);
+        let lp = (point.x as u16 as u32 | ((point.y as u16 as u32) << 16)) as isize;
+        SendMessageW(hwnd, WM_LBUTTONDOWN, 1, lp); SendMessageW(hwnd, WM_LBUTTONUP, 0, lp);
+        assert_eq!(GetWindowTextLengthW(editor), 0, "clear button must clear the native editor");
+        ShowWindow(hwnd, SW_MINIMIZE);
+        assert_eq!(IsWindowVisible(editor), 0);
+        ShowWindow(hwnd, SW_SHOWNOACTIVATE); SendMessageW(hwnd, WM_PAINT, 0, 0);
+        assert_ne!(IsWindowVisible(editor), 0);
+        let mut before = RECT::default(); GetWindowRect(editor, &raw mut before);
+        let mut owner = RECT::default(); GetWindowRect(hwnd, &raw mut owner);
+        SetWindowPos(hwnd, std::ptr::null_mut(), owner.left + 20, owner.top + 20, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+        let mut after = RECT::default(); GetWindowRect(editor, &raw mut after);
+        assert_eq!((after.left - before.left, after.top - before.top), (20, 20));
+        click(nav.controls.iter().find(|c| matches!(c.action, Action::Page(0))).unwrap().bounds);
+        assert_eq!(IsWindowVisible(editor), 0);
+        SendMessageW(hwnd, WM_CLOSE, 0, 0);
+    }
+}
+
+#[test]
+fn font_search_matches_words_fullwidth_and_separators() {
+    let names: Vec<String> = ["Microsoft YaHei UI", "Maple Mono NF-CN", "Noto Sans SC", "微软雅黑"].into_iter().map(String::from).collect();
+    for query in ["yahei microsoft", "ＭＩＣＲＯＳＯＦＴ　ＵＩ", "microsoftyahei"] {
+        assert_eq!(filter_fonts(&names, query), names[..1]);
+    }
+    for query in ["CN maple", "nf_cn", "MapleMono"] {
+        assert_eq!(filter_fonts(&names, query), names[1..2]);
+    }
+    assert_eq!(filter_fonts(&names, "软 雅"), names[3..]);
+    assert_eq!(filter_fonts(&names, "  "), names);
+    assert!(filter_fonts(&names, "maple yahei").is_empty());
+}
+
+#[test]
+#[ignore = "Process-wide GDI counts; run alone to exclude other rendering tests"]
+fn search_font_lifetime_survives_detached_callback_and_releases_on_close() {
+    use windows_sys::Win32::Graphics::Gdi::*;
+    unsafe {
+        for detached_first in [false, true] {
+            for _ in 0..32 {
+                use windows_sys::Win32::System::Threading::{GetCurrentProcess, GetGuiResources};
+                let process = GetCurrentProcess();
+                let before = windows_sys::Win32::System::Threading::GetGuiResources(process, 0);
+                let owner = CreateWindowExW(0, windows_sys::w!("STATIC"), windows_sys::w!("Font lifetime"),
+                    WS_POPUP, 0, 0, 1, 1, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null());
+                assert!(!owner.is_null());
+                windows_sys::Win32::UI::Shell::SetWindowSubclass(owner, Some(frame_proc), 1, 0);
+                let editor = create_font_search(owner);
+                assert!(!editor.is_null());
+                let font = CreateFontW(-14, 0, 0, 0, FW_NORMAL as i32, 0, 0, 0,
+                    DEFAULT_CHARSET as u32, 0, 0, ANTIALIASED_QUALITY as u32, 0, windows_sys::w!("Segoe UI"));
+                assert!(!font.is_null());
+                let resources: SearchFontOwner = Rc::new(RefCell::new(Some(SearchFont(font))));
+                let weak = Rc::downgrade(&resources);
+                assert!(attach_search_lifetime(editor, &resources));
+                SetPropW(owner, windows_sys::w!("LucidDesk.FontSearch"), editor);
+                SendMessageW(editor, WM_SETFONT, font as usize, 0);
+                assert!(GetGuiResources(process, 0) > before, "probe must allocate GDI resources");
+                assert_eq!(Rc::strong_count(&resources), 2);
+                if detached_first {
+                    drop(resources);
+                    assert!(weak.upgrade().is_some(), "editor must keep its selected font alive");
+                    DestroyWindow(owner);
+                } else {
+                    DestroyWindow(owner);
+                    assert!(resources.borrow().is_none(), "native destruction releases the font even with a live callback");
+                    drop(resources);
+                }
+                assert_eq!(IsWindow(editor), 0);
+                assert!(weak.upgrade().is_none());
+                GdiFlush();
+                let after = windows_sys::Win32::System::Threading::GetGuiResources(process, 0);
+                // GDI can retain a deleted font in its internal cache, so a stale
+                // handle's GetObjectType is not a measure of process ownership.
+                assert_eq!(after, before, "closing the editor must restore the GDI resource count");
+            }
+        }
     }
 }

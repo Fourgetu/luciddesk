@@ -10,11 +10,14 @@ struct CachedPreview {
 
 pub(super) struct Painter {
     preview: RefCell<Option<CachedPreview>>,
-    font_previews: RefCell<std::collections::HashMap<String, windows_canvas::TextFormat>>,
     app_icon: super::super::assets::Pixels,
     formats: Vec<windows_canvas::TextFormat>,
     button_format: windows_canvas::TextFormat,
 }
+impl Drop for Painter {
+    fn drop(&mut self) { super::components::release_text_metrics(); }
+}
+
 impl Painter {
     pub(super) fn new() -> windows::core::Result<Self> {
         use windows_canvas::{FontWeight, ParagraphAlignment, TextFormat, WordWrapping};
@@ -65,7 +68,6 @@ impl Painter {
         super::super::canvas::ellipsis(&button_format)?;
         Ok(Self {
             preview: RefCell::new(None),
-            font_previews: RefCell::new(std::collections::HashMap::new()),
             app_icon: {
                 let icon = crate::app_icon::load(128, 128).map_err(|message| {
                     windows::core::Error::new(windows::Win32::Foundation::E_FAIL, message)
@@ -181,11 +183,11 @@ impl Painter {
                     &page_background,
                 );
                 for r in &s.separators {
-                    let _clip = ContentClip::new(&t, s, r.left >= Tokens::content_x());
+                    let _clip = ContentClip::new(&t, s, r.left >= Tokens::content_x() && !s.fixed_list());
                     t.fill_rect(r, &border);
                 }
                 for r in &s.cards {
-                    let _clip = ContentClip::new(&t, s, r.left >= Tokens::content_x());
+                    let _clip = ContentClip::new(&t, s, r.left >= Tokens::content_x() && !s.fixed_list());
                     let rr = RoundedRect {
                         rect: *r,
                         radius_x: Tokens::CARD_RADIUS,
@@ -202,7 +204,7 @@ impl Painter {
                     t.draw_bitmap(&bitmap, bounds, 1.0);
                 }
                 for (r, material) in &s.previews {
-                    let _clip = ContentClip::new(&t, s, r.left >= Tokens::content_x());
+                    let _clip = ContentClip::new(&t, s, r.left >= Tokens::content_x() && !s.fixed_list());
                     // Keep only the current image. Theme, strength, custom color or
                     // device/context changes invalidate it; hover and scroll do not.
                     let mut cached = self.preview.borrow_mut();
@@ -288,13 +290,46 @@ impl Painter {
                         );
                     }
                 }
+                if s.fixed_list() && let Some(r) = s.viewport {
+                    t.draw_rounded_rect(&RoundedRect { rect: r, radius_x: Tokens::CARD_RADIUS, radius_y: Tokens::CARD_RADIUS }, &card_border, 1.0);
+                }
                 for (i, c) in s.controls.iter().enumerate() {
+                    if s.fixed_list() && Scene::list_row(c) && s.viewport.is_some_and(|v| c.bounds.bottom <= v.top || c.bounds.top >= v.bottom) { continue; }
                     let _clip = ContentClip::new(
                         &t,
                         s,
                         c.bounds.left >= Tokens::content_x()
-                            && !matches!(c.kind, ControlKind::Caption),
+                            && !matches!(c.kind, ControlKind::Caption)
+                            && (!s.fixed_list() || Scene::list_row(c)),
                     );
+                    if matches!(c.action, Action::FontSearch) {
+                        let r = c.bounds;
+                        let background = canvas_result(t.create_solid_brush(ColorF {
+                            a: if dark { 0.04 } else { 0.45 }, ..color(0xffffff)
+                        }))?;
+                        let frame = RoundedRect { rect: r, radius_x: 8.0, radius_y: 8.0 };
+                        t.fill_rounded_rect(&frame, &background);
+                        t.draw_rounded_rect(&frame, &border, 1.0);
+                        let hint = canvas_result(t.create_solid_brush(ColorF {
+                            a: 1.0, ..color(if dark { 0xb8b8b8 } else { 0x606060 })
+                        }))?;
+                        t.clipped_text(&c.label, &self.formats[1],
+                            &Rect::from_xywh(r.left + 16.0, r.top, r.right - r.left - 56.0, r.bottom - r.top), &hint);
+                        t.clipped_icon(if c.selected { "\u{e711}" } else { "\u{e721}" }, &self.formats[4],
+                            &Rect::from_xywh(r.right - 32.0, r.top, 16.0, r.bottom - r.top), &hint);
+                        let focused = unsafe {
+                            let focus = windows_sys::Win32::UI::Input::KeyboardAndMouse::GetFocus();
+                            let owner = windows_sys::Win32::UI::WindowsAndMessaging::GetWindow(focus,
+                                windows_sys::Win32::UI::WindowsAndMessaging::GW_OWNER);
+                            !focus.is_null() && windows_sys::Win32::UI::WindowsAndMessaging::GetPropW(owner,
+                                windows_sys::w!("LucidDesk.FontSearch")) == focus
+                        };
+                        if focused {
+                            t.draw_line(Vector2::new(r.left + 8.0, r.bottom - 1.0),
+                                Vector2::new(r.right - 8.0, r.bottom - 1.0), &accent, 2.0);
+                        }
+                        continue;
+                    }
                     if !c.enabled && c.is_toggle() {
                         let r = c.bounds;
                         t.draw_rounded_rect(
@@ -687,25 +722,6 @@ impl Painter {
                             a: 1.0,
                         }))?;
                         t.fill_ellipse(&toggle_thumb(c.bounds, progress), &brush);
-                    } else if let Action::Font(name) = &c.action && c.kind.is_row() {
-                        let r = c.bounds;
-                        t.clipped_text(&c.label, &self.formats[1],
-                            &Rect::from_xywh(r.left + 16.0, r.top + 6.0, r.right - r.left - 56.0, 24.0), &ink);
-                        let mut previews = self.font_previews.borrow_mut();
-                        if !previews.contains_key(name) {
-                            let format = canvas_result(windows_canvas::TextFormat::new(name, 18.0))?
-                                .with_word_wrapping(windows_canvas::WordWrapping::NoWrap)
-                                .with_paragraph_alignment(windows_canvas::ParagraphAlignment::Center);
-                            super::super::canvas::ellipsis(&format)?;
-                            if previews.len() >= 32 { previews.clear(); }
-                            previews.insert(name.clone(), format);
-                        }
-                        t.clipped_text(crate::i18n::text("font-preview"), &previews[name],
-                            &Rect::from_xywh(r.left + 16.0, r.top + 32.0, r.right - r.left - 56.0, 28.0), &muted);
-                        if c.selected {
-                            t.clipped_icon("\u{e73e}", &self.formats[4],
-                                &Rect::from_xywh(r.right - 32.0, r.top + 24.0, 16.0, 20.0), &accent);
-                        }
                     } else if caption {
                         if hover == Some(i) && matches!(c.action, Action::Window(SC_CLOSE)) {
                             let red = canvas_result(t.create_solid_brush(color(0xc42b1c)))?;
@@ -734,6 +750,13 @@ impl Painter {
                             bounds.left += Style::NAV_TEXT_INSET;
                         } else if plain {
                             bounds.left += Style::ROW_INSET;
+                            if matches!(c.action, Action::Font(_) | Action::Language(_)) {
+                                bounds.left += 24.0;
+                                if c.selected {
+                                    t.clipped_icon("\u{e73e}", &self.formats[4],
+                                        &Rect::from_xywh(c.bounds.left + 12.0, c.bounds.top, 16.0, c.bounds.bottom - c.bounds.top), &accent);
+                                }
+                            }
                         }
                         if !navigation {
                             let back = c.kind.is_back();
@@ -781,7 +804,7 @@ impl Painter {
                     }
                 }
                 for (r, text, size) in &s.text {
-                    let _clip = ContentClip::new(&t, s, r.left >= Tokens::content_x());
+                    let _clip = ContentClip::new(&t, s, r.left >= Tokens::content_x() && !s.fixed_list());
                     if matches!(*size, 4 | 5) {
                         t.clipped_icon(text, &self.formats[*size], r, &ink);
                         continue;

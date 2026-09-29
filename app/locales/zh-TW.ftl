@@ -1176,3 +1176,9 @@ show-panels-enable = 啟用全域快捷鍵
 show-panels-description = 與系統匣「顯示面板」相同，一次提升所有面板；保留原有置頂設定。
 
 show-panels-disabled = 預設關閉。啟用後可從其他應用程式顯示所有面板。
+
+font-search = 搜尋字型名稱
+font-search-empty = 沒有符合的字型，請修改或清除搜尋內容。
+
+font-loading = 正在載入字型…
+font-load-failed = 字型載入失敗，請重新進入此頁面重試。
