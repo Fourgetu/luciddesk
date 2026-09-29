@@ -73,6 +73,7 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
         windows::Win32::System::Ole::OleInitialize(None).map_err(|e| e.to_string())?;
     }
     let _ole = OleApartment;
+    let _graphics = super::native_graphics::GraphicsLifetime;
     let first_run = !path.exists();
     let mut store = WorkspaceStore::open(path).map_err(|e| e.to_string())?;
     super::peek::load(&store)?;

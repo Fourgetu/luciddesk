@@ -13,6 +13,22 @@ thread_local! {
     static DEVICE: std::cell::RefCell<Option<windows_canvas::GpuDevice>> = const { std::cell::RefCell::new(None) };
 }
 
+/// Declare after the COM/OLE apartment and before any windows or renderers.
+/// DXGI may unload helper DLLs on final release; doing that from a Windows TLS
+/// destructor during process shutdown can raise DXGI_ERROR_INVALID_CALL.
+pub(super) struct GraphicsLifetime;
+
+impl Drop for GraphicsLifetime {
+    fn drop(&mut self) {
+        crate::diagnostics::render_trace(format_args!("shutdown: graphics caches begin"));
+        super::acrylic::clear_thread_cache();
+        desktop_graphics::clear_thread_cache();
+        let device = DEVICE.with(|slot| slot.borrow_mut().take());
+        drop(device);
+        crate::diagnostics::render_trace(format_args!("shutdown: graphics caches released"));
+    }
+}
+
 /// All pane and flyout contexts on the UI thread share one graphics device.
 pub fn gpu_device() -> Result<windows_canvas::GpuDevice> {
     DEVICE.with(|slot| {
@@ -85,4 +101,48 @@ pub fn native_interface<T: Interface>(source: &impl canvas_core::Interface) -> R
 
 pub fn canvas_result<T>(result: canvas_core::Result<T>) -> Result<T> {
     result.map_err(|error| Error::from_hresult(HRESULT(error.code().0)))
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+    use super::*;
+
+    #[test]
+    fn graphics_caches_release_before_apartment_and_process_exit() {
+        const CHILD: &str = "LUCIDDESK_GRAPHICS_SHUTDOWN_TEST";
+        if std::env::var_os(CHILD).is_some() {
+            let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+            let graphics = GraphicsLifetime;
+            for shared in [false, true] {
+                use windows_sys::Win32::UI::WindowsAndMessaging::*;
+                let window = windows_window::Window::new("Graphics shutdown regression")
+                    .size(96, 64).style(WS_POPUP).ex_style(WS_EX_NOREDIRECTIONBITMAP)
+                    .on_message(|_, msg, _, _| (msg == WM_DESTROY).then_some(0))
+                    .create().unwrap();
+                let hwnd = HWND(window.hwnd().cast());
+                let mut surface = if shared {
+                    super::super::composition::Surface::new_settings(hwnd)
+                } else {
+                    super::super::composition::Surface::new_pane(hwnd)
+                }.unwrap();
+                surface.material(hwnd, desktop_core::Backdrop::Acrylic);
+                surface.present(96, 64, &[255; 96 * 64 * 4]).unwrap();
+            }
+            assert!(DEVICE.with(|slot| slot.borrow().is_some()));
+            drop(graphics);
+            assert!(DEVICE.with(|slot| slot.borrow().is_none()));
+            return;
+        }
+        // Check the actual process exit: an in-process assertion cannot catch
+        // a later crash from TLS destruction after the test has returned.
+        for _ in 0..3 {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "pane::native_graphics::shutdown_tests::graphics_caches_release_before_apartment_and_process_exit",
+                    "--test-threads=1", "--nocapture"])
+                .env(CHILD, "1").env("LUCIDPANE_SHARED_PANE_TREE", "0")
+                .output().unwrap();
+            assert!(output.status.success(), "graphics shutdown failed: {:?}\n{}\n{}",
+                output.status, String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        }
+    }
 }

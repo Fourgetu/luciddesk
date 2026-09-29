@@ -47,6 +47,11 @@ thread_local! {
     static RUNTIME: RefCell<Option<Rc<Runtime>>> = const { RefCell::new(None) };
 }
 
+pub(super) fn clear_thread_cache() {
+    let runtime = RUNTIME.with(|slot| slot.borrow_mut().take());
+    drop(runtime);
+}
+
 pub struct Acrylic {
     hwnd: HWND,
     _power_notification: PowerNotification,

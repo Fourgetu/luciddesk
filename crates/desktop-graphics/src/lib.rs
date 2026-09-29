@@ -20,4 +20,4 @@ pub mod dwm {
 }
 
 mod layer;
-pub use layer::Layer;
+pub use layer::{Layer, clear_thread_cache};

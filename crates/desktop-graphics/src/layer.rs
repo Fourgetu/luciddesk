@@ -14,6 +14,13 @@ thread_local! {
     static DEVICE: std::cell::RefCell<Option<(IUnknown, dcomp::IDCompositionDevice)>> = const { std::cell::RefCell::new(None) };
 }
 
+/// Release cached composition resources on the UI thread before COM teardown.
+/// All layers must have been dropped first.
+pub fn clear_thread_cache() {
+    let cached = DEVICE.with(|cache| cache.borrow_mut().take());
+    drop(cached);
+}
+
 unsafe fn composition_device(dxgi: &IUnknown) -> Result<dcomp::IDCompositionDevice> {
     let identity: IUnknown = dxgi.cast()?;
     DEVICE.with(|cache| {
