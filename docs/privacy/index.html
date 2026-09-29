@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="LucidDesk 隐私政策：本地文件处理、配置与备份、搜索与预览、诊断、删除及联系方式。 LucidDesk Privacy Policy.">
+<title>隐私政策 / Privacy Policy · LucidDesk</title>
+<style>
+:root{color-scheme:light dark;font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;line-height:1.8;color:#243047;background:#f6f8fb}body{margin:0}main{max-width:800px;margin:auto;padding:48px 24px 64px}header{border-bottom:1px solid #b8c5d6;padding-bottom:24px}.brand{letter-spacing:.08em;color:#52627a}h1{font-size:clamp(30px,6vw,42px);line-height:1.3}h2{font-size:21px;margin-top:28px}p,li{overflow-wrap:anywhere}a{color:#225fc2;text-underline-offset:3px}.date,footer{font-size:14px;color:#52627a}.summary{padding:18px 22px;border-left:3px solid #3975cb;background:#eaf0f9}li{margin:8px 0}section{scroll-margin-top:24px}section+section{border-top:1px solid #b8c5d6;margin-top:48px;padding-top:24px}footer{border-top:1px solid #b8c5d6;margin-top:40px;padding-top:20px}nav{display:flex;gap:24px}a:focus-visible{outline:3px solid #3975cb;outline-offset:4px}@media(prefers-color-scheme:dark){:root{color:#dce4ef;background:#141b26}.brand,.date,footer{color:#a6b5ca}.summary{background:#1d2c42}a{color:#91bbff}}
+</style>
+</head>
+<body><main>
+<header><div class="brand">LucidDesk</div><h1>隐私政策 / Privacy Policy</h1><p class="date">生效及更新日期：2026 年 9 月 30 日 · Effective / Last updated: September 30, 2026</p><nav aria-label="语言 / Language"><a href="#zh-CN" lang="zh-CN">中文</a><a href="#en" lang="en">English</a></nav></header>
+<section id="zh-CN" lang="zh-CN" aria-label="中文隐私政策">
+<p class="summary">LucidDesk 在你的 Windows 设备上整理桌面、浏览文件夹并调用本机搜索与预览工具。当前版本无需注册账号，没有广告、行为分析或自动崩溃上报，也不会自动向开发者上传你的文件、文件路径、搜索内容或配置。</p>
+<h2>1. 适用范围与开发者</h2>
+<p>本政策适用于由 Yuchen95（GitHub：Yuch3nE）维护的 LucidDesk 桌面应用及本隐私政策网页。下述处理仅在使用相应功能时发生；第三方软件、操作系统、应用商店和网站按各自的隐私政策处理信息。</p>
+<h2>2. 在设备上处理的信息及用途</h2>
+<ul>
+<li><strong>文件及桌面信息：</strong>读取桌面项目、所浏览目录中的名称、路径、类型、大小、修改时间、图标和相关 Shell 信息，用于展示、分组、排序和文件操作。重命名、删除、剪切、粘贴及部分拖放操作会改变真实文件；仅加入桌面分组不会移动原文件。</li>
+<li><strong>设置与工作区：</strong>保存面板标题、文件引用、文件夹路径、位置、尺寸、标签与排列、显示器布局、语言、外观、快捷键，以及搜索和预览开关、第三方程序路径，以恢复你的工作区。</li>
+<li><strong>搜索与预览：</strong>启用 Everything 搜索后，通过本机进程通信把搜索词交给正在运行的 Everything，并接收文件路径等结果。启用 PowerToys Peek 或 QuickLook 后，将所选文件的引用或路径交给相应本机程序进行预览；预览程序可能读取文件内容。搜索和预览默认关闭，第三方工具需单独安装。</li>
+<li><strong>剪贴板与诊断：</strong>在你执行复制、剪切、粘贴或“复制诊断”时使用 Windows 剪贴板。诊断信息包括应用版本、构建、系统版本、架构及桌面连接状态；启用诊断选项或使用诊断构建时，可能生成本地运行日志。这些信息用于故障排查，不会自动发送给开发者。</li>
+</ul>
+<h2>3. 对外传输与第三方服务</h2>
+<p>当前版本没有开发者运营的云同步或账号服务。开发者不会通过应用自动接收这些本地数据，也不会通过应用将其出售或提供给广告商。</p>
+<p>打开网页链接、网络位置、云盘目录、快捷方式或文件时，Windows、关联应用、Shell 扩展及相关服务可能发生网络访问；剪贴板也可能按你的系统设置同步。Everything、PowerToys Peek、QuickLook 及其插件的处理行为由对应软件和你的配置决定。本机通信不代表这些外部工具没有独立的网络行为。</p>
+<h2>4. 存储、备份与删除</h2>
+<p>全局设置保存在 <code>config.toml</code>，工作区保存在 <code>workspace.db</code>。普通版默认数据目录为 <code>%LOCALAPPDATA%\LucidDesk</code>；便携版使用程序旁的 <code>data</code> 文件夹，也可使用自定义数据目录。请通过“设置 → 备份与恢复”中的“打开配置目录”确认当前实际位置。</p>
+<p>自动快照和手动导出可保存设置、布局、文件引用及路径，不包含引用文件的实际内容。自动快照保留最近的若干份，恢复前可能另存快照；手动导出的备份由你管理。文件路径与面板标题可能包含个人信息，请在分享备份前检查。</p>
+<p>设置和工作区通常保留至你修改或删除。你可关闭搜索和预览、移除面板或文件引用；完全清除本地配置时，请先退出应用，再删除实际数据目录及另行保存的备份和诊断日志。移除分组或删除配置不会删除所引用的原文件；卸载应用也不保证清除便携目录、自定义目录、备份或日志。系统备份及云端副本需另行管理。</p>
+<h2>5. 权限与安全</h2>
+<p>应用通过 Windows 桌面及文件系统接口访问相关文件、监控目录变化、管理桌面项目，并写入数据目录；可选功能使用快捷键及本机进程通信。限制相应文件或进程访问会影响相关功能。应用不需要摄像头、麦克风或实时定位来完成上述功能。</p>
+<p>配置、数据库、备份和日志没有应用提供的额外加密，其保护依赖 Windows 账户、文件权限及磁盘加密等措施。请妥善管理设备和备份，尤其是在共享设备或使用云同步目录时。</p>
+<h2>6. 政策网页、下载与主动反馈</h2>
+<p>本页面没有广告、统计脚本、第三方字体、Cookie 或浏览器本地存储。页面由 GitHub Pages 托管；GitHub 会为安全目的记录访问者 IP 地址。详见 <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub 隐私声明</a>和 <a href="https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages">GitHub Pages 说明</a>。</p>
+<p>下载、购买、更新或在 GitHub 提交反馈时，所使用的平台可能按自己的政策处理账户、交易或访问数据。主动提交的截图、日志、诊断或备份会提供给维护者用于回复和排查；公开 Issue 的内容也会对其他人可见。请先遮盖用户名、私人路径、文件名等信息，不要公开敏感文件。</p>
+<h2>7. 你的选择与联系渠道</h2>
+<p>你可以按上述方式查看、更改、备份或删除本地数据，并停止使用可选功能。对于已主动提交给维护者的信息，可通过 <a href="https://github.com/Yuch3nE/luciddesk/issues">LucidDesk Issues</a>提出访问、更正或删除请求，或通过 <a href="https://github.com/Yuch3nE">维护者 GitHub 主页</a>查看可用联系渠道。处理平台保存的数据还需遵循该平台的流程；请勿在公开请求中重复敏感信息。</p>
+<h2>8. 未成年人及政策更新</h2>
+<p>LucidDesk 不针对儿童提供专门服务，也不会通过应用主动收集儿童信息。未成年人使用或分享信息时，应在适用情况下寻求监护人指导。本政策会随功能和数据处理方式变化而更新，更新日期标注于页首；涉及新增数据收集或传输的功能，将在相关版本或功能说明中告知。</p>
+</section>
+<section id="en" lang="en" aria-label="English privacy policy">
+<h1>Privacy Policy</h1>
+<p class="summary">LucidDesk organizes your desktop, browses folders and invokes local search and preview tools on your Windows device. The current version requires no account and includes no advertising, behavioral analytics or automatic crash reporting. It does not automatically upload your files, paths, searches or settings to the developer.</p>
+<h2>1. Scope and developer</h2>
+<p>This policy covers the LucidDesk desktop application maintained by Yuchen95 (GitHub: Yuch3nE) and this policy webpage. Processing described below occurs when you use the relevant feature. Third-party software, operating systems, stores and websites follow their own privacy policies.</p>
+<h2>2. Information processed on your device</h2>
+<ul>
+<li><strong>Files and desktop items:</strong> Names, paths, types, sizes, modification times, icons and Shell information are read to display, group, sort and operate on files. Rename, delete, cut, paste and some drag-and-drop actions affect real files. Adding an item to a desktop group does not move the original file.</li>
+<li><strong>Preferences and workspace:</strong> Panel titles, file references, folder paths, positions, sizes, tabs, ordering, monitor layouts, language, appearance, shortcuts, search and preview settings and third-party executable paths are stored to restore your workspace.</li>
+<li><strong>Search and preview:</strong> When enabled, search sends queries through local process communication to a running Everything instance and receives results such as file paths. Preview passes the selected file reference or path to PowerToys Peek or QuickLook, which may read its contents. Search and preview are disabled by default, and the tools must be installed separately.</li>
+<li><strong>Clipboard and diagnostics:</strong> Windows clipboard access supports your copy, cut, paste and Copy diagnostics actions. Diagnostics include application version, build, Windows version, architecture and desktop connection status. Diagnostic options or builds may produce local runtime logs. These support troubleshooting and are not automatically sent to the developer.</li>
+</ul>
+<h2>3. Transfers and third-party services</h2>
+<p>The current version has no developer-operated cloud sync or account service. The developer does not automatically receive this local data through the application or sell or share it with advertisers through the application.</p>
+<p>Opening links, network locations, cloud-synced folders, shortcuts or files may cause Windows, associated applications, Shell extensions or services to access the network. Your system settings may also synchronize the clipboard. Everything, PowerToys Peek, QuickLook and their plugins act according to their own behavior and your configuration. Local communication does not rule out independent network activity by those tools.</p>
+<h2>4. Storage, backups and deletion</h2>
+<p>Preferences are stored in <code>config.toml</code> and the workspace in <code>workspace.db</code>. The standard default is <code>%LOCALAPPDATA%\LucidDesk</code>; portable mode uses the <code>data</code> folder beside the application. A custom data directory may also be used. Confirm the actual location using Open configuration directory in Settings → Backup and recovery.</p>
+<p>Automatic snapshots and manual exports may include settings, layouts, file references and paths, but not the contents of referenced files. Recent automatic snapshots are retained, and recovery may create another snapshot first. You manage manually exported backups. Check backups for personal information in paths and panel titles before sharing.</p>
+<p>Settings and workspace data generally remain until changed or deleted. You can disable search and preview or remove panels and references. To clear local configuration completely, exit the application and delete its actual data directory, separately saved backups and diagnostic logs. Removing groups or configuration does not delete referenced original files. Uninstalling may leave portable or custom directories, backups and logs. Manage system backups and cloud copies separately.</p>
+<h2>5. Access and security</h2>
+<p>Windows desktop and filesystem interfaces provide access to relevant files, directory changes, desktop items and writable application data. Optional features use shortcuts and local process communication. Restricting file or process access may prevent related features from working. These features do not require a camera, microphone or live location.</p>
+<p>The application does not provide additional encryption for settings, databases, backups or logs. Protection depends on Windows accounts, file permissions and measures such as disk encryption. Protect your device and backups, particularly on shared devices or in cloud-synced directories.</p>
+<h2>6. Webpage, downloads and voluntary feedback</h2>
+<p>This page contains no advertising, analytics scripts, third-party fonts, cookies or browser local storage. GitHub Pages hosts it, and GitHub logs visitors' IP addresses for security. See the <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub Privacy Statement</a> and <a href="https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages">GitHub Pages documentation</a>.</p>
+<p>Platforms used for downloads, purchases, updates or GitHub feedback may process account, transaction or access data under their own policies. Screenshots, logs, diagnostics or backups you voluntarily submit are provided to maintainers for replies and troubleshooting. Public issues are visible to others. Redact usernames, private paths and filenames before submitting, and do not publish sensitive files.</p>
+<h2>7. Your choices and contact</h2>
+<p>You can inspect, change, back up or delete local data as described above and stop using optional features. For information you have voluntarily submitted, request access, correction or deletion through <a href="https://github.com/Yuch3nE/luciddesk/issues">LucidDesk Issues</a>, or check the <a href="https://github.com/Yuch3nE">maintainer's GitHub profile</a> for available contact channels. Data held by platforms is also subject to their procedures. Do not repeat sensitive information in public requests.</p>
+<h2>8. Minors and policy changes</h2>
+<p>LucidDesk does not provide services specifically for children or actively collect children's information through the application. Minors should seek guidance from a guardian when appropriate, particularly before sharing information. This policy will be updated as features and data processing change, with the date shown above. Features introducing data collection or transfers will be explained in the relevant release or feature information.</p>
+</section>
+<footer>LucidDesk · <a href="https://github.com/Yuch3nE/luciddesk">项目主页 / Project</a></footer>
+</main></body></html>
