@@ -23,6 +23,10 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
 #[allow(clippy::wildcard_imports)]
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 use windows_window::Window;
+mod shape;
+pub(super) fn round_flyout(hwnd: HWND, width: i32, height: i32, radius: f32, scale: f32) {
+    shape::WindowShape::default().update(hwnd, width, height, radius, scale);
+}
 pub const ANIMATE_FOLD: u32 = WM_APP + 10;
 pub(super) fn update_auto_hide(hwnd: HWND, enabled: bool) {
     unsafe {
@@ -39,17 +43,12 @@ pub(super) const RESTORE_MERGE: u32 = WM_APP + 14;
 const DESKTOP_LAYER: windows_sys::core::PCWSTR = windows_sys::w!("LucidPane.DesktopLayer");
 const CLOSING_PANE: windows_sys::core::PCWSTR = windows_sys::w!("LucidPane.ClosingPane");
 
-fn clip_drag(hwnd: HWND, hidden: bool, clipped: &mut bool) {
-    if *clipped == hidden { return; }
-    unsafe {
-        let region = if hidden { windows_sys::Win32::Graphics::Gdi::CreateRectRgn(0, 0, 0, 0) } else { std::ptr::null_mut() };
-        if hidden && region.is_null() { return; }
-        if windows_sys::Win32::Graphics::Gdi::SetWindowRgn(hwnd, region, 1) != 0 {
-            *clipped = hidden;
-        } else if !region.is_null() {
-            windows_sys::Win32::Graphics::Gdi::DeleteObject(region);
-        }
-    }
+pub(super) fn is_desktop_layer(hwnd: HWND) -> bool {
+    unsafe { !GetPropW(hwnd, DESKTOP_LAYER).is_null() }
+}
+
+fn clip_drag(hwnd: HWND, hidden: bool, shape: &mut shape::WindowShape) {
+    shape.hide(hwnd, hidden);
 }
 
 pub(super) fn prepare_close(hwnd: HWND) {
@@ -59,7 +58,7 @@ pub(super) fn prepare_close(hwnd: HWND) {
 }
 
 /// Raise within the desktop-pane band, without jumping above ordinary application windows.
-fn desktop_insert_after(hwnd: HWND) -> HWND {
+fn desktop_insert_after(hwnd: HWND) -> Option<HWND> {
     unsafe {
         let mut peer = GetTopWindow(std::ptr::null_mut());
         while !peer.is_null() {
@@ -69,13 +68,34 @@ fn desktop_insert_after(hwnd: HWND) -> HWND {
                 if previous == hwnd { previous = GetWindow(hwnd, GW_HWNDPREV); }
                 // HWND_TOP preserves the non-topmost band; inserting after a topmost HWND would not.
                 if previous.is_null() || GetWindowLongW(previous, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST != 0 {
-                    return HWND_TOP;
+                    return Some(HWND_TOP);
                 }
-                return previous;
+                return Some(previous);
             }
             peer = GetWindow(peer, GW_HWNDNEXT);
         }
-        HWND_BOTTOM
+        None
+    }
+}
+
+/// Raise only within the desktop-pane band, including clicks on owned controls.
+pub(super) fn raise_among_peers(hwnd: HWND) {
+    unsafe {
+        if !GetPropW(hwnd, DESKTOP_LAYER).is_null()
+            && let Some(after) = desktop_insert_after(hwnd)
+        {
+            let previous = GetWindow(hwnd, GW_HWNDPREV);
+            let in_place = if after == HWND_TOP {
+                previous.is_null() || GetWindowLongW(previous, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST != 0
+            } else {
+                previous == after
+            };
+            if !in_place {
+                crate::diagnostics::render_trace(format_args!("hwnd={hwnd:?} raise among peers after={after:?} previous={previous:?}"));
+                SetWindowPos(hwnd, after, 0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+            }
+        }
     }
 }
 
@@ -98,7 +118,7 @@ pub fn set_layer(hwnd: HWND, always_on_top: bool) {
             0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
         if !always_on_top {
             SetPropW(hwnd, DESKTOP_LAYER, 1usize as _);
-            SetWindowPos(hwnd, desktop_insert_after(hwnd), 0, 0, 0, 0,
+            SetWindowPos(hwnd, desktop_insert_after(hwnd).unwrap_or(HWND_BOTTOM), 0, 0, 0, 0,
                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
         }
     }
@@ -260,6 +280,17 @@ mod hit_tests {
 
     #[test]
     fn desktop_panes_raise_among_peers_without_covering_apps() {
+        unsafe extern "system" fn count_positions(
+            hwnd: HWND, message: u32, wparam: usize, lparam: isize, _: usize, data: usize,
+        ) -> isize {
+            unsafe {
+                if message == WM_WINDOWPOSCHANGING {
+                    let count = &*(data as *const std::cell::Cell<u32>);
+                    count.set(count.get() + 1);
+                }
+                windows_sys::Win32::UI::Shell::DefSubclassProc(hwnd, message, wparam, lparam)
+            }
+        }
         unsafe {
             let make = || CreateWindowExW(WS_EX_TOOLWINDOW, windows_sys::w!("STATIC"), std::ptr::null(),
                 WS_POPUP | WS_VISIBLE, 20, 20, 240, 120, std::ptr::null_mut(), std::ptr::null_mut(),
@@ -290,6 +321,33 @@ mod hit_tests {
             SetWindowPos(first, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
             assert!(above(first, second), "activation must raise the old pane");
             assert!(above(app, first));
+            for _ in 0..3 {
+                let mut menu_owner = first;
+                let mut popups = Vec::new();
+                for _ in 0..2 {
+                    let popup = make();
+                    ShowWindow(popup, SW_HIDE);
+                    SetWindowLongPtrW(popup, GWLP_HWNDPARENT, menu_owner as isize);
+                    SetWindowPos(popup, HWND_TOPMOST, 20, 20, 100, 100, SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+                    SetWindowPos(popup, HWND_TOPMOST, 20, 20, 100, 100, SWP_SHOWWINDOW | SWP_NOOWNERZORDER);
+                    SetForegroundWindow(popup);
+                    assert!(above(first, second), "opening an owned menu must preserve pane order");
+                    assert!(above(app, first), "opening a menu must preserve the application band");
+                    assert!(above(popup, first));
+                    assert_eq!(GetWindowLongW(first, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST, 0);
+                    menu_owner = popup;
+                    popups.push(popup);
+                }
+                for popup in popups.into_iter().rev() {
+                    DestroyWindow(popup);
+                    assert!(above(first, second), "closing an owned menu must preserve pane order");
+                    assert!(above(app, first), "closing a menu must preserve the application band");
+                }
+            }
+            let positions = std::cell::Cell::new(0u32);
+            assert_ne!(windows_sys::Win32::UI::Shell::SetWindowSubclass(
+                first, Some(count_positions), 2, (&raw const positions) as usize,
+            ), 0);
             for interaction in [WM_LBUTTONDOWN, WM_NCLBUTTONDOWN, WM_ENTERSIZEMOVE] {
                 // Simulate a peer covering an already-active pane: there is no
                 // WM_MOUSEACTIVATE before the next click or native move loop.
@@ -299,13 +357,55 @@ mod hit_tests {
                 SendMessageW(first, interaction, 0, 0);
                 assert!(above(first, second), "interaction {interaction:#x} must raise the pane");
                 assert!(above(app, first), "interaction must preserve the application band");
+                positions.set(0);
+                SendMessageW(first, interaction, 0, 0);
+                assert_eq!(positions.get(), 0, "repeated interaction must not reset z-order");
             }
+            // With no visible peer the pane still cannot go below its owner.
+            // Repeated HWND_BOTTOM requests must not be mistaken for useful raises.
+            ShowWindow(second, SW_HIDE);
+            set_layer(first, false);
+            for interaction in [WM_MOUSEACTIVATE, WM_LBUTTONDOWN, WM_NCLBUTTONDOWN, WM_ENTERSIZEMOVE] {
+                positions.set(0);
+                SendMessageW(first, interaction, 0, 0);
+                assert_eq!(positions.get(), 0, "single owned pane must not reorder on {interaction:#x}");
+            }
+            let mut activation = WINDOWPOS {
+                hwnd: first, hwndInsertAfter: HWND_TOP,
+                flags: SWP_NOMOVE | SWP_NOSIZE, ..Default::default()
+            };
+            SendMessageW(first, WM_WINDOWPOSCHANGING, 0, (&raw mut activation) as isize);
+            assert_ne!(activation.flags & SWP_NOZORDER, 0,
+                "activation of a single pane must preserve its position, not move to HWND_BOTTOM");
+            windows_sys::Win32::UI::Shell::RemoveWindowSubclass(first, Some(count_positions), 2);
             set_layer(first, true);
             assert_ne!(GetWindowLongW(first, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST, 0);
             set_layer(first, false);
             assert_eq!(GetWindowLongW(first, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST, 0);
             assert!(above(app, first));
             for hwnd in [first, second, app, owner] { DestroyWindow(hwnd); }
+        }
+    }
+
+    #[test]
+    fn borderless_activation_keeps_default_state_without_frame_painting() {
+        let activations = Rc::new(RefCell::new(Vec::new()));
+        let received = Rc::clone(&activations);
+        let window = Window::new("Borderless activation")
+            .size(240, 160).style(WS_POPUP | WS_THICKFRAME)
+            .on_message(move |_, message, wparam, lparam| {
+                if message == WM_NCACTIVATE { received.borrow_mut().push((wparam, lparam)); }
+                None
+            }).create().unwrap();
+        let hwnd = window.hwnd().cast();
+        unsafe {
+            assert_ne!(windows_sys::Win32::UI::Shell::SetWindowSubclass(hwnd, Some(borderless_proc), 1, 0), 0);
+            activations.borrow_mut().clear();
+            SendMessageW(hwnd, WM_NCACTIVATE, 1, 0);
+            assert_ne!(SendMessageW(hwnd, WM_NCACTIVATE, 0, 0), 0);
+            assert_eq!(*activations.borrow(), [(1, -1), (0, -1)]);
+            assert_eq!(SendMessageW(hwnd, WM_NCPAINT, 1, 0), 0);
+            assert_eq!(SendMessageW(hwnd, WM_ERASEBKGND, 0, 0), 1);
         }
     }
 
@@ -319,15 +419,15 @@ mod hit_tests {
                 std::ptr::null_mut(), std::ptr::null());
             assert!(!hwnd.is_null());
             SetCapture(hwnd);
-            let mut clipped = false;
+            let mut clipped = shape::WindowShape::default();
             clip_drag(hwnd, true, &mut clipped);
-            assert!(clipped);
+            assert!(clipped.hidden);
             assert_ne!(IsWindowVisible(hwnd), 0);
             assert_eq!(GetCapture(), hwnd);
             let region = CreateRectRgn(0, 0, 0, 0);
             assert_eq!(GetWindowRgn(hwnd, region), NULLREGION);
             clip_drag(hwnd, false, &mut clipped);
-            assert!(!clipped);
+            assert!(!clipped.hidden);
             assert_eq!(GetWindowRgn(hwnd, region), 0);
             assert_eq!(GetCapture(), hwnd);
             DeleteObject(region);
@@ -570,6 +670,15 @@ pub(super) unsafe extern "system" fn borderless_proc(
     id: usize,
     _data: usize,
 ) -> isize {
+    if matches!(message, WM_ACTIVATE | WM_NCACTIVATE | WM_LBUTTONDOWN | WM_NCLBUTTONDOWN | WM_ENTERSIZEMOVE | WM_EXITSIZEMOVE) {
+        crate::diagnostics::render_trace(format_args!("hwnd={hwnd:?} message={message:#x} wparam={wparam:#x}"));
+    }
+    if message == WM_WINDOWPOSCHANGING && lparam != 0 {
+        let flags = unsafe { (*(lparam as *const WINDOWPOS)).flags };
+        if flags & (SWP_SHOWWINDOW | SWP_HIDEWINDOW) != 0 {
+            crate::diagnostics::render_trace(format_args!("hwnd={hwnd:?} windowpos flags={flags:#x} visible={}", unsafe { IsWindowVisible(hwnd) }));
+        }
+    }
     if message == RUN_POSTED_ACTION {
         let action = POSTED.with(|queue| queue.borrow_mut().remove(&(hwnd as isize, wparam)));
         if let Some(action) = action {
@@ -599,23 +708,49 @@ pub(super) unsafe extern "system" fn borderless_proc(
     if message == WM_NCCALCSIZE {
         return 0;
     }
+    // The composition surface owns the entire frame. DefWindowProc's classic
+    // activation painting can flash over it on Windows 10.
+    if message == WM_NCACTIVATE {
+        return unsafe { windows_sys::Win32::UI::Shell::DefSubclassProc(hwnd, message, wparam, -1) };
+    }
+    if message == WM_NCPAINT { return 0; }
+    if message == WM_ERASEBKGND { return 1; }
     unsafe {
         // An already-active pane can be covered by another pane without losing
         // activation. Its next click/drag need not send WM_MOUSEACTIVATE.
         // Handle interaction here, outside the model callback's borrow guards.
         if matches!(message, WM_MOUSEACTIVATE | WM_LBUTTONDOWN | WM_NCLBUTTONDOWN | WM_ENTERSIZEMOVE)
-            && !GetPropW(hwnd, DESKTOP_LAYER).is_null()
         {
-            SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+            raise_among_peers(hwnd);
         }
         if message == WM_WINDOWPOSCHANGING && !GetPropW(hwnd, DESKTOP_LAYER).is_null() {
             let position = &mut *(lparam as *mut WINDOWPOS);
+            // Activating/destroying an owned popup can reposition every sibling
+            // pane in the shared owner group. Those passive moves must not be
+            // treated as requests to raise each sibling above the active pane.
+            // Our explicit peer raises already specify SWP_NOOWNERZORDER.
+            if position.flags & (SWP_NOACTIVATE | SWP_NOOWNERZORDER) == SWP_NOACTIVATE {
+                position.flags |= SWP_NOZORDER;
+            }
             if position.flags & SWP_NOZORDER == 0 {
                 // All desktop panes share a Shell owner. Raising a pane must
                 // not reorder that owner and indirectly raise its other panes.
                 position.flags |= SWP_NOOWNERZORDER;
-                position.hwndInsertAfter = desktop_insert_after(hwnd);
+                if let Some(after) = desktop_insert_after(hwnd) {
+                    let previous = GetWindow(hwnd, GW_HWNDPREV);
+                    if previous == after || (after == HWND_TOP && !previous.is_null()
+                        && GetWindowLongW(previous, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST != 0) {
+                        position.flags |= SWP_NOZORDER;
+                    } else {
+                        position.hwndInsertAfter = after;
+                    }
+                } else if position.hwndInsertAfter != HWND_BOTTOM {
+                    // The initial set_layer placement may use HWND_BOTTOM once.
+                    // A lone pane has no peer to raise above on activation; keep
+                    // its existing position instead of repeatedly sinking it.
+                    position.flags |= SWP_NOZORDER;
+                }
+                crate::diagnostics::render_trace(format_args!("hwnd={hwnd:?} desktop windowpos after={:?} flags={:#x}", position.hwndInsertAfter, position.flags));
             }
         }
         if message == WM_NCDESTROY {
@@ -649,7 +784,7 @@ where
     let mut drag_image: Option<super::drag_drop::image::DragImage> = None;
     let mut fold: Option<super::animation::Fold> = None;
     let mut pane_moved = false;
-    let mut drag_clipped = false;
+    let mut drag_clipped = shape::WindowShape::default();
     let mut move_origin: Option<super::snap::DragOrigin> = None;
     let mut auto_hide = super::auto_hide::AutoHide::default();
     let mut tab_press: Option<(desktop_core::PanelId, POINT)> = None;
@@ -789,6 +924,10 @@ where
                         PostMessageW(hwnd, SYNC_POINTER, 0, 0);
                     }
                     None
+                }
+                WM_POWERBROADCAST => {
+                    invalidate(hwnd);
+                    Some(1)
                 }
                 WM_SETTINGCHANGE | WM_THEMECHANGED => {
                     scrollbar_animated = super::scrollbar::animations_enabled();
@@ -1080,6 +1219,8 @@ where
                     let r = client(hwnd);
                     if r.right > 0 && r.bottom > 0 {
                         let s = scale(hwnd);
+                        let radius = model.borrow().options.corner_radius;
+                        drag_clipped.update(hwnd, r.right, r.bottom, radius, s);
                         let result = (|| {
                             if surface.is_none() {
                                 surface = Some(Surface::new_pane(

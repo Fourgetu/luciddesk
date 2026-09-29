@@ -34,7 +34,7 @@ impl Drawing {
                 .map_err(|e| e.to_string())?
                 .with_paragraph_alignment(ParagraphAlignment::Center)
                 .with_word_wrapping(WordWrapping::NoWrap),
-            icon: TextFormat::new("Segoe Fluent Icons", 20.0)
+            icon: TextFormat::new(crate::pane::fonts::icon_family(), 20.0)
                 .map_err(|e| e.to_string())?
                 .with_alignment(windows_canvas::TextAlignment::Center)
                 .with_paragraph_alignment(ParagraphAlignment::Center)
@@ -159,7 +159,7 @@ impl Drawing {
                     stroke,
                 );
             }
-            target.clipped_text(
+            target.clipped_icon(
                 "\u{e721}",
                 &self.icon,
                 &Rect::from_xywh(12.0, 0.0, 28.0, TOP),
@@ -174,7 +174,7 @@ impl Drawing {
                 );
             }
             if unsafe { GetWindowTextLengthW(edit(hwnd)) } > 0 {
-                target.clipped_text(
+                target.clipped_icon(
                     if state.busy { "\u{e916}" } else { "\u{e711}" },
                     &self.icon,
                     &Rect::from_xywh((w - 44.0).max(0.0), 10.0, 32.0, TOP - 20.0),
@@ -275,7 +275,7 @@ impl Drawing {
                         .to_string_lossy();
                     let parent = entry.path.parent().unwrap_or(&entry.path).to_string_lossy();
                     let path = parent;
-                    target.clipped_text(
+                    target.clipped_icon(
                         if entry.folder { "\u{e8b7}" } else { "\u{e8a5}" },
                         &self.icon,
                         &Rect::from_xywh(16.0, y, 20.0, ROW - 2.0),

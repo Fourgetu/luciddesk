@@ -24,7 +24,7 @@ desktop-window.workspace = true
 desktop-hook.workspace = true
 windows = { workspace = true, features = ["UI_ViewManagement", "Graphics_Effects", "Win32_System_WinRT_Graphics_Direct2D"] }
 windows-core = "0.62.2"
-windows-sys = { workspace = true, features = ["Win32_System_ProcessStatus", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Time", "Win32_System_DataExchange", "Win32_System_LibraryLoader"] }
+windows-sys = { workspace = true, features = ["Win32_System_Power", "Win32_System_SystemServices", "Win32_System_ProcessStatus", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Time", "Win32_System_DataExchange", "Win32_System_LibraryLoader"] }
 windows-window.workspace = true
 windows-numerics.workspace = true
 windows-canvas = { version = "=0.100.0", default-features = false }

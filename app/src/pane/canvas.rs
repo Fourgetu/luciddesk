@@ -74,6 +74,20 @@ impl<'a> std::ops::Deref for DrawPass<'a> {
 }
 
 impl DrawPass<'_> {
+    /// Center the visible glyph, not the font's line box. MDL2's em-square
+    /// placement differs from the UI text font and from Segoe Fluent Icons.
+    pub fn clipped_icon(&self, text: &str, format: &c::TextFormat, bounds: &c::Rect, brush: &c::Brush) {
+        let Ok(layout) = c::TextLayout::new(text, format,
+            bounds.right - bounds.left, bounds.bottom - bounds.top) else {
+            self.clipped_text(text, format, bounds, brush);
+            return;
+        };
+        let offset = text_ink_center_offset(&layout).unwrap_or(0.0);
+        self.push_clip(bounds);
+        self.session.draw_text_layout(c::Vector2::new(bounds.left, bounds.top + offset), &layout, brush);
+        self.pop_clip();
+    }
+
     pub fn clipped_text(
         &self,
         text: &str,
@@ -231,6 +245,35 @@ mod tests {
         b: 1.0,
         a: 1.0,
     };
+
+    #[test]
+    fn icon_ink_stays_centered_for_mdl2_and_fluent_at_multiple_scales() {
+        let device = c::GpuDevice::new_warp().unwrap();
+        for family in ["Segoe MDL2 Assets", super::super::fonts::icon_family()] {
+            let format = c::TextFormat::new(family, 20.0).unwrap()
+                .with_alignment(c::TextAlignment::Center)
+                .with_paragraph_alignment(c::ParagraphAlignment::Center);
+            for scale in [1.0, 1.5, 2.0] {
+                let size = (64.0 * scale) as u32;
+                let surface = Offscreen::new(&device, size, size).unwrap();
+                for glyph in ["\u{e790}", "\u{f0e2}", "\u{e721}", "\u{e70d}", "\u{e8bb}"] {
+                    draw(&surface.target, scale, |frame| {
+                        frame.clear(c::ColorF::new(0.0, 0.0, 0.0, 0.0));
+                        let ink = canvas_result(frame.create_solid_brush(WHITE))?;
+                        frame.clipped_icon(glyph, &format, &bounds(8.0, 8.0, 48.0, 48.0), &ink);
+                        frame.finish()
+                    }).unwrap();
+                    let pixels = surface.pixels().unwrap();
+                    let rows: Vec<_> = (0..size as usize).filter(|y|
+                        pixels[y * size as usize * 4..(y + 1) * size as usize * 4]
+                            .chunks_exact(4).any(|pixel| pixel[3] > 16)).collect();
+                    let center = (*rows.first().unwrap() + *rows.last().unwrap() + 1) as f32 / 2.0;
+                    assert!((center - 28.0 * scale).abs() <= 1.0,
+                        "{family} {glyph} scale={scale} ink center={center}");
+                }
+            }
+        }
+    }
 
     #[test]
     fn failed_bitmap_upload_unwinds_clip_and_draw_before_next_frame() {

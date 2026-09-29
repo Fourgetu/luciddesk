@@ -1,5 +1,33 @@
 use super::*;
 
+#[cfg(test)]
+mod compatibility_tests {
+    use super::*;
+
+    #[test]
+    fn windows10_material_page_hides_mica_in_choices_and_preview() {
+        for show_mica in [false, true] {
+            for material in [Backdrop::Mica, Backdrop::MicaAlt, Backdrop::Mica.with_strength(75)] {
+                let page = scene_with_mica(900.0, 700.0, 0, false,
+                    (PanelTheme::Light, material), desktop_core::PaneOptions::default(), show_mica);
+                let choices: Vec<_> = page.controls.iter().filter_map(|control| {
+                    if let Action::Change(Event::Material(value)) = control.action {
+                        Some((value, control.selected))
+                    } else { None }
+                }).collect();
+                assert_eq!(choices.len(), if show_mica { 4 } else { 2 });
+                if !show_mica {
+                    assert!(choices.iter().all(|(value, _)| !matches!(value, Backdrop::Mica | Backdrop::MicaAlt)));
+                    assert!(choices.iter().any(|(value, selected)| *value == Backdrop::Acrylic && *selected));
+                    assert!(page.text.iter().all(|(_, text, _)| !text.contains("Mica")));
+                    assert!(page.previews.iter().all(|(_, value)| value.base() == Backdrop::Acrylic));
+                    assert_eq!(page.material.strength(), material.strength().or(Some(50)));
+                }
+            }
+        }
+    }
+}
+
 pub(super) fn folder_defaults(
     s: &mut Scene,
     width: f32,
@@ -77,6 +105,26 @@ pub(super) fn scene(
     appearance: (PanelTheme, Backdrop),
     options: desktop_core::PaneOptions,
 ) -> Scene {
+    let version = windows_version::OsVersion::current();
+    scene_with_mica(width, _height, page, search_enabled, appearance, options,
+        version.major > 10 || (version.major == 10 && version.build >= 22000))
+}
+
+fn scene_with_mica(
+    width: f32,
+    _height: f32,
+    page: usize,
+    search_enabled: bool,
+    appearance: (PanelTheme, Backdrop),
+    options: desktop_core::PaneOptions,
+    show_mica: bool,
+) -> Scene {
+    // A portable configuration may have been saved on Windows 11. Reflect the
+    // downlevel acrylic fallback without rewriting the persisted preference.
+    let material_strength = appearance.1.strength();
+    let appearance = if !show_mica && matches!(appearance.1.base(), Backdrop::Mica | Backdrop::MicaAlt) {
+        (appearance.0, Backdrop::Acrylic.with_strength(appearance.1.strength().unwrap_or(50)))
+    } else { appearance };
     let mut s = Scene {
         material: appearance.1,
         viewport: None,
@@ -217,6 +265,7 @@ pub(super) fn scene(
                 ("纯色", solid),
             ]
             .into_iter()
+            .filter(|(_, material)| show_mica || !matches!(material, Backdrop::Mica | Backdrop::MicaAlt))
             .map(|(name, value)| {
                 (
                     name,
@@ -256,7 +305,7 @@ pub(super) fn scene(
                 Action::SolidReset,
             );
         }
-        if let Some(value) = appearance.1.strength() {
+        if let Some(value) = material_strength {
             form.slider(
                 "效果强度",
                 "从通透到厚实，居中为默认。",

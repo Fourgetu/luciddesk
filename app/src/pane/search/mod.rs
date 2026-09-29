@@ -527,6 +527,23 @@ unsafe extern "system" fn input_color_proc(
     _: usize,
 ) -> LRESULT {
     let editor = edit(owner);
+    if msg == WM_WINDOWPOSCHANGED && !editor.is_null() {
+        unsafe {
+            let topmost = GetWindowLongW(owner, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST != 0;
+            let editor_topmost = GetWindowLongW(editor, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST != 0;
+            let mut previous = GetWindow(owner, GW_HWNDPREV);
+            if topmost != editor_topmost || previous != editor {
+                if previous == editor { previous = GetWindow(editor, GW_HWNDPREV); }
+                let after = if topmost {
+                    if previous.is_null() { HWND_TOPMOST } else { previous }
+                } else if previous.is_null()
+                    || GetWindowLongW(previous, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST != 0
+                { HWND_NOTOPMOST } else { previous };
+                SetWindowPos(editor, after,
+                    0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+            }
+        }
+    }
     if msg == WM_MOUSEACTIVATE && !editor.is_null() && unsafe { GetFocus() } == editor {
         return MA_NOACTIVATE as isize;
     }
@@ -564,6 +581,29 @@ unsafe extern "system" fn input_proc(
     _: usize,
 ) -> LRESULT {
     let owner = unsafe { GetParent(hwnd) };
+    if msg == WM_WINDOWPOSCHANGING {
+        let position = unsafe { &mut *(lp as *mut WINDOWPOS) };
+        if position.flags & SWP_NOZORDER == 0
+            && super::window::is_desktop_layer(owner)
+        {
+            // Focusing the popup EDIT must not lift it out of the pane's band.
+            // Keep it immediately above the owner instead of above applications.
+            unsafe {
+                let mut previous = GetWindow(owner, GW_HWNDPREV);
+                if previous == hwnd { previous = GetWindow(hwnd, GW_HWNDPREV); }
+                position.hwndInsertAfter = if previous.is_null()
+                    || GetWindowLongW(previous, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST != 0
+                { HWND_TOP } else { previous };
+                position.flags |= SWP_NOOWNERZORDER;
+            }
+        }
+    }
+    // The native EDIT is an owned popup, so its clicks do not reach the pane's
+    // borderless subclass. Apply the same desktop-band ordering before focus
+    // handling, including clicks while the editor already holds focus.
+    if matches!(msg, WM_MOUSEACTIVATE | WM_LBUTTONDOWN) {
+        super::window::raise_among_peers(owner);
+    }
     if matches!(msg, WM_SETFOCUS | WM_KILLFOCUS) {
         invalidate(owner);
     }

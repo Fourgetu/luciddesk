@@ -34,7 +34,7 @@ impl Painter {
         {
             let format = canvas_result(TextFormat::with_weight(
                 if matches!(i, 4 | 5) {
-                    "Segoe Fluent Icons"
+                    super::super::fonts::icon_family()
                 } else {
                     &family
                 },
@@ -144,6 +144,11 @@ impl Painter {
                     ..color(palette.border)
                 }))?;
                 let accent = canvas_result(t.create_solid_brush(color(palette.accent)))?;
+                let [nav_selection, nav_hover, nav_selection_hover] =
+                    components::navigation_colors(s.material, dark);
+                let nav_selected = canvas_result(t.create_solid_brush(nav_selection))?;
+                let nav_hovered = canvas_result(t.create_solid_brush(nav_hover))?;
+                let nav_selected_hovered = canvas_result(t.create_solid_brush(nav_selection_hover))?;
                 let selected = canvas_result(t.create_solid_brush(color(if dark {
                     0x344656
                 } else {
@@ -450,7 +455,7 @@ impl Painter {
                             ),
                             text,
                         );
-                        t.clipped_text(
+                        t.clipped_icon(
                             "\u{e70d}",
                             &self.formats[4],
                             &Rect::from_xywh(
@@ -505,7 +510,13 @@ impl Painter {
                     {
                         t.fill_rounded_rect(
                             &rr,
-                            if c.selected {
+                            if navigation && c.selected && c.enabled && hover == Some(i) {
+                                &nav_selected_hovered
+                            } else if navigation && c.selected {
+                                &nav_selected
+                            } else if navigation && c.enabled && hover == Some(i) {
+                                &nav_hovered
+                            } else if c.selected {
                                 &selected
                             } else if c.enabled && hover == Some(i) {
                                 &hovered
@@ -700,7 +711,7 @@ impl Painter {
                                 SC_CLOSE => "\u{e8bb}",
                                 _ => "",
                             };
-                            t.clipped_text(glyph, &self.formats[4], &c.bounds, brush);
+                            t.clipped_icon(glyph, &self.formats[4], &c.bounds, brush);
                         }
                     } else {
                         let mut bounds = c.bounds;
@@ -724,7 +735,7 @@ impl Painter {
                                 } else {
                                     c.bounds.right - 28.0
                                 };
-                                t.clipped_text(
+                                t.clipped_icon(
                                     if back { "\u{e72b}" } else { "\u{e76c}" },
                                     &self.formats[4],
                                     &Rect::from_xywh(
@@ -756,6 +767,10 @@ impl Painter {
                 }
                 for (r, text, size) in &s.text {
                     let _clip = ContentClip::new(&t, s, r.left >= Tokens::CONTENT_X);
+                    if matches!(*size, 4 | 5) {
+                        t.clipped_icon(text, &self.formats[*size], r, &ink);
+                        continue;
+                    }
                     t.clipped_text(
                         text,
                         &self.formats[*size],

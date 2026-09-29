@@ -62,7 +62,10 @@ impl Transition {
             self.track = None;
             unsafe { KillTimer(hwnd, TIMER); }
         }
-        if msg == CLOSE || (flags & SWP_SHOWWINDOW != 0 && !self.closing) {
+        // Activation/z-order changes may repeat SHOWWINDOW for an already
+        // visible HWND. Only a real hidden-to-visible transition starts a fade.
+        let showing = flags & SWP_SHOWWINDOW != 0 && unsafe { IsWindowVisible(hwnd) } == 0;
+        if msg == CLOSE || (showing && !self.closing) {
             self.closing = msg == CLOSE;
             self.from = if self.closing { self.opacity() } else { 0.0 };
             self.track = None;
@@ -104,5 +107,36 @@ impl Transition {
             self.closing = false;
             finish_close(hwnd);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repeated_show_and_move_preserve_visible_surface_opacity() {
+        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let window = windows_window::Window::new("Visibility regression")
+            .size(96, 64).style(WS_POPUP)
+            .ex_style(WS_EX_TOOLWINDOW | WS_EX_NOREDIRECTIONBITMAP)
+            .create().unwrap();
+        let hwnd = window.hwnd().cast();
+        let surface = Surface::new_with_opacity(windows::Win32::Foundation::HWND(hwnd), 0.65).unwrap();
+        let mut transition = Transition { opacity: Some(0.65), ..Default::default() };
+        unsafe { ShowWindow(hwnd, SW_SHOWNOACTIVATE); }
+        for flags in [SWP_SHOWWINDOW, SWP_SHOWWINDOW | SWP_NOMOVE | SWP_NOSIZE, SWP_NOACTIVATE] {
+            let mut position = WINDOWPOS { hwnd, flags, ..Default::default() };
+            transition.message(hwnd, WM_WINDOWPOSCHANGING, 0,
+                (&raw mut position) as isize, Some(&surface), |_| panic!("unexpected opacity change"));
+            assert_eq!(transition.opacity(), 0.65);
+            assert_eq!(surface.current_opacity(), 0.65);
+            assert!(!transition.pending);
+        }
+        unsafe { ShowWindow(hwnd, SW_HIDE); }
+        let mut position = WINDOWPOS { hwnd, flags: SWP_SHOWWINDOW, ..Default::default() };
+        transition.message(hwnd, WM_WINDOWPOSCHANGING, 0,
+            (&raw mut position) as isize, Some(&surface), |_| {});
+        assert_eq!(transition.opacity(), if super::super::scrollbar::animations_enabled() { 0.0 } else { 1.0 });
     }
 }

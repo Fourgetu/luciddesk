@@ -576,6 +576,9 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 }
                 return Some(0);
             }
+            if matches!(msg, WM_SETTINGCHANGE | WM_THEMECHANGED | WM_POWERBROADCAST) {
+                unsafe { InvalidateRect(hwnd, std::ptr::null(), 0); }
+            }
             if msg == WM_DPICHANGED {
                 let _ = crate::app_icon::apply(hwnd);
                 unsafe {

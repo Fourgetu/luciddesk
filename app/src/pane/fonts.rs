@@ -3,6 +3,48 @@ use std::sync::RwLock;
 use windows_sys::Win32::Graphics::Gdi::*;
 const KEY: &str = "ui_font_family";
 static FAMILY: RwLock<String> = RwLock::new(String::new());
+
+const ICON_GLYPHS: &[u32] = &[
+    0xe70d, 0xe70e, 0xe711, 0xe721, 0xe72b, 0xe73e, 0xe76c,
+    0xe790, 0xe80f, 0xe81c, 0xe890, 0xe8a5, 0xe8b7, 0xe8bb,
+    0xe8d2, 0xe916, 0xe921, 0xe922, 0xe923, 0xe946, 0xf0e2,
+];
+
+/// Private-use glyphs cannot rely on normal text fallback. Check the actual
+/// DirectWrite family and glyph coverage before selecting the Windows 11 font.
+pub(super) fn icon_family() -> &'static str {
+    static ICON_FAMILY: std::sync::LazyLock<&'static str> = std::sync::LazyLock::new(|| {
+        let family = choose_icon_family(|name| icon_coverage(name).unwrap_or(false));
+        crate::diagnostics::render_trace(format_args!("icon_font={family}"));
+        family
+    });
+    *ICON_FAMILY
+}
+
+fn choose_icon_family(supports: impl FnOnce(&str) -> bool) -> &'static str {
+    if supports("Segoe Fluent Icons") { "Segoe Fluent Icons" } else { "Segoe MDL2 Assets" }
+}
+
+fn icon_coverage(name: &str) -> windows::core::Result<bool> {
+    use windows::Win32::Graphics::DirectWrite::*;
+    unsafe {
+        let factory: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
+        let mut collection = None;
+        factory.GetSystemFontCollection(&raw mut collection, false)?;
+        let collection = collection.unwrap();
+        let mut index = 0;
+        let mut exists = windows::core::BOOL(0);
+        collection.FindFamilyName(&windows::core::HSTRING::from(name), &raw mut index, &raw mut exists)?;
+        if !exists.as_bool() { return Ok(false); }
+        let font = collection.GetFontFamily(index)?.GetFirstMatchingFont(
+            DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
+        )?;
+        let face = font.CreateFontFace()?;
+        let mut glyphs = vec![0u16; ICON_GLYPHS.len()];
+        face.GetGlyphIndices(ICON_GLYPHS.as_ptr(), ICON_GLYPHS.len() as u32, glyphs.as_mut_ptr())?;
+        Ok(glyphs.iter().all(|glyph| *glyph != 0))
+    }
+}
 pub(super) fn family() -> String {
     let value = FAMILY.read().unwrap();
     if value.is_empty() {
@@ -133,6 +175,14 @@ pub(super) fn save(store: &desktop_storage::WorkspaceStore, name: &str) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn downlevel_icon_font_covers_all_application_symbols() {
+        assert_eq!(choose_icon_family(|_| false), "Segoe MDL2 Assets");
+        assert_eq!(choose_icon_family(|_| true), "Segoe Fluent Icons");
+        assert!(icon_coverage("Segoe MDL2 Assets").unwrap());
+        assert!(!icon_coverage("LucidDesk nonexistent icon font").unwrap());
+        assert!(icon_coverage(icon_family()).unwrap());
+    }
     #[test]
     fn regular_faces_exclude_weight_variants_and_italics() {
         for weight in [100, 200, 300, 400, 500, 600, 700, 800, 900] {

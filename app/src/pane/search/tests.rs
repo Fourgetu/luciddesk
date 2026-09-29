@@ -1,4 +1,62 @@
 #[test]
+#[ignore = "Activates real windows; run alone in an interactive desktop session"]
+fn editor_click_raises_search_among_panes_but_hotkey_stays_on_desktop() {
+    use super::*;
+    let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let state = Rc::new(RefCell::new(super::super::tests::test_state()));
+    super::super::handle(&state, desktop_core::PanelId::new(0), Event::EnableSearch).unwrap();
+    let hwnd = state.borrow().views[0].window.hwnd().cast();
+    let make = || windows_window::Window::new("Search layer regression")
+        .style(WS_POPUP).ex_style(WS_EX_TOOLWINDOW).size(100, 100)
+        .on_message(|_, msg, _, _| (msg == WM_DESTROY).then_some(0))
+        .create().unwrap();
+    let app = make();
+    let peer = make();
+    let app_hwnd = app.hwnd().cast();
+    let peer_hwnd = peer.hwnd().cast();
+    unsafe {
+        let above = |a, b| {
+            let mut current = GetWindow(b, GW_HWNDPREV);
+            while !current.is_null() {
+                if current == a { return true; }
+                current = GetWindow(current, GW_HWNDPREV);
+            }
+            false
+        };
+        ShowWindow(app_hwnd, SW_SHOWNOACTIVATE);
+        SetWindowPos(app_hwnd, HWND_TOP, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+        super::hotkey::activate(&state);
+        assert!(above(app_hwnd, hwnd), "global hotkey must retain the desktop layer");
+        ShowWindow(peer_hwnd, SW_SHOWNOACTIVATE);
+        SetWindowSubclass(peer_hwnd, Some(super::super::window::borderless_proc), 1, 0);
+        super::super::window::set_layer(peer_hwnd, false);
+        SetFocus(edit(hwnd));
+        for message in [WM_MOUSEACTIVATE, WM_LBUTTONDOWN] {
+            SetWindowPos(peer_hwnd, HWND_TOP, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+            assert!(above(peer_hwnd, hwnd));
+            SendMessageW(edit(hwnd), message, 0, 0);
+            SendMessageW(edit(hwnd), WM_LBUTTONUP, 0, 0);
+            assert!(above(hwnd, peer_hwnd), "editor interaction must raise its pane");
+            assert!(above(app_hwnd, edit(hwnd)), "editor must remain below applications");
+            assert!(above(edit(hwnd), hwnd), "editor must remain above its own pane");
+            assert_eq!(GetFocus(), edit(hwnd));
+            assert_eq!(GetWindowLongW(hwnd, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST, 0);
+        }
+        ReleaseCapture();
+        super::super::window::set_layer(hwnd, true);
+        assert_ne!(GetWindowLongW(edit(hwnd), GWL_EXSTYLE) as u32 & WS_EX_TOPMOST, 0,
+            "editor must follow a permanently topmost pane");
+        assert!(above(edit(hwnd), hwnd));
+        super::super::window::set_layer(hwnd, false);
+        assert_eq!(GetWindowLongW(edit(hwnd), GWL_EXSTYLE) as u32 & WS_EX_TOPMOST, 0,
+            "editor must leave the topmost band with its pane");
+        assert!(above(app_hwnd, edit(hwnd)));
+    }
+}
+
+#[test]
 fn compact_search_edges_resize_and_icon_drags_at_each_scale() {
     use super::*;
     for scale in [1.0, 1.5, 2.0] {

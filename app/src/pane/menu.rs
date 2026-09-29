@@ -26,6 +26,7 @@ pub struct Entry {
     pub children: Vec<Entry>,
 }
 pub const ROW_HEIGHT: f32 = 30.0;
+pub(super) const CORNER_RADIUS: f32 = 8.0;
 pub fn row_top(rows: &[Entry], index: usize) -> f32 {
     4.0 + rows[..index]
         .iter()
@@ -243,7 +244,7 @@ fn show_level(
                     }
                     let result = (|| -> windows::core::Result<()> {
                         if surface.is_none() {
-                            let mut value = Surface::new_with_opacity(
+                            let mut value = Surface::new_flyout(
                                 windows::Win32::Foundation::HWND(hwnd),
                                 if fade_finished { 1.0 } else { 0.0 },
                             )?;
@@ -445,12 +446,13 @@ fn show_level(
         SetWindowLongPtrW(hwnd, GWLP_HWNDPARENT, owner as isize);
         // Prepare the complete first frame while the popup is still hidden.
         // Neither the content target nor the material starts at full opacity.
-        SetWindowPos(hwnd, HWND_TOPMOST, left, top, width, height, SWP_NOACTIVATE);
+        SetWindowPos(hwnd, HWND_TOPMOST, left, top, width, height, SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+        super::window::round_flyout(hwnd, width, height, CORNER_RADIUS, scale);
         SendMessageW(hwnd, WM_PAINT, 0, 0);
         if done.get() {
             return 0;
         }
-        SetWindowPos(hwnd, HWND_TOPMOST, left, top, width, height, SWP_SHOWWINDOW);
+        SetWindowPos(hwnd, HWND_TOPMOST, left, top, width, height, SWP_SHOWWINDOW | SWP_NOOWNERZORDER);
         SetForegroundWindow(hwnd);
         SetFocus(hwnd);
         if animate != 0 {

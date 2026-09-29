@@ -48,6 +48,36 @@ pub(super) struct SettingsForm<'a> {
     width: f32,
     y: f32,
 }
+
+// Sidebar interaction surfaces have their own contrast requirements; pane-tab
+// fills are too subtle here, especially on dark acrylic and light solid colors.
+pub(super) fn navigation_colors(material: Backdrop, dark: bool) -> [ColorF; 3] {
+    let (selected, hovered) = match (material.base(), dark) {
+        (Backdrop::Acrylic, true) => (0.14, 0.07),
+        (Backdrop::Mica, true) => (0.10, 0.05),
+        (Backdrop::MicaAlt, true) => (0.12, 0.06),
+        (_, true) => (0.12, 0.06),
+        (Backdrop::Acrylic, false) => (0.14, 0.055),
+        (Backdrop::Mica, false) => (0.10, 0.035),
+        (Backdrop::MicaAlt, false) => (0.12, 0.045),
+        (_, false) => (0.12, 0.045),
+    };
+    // Keep all states legible at either end of the material-strength slider.
+    let strength = f32::from(material.strength().unwrap_or(50)) / 100.0;
+    let factor = 0.9 + strength * 0.2;
+    let fill = |rgb: u32, alpha: f32| ColorF {
+        r: ((rgb >> 16) & 255) as f32 / 255.0,
+        g: ((rgb >> 8) & 255) as f32 / 255.0,
+        b: (rgb & 255) as f32 / 255.0,
+        a: alpha * factor,
+    };
+    let selection = if dark { 0xffffff } else { Palette::for_theme(false).accent };
+    [
+        fill(selection, selected),
+        fill(if dark { 0xffffff } else { 0x000000 }, hovered),
+        fill(selection, selected * 1.25),
+    ]
+}
 impl<'a> SettingsForm<'a> {
     pub fn new(scene: &'a mut Scene, width: f32, description: &str) -> Self {
         let width = (width - Tokens::CONTENT_X - Tokens::MARGIN).min(Tokens::MAX_WIDTH);

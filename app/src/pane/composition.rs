@@ -25,6 +25,7 @@ pub struct Surface {
     layer: Option<desktop_graphics::Layer>,
     swap: SwapChain,
     material: Option<Backdrop>,
+    effects_enabled: Option<bool>,
     pub native: bool,
 }
 
@@ -44,6 +45,7 @@ impl Surface {
         if self.opacity.get() == opacity {
             return Ok(());
         }
+        crate::diagnostics::render_trace(format_args!("hwnd={:?} opacity {} -> {opacity}", self.hwnd, self.opacity.get()));
         if let Some(layer) = &self.layer {
             canvas_result(layer.opacity(opacity))?;
         }
@@ -72,6 +74,13 @@ impl Surface {
         Self::create(hwnd, 1.0, gpu_device()?, true)
     }
 
+    pub fn new_flyout(hwnd: HWND, initial_opacity: f32) -> Result<Self> {
+        let mut surface = Self::create(hwnd, initial_opacity, gpu_device()?, true)?;
+        surface.rounded_backdrop = Some(hwnd);
+        surface.pane_corner_radius = super::menu::CORNER_RADIUS;
+        Ok(surface)
+    }
+
     pub fn fade_in(&self) -> Result<()> {
         // Only a shared tree can animate content and material atomically.
         if self.layer.is_none()
@@ -83,7 +92,11 @@ impl Surface {
     }
 
     pub fn new_pane(hwnd: HWND) -> Result<Self> {
-        let mut surface = Self::new(hwnd)?;
+        let mut surface = if crate::diagnostics::shared_pane_tree() {
+            Self::create(hwnd, 1.0, gpu_device()?, true)?
+        } else {
+            Self::new(hwnd)?
+        };
         Self::disable_window_shadow(hwnd)?;
         // On Windows 11, forced DWM rounding casts an activation shadow even with
         // non-client rendering disabled. Round our backdrop instead of the HWND.
@@ -136,7 +149,8 @@ impl Surface {
                 {
                     Ok(material) => Some(material),
                     Err(error) => {
-                        eprintln!("Shared settings composition unavailable: {error}");
+                        eprintln!("Shared composition unavailable: {error}");
+                        crate::diagnostics::render_trace(format_args!("hwnd={hwnd:?} shared composition failed: {error}"));
                         None
                     }
                 }
@@ -148,6 +162,7 @@ impl Surface {
             } else {
                 Some(create_layer(hwnd, &dxgi, &native_swap, initial_opacity)?)
             };
+            crate::diagnostics::render_trace(format_args!("hwnd={hwnd:?} surface created shared={} opacity={initial_opacity}", acrylic.is_some()));
             let margins = MARGINS {
                 cxLeftWidth: -1,
                 cxRightWidth: -1,
@@ -170,6 +185,7 @@ impl Surface {
                 pane_corner_radius: desktop_core::PaneOptions::DEFAULT.corner_radius,
                 dark: true,
                 opacity: std::cell::Cell::new(initial_opacity),
+                effects_enabled: None,
                 acrylic,
                 _device: device,
                 #[cfg(test)]
@@ -195,9 +211,11 @@ impl Surface {
     }
 
     pub fn material(&mut self, hwnd: HWND, material: Backdrop) {
-        if self.material == Some(material) {
+        let effects_enabled = self.acrylic.as_ref().is_none_or(|acrylic| acrylic.effects_enabled());
+        if self.material == Some(material) && self.effects_enabled == Some(effects_enabled) {
             return;
         }
+        self.effects_enabled = Some(effects_enabled);
         let kind = DWMSBT_NONE;
         self.native = unsafe { set_attribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &kind).is_ok() }
             && kind != DWMSBT_NONE;
@@ -222,6 +240,7 @@ impl Surface {
             let _ = acrylic.visible(false);
         }
         self.material = Some(material);
+        crate::diagnostics::render_trace(format_args!("hwnd={hwnd:?} material={material:?} dark={} composition_material={}", self.dark, self.native));
     }
 
     fn resize(&mut self, width: u32, height: u32) -> Result<()> {
@@ -303,6 +322,9 @@ impl Surface {
         // DWM owns display synchronization. Never make the common UI thread wait
         // for every pane's vertical blank; a full queue retries the latest state.
         let result = unsafe { self.present.Present(0, DXGI_PRESENT_DO_NOT_WAIT) };
+        if result.is_err() {
+            crate::diagnostics::render_trace(format_args!("hwnd={:?} Present={result:?}", self.hwnd));
+        }
         if result == DXGI_ERROR_WAS_STILL_DRAWING {
             self.schedule_retry(16)?;
             self.retry_at.set(Some(
@@ -382,6 +404,7 @@ unsafe extern "system" fn retry_present(
 }
 impl Drop for Surface {
     fn drop(&mut self) {
+        crate::diagnostics::render_trace(format_args!("hwnd={:?} surface dropped", self.hwnd));
         unsafe {
             windows_sys::Win32::UI::WindowsAndMessaging::KillTimer(self.hwnd.0, PRESENT_RETRY);
         }
@@ -391,6 +414,76 @@ impl Drop for Surface {
 #[cfg(test)]
 pub(super) mod animation_tests {
     use super::*;
+    #[test]
+    fn system_policy_changes_invalidate_cached_material_and_restore_effects() {
+        use windows_sys::Win32::UI::WindowsAndMessaging::*;
+        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let window = windows_window::Window::new("System material fallback")
+            .size(96, 64).style(WS_POPUP).ex_style(WS_EX_NOREDIRECTIONBITMAP)
+            .create().unwrap();
+        let hwnd = HWND(window.hwnd().cast());
+        let mut surface = Surface::new_settings(hwnd).unwrap();
+        for dark in [false, true] {
+            surface.theme(hwnd, dark);
+            for material in [Backdrop::Acrylic, Backdrop::Mica, Backdrop::MicaAlt] {
+                surface.acrylic.as_ref().unwrap().set_effects_enabled_for_test(true);
+                surface.material(hwnd, material);
+                surface.acrylic.as_ref().unwrap().set_effects_enabled_for_test(false);
+                surface.material(hwnd, material);
+                let acrylic = surface.acrylic.as_ref().unwrap();
+                acrylic.assert_solid_color(if dark { 0x202020 } else { 0xf3f3f3 }, 1.0);
+                acrylic.assert_content_visible();
+                acrylic.set_effects_enabled_for_test(true);
+                surface.material(hwnd, material);
+                surface.acrylic.as_ref().unwrap().assert_material_effect();
+                assert_eq!(surface.material, Some(material), "policy must not change the requested material");
+            }
+        }
+    }
+
+    #[test]
+    fn pane_surface_uses_requested_composition_tree() {
+        use windows_sys::Win32::UI::WindowsAndMessaging::*;
+        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let window = windows_window::Window::new("Pane composition isolation")
+            .size(240, 160).style(WS_POPUP).ex_style(WS_EX_NOREDIRECTIONBITMAP)
+            .create().unwrap();
+        let hwnd = HWND(window.hwnd().cast());
+        let mut surface = Surface::new_pane(hwnd).unwrap();
+        assert_eq!(surface.layer.is_none(), crate::diagnostics::shared_pane_tree());
+        surface.material(hwnd, Backdrop::Acrylic);
+        surface.present(240, 160, &[255; 240 * 160 * 4]).unwrap();
+        assert!(surface.native);
+        surface.opacity(0.75).unwrap();
+        assert_eq!(surface.acrylic.as_ref().unwrap().opacity_value().unwrap(), 0.75);
+        if crate::diagnostics::shared_pane_tree() {
+            surface.acrylic.as_ref().unwrap().assert_content_visible();
+        }
+    }
+    #[test]
+    fn flyout_material_and_content_share_the_rounded_clip() {
+        use windows_sys::Win32::UI::WindowsAndMessaging::*;
+        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let window = windows_window::Window::new("Rounded flyout regression")
+            .size(240, 160).style(WS_POPUP).ex_style(WS_EX_NOREDIRECTIONBITMAP)
+            .create().unwrap();
+        let hwnd = HWND(window.hwnd().cast());
+        let mut surface = Surface::new_flyout(hwnd, 0.0).unwrap();
+        assert!(surface.layer.is_none());
+        let scale = unsafe { windows_sys::Win32::UI::HiDpi::GetDpiForWindow(hwnd.0) } as f32 / 96.0;
+        for material in [Backdrop::Acrylic, Backdrop::Mica, Backdrop::Solid { color: 0x123456, opacity: 0.5 }, Backdrop::Translucent { opacity: 0.8 }] {
+            surface.material(hwnd, material);
+            surface.resize(240, 160).unwrap();
+            let acrylic = surface.acrylic.as_ref().unwrap();
+            acrylic.assert_content_visible();
+            acrylic.assert_rounded_clip(240, 160, (super::super::menu::CORNER_RADIUS + 0.5) * scale);
+            for opacity in [0.0, 0.5, 1.0] {
+                surface.opacity(opacity).unwrap();
+                assert_eq!(acrylic.opacity_value().unwrap(), opacity);
+            }
+        }
+    }
+
     pub(crate) fn settings_content_survives_material_changes_and_resize() {
         use windows_sys::Win32::UI::WindowsAndMessaging::*;
         let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();

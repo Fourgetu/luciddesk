@@ -89,18 +89,26 @@ impl Renderer {
             let text = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 1.0)))?;
             let subtle =
                 canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.13)))?;
-            target.clear(ColorF::new(
-                if dark { 0.09 } else { 0.96 },
-                if dark { 0.10 } else { 0.96 },
-                if dark { 0.12 } else { 0.96 },
-                if native { 0.0 } else { 1.0 },
-            ));
+            target.clear(ColorF::new(0.0, 0.0, 0.0, 0.0));
             let width = width as f32 / scale;
+            if !native {
+                let background = canvas_result(target.create_solid_brush(ColorF::new(
+                    if dark { 0.09 } else { 0.96 },
+                    if dark { 0.10 } else { 0.96 },
+                    if dark { 0.12 } else { 0.96 },
+                    1.0,
+                )))?;
+                target.fill_rounded_rect(&RoundedRect {
+                    rect: Rect::from_xywh(0.0, 0.0, width, height as f32 / scale),
+                    radius_x: super::menu::CORNER_RADIUS + 0.5,
+                    radius_y: super::menu::CORNER_RADIUS + 0.5,
+                }, &background);
+            }
             target.draw_rounded_rect(
                 &RoundedRect {
                     rect: Rect::from_xywh(0.5, 0.5, width - 1.0, height as f32 / scale - 1.0),
-                    radius_x: 8.0,
-                    radius_y: 8.0,
+                    radius_x: super::menu::CORNER_RADIUS,
+                    radius_y: super::menu::CORNER_RADIUS,
                 },
                 &subtle,
                 1.0,
@@ -141,23 +149,20 @@ impl Renderer {
                     (row.icon, 12.0, 20.0),
                     (row.label, 38.0, width - 50.0 - trailing_width),
                 ] {
+                    if label.chars().next().is_some_and(|ch| ('\u{e000}'..='\u{f8ff}').contains(&ch)) {
+                        target.clipped_icon(label, &self.icons,
+                            &Rect::from_xywh(left, top, available, super::menu::ROW_HEIGHT), &text);
+                        continue;
+                    }
                     target.clipped_text(
                         label,
-                        if label
-                            .chars()
-                            .next()
-                            .is_some_and(|ch| ('\u{e000}'..='\u{f8ff}').contains(&ch))
-                        {
-                            &self.icons
-                        } else {
-                            &self.title
-                        },
+                        &self.title,
                         &Rect::from_xywh(left, top, available, super::menu::ROW_HEIGHT),
                         &text,
                     );
                 }
                 if !row.children.is_empty() {
-                    target.clipped_text("\u{e76c}", &self.icons,
+                    target.clipped_icon("\u{e76c}", &self.icons,
                         &Rect::from_xywh(width - 28.0, top, 16.0, super::menu::ROW_HEIGHT), &text);
                 } else if trailing_width > 0.0 {
                     target.clipped_text(
@@ -208,7 +213,7 @@ impl Renderer {
             details,
             tab_title,
             column_label_widths,
-            sort_icons: canvas_result(TextFormat::new("Segoe Fluent Icons", 10.0))?
+            sort_icons: canvas_result(TextFormat::new(super::fonts::icon_family(), 10.0))?
                 .with_alignment(TextAlignment::Center)
                 .with_paragraph_alignment(ParagraphAlignment::Center)
                 .with_word_wrapping(WordWrapping::NoWrap),
@@ -216,11 +221,11 @@ impl Renderer {
                 .with_alignment(TextAlignment::Trailing)
                 .with_paragraph_alignment(ParagraphAlignment::Center)
                 .with_word_wrapping(WordWrapping::NoWrap),
-            icons: canvas_result(TextFormat::new("Segoe Fluent Icons", 12.0))?
+            icons: canvas_result(TextFormat::new(super::fonts::icon_family(), 12.0))?
                 .with_alignment(windows_canvas::TextAlignment::Center)
                 .with_paragraph_alignment(ParagraphAlignment::Center)
                 .with_word_wrapping(WordWrapping::NoWrap),
-            navigation_icons: canvas_result(TextFormat::new("Segoe Fluent Icons", 12.0))?
+            navigation_icons: canvas_result(TextFormat::new(super::fonts::icon_family(), 12.0))?
                 .with_alignment(TextAlignment::Center)
                 .with_paragraph_alignment(ParagraphAlignment::Center)
                 .with_word_wrapping(WordWrapping::NoWrap),
@@ -446,7 +451,7 @@ impl Renderer {
                         }, &outline, stroke);
                     }
                     if show_icon && model.tabs.len() < 2 && model.merge_preview.is_empty() {
-                        target.clipped_text(
+                        target.clipped_icon(
                             "\u{e8b7}",
                             &self.icons,
                             &Rect::from_xywh(group_left, 0.0, 18.0, HEADER),
@@ -485,7 +490,7 @@ impl Renderer {
                         }
                         let center = x + 14.0;
                         if button >= 2 {
-                            target.clipped_text(
+                            target.clipped_icon(
                                 if button == 2 { "\u{e72b}" } else { "\u{e80f}" },
                                 &self.navigation_icons,
                                 &Rect::from_xywh(x, top, 28.0, button_height),
@@ -620,7 +625,7 @@ impl Renderer {
                                 &dim,
                             );
                             if sorted {
-                                target.clipped_text(
+                                target.clipped_icon(
                                     if model.folder_sort.1 { "\u{e70d}" } else { "\u{e70e}" },
                                     &self.sort_icons,
                                     &Rect::from_xywh(
@@ -776,7 +781,7 @@ impl Renderer {
                         } else {
                             // Enumeration is published before Shell image extraction.
                             // Keep a visible placeholder while loading or after a failure.
-                            target.clipped_text(
+                            target.clipped_icon(
                                 if item.details.folder { "\u{e8b7}" } else { "\u{e8a5}" },
                                 &self.icons,
                                 &Rect::from_xywh(
@@ -1191,7 +1196,10 @@ mod tests {
             let opaque = renderer
                 .flyout(width, height, scale, &entries, None, false, false)
                 .unwrap();
-            assert!(opaque.as_chunks::<4>().0.iter().all(|p| p[3] == 255));
+            assert_eq!(opaque[at + 3], 255);
+            for (x, y) in [(0, 0), (width - 1, 0), (0, height - 1), (width - 1, height - 1)] {
+                assert_eq!(opaque[((y * width + x) * 4 + 3) as usize], 0);
+            }
         }
     }
     use crate::pane::{Item, assets::Pixels};

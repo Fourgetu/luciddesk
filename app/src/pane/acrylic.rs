@@ -27,6 +27,15 @@ use windows::{
 };
 use windows_numerics::Vector2;
 
+struct PowerNotification(windows_sys::Win32::System::Power::HPOWERNOTIFY);
+impl Drop for PowerNotification {
+    fn drop(&mut self) {
+        if self.0 != 0 {
+            unsafe { windows_sys::Win32::System::Power::UnregisterPowerSettingNotification(self.0); }
+        }
+    }
+}
+
 struct Runtime {
     // Release effects before their compositor and dispatcher queue.
     material_factory: RefCell<Option<windows::UI::Composition::CompositionEffectFactory>>,
@@ -40,6 +49,11 @@ thread_local! {
 
 pub struct Acrylic {
     hwnd: HWND,
+    _power_notification: PowerNotification,
+    ui_settings: Option<windows::UI::ViewManagement::UISettings>,
+    #[cfg(test)]
+    effects_override: std::cell::Cell<Option<bool>>,
+    disable_backdrop: bool,
     material_brush: RefCell<Option<(bool, windows::UI::Composition::CompositionBrush)>>,
     host_backdrop: RefCell<Option<host::HostBackdrop>>,
     #[cfg(test)]
@@ -120,6 +134,19 @@ impl Acrylic {
         target.SetRoot(&root)?;
         Ok(Self {
             hwnd,
+            _power_notification: PowerNotification(unsafe {
+                windows_sys::Win32::System::Power::RegisterPowerSettingNotification(
+                    hwnd.0,
+                    &windows_sys::Win32::System::SystemServices::GUID_POWER_SAVING_STATUS,
+                    windows_sys::Win32::UI::WindowsAndMessaging::DEVICE_NOTIFY_WINDOW_HANDLE,
+                )
+            }),
+            ui_settings: windows::UI::ViewManagement::UISettings::new().ok(),
+            #[cfg(test)]
+            // Rendering tests control policy explicitly, independent of the
+            // test machine's current transparency or battery-saver setting.
+            effects_override: std::cell::Cell::new(Some(true)),
+            disable_backdrop: crate::diagnostics::disable_backdrop(),
             material_brush: RefCell::new(None),
             host_backdrop: RefCell::new(None),
             #[cfg(test)]
@@ -165,6 +192,27 @@ impl Acrylic {
         }
         self.rounded_clip = Some((geometry, bounds));
         Ok(())
+    }
+
+    pub(super) fn effects_enabled(&self) -> bool {
+        #[cfg(test)]
+        if let Some(enabled) = self.effects_override.get() {
+            return enabled;
+        }
+        let advanced = self.ui_settings.as_ref()
+            .and_then(|settings| settings.AdvancedEffectsEnabled().ok())
+            .unwrap_or(true);
+        let mut power = windows_sys::Win32::System::Power::SYSTEM_POWER_STATUS::default();
+        let saver = unsafe {
+            windows_sys::Win32::System::Power::GetSystemPowerStatus(&raw mut power) != 0
+                && power.SystemStatusFlag == 1
+        };
+        advanced && !saver
+    }
+
+    #[cfg(test)]
+    pub(super) fn set_effects_enabled_for_test(&self, enabled: bool) {
+        self.effects_override.set(Some(enabled));
     }
 
     pub fn material(&self, material: desktop_core::Backdrop, dark: bool) -> Result<()> {
@@ -223,7 +271,8 @@ impl Acrylic {
                     Err(error)
                 }
             })
-            .or_else(|_| -> Result<windows::UI::Composition::CompositionBrush> {
+            .or_else(|error| -> Result<windows::UI::Composition::CompositionBrush> {
+                crate::diagnostics::render_trace(format_args!("hwnd={:?} opaque fallback: {error}", self.hwnd));
                 // An unavailable backdrop/effect must remain opaque and legible.
                 self.material_brush.borrow_mut().take();
                 self.host_backdrop.borrow_mut().take();
@@ -249,6 +298,9 @@ impl Acrylic {
         dark: bool,
         wallpaper: bool,
     ) -> Result<windows::UI::Composition::CompositionBrush> {
+        if self.disable_backdrop || !self.effects_enabled() {
+            return Err(windows::Win32::Foundation::E_NOTIMPL.into());
+        }
         #[cfg(test)]
         if if wallpaper {
             self.unavailable_backdrops.get().0
@@ -414,6 +466,15 @@ impl Acrylic {
     pub fn opacity_value(&self) -> Result<f32> {
         self.root.Opacity()
     }
+
+    #[cfg(test)]
+    pub fn assert_rounded_clip(&self, width: u32, height: u32, radius: f32) {
+        let (geometry, bounds) = self.rounded_clip.as_ref().unwrap();
+        assert_eq!(*bounds, (width, height, radius));
+        assert!(self.root.Clip().is_ok());
+        assert_eq!(geometry.Size().unwrap(), Vector2 { X: width as f32, Y: height as f32 });
+        assert_eq!(geometry.CornerRadius().unwrap(), Vector2 { X: radius, Y: radius });
+    }
 }
 
 /// Shared material recipe for the compositor and the illustrative settings preview.
@@ -433,6 +494,40 @@ pub(super) fn material_colors(material: desktop_core::Backdrop, dark: bool) -> (
 mod tests {
     use super::*;
     use desktop_core::Backdrop;
+
+    #[test]
+    fn diagnostic_bypass_never_enables_host_or_wallpaper_backdrops() {
+        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let window = windows_window::Window::new("Backdrop isolation")
+            .size(96, 64)
+            .style(windows_sys::Win32::UI::WindowsAndMessaging::WS_POPUP)
+            .ex_style(windows_sys::Win32::UI::WindowsAndMessaging::WS_EX_NOREDIRECTIONBITMAP)
+            .create().unwrap();
+        let device = super::super::native_graphics::gpu_device().unwrap();
+        let swap = device.create_swap_chain(96, 64).unwrap();
+        let native_swap = super::super::native_graphics::native_interface(swap.raw_swap_chain()).unwrap();
+        let mut acrylic = Acrylic::new_with_content(HWND(window.hwnd().cast()), 1.0, &native_swap).unwrap();
+        for disabled_by_policy in [false, true] {
+            acrylic.disable_backdrop = !disabled_by_policy;
+            acrylic.effects_override.set(Some(!disabled_by_policy));
+            for dark in [true, false] {
+                for material in [Backdrop::Acrylic, Backdrop::Mica, Backdrop::MicaAlt] {
+                    for strength in [0, 50, 100] {
+                        acrylic.material(material.with_strength(strength), dark).unwrap();
+                        acrylic.assert_solid_color(if dark { 0x202020 } else { 0xf3f3f3 }, 1.0);
+                        assert!(acrylic.host_backdrop.borrow().is_none());
+                        assert!(acrylic.material_brush.borrow().is_none());
+                        acrylic.assert_content_visible();
+                    }
+                }
+            }
+        }
+        acrylic.disable_backdrop = false;
+        acrylic.effects_override.set(Some(true));
+        acrylic.material(Backdrop::Acrylic, false).unwrap();
+        acrylic.assert_material_effect();
+        acrylic.assert_content_visible();
+    }
 
     #[test]
     fn missing_wallpaper_uses_acrylic_then_opaque_color_without_hiding_content() {
