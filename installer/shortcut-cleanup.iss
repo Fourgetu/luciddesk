@@ -75,10 +75,9 @@ procedure CollectUninstallShortcuts;
 begin
   try
     ShortcutShell := CreateOleObject('WScript.Shell');
-    CollectShortcutDirectory(ExpandConstant('{userprograms}'), True, 0);
+    // Start Menu links belong to [Icons] and Inno's native uninstall log.
     CollectShortcutDirectory(ExpandConstant('{userdesktop}'), False, 0);
     if IsAdminInstallMode then begin
-      CollectShortcutDirectory(ExpandConstant('{commonprograms}'), True, 0);
       CollectShortcutDirectory(ExpandConstant('{commondesktop}'), False, 0);
     end;
     Log(Format('Collected %d shortcuts targeting this installation.', [GetArrayLength(UninstallShortcuts)]));

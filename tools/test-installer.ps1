@@ -226,9 +226,10 @@ public static class InstallerImageLock {
     $outsideShortcuts = Join-Path $testRoot 'outside-shortcuts'
     New-Item -ItemType Directory -Path $outsideShortcuts | Out-Null
     $shortcutShell = New-Object -ComObject WScript.Shell
-    $ownedLinks = @((Join-Path $shortcutFixture 'nested/renamed.lnk'), (Join-Path $shortcutFixture 'legacy.lnk'), $desktopFixtureLink)
-    $preservedLinks = @((Join-Path $shortcutFixture 'other-install.lnk'), (Join-Path $shortcutFixture 'unrelated.lnk'), (Join-Path $outsideShortcuts 'outside.lnk'))
-    $linkTargets = @((Join-Path $installed 'luciddesk.exe'), (Join-Path $installed 'lucidpane.exe'), (Join-Path $installed 'luciddesk.exe'), (Join-Path $SourcePath 'luciddesk.exe'), (Join-Path $env:WINDIR 'notepad.exe'), (Join-Path $installed 'luciddesk.exe'))
+    $ownedLinks = @($desktopFixtureLink)
+    # User-created Start Menu links are not part of the installer's [Icons] log.
+    $preservedLinks = @((Join-Path $shortcutFixture 'nested/renamed.lnk'), (Join-Path $shortcutFixture 'legacy.lnk'), (Join-Path $shortcutFixture 'other-install.lnk'), (Join-Path $shortcutFixture 'unrelated.lnk'), (Join-Path $outsideShortcuts 'outside.lnk'))
+    $linkTargets = @((Join-Path $installed 'luciddesk.exe'), (Join-Path $installed 'luciddesk.exe'), (Join-Path $installed 'lucidpane.exe'), (Join-Path $SourcePath 'luciddesk.exe'), (Join-Path $env:WINDIR 'notepad.exe'), (Join-Path $installed 'luciddesk.exe'))
     $fixtureLinks = $ownedLinks + $preservedLinks
     for ($index = 0; $index -lt $fixtureLinks.Count; $index++) {
         $shortcut = $shortcutShell.CreateShortcut($fixtureLinks[$index]); $shortcut.TargetPath = $linkTargets[$index]; $shortcut.Save()
@@ -257,7 +258,7 @@ public static class InstallerImageLock {
     if ((Get-Content -LiteralPath (Join-Path $unrelatedData 'keep.txt') -Raw).Trim() -ne 'retain unrelated file') { throw 'Settings cleanup followed a junction into unrelated files.' }
     if ((Get-Content -LiteralPath (Join-Path $data 'keep.txt') -Raw).Trim() -ne 'retain configuration') { throw 'Settings cleanup removed a custom data directory.' }
     $scope = if ($AllUsers) { 'All users in Program Files (HKLM)' } else { 'Current user (HKCU)' }
-    Write-Output "$scope verified: install/upgrade and uninstall with normal auto-close, running/mapped-DLL guards, settings options; native/renamed/nested/legacy shortcuts removed, unrelated/other-install/junction shortcuts preserved, Shell and AppsFolder notified."
+    Write-Output "$scope verified: install/upgrade and uninstall with normal auto-close, running/mapped-DLL guards, settings options; native shortcuts and owned desktop copy removed, user-created Start Menu/other-install/junction shortcuts preserved, Shell and AppsFolder notified."
 } finally {
     if ($probeProcess -and -not $probeProcess.HasExited) {
         Stop-Process -Id $probeProcess.Id -Force
