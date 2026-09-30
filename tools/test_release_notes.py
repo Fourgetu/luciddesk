@@ -29,6 +29,15 @@ class ReleaseNotesTests(unittest.TestCase):
                 with self.subTest(zh=zh, en=en), self.assertRaises(ValueError):
                     notes.bilingual(zh, en, "v1.2.3", "owner/repo")
 
+    def test_unprefixed_tag_uses_version_section_and_original_tag_in_links(self):
+        zh = "## 1.2.3 · 2026-09-30\n\n- 中文 [指南](docs/usage.md)\n\n## 1.2.2\n\nOLD"
+        en = "## 1.2.3 · 2026-09-30\n\n- English [Guide](docs/usage.md)\n"
+        result = notes.bilingual(zh, en, "1.2.3", "owner/repo")
+        self.assertEqual(result.count("### 1.2.3 · 2026-09-30"), 2)
+        self.assertEqual(result.count("https://github.com/owner/repo/blob/1.2.3/docs/usage.md"), 2)
+        self.assertNotIn("blob/v1.2.3/", result)
+        self.assertNotIn("OLD", result)
+
     def test_invalid_tag(self):
         with self.assertRaises(ValueError):
             notes.extract("## 1.2.3\n\n- Change", "main", "owner/repo")
@@ -49,7 +58,8 @@ class ReleaseNotesTests(unittest.TestCase):
         self.assertIn(f"**{version}**", en.split("\n## ")[0])
 
         for ver in versions(zh):
-            notes.bilingual(zh, en, "v" + ver, "Yuch3nE/luciddesk")
+            for tag in (ver, "v" + ver):
+                notes.bilingual(zh, en, tag, "Yuch3nE/luciddesk")
 
 
 if __name__ == "__main__":

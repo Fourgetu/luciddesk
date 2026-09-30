@@ -6,13 +6,14 @@ from urllib.parse import urljoin
 
 
 def extract(text, tag, repository):
-    if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag):
-        raise ValueError("Expected a release tag such as v0.10.6")
+    if not re.fullmatch(r"v?[0-9]+\.[0-9]+\.[0-9]+", tag):
+        raise ValueError("Expected a release tag such as 0.14.0 or v0.14.0")
+    release_version = tag.removeprefix("v")
     headings = list(re.finditer(r"^##[ \t]+(.+)$", text, re.MULTILINE))
     matches = []
     for index, heading in enumerate(headings):
         version = heading.group(1).strip().split()[0]
-        if version == tag[1:]:
+        if version == release_version:
             end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
             body = text[heading.end():end].strip()
             matches.append((heading.group(0).strip(), body))
