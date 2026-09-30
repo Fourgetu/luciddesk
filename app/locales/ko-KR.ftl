@@ -1203,3 +1203,23 @@ update-checking = 새 버전 확인 중…
 update-current = 최신 버전입니다.
 update-available = 버전 { $version } 사용 가능
 update-failed = 확인 실패. 다시 시도하세요
+
+# Login startup
+startup-general = 일반
+startup-description = 현재 Windows 계정의 로그인 시 시작을 관리합니다.
+startup-section = 로그인 시 시작
+startup-title = Windows 로그인 시 LucidDesk 시작
+startup-off = 등록되지 않았습니다.
+startup-enabled = 등록됨. Windows 비활성화 상태가 감지되지 않았습니다.
+startup-windows-disabled = Windows에서 비활성화되었습니다. 시스템 시작 설정에서 활성화하세요.
+startup-unknown = Windows 시작 상태를 확인할 수 없습니다.
+startup-other-location = 다른 LucidDesk 위치가 등록되어 있습니다. 해당 프로그램에서 먼저 끄세요.
+startup-manage = Windows 시작 앱 관리
+startup-manage-description = 등록된 앱의 시작 허용 여부는 Windows가 관리합니다.
+startup-open-settings = 설정 열기
+startup-invalid-path = 실행 파일 경로가 잘못되었거나 시작 명령이 260자를 초과합니다.
+startup-user-disabled = Windows에서 직접 비활성화했습니다. 시스템 시작 설정에서 활성화하세요.
+startup-policy-disabled = 시스템 정책에 의해 시작이 비활성화되었습니다.
+startup-policy-enabled = 시스템 정책에 의해 시작이 활성화되었습니다.
+startup-working = 시작 상태를 확인하거나 변경하는 중…
+startup-package-invalid = MSIX 패키지 ID 또는 표시 파일이 잘못되었습니다. 시작 설정은 변경되지 않았습니다.

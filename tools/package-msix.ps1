@@ -76,8 +76,9 @@ $manifest = @"
 <?xml version="1.0" encoding="utf-8"?>
 <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
          xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+         xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
          xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-         IgnorableNamespaces="uap rescap">
+         IgnorableNamespaces="uap desktop rescap">
   <Identity Name="$identityXml" Publisher="$publisherXml" Version="$PackageVersion" ProcessorArchitecture="x64" />
   <Properties>
     <DisplayName>LucidDesk</DisplayName>
@@ -92,6 +93,11 @@ $manifest = @"
       <uap:VisualElements DisplayName="LucidDesk" Description="Windows desktop organizer"
                           Square150x150Logo="Assets\Square150x150Logo.png"
                           Square44x44Logo="Assets\Square44x44Logo.png" BackgroundColor="transparent" />
+      <Extensions>
+        <desktop:Extension Category="windows.startupTask" Executable="luciddesk.exe" EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="LucidDeskStartup" Enabled="false" DisplayName="LucidDesk" />
+        </desktop:Extension>
+      </Extensions>
     </Application>
   </Applications>
   <Capabilities><rescap:Capability Name="runFullTrust" /></Capabilities>

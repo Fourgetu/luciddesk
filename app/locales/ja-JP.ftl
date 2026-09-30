@@ -1203,3 +1203,23 @@ update-checking = 新しいバージョンを確認中…
 update-current = 最新バージョンです。
 update-available = バージョン { $version } が利用可能です
 update-failed = 確認に失敗しました。再試行してください
+
+# Login startup
+startup-general = 全般
+startup-description = この Windows アカウントのログイン時の起動を管理します。
+startup-section = ログイン時の起動
+startup-title = Windows へのログイン時に LucidDesk を起動する
+startup-off = 未登録です。
+startup-enabled = 登録済みです。Windows による無効化は検出されていません。
+startup-windows-disabled = Windows によって無効化されています。システムの設定で有効にしてください。
+startup-unknown = Windows の起動状態を確認できません。
+startup-other-location = 別の LucidDesk が登録されています。先にそのアプリで無効にしてください。
+startup-manage = Windows のスタートアップを管理
+startup-manage-description = 登録されたアプリの起動可否は Windows が管理します。
+startup-open-settings = 設定を開く
+startup-invalid-path = 実行ファイルのパスが無効か、起動コマンドが 260 文字を超えています。
+startup-user-disabled = Windows で無効に設定されています。システムの起動設定で有効にしてください。
+startup-policy-disabled = システムポリシーによって無効になっています。
+startup-policy-enabled = システムポリシーによって有効になっています。
+startup-working = 起動状態を確認または変更しています…
+startup-package-invalid = MSIX のパッケージ ID またはマーカーが無効です。起動設定は変更されていません。

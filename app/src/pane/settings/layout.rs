@@ -1,5 +1,15 @@
 use super::*;
 
+pub(super) fn general(s: &mut Scene, width: f32, status: crate::startup::Status, busy: bool) {
+    let mut form = SettingsForm::new(s, width, crate::i18n::text("startup-description"));
+    form.section(crate::i18n::text("startup-section"));
+    form.toggle_enabled(crate::i18n::text("startup-title"), if busy { crate::i18n::text("startup-working") } else { status.message() }, status.registered(),
+        status.editable() && !busy,
+        Action::Startup(!status.registered()));
+    form.button(crate::i18n::text("startup-manage"), crate::i18n::text("startup-manage-description"),
+        crate::i18n::text("startup-open-settings"), Action::ProjectLink("ms-settings:startupapps"));
+}
+
 #[cfg(test)]
 mod compatibility_tests {
     use super::*;
@@ -86,7 +96,8 @@ pub(super) fn folder_defaults(
 }
 
 // Page IDs stay stable; display order is independent of routing.
-pub(super) fn pages() -> [(usize, &'static str, &'static str); 9] { [
+pub(super) fn pages() -> [(usize, &'static str, &'static str); 10] { [
+    (13, crate::i18n::text("startup-general"), "\u{e713}"),
     (0, crate::i18n::text("ui-theme-materials"), "\u{e790}"),
     (1, crate::i18n::text("ui-panel-layout"), "\u{f0e2}"),
     (11, crate::i18n::text("ui-fonts"), "\u{e8d2}"),
@@ -146,7 +157,7 @@ fn scene_with_mica(
             6 | 12 | 5 => 20.0,
             _ => 0.0,
         };
-        let stride = ((_height - 136.0) / 8.0).clamp(38.0, 42.0);
+        let stride = ((_height - 136.0) / (pages().len() - 1) as f32).clamp(34.0, 42.0);
         let y = 78.0 + position as f32 * stride + gap;
         s.control(
             ControlKind::Navigation,

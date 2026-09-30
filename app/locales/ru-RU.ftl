@@ -1203,3 +1203,23 @@ update-checking = Проверка новой версии…
 update-current = Установлена последняя версия.
 update-available = Доступна версия { $version }
 update-failed = Ошибка проверки. Повторите попытку
+
+# Login startup
+startup-general = Общие
+startup-description = Управление запуском при входе в эту учётную запись Windows.
+startup-section = Запуск при входе
+startup-title = Запускать LucidDesk при входе в Windows
+startup-off = Не зарегистрирован.
+startup-enabled = Зарегистрирован; отключение в Windows не обнаружено.
+startup-windows-disabled = Отключён в Windows. Включите в настройках автозагрузки.
+startup-unknown = Не удалось определить состояние автозагрузки Windows.
+startup-other-location = Автозагрузка указывает на другую копию LucidDesk. Сначала отключите её там.
+startup-manage = Управление автозагрузкой Windows
+startup-manage-description = Windows определяет, разрешён ли запуск зарегистрированных приложений.
+startup-open-settings = Открыть настройки
+startup-invalid-path = Недопустимый путь или команда запуска длиннее 260 символов.
+startup-user-disabled = Вы отключили запуск в Windows. Включите его в настройках автозагрузки.
+startup-policy-disabled = Автозагрузка отключена системной политикой.
+startup-policy-enabled = Автозагрузка включена системной политикой.
+startup-working = Проверка или изменение автозагрузки…
+startup-package-invalid = Недопустимый идентификатор или маркер MSIX. Настройки не изменены.

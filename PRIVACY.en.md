@@ -2,7 +2,7 @@
 
 [简体中文](PRIVACY.md) · English
 
-Last updated: September 30, 2026. Maintainer: Yuchen95.
+Last updated: October 1, 2026. Maintainer: Yuchen95.
 
 This policy describes data handling by the current official installer, standard ZIP and portable editions of LucidDesk. Third-party modified builds may behave differently.
 
@@ -23,6 +23,10 @@ To provide its features, the application reads or stores:
 Settings and workspace data normally reside in `%LOCALAPPDATA%\LucidDesk`, or an existing `%LOCALAPPDATA%\LucidPane` directory for compatibility. Portable builds use `data` next to the program; environment variables can select a different data directory. See the [storage guide](docs/development/storage.md). These files and backups may contain personal file paths. LucidDesk does not automatically upload them to the maintainer.
 
 Organizing desktop panels stores references without moving original files. Explicit file operations such as delete, rename, cut, paste and folder operations affect actual files.
+
+Enabling login startup in the standard installer or portable edition registers the executable path and startup arguments under `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`. Disabling it removes the registration belonging to the current executable. The app only reads Windows `StartupApproved\Run` status and does not change Windows disable records. These details stay on the device. Uninstall removes the current installation's registration for the current user; disable startup before manually deleting or moving a portable copy.
+
+The MSIX edition uses Windows StartupTask to manage login startup for its package, identified by both package identity and the regular `msix` marker beside the executable. State queries and changes stay on the device, do not create an unpackaged Run registration, and are not uploaded. Windows manages the package startup registration and its removal during uninstall.
 
 ## Network access and third-party features
 

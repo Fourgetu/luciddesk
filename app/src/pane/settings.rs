@@ -18,11 +18,29 @@ use windows_sys::Win32::{
 };
 const FONT_LOAD_TIMER: usize = 0x4c5046;
 const UPDATE_TIMER: usize = 0x4c5056;
+const STARTUP_TIMER: usize = 0x4c5354;
 const SELECT_PANEL: u32 = WM_APP + 95;
 const PREPARE_REVEAL: u32 = WM_APP + 96;
 const REVEAL_TIMER: usize = 0x4c5055;
 pub(super) const DEFAULT_HEIGHT: i32 = 600;
 const MIN_HEIGHT: f32 = 560.0;
+
+fn start_login_operation(
+    controller: &mut crate::startup::Controller,
+    hwnd: windows_sys::Win32::Foundation::HWND,
+    enabled: Option<bool>,
+) -> Result<(), String> {
+    if controller.busy() { return Ok(()); }
+    if unsafe { SetTimer(hwnd, STARTUP_TIMER, 150, None) } == 0 {
+        return Err(std::io::Error::last_os_error().to_string());
+    }
+    let result = match enabled {
+        Some(enabled) => controller.set_enabled(enabled),
+        None => controller.refresh(),
+    };
+    if result.is_err() { unsafe { KillTimer(hwnd, STARTUP_TIMER); } }
+    result
+}
 
 struct PendingReveal {
     started: std::time::Instant,
@@ -48,6 +66,7 @@ use windows_sys::Win32::UI::Controls::WM_MOUSELEAVE;
 
 #[derive(Clone)]
 enum Action {
+    Startup(bool),
     Font(String),
     FontSearch,
     FolderDefaults(folder::Defaults),
@@ -516,6 +535,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
     let mut desktop_status = String::new();
     let mut diagnostics_copied = false;
     let mut updates = crate::updates::Controller::default();
+    let mut startup = crate::startup::Controller::default();
     let mut backup_view = recovery::View::default();
     let mut backup_policy = recovery::Policy::default();
     let mut backup_offset = 0usize;
@@ -544,6 +564,13 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
             if msg == WM_TIMER && wp == UPDATE_TIMER {
                 updates.poll();
                 if !updates.busy() { unsafe { KillTimer(hwnd, UPDATE_TIMER); } }
+                scene_key = None;
+                unsafe { InvalidateRect(hwnd, std::ptr::null(), 0); }
+                return Some(0);
+            }
+            if msg == WM_TIMER && wp == STARTUP_TIMER {
+                if let Some(error) = startup.poll() { window::error(&error); }
+                if !startup.busy() { unsafe { KillTimer(hwnd, STARTUP_TIMER); } }
                 scene_key = None;
                 unsafe { InvalidateRect(hwnd, std::ptr::null(), 0); }
                 return Some(0);
@@ -726,6 +753,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     KillTimer(hwnd, TOGGLE_TIMER);
                     KillTimer(hwnd, FONT_LOAD_TIMER);
                     KillTimer(hwnd, UPDATE_TIMER);
+                    KillTimer(hwnd, STARTUP_TIMER);
                 }
                 // Drop outside the PaneApp borrow: native destruction can send
                 // focus messages to other panes. The callback's render resources
@@ -902,7 +930,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     show_hotkey::settings(&state.borrow().store), show_hotkey::status()),
                 unsafe { IsZoomed(hwnd) } != 0,
                 search_visible,
-                (desktop_status.clone(), header_divider::enabled(), compact_menu::enabled(), updates.status()),
+                (desktop_status.clone(), header_divider::enabled(), compact_menu::enabled(), updates.status(), startup.status(), startup.busy()),
             );
             if scroll_page != page { scroll_offset = 0.0; scroll_page = page; }
             let scene_changed = snapshot_changed || scene_key.as_ref() != Some(&key);
@@ -919,6 +947,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     let chosen = state.borrow().store.preference("language").ok().flatten().unwrap_or_else(|| "system".into());
                     layout::language(&mut body, w, &chosen);
                 }
+                if page == 13 { layout::general(&mut body, w, startup.status(), startup.busy()); }
                 if page == 1 { layout::show_panels_shortcut(&mut body, w, &state.borrow().store); }
                 if page == 11 { layout::fonts_status(&mut body, w, &font_choices, if !fonts_loaded { Some("font-loading") } else if font_load_failed { Some("font-load-failed") } else { None }); }
                 if page == 8 { layout::folder_defaults(&mut body, w, folder_defaults, folder_entry_mode); }
@@ -1088,6 +1117,10 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     hover = None;
                 }
                 WM_ACTIVATE => {
+                    scene_key = None;
+                    if wp & 0xffff != WA_INACTIVE as usize && page == 13 {
+                        if let Err(error) = start_login_operation(&mut startup, hwnd, None) { window::error(&error); }
+                    }
                     if wp & 0xffff == WA_INACTIVE as usize {
                         hover = None;
                         pressed = None;
@@ -1466,6 +1499,10 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         if let Err(error) = result { window::error(&error.to_string()); }
                         scene_key = None;
                     }
+                    Action::Startup(enabled) => {
+                        if let Err(error) = start_login_operation(&mut startup, hwnd, Some(*enabled)) { window::error(&error); }
+                        scene_key = None;
+                    }
                     Action::CopyDiagnostics => {
                         let report = format!("{}Desktop: {}\r\n", crate::diagnostics::report(), desktop_status);
                         match crate::diagnostics::copy(hwnd as isize, &report) {
@@ -1566,6 +1603,9 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         scene_key = None;
                     }
                     Action::Page(value) => {
+                        if *value == 13 {
+                            if let Err(error) = start_login_operation(&mut startup, hwnd, None) { window::error(&error); }
+                        }
                         if *value == 11 {
                             font_choices = all_fonts.clone();
                             if font_load_failed { fonts_loaded = false; font_load_failed = false; }

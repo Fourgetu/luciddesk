@@ -25,7 +25,7 @@ serde_json = "1"
 semver = "1"
 desktop-window.workspace = true
 desktop-hook.workspace = true
-windows = { workspace = true, features = ["Storage", "Storage_Search", "UI_ViewManagement", "Graphics_Effects", "Win32_System_WinRT_Graphics_Direct2D"] }
+windows = { workspace = true, features = ["ApplicationModel", "Storage", "Storage_Search", "UI_ViewManagement", "Graphics_Effects", "Win32_System_WinRT_Graphics_Direct2D"] }
 windows-core = "0.62.2"
 windows-sys = { workspace = true, features = ["Win32_Storage_Packaging_Appx", "Win32_Security_Cryptography", "Win32_Networking_WinHttp", "Win32_System_Power", "Win32_System_SystemServices", "Win32_System_ProcessStatus", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Time", "Win32_System_DataExchange", "Win32_System_LibraryLoader"] }
 windows-window.workspace = true
@@ -34,6 +34,7 @@ windows-canvas = { version = "=0.100.0", default-features = false }
 canvas-core = { package = "windows-core", version = "=0.100.0", default-features = false }
 windows-animation = "=0.100.0"
 windows-version = "=0.100.0"
+windows-registry = "=0.100.0"
 desktop-graphics = { path = "../crates/desktop-graphics" }
 fluent-bundle = "0.16"
 unic-langid = "0.9"

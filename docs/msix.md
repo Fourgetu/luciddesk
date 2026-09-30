@@ -130,3 +130,11 @@ cargo test -p luciddesk --bin luciddesk desktop_component::tests --locked --offl
 | 旧哈希目录仍存在 | DLL 是否仍被占用，目录内是否含未知文件；不应强制删除正在使用的组件 |
 
 反馈问题时记录应用版本和包版本、包身份、Windows 构建号、部署命令与错误码、实际 DLL 加载路径。把打包校验、侧载测试、App Installer 和商店分发结果分别记录，不互相替代。
+
+## 登录自启
+
+设置入口与普通版共用「设置 → 通用」。程序同时确认真实包身份和程序旁的有效 `msix` 标记后，使用 `Windows.ApplicationModel.StartupTask`，不创建 Run 自启项。仅有标记但没有包身份的解压副本走普通版逻辑；有包身份却缺少或无法读取标记时，显示无法确认，不降级写入 Run。
+
+包清单声明稳定任务 ID `LucidDeskStartup`，默认 `Enabled="false"`。用户主动开启后调用 `RequestEnableAsync`，关闭调用 `Disable`；状态读取与修改在后台进行。Task Manager/Windows 启动设置禁用后的 `DisabledByUser` 以及策略控制的状态均只读显示，引导用户到系统设置，不覆盖系统选择。任务 ID 在更新中保持一致，卸载由 Windows 清理包登记。
+
+验证应区分清单校验和真实部署：MakeAppx 校验通过不能替代受信任签名包安装后对启用、停用、任务管理器禁用、更新保留状态及卸载的测试。

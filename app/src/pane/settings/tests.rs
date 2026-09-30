@@ -1104,7 +1104,7 @@ fn all_languages_layout_and_render_without_control_overflow() {
     for locale in 0..7 {
         crate::i18n::with_locale(locale, || {
             let painter = Painter::new().unwrap();
-            for page in [0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] {
+            for page in [0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13] {
                 let width = 800.0;
                 let height = 620.0;
                 let material = if page == 7 { Backdrop::Solid { color: 0xf3f3f3, opacity: 1.0 } } else { Backdrop::Acrylic };
@@ -1117,6 +1117,7 @@ fn all_languages_layout_and_render_without_control_overflow() {
                     6 | 10 => layout::backup_page(&mut body, width, &recovery::View::default(), recovery::Policy::default(), page == 10),
                     11 => layout::fonts(&mut body, width, &fonts::installed(), 0),
                     12 => layout::language(&mut body, width, "system"),
+                    13 => layout::general(&mut body, width, crate::startup::Status::DisabledByWindows, false),
                     _ => {},
                 }
                 let mut scene = with_titlebar(body, width, false);

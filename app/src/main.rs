@@ -8,6 +8,7 @@ mod pane;
 mod tray;
 mod window_visibility;
 mod updates;
+mod startup;
 
 use desktop_shell::{ShellApartment, local_app_data_path};
 use std::{ffi::OsString, fs, path::PathBuf};
@@ -36,8 +37,9 @@ fn main() -> Result<(), String> {
         )
     }
     .map_err(|error| format!("failed to set application identity: {error}"))?;
+    let startup = arguments.iter().any(|argument| argument == "--startup");
     let title = parse_options(arguments)?;
-    let Some(_instance) = Instance::acquire()? else {
+    let Some(_instance) = Instance::acquire(!startup)? else {
         return Ok(());
     };
     let _ = diagnostics::system();
@@ -51,7 +53,7 @@ fn main() -> Result<(), String> {
 
 struct Instance(windows_sys::Win32::Foundation::HANDLE);
 impl Instance {
-    fn acquire() -> Result<Option<Self>, String> {
+    fn acquire(show_existing: bool) -> Result<Option<Self>, String> {
         use windows_sys::Win32::{Foundation::*, System::Threading::*, UI::WindowsAndMessaging::*};
         unsafe {
             let handle = CreateMutexW(
@@ -64,12 +66,14 @@ impl Instance {
             }
             if GetLastError() == ERROR_ALREADY_EXISTS {
                 CloseHandle(handle);
-                PostMessageW(
-                    HWND_BROADCAST,
-                    RegisterWindowMessageW(windows_sys::w!("LucidPane.ShowExisting")),
-                    0,
-                    0,
-                );
+                if show_existing {
+                    PostMessageW(
+                        HWND_BROADCAST,
+                        RegisterWindowMessageW(windows_sys::w!("LucidPane.ShowExisting")),
+                        0,
+                        0,
+                    );
+                }
                 return Ok(None);
             }
             Ok(Some(Self(handle)))
@@ -89,6 +93,7 @@ fn parse_options(arguments: impl IntoIterator<Item = OsString>) -> Result<Option
     let mut title = None;
     while let Some(argument) = arguments.next() {
         match argument.to_str() {
+            Some("--startup") => {}
             Some("--title") => {
                 title = Some(
                     arguments
@@ -100,7 +105,7 @@ fn parse_options(arguments: impl IntoIterator<Item = OsString>) -> Result<Option
             }
             _ => {
                 return Err(format!(
-                    "Unsupported argument {}. Supported option: --title <name>.",
+                    "Unsupported argument {}. Supported options: --title <name>, --startup.",
                     argument.to_string_lossy()
                 ));
             }
@@ -161,6 +166,7 @@ mod tests {
     #[test]
     fn accepts_optional_title_and_rejects_invalid_arguments() {
         assert_eq!(parse_options([]).unwrap(), None);
+        assert_eq!(parse_options([OsString::from("--startup")]).unwrap(), None);
 
         assert_eq!(
             parse_options([OsString::from("--title"), OsString::from("Work")])

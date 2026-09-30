@@ -1203,3 +1203,23 @@ update-checking = 正在检查新版本…
 update-current = 已是最新版本。
 update-available = 发现新版本 { $version }
 update-failed = 检查失败，请重试
+
+# Login startup
+startup-general = 通用
+startup-description = 管理当前 Windows 账户的登录自启。
+startup-section = 登录自启
+startup-title = 登录 Windows 时启动 LucidDesk
+startup-off = 未开启。
+startup-enabled = 已登记，未检测到 Windows 禁用状态。
+startup-windows-disabled = 已被 Windows 禁用，请在系统启动设置中启用。
+startup-unknown = 无法确认 Windows 启动状态。
+startup-other-location = 自启指向另一份 LucidDesk，请先在那份程序中关闭。
+startup-manage = 管理 Windows 启动应用
+startup-manage-description = Windows 决定是否允许运行已登记的启动应用。
+startup-open-settings = 打开设置
+startup-invalid-path = 程序路径无效，或自启命令超过 260 个字符。
+startup-user-disabled = 你已在 Windows 中禁用自启，请在系统启动设置中启用。
+startup-policy-disabled = 系统策略已禁用自启。
+startup-policy-enabled = 系统策略已启用自启。
+startup-working = 正在读取或修改自启状态…
+startup-package-invalid = MSIX 包身份或标记无效，未修改自启设置。

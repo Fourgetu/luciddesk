@@ -1203,3 +1203,23 @@ update-checking = Suche nach Updates…
 update-current = Die Version ist aktuell.
 update-available = Version { $version } ist verfügbar
 update-failed = Suche fehlgeschlagen. Bitte erneut versuchen
+
+# Login startup
+startup-general = Allgemein
+startup-description = Anmeldestart für dieses Windows-Konto verwalten.
+startup-section = Anmeldestart
+startup-title = LucidDesk bei der Windows-Anmeldung starten
+startup-off = Nicht registriert.
+startup-enabled = Registriert; keine Deaktivierung durch Windows erkannt.
+startup-windows-disabled = Von Windows deaktiviert. In den Autostart-Einstellungen aktivieren.
+startup-unknown = Windows-Autostartstatus konnte nicht ermittelt werden.
+startup-other-location = Autostart verweist auf eine andere LucidDesk-Kopie. Dort zuerst deaktivieren.
+startup-manage = Windows-Autostart verwalten
+startup-manage-description = Windows bestimmt, ob registrierte Apps gestartet werden dürfen.
+startup-open-settings = Einstellungen öffnen
+startup-invalid-path = Ungültiger Programmpfad oder Startbefehl mit mehr als 260 Zeichen.
+startup-user-disabled = Von Ihnen in Windows deaktiviert. In den Autostart-Einstellungen aktivieren.
+startup-policy-disabled = Autostart ist durch eine Systemrichtlinie deaktiviert.
+startup-policy-enabled = Autostart ist durch eine Systemrichtlinie aktiviert.
+startup-working = Autostartstatus wird geprüft oder geändert…
+startup-package-invalid = Ungültige MSIX-Identität oder Markierungsdatei. Autostart wurde nicht geändert.

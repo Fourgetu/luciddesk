@@ -1203,3 +1203,23 @@ update-checking = Checking for updates…
 update-current = You are up to date.
 update-available = Version { $version } is available
 update-failed = Check failed. Please retry
+
+# Login startup
+startup-general = General
+startup-description = Manage login startup for this Windows account.
+startup-section = Login startup
+startup-title = Start LucidDesk when I sign in to Windows
+startup-off = Not registered.
+startup-enabled = Registered; no Windows disable state detected.
+startup-windows-disabled = Disabled by Windows. Enable it in Windows startup settings.
+startup-unknown = Unable to confirm the Windows startup state.
+startup-other-location = Startup points to another LucidDesk location. Turn it off from that copy first.
+startup-manage = Manage Windows startup apps
+startup-manage-description = Windows controls whether registered applications may start.
+startup-open-settings = Open settings
+startup-invalid-path = The executable path is invalid or the startup command exceeds 260 characters.
+startup-user-disabled = Disabled by you in Windows. Enable it in Windows startup settings.
+startup-policy-disabled = Startup is disabled by system policy.
+startup-policy-enabled = Startup is enabled by system policy.
+startup-working = Checking or updating startup status…
+startup-package-invalid = MSIX identity or marker is invalid. Startup settings were not changed.
