@@ -12,10 +12,17 @@ try {
     $dirty = [bool](& git status --porcelain --untracked-files=no)
     $revisionLabel = if ($dirty) { "$revision-dirty" } else { $revision }
     $env:LUCIDPANE_BUILD_REVISION = $revisionLabel
+    $toolchain = Get-Content -LiteralPath (Join-Path $repoRoot 'rust-toolchain.toml') -Raw
+    $pinnedVersion = [regex]::Match($toolchain, 'channel\s*=\s*"([^"]+)"').Groups[1].Value
     $hostInfo = & rustc -vV
     if ($LASTEXITCODE -ne 0 -or $hostInfo -notcontains 'host: x86_64-pc-windows-msvc') {
         throw 'Packaging requires the Windows x64 MSVC Rust toolchain.'
     }
+    if (-not $pinnedVersion -or $hostInfo -notcontains "release: $pinnedVersion") {
+        throw "Packaging requires the pinned Rust $pinnedVersion toolchain."
+    }
+    $cargoVersion = & cargo -V
+    if ($LASTEXITCODE -ne 0) { throw 'Could not read Cargo version.' }
     # Keep release artifacts separate from explicitly enabled diagnostic backends.
     $productionTarget = Join-Path $repoRoot 'target\production'
     $buildArgs = @('build', '--release', '--locked', '--no-default-features', '--target-dir', $productionTarget, '-p', 'luciddesk', '-p', 'desktop-hook')
@@ -65,6 +72,10 @@ try {
         portable = [bool]$Portable
         renderingDiagnostics = [bool]$RenderDiagnostics
         builtAt = (Get-Date).ToUniversalTime().ToString('o'); architecture = 'windows-x64'
+        buildEnvironment = [ordered]@{
+            rustc = ($hostInfo -join "`n"); cargo = $cargoVersion
+            runnerImage = $env:ImageOS; runnerVersion = $env:ImageVersion
+        }
         files = $files
     } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $stage 'build.json') -Encoding UTF8
     $archive = Join-Path $outRoot "$name.zip"

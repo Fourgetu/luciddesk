@@ -5,7 +5,7 @@
 ## 环境
 
 - 主要使用 Windows 11 x64 交互桌面验证，Explorer 正常运行；Windows 10 已由用户完成实机验证，平台记录见[验证记录](validation.md)。
-- Rust MSVC 工具链；仓库声明的最低 Rust 版本为 1.95，使用 edition 2024。
+- Rust MSVC 工具链；`rust-toolchain.toml` 固定本地与 CI 使用 Rust 1.95.0，使用 edition 2024。
 - Visual Studio C++ 构建工具与 Windows SDK，用于链接 Win32 库。
 
 首次获取依赖时省略 `--offline`。已有锁文件和依赖缓存后，可按以下方式离线构建。
@@ -158,7 +158,7 @@ cargo build -p desktop-shell --example filter_backend_probe
 
 ## GitHub Release
 
-Build CI 仅在推送标签时运行，不限定 `v` 前缀；普通分支推送和 PR 不触发，也不提供手动启动入口。发布标签支持 `<版本>` 和 `v<版本>`（例如 `0.14.0` 或 `v0.14.0`）。公开仓库 `Yuch3nE/luciddesk` 核对标签与应用 Cargo 版本，完成检查与双版本打包，再发布对应 GitHub Release；其他标签会在版本校验阶段报错。同步本地仓库时需要一并同步标签；已触发的运行可在 Actions 页面重新运行。
+Build CI 在推送标签或 `codex/ci-compare-*` 比较分支时运行，不限定 `v` 前缀；普通分支推送和 PR 不触发，手动启动用于比较构建产物，仅上传 Actions 附件，不发布 Release。发布标签支持 `<版本>` 和 `v<版本>`（例如 `0.14.0` 或 `v0.14.0`）。公开仓库 `Yuch3nE/luciddesk` 核对标签与应用 Cargo 版本，完成检查与双版本打包，再发布对应 GitHub Release；其他标签会在版本校验阶段报错。同步本地仓库时需要一并同步标签；已触发的运行可在 Actions 页面重新运行。
 
 Release 包含一个安装包、两个 ZIP 及各自的 SHA256 文件，均附带中英文更新记录。发布任务先验证校验值；正文从标签对应源码中的 `CHANGELOG.md` 和 `CHANGELOG.en.md` 分别提取匹配版本章节，按中文、英文顺序合并，中间使用分隔线，不添加语言大标题，只显示一次版本标题与日期。新增功能和问题修复分别放在 `feat`、`fix` 分类下，文档和发布流程使用 `docs`、`ci` 分类；保留完整内容，并将相对链接转换为该标签下的 GitHub 链接。任一语言的章节缺失、重复或为空时中止发布；构建阶段会运行双语提取测试。重跑时同步更新正文与同名附件。发布权限仅授予独立的 Release 任务。
 
@@ -172,3 +172,5 @@ Release 包含一个安装包、两个 ZIP 及各自的 SHA256 文件，均附�
 项目在 `0.x` 阶段采用以下约定：新增功能递增次版本并将修订号归零；只有兼容修复时递增修订号。破坏兼容性的变更在 `0.x` 阶段递增次版本并明确记录迁移要求；稳定的兼容性承诺从 `1.0.0` 开始。进入 `1.x` 后，破坏兼容的变更递增主版本。参见 [Semantic Versioning 2.0.0](https://semver.org/lang/zh-CN/)。
 
 已有版本记录和 Git 标签不追溯重编号。尚未发布的变更先记录在双语 Changelog 的“未发布 / Unreleased”章节，确定版本后移入对应版本章节。发布时同步 `Cargo.lock`、双语 README 徽章和双语 Changelog；CI 验证版本一致性，发布标签必须为 `<应用版本>` 或 `v<应用版本>`。
+
+构建环境统一：CI 使用 `windows-2022`，本地与 CI 共用 `rust-toolchain.toml` 和固定的 Inno Setup 6.7.3。`build.json` 记录 Rust、Cargo 及 CI runner 版本。Windows SDK、链接器、时间戳和构建路径仍可能造成二进制差异；校验值不同本身不代表文件被篡改。

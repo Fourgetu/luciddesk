@@ -2,19 +2,25 @@ name: Build CI
 on:
   push:
     tags: ['**']
+    branches: ['codex/ci-compare-*']
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust
         shell: pwsh
         run: |
-          rustup toolchain install 1.95.0 --profile minimal
-          if ($LASTEXITCODE -ne 0) { throw 'Rust installation failed.' }
-          rustup override set 1.95.0
+          $toolchain = Get-Content rust-toolchain.toml -Raw
+          $channel = [regex]::Match($toolchain, 'channel\s*=\s*"([^"]+)"').Groups[1].Value
+          if (-not $channel) { throw 'Missing pinned Rust version.' }
+          rustup toolchain install $channel --profile minimal
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned Rust toolchain installation failed.' }
+          rustc -vV
+          cargo -V
       - name: Validate release tag
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
