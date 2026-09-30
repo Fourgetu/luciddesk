@@ -319,13 +319,11 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), S
     if luciddesk_desktop::desktop_view()? != view {
         return Err(crate::i18n::text("ui-desktop-view-changed-while-reading-reconnecting").into());
     }
-    let hook_dll = std::env::current_exe()
-        .map_err(|error| error.to_string())?
-        .with_file_name("luciddesk_desktop.dll");
+    let hook_dll = crate::desktop_component::prepare()?;
     let hook = FilterSession::connect(
         view,
         controller.hwnd() as isize,
-        &hook_dll,
+        &hook_dll.path,
     )?;
     let (sender, receiver) = mpsc::channel();
     let session = Session {

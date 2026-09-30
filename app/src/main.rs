@@ -1,6 +1,7 @@
 #![windows_subsystem = "windows"]
 
 mod app_icon;
+mod desktop_component;
 mod diagnostics;
 mod i18n;
 mod pane;
@@ -131,7 +132,7 @@ fn default_data_directory(root: &std::path::Path) -> PathBuf {
 }
 
 fn portable_data_directory(executable_directory: &std::path::Path) -> Option<PathBuf> {
-    executable_directory.join("portable.marker").is_file()
+    executable_directory.join("portable").is_file()
         .then(|| executable_directory.join("data"))
 }
 
@@ -142,7 +143,7 @@ mod tests {
     fn portable_data_stays_beside_executable_only_when_enabled() {
         let root = tempfile::tempdir().unwrap();
         assert_eq!(portable_data_directory(root.path()), None);
-        std::fs::write(root.path().join("portable.marker"), "").unwrap();
+        std::fs::write(root.path().join("portable"), "").unwrap();
         assert_eq!(portable_data_directory(root.path()), Some(root.path().join("data")));
         assert!(!root.path().join("data").exists());
     }

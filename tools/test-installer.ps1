@@ -93,7 +93,7 @@ try {
     if ((Run-Setup $current -UsePreviousDirectory) -ne 0) { throw 'In-place upgrade failed.' }
     if ((Get-ItemProperty -LiteralPath $uninstallKey).DisplayVersion -ne $currentVersion) { throw 'Upgrade registry version is incorrect.' }
     if ((Get-FileHash -LiteralPath (Join-Path $installed 'luciddesk.exe')).Hash -ne (Get-FileHash -LiteralPath (Join-Path $SourcePath 'luciddesk.exe')).Hash) { throw 'Upgrade did not replace app.' }
-    if (-not (Test-Path -LiteralPath (Join-Path $installed 'installed.marker'))) { throw 'Installation marker missing.' }
+    if (-not (Test-Path -LiteralPath (Join-Path $installed 'installed'))) { throw 'Installation marker missing.' }
     if ((Run-Setup $older) -eq 0) { throw 'Downgrade was incorrectly accepted.' }
     $mutex = [Threading.Mutex]::new($false, $mutexName)
     if ((Run-Setup $current) -eq 0) { throw 'Running-app mutex did not block update.' }
@@ -206,9 +206,9 @@ public static class InstallerImageLock {
             if ((Run-Setup $current) -ne 0) { throw 'Reinstall after the automatic uninstall test failed.' }
         }
     }
-    'portable' | Set-Content -LiteralPath (Join-Path $installed 'portable.marker') -Encoding ASCII
+    'portable' | Set-Content -LiteralPath (Join-Path $installed 'portable') -Encoding ASCII
     if ((Run-Setup $current) -eq 0) { throw 'Portable directory was incorrectly converted.' }
-    Remove-Item -LiteralPath (Join-Path $installed 'portable.marker')
+    Remove-Item -LiteralPath (Join-Path $installed 'portable')
     if ((Run-Setup $current -CreateIcons -ExtraArguments @('/TASKS=desktopicon')) -ne 0) { throw 'Shortcut installation failed.' }
     $nativePrograms = if ($AllUsers) { [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonPrograms) } else { $programsBase }
     $nativeDesktop = if ($AllUsers) { [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonDesktopDirectory) } else { $desktopBase }

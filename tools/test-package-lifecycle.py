@@ -79,7 +79,7 @@ def unload_test(args, root, checks):
     directory.mkdir()
     for name in ["luciddesk.exe", "luciddesk_desktop.dll"]:
         shutil.copy2(args.source / name, directory / name)
-    (directory / "portable.marker").write_text("portable")
+    (directory / "portable").write_text("portable")
     process = None
     try:
         for cycle in range(10):
@@ -207,7 +207,7 @@ def installer(args, root, checks):
     old = root / "old-stage"
     extract(args.old_zip, old)
     assert verify_payload(old)["version"] == "0.13.0"
-    (old / "portable.marker").unlink()
+    (old / "portable.marker").unlink()  # Historical 0.13.0 archive.
     output = root / "old-installer"
     subprocess.run([str(ROOT / "target/tooling/inno-6.7.3/ISCC.exe"), "/Q", "/DAppVersion=0.13.0",
                     f"/DSourcePath={old}", f"/DOutputPath={output}", str(ROOT / "installer/LucidDesk.iss")], check=True)
@@ -220,7 +220,7 @@ def installer(args, root, checks):
                          ("/TASKS=desktopicon", f"/DIR={directory}")) == 0
         assert installed_version() == "0.13.0"
         assert all(p.exists() for p in shortcuts)
-        assert (directory / "installed.marker").exists() and not (directory / "portable.marker").exists()
+        assert (directory / "installed").exists() and not (directory / "portable").exists()
         checks.append("Actual per-user installation, registry, Start Menu and desktop shortcuts")
         process = launch(directory, data, title)
         explorer_pid, modules = explorer_modules()
@@ -290,7 +290,7 @@ def portable(args, root, checks):
         verify_unloaded(directory, explorer_pid)
         extract(package, directory)
         assert verify_payload(directory)["version"] == "0.14.0"
-        assert (directory / "portable.marker").exists() and not (directory / "installed.marker").exists()
+        assert (directory / "portable").exists() and not (directory / "installed").exists()
         assert installed_version() is None
         verify_data(data, title, config_hash)
         process = launch(directory)

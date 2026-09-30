@@ -48,7 +48,7 @@ try {
     $readme = if ($Portable) { 'docs\portable.md' } else { 'docs\package.md' }
     Copy-Item -LiteralPath (Join-Path $repoRoot $readme) -Destination (Join-Path $stage 'README.md')
     if ($Portable) {
-        'LucidDesk portable mode: store configuration in ./data.' | Set-Content -LiteralPath (Join-Path $stage 'portable.marker') -Encoding ASCII
+        'LucidDesk portable mode: store configuration in ./data.' | Set-Content -LiteralPath (Join-Path $stage 'portable') -Encoding ASCII
     }
     if ($RenderDiagnostics) {
         Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'render-diagnostics') -File | ForEach-Object {

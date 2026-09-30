@@ -72,11 +72,11 @@ Name: "chinesesimplified"; MessagesFile: "ChineseSimplified.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "{#SourcePath}\*"; DestDir: "{app}"; Flags: ignoreversion; Excludes: "portable.marker,README.md,luciddesk_desktop.dll,luciddesk.exe"
+Source: "{#SourcePath}\*"; DestDir: "{app}"; Flags: ignoreversion; Excludes: "portable,msix,README.md,luciddesk_desktop.dll,luciddesk.exe"
 Source: "{#SourcePath}\luciddesk.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourcePath}\luciddesk_desktop.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\docs\installer.md"; DestDir: "{app}"; DestName: "README.md"; Flags: ignoreversion
-Source: "installed.marker"; DestDir: "{app}"; Flags: ignoreversion
+Source: "installed"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 ; Keep this stable across upgrades and in sync with app/src/main.rs.
@@ -384,7 +384,7 @@ var
   Declined: Boolean;
 begin
   Result := '';
-  if FileExists(ExpandConstant('{app}\portable.marker')) then begin
+  if FileExists(ExpandConstant('{app}\portable')) then begin
     Result := CustomMessage('PortableDirectory');
     Exit;
   end;
