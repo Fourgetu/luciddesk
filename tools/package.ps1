@@ -61,6 +61,9 @@ try {
         Copy-Item -LiteralPath (Join-Path $repoRoot "docs\$guide") -Destination (Join-Path $stage $guide)
     }
     Copy-Item -LiteralPath (Join-Path $repoRoot 'LICENSE') -Destination (Join-Path $stage 'LICENSE')
+    foreach ($policy in @('PRIVACY.md', 'PRIVACY.en.md')) {
+        Copy-Item -LiteralPath (Join-Path $repoRoot $policy) -Destination $stage
+    }
     foreach ($changelog in @('CHANGELOG.md', 'CHANGELOG.en.md')) {
         Copy-Item -LiteralPath (Join-Path $repoRoot $changelog) -Destination (Join-Path $stage $changelog)
     }
