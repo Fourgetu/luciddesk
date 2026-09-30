@@ -873,10 +873,13 @@ pub(super) fn next_work(s: &PaneApp) -> Option<u32> {
         .chain(h.audit.remaining(h.last_reconcile.elapsed()).map(|delay| now + delay))
         .chain(h.image_retention.deadline())
         .chain(
-            h.icon_failures
-                .iter()
-                .filter(|(key, (attempts, _))| *attempts < 5 && !h.requested.contains(*key))
-                .map(|(_, (_, due))| *due),
+            icons::retry_deadline(
+                h.initial_batches != 0 || h.icon_reload.is_some(),
+                h.last_icon_scan,
+                &s.images,
+                &h.requested,
+                &h.icon_failures,
+            ),
         )
         .min()
         .map(|due| {

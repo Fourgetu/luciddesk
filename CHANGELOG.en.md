@@ -2,9 +2,20 @@
 
 [简体中文](CHANGELOG.md) · English
 
-Current version: **0.16.1**. Features and fixes by release.
+Current version: **0.16.2**. Features and fixes by release.
 
 Exit the app before upgrading a portable installation and preserve its `data` folder. See the [portable guide](docs/portable.md) (Chinese).
+
+## 0.16.2 · 2026-10-01
+
+### fix
+
+- Fix icons dragged into a pane remaining as placeholders with their desktop originals still visible during background refresh. Resume pending icon loads when the refresh finishes, even if its pixels have not changed.
+
+### perf
+
+- Clear previous loading failures after a successful icon refresh to prevent repeated retry wakeups.
+- Suspend ineffective retry timers while a load or refresh is running, resume processing on completion, and respect the icon scan interval when scheduling retries.
 
 ## 0.16.1 · 2026-10-01
 

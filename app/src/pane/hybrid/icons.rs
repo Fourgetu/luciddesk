@@ -171,6 +171,39 @@ fn refresh_retry_delay(failures: &mut u32) -> Duration {
     Duration::from_secs(1 << *failures)
 }
 
+fn apply_refreshed_images(
+    workspace: &Workspace,
+    images: &mut HashMap<String, Arc<assets::Pixels>>,
+    failures: &mut HashMap<String, (u32, Instant)>,
+    loaded: Vec<(String, assets::Pixels)>,
+) -> bool {
+    let changed = apply_pane_images(workspace, images, loaded);
+    // A refresh can recover a failed initial load, including unchanged pixels.
+    failures.retain(|key, _| !images.contains_key(key));
+    changed
+}
+
+pub(super) fn retry_deadline(
+    busy: bool,
+    last_scan: Instant,
+    images: &HashMap<String, Arc<assets::Pixels>>,
+    requested: &HashSet<String>,
+    failures: &HashMap<String, (u32, Instant)>,
+) -> Option<Instant> {
+    // Completion wakes the supervisor and resumes work; timers cannot make
+    // progress while another batch or refresh owns the loading slot.
+    if busy {
+        return None;
+    }
+    failures
+        .iter()
+        .filter(|(key, (attempts, _))| {
+            *attempts < 5 && !images.contains_key(*key) && !requested.contains(*key)
+        })
+        .map(|(_, (_, due))| (*due).max(last_scan + Duration::from_millis(250)))
+        .min()
+}
+
 fn refresh_changed_icons(s: &mut PaneApp) -> bool {
     let h = s.session.as_mut().unwrap();
     if !h.icons_dirty.borrow().is_empty() {
@@ -180,10 +213,13 @@ fn refresh_changed_icons(s: &mut PaneApp) -> bool {
         }
     }
     let completed = h.icon_reload.as_ref().and_then(RefreshJob::poll);
+    let finished = completed.is_some();
     let mut changed = false;
     if let Some(result) = completed {
         h.icon_reload = None;
-        changed = apply_pane_images(&s.workspace, &mut s.images, result.images);
+        changed = apply_refreshed_images(
+            &s.workspace, &mut s.images, &mut h.icon_failures, result.images,
+        );
         if result.retry.is_empty() {
             h.icon_refresh_failures = 0;
         } else {
@@ -243,7 +279,10 @@ fn refresh_changed_icons(s: &mut PaneApp) -> bool {
     if changed {
         refresh_views(s);
     }
-    changed
+    // Collection may have queued missing icons while this worker held the slot.
+    // Even identical pixels (or worker failure) must trigger sync so it resumes
+    // those loads immediately, bypassing the normal icon-scan throttle.
+    changed || finished
 }
 
 const ICON_BATCH_SIZE: usize = 32;

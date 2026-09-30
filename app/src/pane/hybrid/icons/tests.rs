@@ -162,6 +162,7 @@ fn released_images_are_freed_and_late_results_cannot_restore_them() {
             let mut image = pixels();
             // Distinct content isolates eviction from live-image sharing.
             image.data[0] = index as u8;
+            image.data[1] = 73; // Isolate eviction from other parallel pixel-pool tests.
             (key.clone(), image)
         }).collect()
     ));
@@ -210,4 +211,63 @@ fn released_images_are_freed_and_late_results_cannot_restore_them() {
         keys.into_iter().map(|key| (key, pixels())).collect()
     ));
     assert!(s.images.is_empty());
+}
+
+#[test]
+fn refresh_recovery_clears_initial_failures_and_stops_retry_timer() {
+    let mut s = crate::pane::tests::test_state();
+    let keys: Vec<_> = s.workspace.desktop_items().iter()
+        .map(|item| item.identity().persistent_key()).collect();
+    let now = Instant::now();
+    let mut failures = HashMap::from([
+        (keys[0].clone(), (1, now)),
+        (keys[1].clone(), (2, now)),
+    ]);
+    assert!(apply_refreshed_images(&s.workspace, &mut s.images, &mut failures,
+        vec![(keys[0].clone(), pixels())]));
+    assert!(!failures.contains_key(&keys[0]));
+    assert!(failures.contains_key(&keys[1]), "keep unsuccessful retries");
+
+    // Identical pixels must clear stale failure state as well.
+    failures.insert(keys[0].clone(), (1, now));
+    assert!(!apply_refreshed_images(&s.workspace, &mut s.images, &mut failures,
+        vec![(keys[0].clone(), pixels())]));
+    assert!(!failures.contains_key(&keys[0]));
+    assert!(apply_refreshed_images(&s.workspace, &mut s.images, &mut failures,
+        vec![(keys[1].clone(), pixels())]));
+    assert!(failures.is_empty());
+    assert_eq!(retry_deadline(false, now, &s.images, &HashSet::new(), &failures), None);
+}
+
+#[test]
+fn busy_loader_defers_retry_timer_but_completion_resumes_missing_icons() {
+    let s = crate::pane::tests::test_state();
+    let identity = s.workspace.desktop_items()[0].identity();
+    let now = Instant::now();
+    let failures = HashMap::from([(identity.persistent_key(), (1, now))]);
+    let last_scan = now - Duration::from_secs(1);
+    let mut requested = HashSet::new();
+    assert_eq!(retry_deadline(true, last_scan, &s.images, &requested, &failures), None);
+    assert_eq!(retry_deadline(false, last_scan, &s.images, &requested, &failures), Some(now));
+    let queued = collect_icon_requests(&s.workspace, &s.images, &mut requested, &failures);
+    assert!(queued.contains(identity));
+    assert_eq!(retry_deadline(false, last_scan, &s.images, &requested, &failures), None);
+}
+
+#[test]
+fn retry_timer_ignores_cached_and_exhausted_items_and_respects_scan_throttle() {
+    let now = Instant::now();
+    let images = HashMap::from([("cached".into(), Arc::new(pixels()))]);
+    let mut failures = HashMap::from([
+        ("cached".into(), (1, now)),
+        ("exhausted".into(), (5, now)),
+    ]);
+    let requested = HashSet::new();
+    assert_eq!(retry_deadline(false, now, &images, &requested, &failures), None);
+    failures.insert("missing".into(), (1, now));
+    assert_eq!(retry_deadline(false, now, &images, &requested, &failures),
+        Some(now + Duration::from_millis(250)));
+    failures.insert("missing".into(), (1, now + Duration::from_secs(2)));
+    assert_eq!(retry_deadline(false, now, &images, &requested, &failures),
+        Some(now + Duration::from_secs(2)));
 }
