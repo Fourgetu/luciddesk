@@ -79,8 +79,9 @@ Source: "..\docs\installer.md"; DestDir: "{app}"; DestName: "README.md"; Flags: 
 Source: "installed.marker"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\{#ProductName}"; Filename: "{app}\luciddesk.exe"; WorkingDir: "{app}"
-Name: "{autodesktop}\{#ProductName}"; Filename: "{app}\luciddesk.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+; Keep this stable across upgrades and in sync with app/src/main.rs.
+Name: "{autoprograms}\{#ProductName}"; Filename: "{app}\luciddesk.exe"; WorkingDir: "{app}"; AppUserModelID: "Yuchen95.LucidDesk"
+Name: "{autodesktop}\{#ProductName}"; Filename: "{app}\luciddesk.exe"; WorkingDir: "{app}"; AppUserModelID: "Yuchen95.LucidDesk"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\luciddesk.exe"; Description: "{cm:LaunchProgram,LucidDesk}"; Flags: nowait postinstall skipifsilent runasoriginaluser
@@ -118,6 +119,8 @@ chinesesimplified.UserDataDeleteFailed=LucidDesk 已卸载，但部分用户配�
 [Code]
 var
   DeleteUserData: Boolean;
+
+#include "shortcut-cleanup.iss"
 
 function UserDataDirectory(Name: String): String;
 var
@@ -427,6 +430,8 @@ var
   Target, Failed: String;
 begin
   if CurUninstallStep = usAppMutexCheck then DeinitializeUninstall;
+  if CurUninstallStep = usUninstall then CollectUninstallShortcuts;
+  if CurUninstallStep = usPostUninstall then CleanupUninstallShortcuts;
   // Run only after the user confirmed the uninstall and application removal completed.
   if (CurUninstallStep <> usPostUninstall) or not DeleteUserData then Exit;
   Failed := '';

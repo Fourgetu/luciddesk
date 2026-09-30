@@ -27,6 +27,14 @@ fn main() -> Result<(), String> {
     }
     let arguments: Vec<_> = std::env::args_os().skip(1).collect();
     let _apartment = ShellApartment::initialize_sta().map_err(|e| e.to_string())?;
+    // Match the installer shortcuts; keep independent of version and install path.
+    // Set before creating any UI, including when launched directly from the EXE.
+    unsafe {
+        windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID(
+            windows::core::w!("Yuchen95.LucidDesk"),
+        )
+    }
+    .map_err(|error| format!("failed to set application identity: {error}"))?;
     let title = parse_options(arguments)?;
     let Some(_instance) = Instance::acquire()? else {
         return Ok(());

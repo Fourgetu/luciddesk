@@ -40,16 +40,21 @@ $unrelatedData = Join-Path $testRoot 'unrelated-data'
 $uninstaller = Join-Path $installed 'unins000.exe'
 $mutex = $null
 $probeProcess = $null
+$programsBase = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
+$desktopBase = [Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)
+$shortcutFixture = Join-Path $programsBase $fixtureName
+$desktopFixtureLink = Join-Path $desktopBase "$fixtureName renamed.lnk"
 function Compile-Fixture([string]$Version) {
     $output = Join-Path $testRoot $Version
     & $InnoCompiler /Q "/DAppVersion=$Version" "/DSourcePath=$SourcePath" "/DOutputPath=$output" "/DProductId={{$fixtureId}" "/DProductName=$fixtureName" "/DAppMutexName=$mutexName" "/DAppWindowClass=$windowClass" "/DAppWindowName=$windowName" "/DUserDataFolderName=$userDataName" "/DLegacyUserDataFolderName=$legacyDataName" /DShutdownTimeout=1000 (Join-Path $repo 'installer/LucidDesk.iss')
     if ($LASTEXITCODE -ne 0) { throw "Fixture compilation failed for $Version" }
     Join-Path $output "LucidDesk-$Version-windows-x64-setup.exe"
 }
-function Run-Setup([string]$Path, [string[]]$ExtraArguments = @(), [switch]$UsePreviousDirectory) {
+function Run-Setup([string]$Path, [string[]]$ExtraArguments = @(), [switch]$UsePreviousDirectory, [switch]$CreateIcons) {
     $log = Join-Path $testRoot "$([IO.Path]::GetFileNameWithoutExtension($Path))-$([guid]::NewGuid()).log"
     $mode = if ($AllUsers) { '/ALLUSERS' } else { '/CURRENTUSER' }
-    $arguments = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOICONS', $mode, "/LOG=`"$log`"")
+    $arguments = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', $mode, "/LOG=`"$log`"")
+    if (-not $CreateIcons) { $arguments += '/NOICONS' }
     if (-not $UsePreviousDirectory) { $arguments += "/DIR=`"$installed`"" }
     $arguments += $ExtraArguments
     $process = Start-Process -FilePath $Path -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru
@@ -204,8 +209,39 @@ public static class InstallerImageLock {
     'portable' | Set-Content -LiteralPath (Join-Path $installed 'portable.marker') -Encoding ASCII
     if ((Run-Setup $current) -eq 0) { throw 'Portable directory was incorrectly converted.' }
     Remove-Item -LiteralPath (Join-Path $installed 'portable.marker')
-    $process = Start-Process -FilePath $uninstaller -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') -WindowStyle Hidden -Wait -PassThru
-    if ($process.ExitCode -ne 0) { throw 'Uninstall failed.' }
+    if ((Run-Setup $current -CreateIcons -ExtraArguments @('/TASKS=desktopicon')) -ne 0) { throw 'Shortcut installation failed.' }
+    $nativePrograms = if ($AllUsers) { [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonPrograms) } else { $programsBase }
+    $nativeDesktop = if ($AllUsers) { [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonDesktopDirectory) } else { $desktopBase }
+    $nativeLinks = @((Join-Path $nativePrograms "$fixtureName.lnk"), (Join-Path $nativeDesktop "$fixtureName.lnk"))
+    $shellProperties = New-Object -ComObject Shell.Application
+    foreach ($link in $nativeLinks) {
+        if (-not (Test-Path -LiteralPath $link)) { throw 'Native installer shortcut missing.' }
+        $folder = $shellProperties.Namespace([IO.Path]::GetDirectoryName($link))
+        $item = $folder.ParseName([IO.Path]::GetFileName($link))
+        if ($item.ExtendedProperty('System.AppUserModel.ID') -cne 'Yuchen95.LucidDesk') {
+            throw "Installer shortcut has an incorrect AppUserModelID: $link"
+        }
+    }
+    New-Item -ItemType Directory -Path (Join-Path $shortcutFixture 'nested') -Force | Out-Null
+    $outsideShortcuts = Join-Path $testRoot 'outside-shortcuts'
+    New-Item -ItemType Directory -Path $outsideShortcuts | Out-Null
+    $shortcutShell = New-Object -ComObject WScript.Shell
+    $ownedLinks = @((Join-Path $shortcutFixture 'nested/renamed.lnk'), (Join-Path $shortcutFixture 'legacy.lnk'), $desktopFixtureLink)
+    $preservedLinks = @((Join-Path $shortcutFixture 'other-install.lnk'), (Join-Path $shortcutFixture 'unrelated.lnk'), (Join-Path $outsideShortcuts 'outside.lnk'))
+    $linkTargets = @((Join-Path $installed 'luciddesk.exe'), (Join-Path $installed 'lucidpane.exe'), (Join-Path $installed 'luciddesk.exe'), (Join-Path $SourcePath 'luciddesk.exe'), (Join-Path $env:WINDIR 'notepad.exe'), (Join-Path $installed 'luciddesk.exe'))
+    $fixtureLinks = $ownedLinks + $preservedLinks
+    for ($index = 0; $index -lt $fixtureLinks.Count; $index++) {
+        $shortcut = $shortcutShell.CreateShortcut($fixtureLinks[$index]); $shortcut.TargetPath = $linkTargets[$index]; $shortcut.Save()
+    }
+    $preservedHashes = @($preservedLinks | ForEach-Object { (Get-FileHash -LiteralPath $_).Hash })
+    New-Item -ItemType Junction -Path (Join-Path $shortcutFixture 'external') -Target $outsideShortcuts | Out-Null
+    if ((Run-Uninstall) -ne 0) { throw 'Uninstall failed.' }
+    foreach ($link in ($nativeLinks + $ownedLinks)) { if (Test-Path -LiteralPath $link) { throw "Uninstall left owned shortcut: $link" } }
+    for ($index = 0; $index -lt $preservedLinks.Count; $index++) {
+        if ((Get-FileHash -LiteralPath $preservedLinks[$index]).Hash -ne $preservedHashes[$index]) { throw 'Shortcut cleanup changed unrelated or junction-target links.' }
+    }
+    $lastUninstallLog = Get-ChildItem -LiteralPath $testRoot -Filter 'uninstall-*.log' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ((Get-Content -LiteralPath $lastUninstallLog.FullName -Raw) -notmatch 'Shell shortcut and AppsFolder refresh notifications sent') { throw 'Shell refresh was not performed.' }
     if (Test-Path -LiteralPath (Join-Path $installed 'luciddesk.exe')) { throw 'Uninstall left the application behind.' }
     if (Test-Path -LiteralPath $uninstallKey) { throw 'Uninstall left its registry entry behind.' }
     if ((Get-Content -LiteralPath (Join-Path $data 'keep.txt') -Raw).Trim() -ne 'retain configuration') { throw 'Uninstall removed user data.' }
@@ -221,7 +257,7 @@ public static class InstallerImageLock {
     if ((Get-Content -LiteralPath (Join-Path $unrelatedData 'keep.txt') -Raw).Trim() -ne 'retain unrelated file') { throw 'Settings cleanup followed a junction into unrelated files.' }
     if ((Get-Content -LiteralPath (Join-Path $data 'keep.txt') -Raw).Trim() -ne 'retain configuration') { throw 'Settings cleanup removed a custom data directory.' }
     $scope = if ($AllUsers) { 'All users in Program Files (HKLM)' } else { 'Current user (HKCU)' }
-    Write-Output "$scope verified: install/upgrade and uninstall with normal auto-close, running/mapped-DLL guards, keep-settings default and precedence, explicit removal of current/legacy settings, junction target and custom data preserved."
+    Write-Output "$scope verified: install/upgrade and uninstall with normal auto-close, running/mapped-DLL guards, settings options; native/renamed/nested/legacy shortcuts removed, unrelated/other-install/junction shortcuts preserved, Shell and AppsFolder notified."
 } finally {
     if ($probeProcess -and -not $probeProcess.HasExited) {
         Stop-Process -Id $probeProcess.Id -Force
@@ -230,5 +266,12 @@ public static class InstallerImageLock {
     if ($mutex) { $mutex.Dispose() }
     if (Test-Path -LiteralPath $uninstaller) {
         $null = Start-Process -FilePath $uninstaller -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') -WindowStyle Hidden -Wait -PassThru
+    }
+    if (Test-Path -LiteralPath $desktopFixtureLink) { Remove-Item -LiteralPath $desktopFixtureLink }
+    if (Test-Path -LiteralPath $shortcutFixture) {
+        if ([IO.Path]::GetFullPath($shortcutFixture) -ne [IO.Path]::GetFullPath((Join-Path $programsBase $fixtureName))) { throw 'Unsafe shortcut fixture cleanup path.' }
+        $junction = Join-Path $shortcutFixture 'external'
+        if (Test-Path -LiteralPath $junction) { Remove-Item -LiteralPath $junction }
+        Remove-Item -LiteralPath $shortcutFixture -Recurse -Force
     }
 }

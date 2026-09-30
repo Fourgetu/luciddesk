@@ -76,6 +76,10 @@ cargo build -p luciddesk -p desktop-hook --locked --offline --target-dir target\
 
 安装包位于 `target\installers\版本-修订-时间戳`。安装器支持当前用户或所有用户安装，后者申请管理员权限并默认安装到 Program Files；快捷方式与卸载注册分别使用对应范围。固定 AppId，升级沿用原安装范围和目录，确认后请求应用正常退出并等待进程结束，阻止降级并保留用户数据。无响应时停止安装；`/NOCLOSEAPPLICATIONS` 禁用自动关闭。中文语言文件来自 Inno Setup 官方仓库 `is-6_7_3/Files/Languages/Unofficial/ChineseSimplified.isl`，保留文件中的译者署名。
 
+从 0.15.1 起，`installer/LucidDesk.iss` 的两项 `[Icons]` 与 `app/src/main.rs` 在创建 UI 前设置的 AppUserModelID 统一为 `Yuchen95.LucidDesk`，不加入版本号或安装路径。修改应用身份时必须同步这两处；Inno Setup AppId 继续用于安装升级识别。`[Icons]` 创建的快捷方式由 Inno 原生卸载记录清理，`shortcut-cleanup.iss` 补充按目标路径清理改名、复制的快捷方式并通知 Shell 刷新，不修改 Windows AppListBackup。
+
+安装器回归测试读取开始菜单和桌面 `.lnk` 的 `System.AppUserModel.ID` 属性，验证固定应用身份，并检查额外快捷方式清理及目录联接保护。
+
 关于页仅支持手动检查新版本与打开 Release 页面。检查使用后台 WinHTTP 请求 GitHub Releases API，支持 Windows 代理和显式 `HTTPS_PROXY` HTTP 代理，并比较稳定版本号（标签可有 `v` 前缀）。更新包由用户在浏览器中自行下载。
 
 验证命令（安装器测试使用随机测试 AppId、快捷方式名称和工作区临时目录，安装与卸载自己的测试注册项）：

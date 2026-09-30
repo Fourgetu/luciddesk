@@ -12,7 +12,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Build CI](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml/badge.svg)](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml)
-[![版本](https://img.shields.io/badge/version-0.15.0-087EA4?style=flat-square)](CHANGELOG.md)
+[![版本](https://img.shields.io/badge/version-0.15.1-087EA4?style=flat-square)](CHANGELOG.md)
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square)](#系统与兼容性)
 [![架构](https://img.shields.io/badge/arch-x64-475569?style=flat-square)](docs/portable.md)
 
@@ -105,6 +105,8 @@ LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。将零散图标�
 | 便携版 | 退出程序，替换程序文件，保留 `data` 和 `portable.marker` |
 
 EXE 与 DLL 必须来自同次构建。安装版卸载时默认勾选“保留用户配置”；取消勾选才会删除当前账户的默认设置、布局和备份。详见[安装说明](docs/installer.md)。
+
+安装版的开始菜单、桌面快捷方式与应用进程使用一致的 Windows 应用身份。卸载会清理指向本安装的快捷方式，并通知系统刷新应用列表；Windows 的应用备份记录可能仍然保留。
 
 在“设置 → 备份与恢复”中可以打开配置目录、导出配置或恢复备份。备份只包含设置与布局，**不包含面板引用的原文件**；复制便携目录时，原文件也不会自动跟随。
 

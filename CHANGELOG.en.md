@@ -2,9 +2,21 @@
 
 [简体中文](CHANGELOG.md) · English
 
-Current version: **0.15.0**. Features and fixes by release.
+Current version: **0.15.1**. Features and fixes by release.
 
 Exit the app before upgrading a portable installation and preserve its `data` folder. See the [portable guide](docs/portable.md) (Chinese).
+
+## 0.15.1 · 2026-09-30
+
+### fix
+
+- Assign the same stable Windows AppUserModelID to Start menu shortcuts, desktop shortcuts and the application process, independent of version and installation path.
+- Remove renamed, copied and legacy-name shortcuts targeting this installation during uninstall, preserving links to other installations and applications without traversing directory junctions.
+- Notify Windows Shell to refresh shortcut directories and the AppsFolder application list after uninstall.
+
+### docs
+
+- Update both READMEs and the installer and build guides to distinguish the installer AppId, Windows application identity and system backup records, and document shortcut property checks.
 
 ## 0.15.0 · 2026-09-30
 
