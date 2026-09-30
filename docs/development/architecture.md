@@ -1,97 +1,137 @@
 # 架构说明
 
-当前应用使用视图成员过滤后端，Pane 图标保持自绘。Windows 11 x64 为优先维护平台，Windows 10 已由用户完成实机验证。
+LucidDesk 由主程序 `luciddesk.exe` 和桌面组件 `luciddesk_desktop.dll` 协作完成桌面整理。主程序维护面板、配置与交互；桌面组件在 Explorer 内过滤已收纳项目，并提供桌面集成能力。收纳只改变项目的显示归属，不移动文件，也不切换系统自动排列设置。
 
-## 系统分工
+本文说明当前运行架构与关键约束。完整文件清单见[目录结构](structure.md)，构建入口见[构建与验证](build.md)。
 
-Explorer 负责未收纳图标的绘制、排列、命中和原生交互。LucidDesk 使用独立窗口绘制分组内容。过滤 Hook 在 Explorer 桌面线程内调用 `IShellFolderView::RemoveObject`，将已收纳项目从视图集合移除；开启系统自动排列时，由 Explorer 补位。
+## 进程与线程分工
 
-收纳不移动文件，不切换系统自动排列设置。原生排列会更新实际视图位置；恢复时在用户没有改变布局的前提下，按原视图顺序恢复基线坐标。完整身份与分组状态由控制端维护，Hook 接收有大小边界的 Shell 解析名集合。
+```mermaid
+flowchart LR
+    subgraph App["luciddesk.exe"]
+        UI["UI STA：PaneApp、面板、设置、托盘"]
+        Workers["后台任务：清单、图标、目录与搜索"]
+        Session["FilterSession 控制端"]
+        UI <-->|"请求与结果通知"| Workers
+        UI --> Session
+    end
+    Store["config.toml / workspace.db"]
+    UI <--> Store
+    subgraph Explorer["explorer.exe"]
+        Desktop["桌面 STA：成员过滤、恢复、输入通知"]
+        Menu["独立菜单 STA：Shell 宿主与命令"]
+    end
+    Session <-->|"成员协议、确认与通知"| Desktop
+    Session <-->|"菜单事务"| Menu
+```
 
-Win11 文件精简菜单由 Explorer 内的独立 Shell 宿主提供文件身份、菜单服务和普通命令执行。该宿主窗口区域为空，不显示图标，也不是完整 Explorer 文件窗口。Pane 保留自身绘制、选择和重命名输入；菜单 rename 动词通过动态编号识别后返回 Pane。命令转发、线程生命周期及实测边界见 [精简菜单技术文档](../win11-compact-menu-command-routing.md)。
+图中连线表示运行时协作，不是 crate 依赖图。
+
+| 执行位置 | 负责的状态与操作 | 边界 |
+| --- | --- | --- |
+| 主程序 UI STA | `PaneApp`、工作区、窗口模型、选择、布局、绘制与存储操作 | `Rc<RefCell<PaneApp>>` 留在所属线程；调用可能重入窗口消息的操作前释放可变借用 |
+| 主程序后台任务 | Shell 清单审计、图标加载、目录与搜索结果 | 通过请求、结果和唤醒通知交接；Shell/COM 对象在所属线程使用，UI 接收前校验结果是否过时 |
+| Explorer 桌面 STA | 原生桌面视图、过滤名单应用、成员恢复与输入通知 | 由桌面组件执行视图操作；不维护完整工作区和应用配置 |
+| Explorer 菜单 STA | 独立 Shell 宿主、原生命令与菜单生命周期 | 普通命令由 Shell 执行；重命名动词返回主程序，输入仍由面板负责 |
+
+Explorer 继续负责未收纳图标的绘制、排列、命中和原生交互。桌面组件调用 `IShellFolderView::RemoveObject` 将已收纳项目从视图集合移除；开启系统自动排列时，由 Explorer 补位。主程序使用独立窗口自绘面板内容。
+
+菜单宿主的窗口区域为空，不显示图标。文件身份、命令转发与释放规则见[精简菜单技术文档](../win11-compact-menu-command-routing.md)。
 
 ## 模块职责
 
 | 模块 | 职责 |
 | --- | --- |
-| `app/src/main.rs` | 参数解析、DPI/STA 初始化、配置路径与启动错误 |
-| `app/src/desktop_component.rs` | 桌面 DLL 路径选择、MSIX 缓存部署、内容校验与清理 |
-| `app/src/pane/hybrid.rs` | Hook 生命周期、桌面输入、清单结果核验与同步顺序 |
-| `app/src/pane/hybrid/audit.rs`、`icons.rs` | 后台审计通道与在途请求、图标批次加载和刷新 |
-| `app/src/pane/runtime.rs`、`display_layout.rs` | 连接重试、窗口恢复、显示器布局切换与自动备份调度 |
-| `app/src/pane/folder.rs`、`search/hotkey.rs` | 文件夹监听和导航排序、全局搜索快捷键生命周期 |
-| `app/src/pane/search/` | 搜索窗口、Everything 查询与配置、快捷键和测试 |
-| `app/src/pane/drag_drop/` | 拖放注册、拖动预览和临时描述 |
-| `app/src/pane/recovery.rs` | 配置导出和恢复入口 |
-| `app/src/pane/mod.rs`、`model.rs`、`events.rs` | 分组集合、布局、选择、操作与保存 |
-| `app/src/pane/window.rs`、`render.rs`、`settings*.rs` | 分组窗口、绘制、设置与输入 |
-| `app/src/tray.rs` | 通知区域入口及托盘资源生命周期 |
-| `desktop-core` | Shell 身份、成员位置与工作区模型 |
-| `desktop-storage` | 当前数据库格式、读取和事务式保存 |
-| `desktop-shell` | Shell 快照、通知、菜单、重命名和 OLE 项目解析 |
-| `desktop-hook` | DLL 引导、成员过滤与恢复、协议校验和控制端存活监测 |
-| `desktop-graphics` | 工具生成的 DWM/DComp 绑定及合成内容层 |
-| `desktop-window` | 显示器枚举与错误提示 |
+| `app/src/main.rs` | 安装器预检、DPI/COM、AppUserModelID、单实例、参数与数据路径 |
+| `app/src/desktop_component.rs` | DLL 路径选择、MSIX 缓存部署、校验与旧缓存清理 |
+| `app/src/pane/hybrid.rs` | 应用运行入口、Hook 会话、桌面输入及同步顺序 |
+| `app/src/pane/hybrid/` | 清单审计、身份合并、图标加载、改名事务与缓存回收 |
+| `app/src/pane/mod.rs`、`model.rs`、`events.rs` | 工作区与视图状态、操作分派和保存 |
+| `app/src/pane/runtime.rs`、`display_layout.rs`、`recovery.rs` | 重连、窗口恢复、显示布局、备份与恢复 |
+| `app/src/pane/folder/`、`folder.rs`、`search/` | 文件夹来源、目录监听、Everything 查询及搜索快捷键 |
+| `app/src/pane/window.rs`、`render.rs`、`settings.rs`、`settings/` | 窗口、绘图、设置布局与输入 |
+| `app/src/pane/drag_drop/`、`tray.rs`、`i18n.rs` | 分别负责拖放、托盘和本地化 |
+| `desktop-core` | Shell 身份、坐标、面板与工作区模型 |
+| `desktop-storage` | 配置与数据库读取、编解码和事务式保存 |
+| `desktop-shell` | Shell 查询、通知、菜单、文件操作和 OLE 能力 |
+| `desktop-hook` | 控制端会话、IPC、DLL 引导、成员过滤与控制端存活监测 |
+| `desktop-graphics`、`desktop-window` | 分别提供合成层与生成绑定、显示器枚举与错误提示 |
 
-### Rust 模块边界
+表中的 `tray.rs`、`i18n.rs` 位于 `app/src/`。crate 的公共入口与内部目录见 [crates 导航](../../crates/README.md)；新增模块按实际功能归属放置，具体规则见[目录结构](structure.md#新增文件约定)。
 
-`desktop-core/src/lib.rs` 只承担 crate 文档与公共类型重导出。领域实现分别放在
-`identity.rs`（身份）、`geometry.rs`（坐标）、`appearance.rs`（外观）、
-`item.rs`（桌面成员）、`panel.rs`（面板）和 `workspace.rs`（集合与默认值），
-测试集中在 `tests.rs`。调用方仍使用 `desktop_core::Panel` 等根路径。
+## 状态与数据流
 
-面板内容来源由内部枚举表示，桌面、文件夹、搜索三种来源互斥；独立的 UI 偏好保留布尔值。
-`Panel::new` 与 `set_rect` 都应用最小尺寸限制。
+### 持久状态、窗口状态与桌面状态
 
-`desktop-storage` 的公共错误位于 `src/error.rs`，存储实现及其测试位于 `src/store/`，
-外观编解码和桌面成员持久化分别位于 `codec.rs` 和 `desktop_items.rs`。
-`desktop-shell/src/apartment.rs` 独立管理 OLE 初始化；守卫不能直接构造或跨线程传递，
-应在依赖 OLE 的资源释放之后析构。
+- `config.toml` 保存全局偏好，`workspace.db` 保存工作区；它们是重启后恢复配置与布局的依据。
+- `PaneApp` 持有当前工作区、存储、窗口、来源与可选 Hook 会话。窗口模型承载选择、滚动、悬停、重命名及绘制所需状态。
+- Explorer 原生快照提供项目身份、位置与视图参数；后台清单同时考虑已被过滤的成员，避免把“不在原生视图中”误判为文件消失。
+- 桌面组件接收有大小边界的 Shell 解析名集合，而不是整个数据库或窗口模型。成员以 Shell 身份和 `DesktopPlacement` 表示，显示名称不作为唯一标识。
 
-`desktop-shell/src/lib.rs` 只声明模块和导出 API；枚举与身份解析、桌面查询、通知注册、
-激活与拖放身份解码、错误定义分属独立文件。`desktop-graphics/src/layer.rs` 管理合成层，
-生成绑定仍位于 `bindings/`。`desktop-hook/src/discovery.rs` 负责桌面发现和冲突检测，
-过滤会话、IPC 和引擎位于 `filter/`。各库入口见 [crates 导航](../../crates/README.md)。
+桌面、文件夹和搜索是互斥的内容来源。桌面面板依赖过滤会话；文件夹与搜索使用独立来源。普通面板的标签共享窗口，文件夹面板加载时保持独立，详见[面板标签](pane-tabs.md)。
 
-应用子模块按真实归属存放：`pane/hybrid/icon_changes.rs` 处理图标通知，
-`pane/settings/layout.rs` 处理设置页布局，使用常规 `mod` 声明加载。
-搜索功能归入 `pane/search/`，拖放功能归入 `pane/drag_drop/`；搜索和设置的单元测试
-分别放在对应目录的 `tests.rs`，模块路径保持在所属功能之下。
-完整目录和新增文件的归属规则见[目录结构](structure.md)。
-接口边界与释放规则见 [Rust API 与资源约定](rust-api-review.md)。
+### 收纳与异步确认
 
-## 启动与退出
+1. 桌面项目拖入或拖出时，先持久化归属并刷新面板，再提交成员名单。
+2. `submit_hidden` 等待请求被接收；`poll_hidden` 后续检查应用结果，UI 不同步等待整批桌面更新完成。
+3. 请求在途时保护确认编号，并暂缓清单审计、桌面选择清除及文件菜单事务，避免不同操作基于不同成员状态执行。
+4. 成员变化使已派发的旧审计结果失效；请求失败则使发布缓存失效并安排重试。
 
-1. 初始化 DPI 与 COM，解析唯一可选参数 `--title`。
-2. 获取当前会话的单实例互斥量；重复启动广播唤起消息。
-3. 读取 `config.toml` 与 `workspace.db`，载入全局设置、工作区和显示器布局；旧格式不自动迁移。
-4. 由 `desktop_component.rs` 选择桌面 DLL：普通包直接加载同目录文件；具有 `msix` 标记和包身份时部署到 LocalState 缓存。随后在 Explorer 的异步桌面线程回调中探测 `IShellFolderView`；成功后同步原生视图与独立来源清单。
-5. 创建可用的分组、独立文件夹和搜索窗口、托盘及运行时监控窗口；消息循环调度同步、重连、快捷键与备份。
-6. 正常退出先停止监控和托盘，取出 Hook 会话后在不持有 `PaneApp` 可变借用的情况下分离 Explorer，再释放状态中的窗口与渲染资源；控制端消失时由存活监测触发清理。
-7. `GraphicsLifetime` 在 OLE 守卫之后、应用状态之前声明，确保窗口释放后依次清空 WinRT 合成运行时、DirectComposition 设备和 GPU 设备缓存，最后才退出 OLE/COM。错误返回也沿用此析构顺序，避免图形缓存留到进程退出时的 TLS 清理阶段。
+OLE Drop 在 Shell 拖动辅助对象和临时描述清理结束后才提交应用操作，避免嵌套消息提前执行收纳。文件夹面板中的真实复制、移动等文件操作仍交给 Shell。细节见[原生桌面与成员过滤](hybrid-desktop.md)和[选择与刷新时序](selection-latency.md)。
 
-启动与重连的包类型判断、内容校验和缓存清理见[MSIX 桌面组件加载](../msix.md#桌面组件加载)。分离时恢复视图成员，撤销回调和定时器；`filter/library.rs` 等待菜单线程结束及桌面 STA 离开 DLL 回调栈，再由原生线程释放模块引用。Explorer 无响应或清理失败时保留引用，避免卸载仍在执行的代码；新连接先检查残留组件。
+### 后台调度与绘制
 
-## 拖放与成员同步
+Runtime 由通知和截止时间唤醒，统一安排重连、显示布局、备份及缓存回收。后台结果回到 UI 后核验身份或修订，再更新模型；不能让迟到结果覆盖新的用户操作。必要的兜底检查、动画及重试仍保留，见[后台调度](event-driven-runtime.md)。
 
-桌面分组拖入、拖出先持久化归属并刷新面板，再提交 Explorer 成员同步。`submit_hidden` 等待请求被接收，后续通过 `poll_hidden` 检查确认，不在 UI 线程等待整批视图更新完成。同步仍在进行时，保护在途确认编号，并暂缓清单审计、清除桌面选择及文件菜单事务；请求失败会使发布缓存失效并安排重试。
+面板使用 Canvas 与合成层绘制。纯像素结果可进入 CPU 缓存，COM 绘图资源保留在所属线程；`native_graphics.rs` 集中处理绑定之间的 COM 引用和 HRESULT 转换。图形生命周期与缓存策略见[绘图与绑定](rendering.md)和[图标内存管理](memory-optimization.md)。
 
-成员变化会丢弃先前已派发的过时审计结果，避免旧快照覆盖新布局。OLE Drop 在 Shell 拖动辅助对象和临时描述清理结束后才提交应用操作，避免嵌套消息提前执行收纳。该流程用于桌面分组；文件夹面板的真实文件复制仍由 Shell 处理。
+## 启动、连接与退出
 
-三种面板及搜索输入框的窗口顺序约束见[面板层级](pane-drag-order.md)。
+### 启动
 
-## 当前兼容边界
+安装器单独传入 `--check-desktop-component` 时，仅执行组件释放状态预检并返回退出码，不初始化 COM、窗口、配置或 Hook。正常启动则执行以下流程：
 
-- 应用使用 `FilterSession` 和成员协议 v1，通过运行期接口探测连接 Explorer。
-- `IShellFolderView` 是已被微软标记为不再提供使用的旧接口；连接时按运行期能力判断是否可用；已验证环境不代表所有 Windows 构建均兼容。
-- 刷新/列表变化触发重新过滤，1 秒定时器补查遗漏变化并监视控制端；刷新期间仍可能短暂出现原生项目。
-- Hook 会话可在故障时缺失；文件夹与搜索 pane 独立运行，桌面分组保留归属并等待重连。
-- 全局偏好保存在 `config.toml`，工作区数据库为 `workspace.db`，开发阶段不迁移旧库。成员仅通过 Shell 身份与 `DesktopPlacement` 表示。
-- `native_graphics.rs` 集中转换两版绑定的 COM 引用与 HRESULT；普通绘图直接使用 Canvas 类型。
-- 窗口嵌套消息、绘制错误清理、Shell 通知解析和系统能力回退是当前运行期的必要保护。
+1. 设置每显示器 DPI 感知，初始化 COM STA，设置稳定的 `Yuchen95.LucidDesk` AppUserModelID，并解析 `--title`。
+2. 获取当前会话的单实例互斥量；重复启动广播唤起消息后退出。不同打包形式共用这一实例约束。
+3. 选择数据目录，初始化 OLE 和图形生命周期守卫，读取存储、语言、字体、工作区及显示布局。
+4. 尝试连接 Explorer：先注册通知、捕获清单并确认桌面视图未变化，再准备 DLL、创建 `FilterSession`，合并清单并发布成员名单。
+5. 按来源和连接状态创建可用窗口，建立托盘与运行时监控，进入消息循环。桌面连接失败记录状态并等待重连，不阻止独立来源继续运行。
 
-原生桌面快照用于读取项目身份、位置和视图参数，为面板刷新与退出恢复提供依据。
+数据路径优先级为显式环境变量、`portable` 标记对应的程序旁 `data`，最后是 LocalAppData 默认目录。现有目录复用和存储兼容规则见[存储与版本约定](storage.md)。
 
+### 打包形式与 DLL 路径
 
+| 条件 | DLL 加载位置 |
+| --- | --- |
+| EXE 同目录没有 `msix` 标记 | EXE 同目录的 `luciddesk_desktop.dll` |
+| 有 `msix`，系统明确返回无包身份 | EXE 同目录的 DLL，不创建组件缓存 |
+| 有 `msix` 且具有包身份 | `LocalState\DesktopComponent\<SHA256>\luciddesk_desktop.dll` |
 
-普通面板的单窗口标签分组、状态归属与事件驱动后台策略见[标签页实现](pane-tabs.md)。
+`portable` 控制便携数据目录；`installed` 是安装版标记，不参与 DLL 路径选择。MSIX 标记用于选择部署方式，不证明商店来源。包身份查询或 LocalState 获取发生其他错误时报告失败，不静默回退。
+
+MSIX 每次连接校验缓存内容，使用部署锁和原子替换修复缺失或损坏文件，并持有校验后的文件句柄直到加载完成。旧缓存仅清理已释放的组件；占用时保留。完整规则见[MSIX 桌面组件加载](../msix.md#桌面组件加载)。
+
+### 退出与异常终止
+
+正常退出停止监控和托盘，在不持有 `PaneApp` 可变借用时分离 Hook，再释放窗口与渲染资源。分离恢复原生视图成员、撤销回调和计时器；在用户没有改变布局的前提下，按原视图顺序恢复基线坐标。
+
+`filter/library.rs` 等待菜单线程结束、回调计数清零并确认桌面 STA 离开 DLL 回调栈，再由原生线程释放模块引用。Explorer 无响应时保留引用，避免卸载仍在执行的代码；新连接检查残留组件，安装器也检查占用状态。
+
+主程序异常消失时，Explorer 内的存活监测触发清理；不能依赖被强制终止进程执行 Rust 析构。
+
+主程序正常释放窗口后，`GraphicsLifetime` 清空 WinRT 合成运行时、DirectComposition 设备和 GPU 缓存，最后退出 OLE/COM；正常返回和错误返回均遵循资源析构顺序。资源约束见 [Rust API 与资源约定](rust-api-review.md)。
+
+## 故障与兼容边界
+
+| 情况 | 当前行为与限制 |
+| --- | --- |
+| Explorer 断开或重启 | 丢弃失效会话，保留桌面归属并安排重连；文件夹与搜索独立运行 |
+| Windows 接口不可用 | 运行时探测失败后报告桌面集成状态，不假定所有系统构建兼容 |
+| 原生视图刷新或列表变化 | 重新过滤；一秒检查补查遗漏并监视控制端，期间可能短暂显示原生项目 |
+| DLL 仍被占用 | 保留引用或旧缓存，阻止不安全替换；进程退出不等于 DLL 已释放 |
+| 存储格式不兼容 | 按存储层规则报告错误并保留原文件；不提供通用旧库自动迁移 |
+| 菜单、窗口或绘图发生重入与失败 | 依赖事务状态、线程归属和释放顺序恢复，不能绕过现有清理路径 |
+
+当前使用 `FilterSession` 和成员协议 v1；原生桌面依赖运行期 Shell 能力探测。Windows 11 x64 为优先维护平台，具体检查要求和支持边界见[验证与兼容边界](validation.md)。
+
+修改架构时，应同时检查状态归属、消息重入、过时结果处理和资源释放。涉及窗口顺序见[面板层级](pane-drag-order.md)，涉及语言与字体刷新见[本地化指南](localization.md)。

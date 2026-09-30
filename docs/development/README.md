@@ -1,43 +1,81 @@
 # 开发文档
 
-当前主线采用视图成员过滤架构：Explorer 管理未收纳的原生桌面图标，LucidDesk 自绘分组图标，通过过滤 Hook 隔离已收纳项目，并由独立 Shell 宿主提供原生菜单。配置与数据兼容规则见[存储](storage.md)。
+这里介绍 LucidDesk 当前实现、代码维护入口和验证方法。Explorer 管理未收纳的原生桌面图标，LucidDesk 自绘分组内容，通过成员过滤 Hook 隔离已收纳项目，并由独立 Shell 宿主提供原生菜单。
+
+首次参与开发建议按下面的顺序阅读；处理具体问题时，可直接使用任务导航。用户介绍见[项目 README](../../README.md)，贡献与数据要求见[贡献指南](../../CONTRIBUTING.md)。
 
 ## 开始开发
 
-1. 阅读[构建与验证](build.md)，准备 Rust 与 Windows 构建环境。
-2. 阅读[架构说明](architecture.md)，确认修改所在模块的职责。
-3. 涉及持久化时阅读[存储与版本约定](storage.md)；涉及绘图时阅读[绘图与绑定](rendering.md)。
-4. 根据[验证与兼容边界](validation.md)执行相关检查，在提交说明中区分自动检查与实际桌面结果。
+1. 阅读[构建与验证](build.md)，准备 Windows、Rust 和本地构建工具，完成与任务相关的基础检查。
+2. 阅读[架构说明](architecture.md)，了解主程序、Explorer 内组件和 Shell 宿主之间的关系。
+3. 使用[目录结构](structure.md)找到实现入口，再阅读相应专题；涉及原生接口时同时核对 [Rust API 与资源生命周期约定](rust-api-review.md)。
+4. 按[验证与兼容边界](validation.md)选择测试，记录本次执行结果、实机观察及未覆盖范围。
 
-## 当前实现
+## 按任务查找
 
-| 文档 | 主题 |
+| 要处理的任务 | 建议阅读顺序 |
 | --- | --- |
-| [架构说明](architecture.md) | 模块职责、启动流程、Hook 与兼容边界 |
-| [目录结构](structure.md) | 源码目录、功能归属与新增文件约定 |
-| [原生桌面与成员过滤](hybrid-desktop.md) | 身份、收纳、过滤名单发布与恢复 |
-| [绘图与绑定](rendering.md) | Canvas、DComp、WinRT、动画与生成绑定 |
-| [背景材质与主题](mica-materials.md) | 四种材质、局部配色、系统策略与回退 |
-| [多语言](localization.md) | Fluent 资源、语言选择、字体与验证 |
-| [设置组件](settings-components.md) | 设置页布局与共用交互组件 |
-| [图标内存管理](memory-optimization.md) | 像素去重、缓存预算与验证边界 |
-| [Rust API 与资源约定](rust-api-review.md) | 接口边界、COM 线程与资源生命周期 |
-| [面板标签](pane-tabs.md) | 标签状态、切换与持久化 |
-| [存储与版本约定](storage.md) | TOML 配置、工作区数据库、备份和开发期版本策略 |
-| [图标菜单与重命名](pane-item-rename.md) | 独立 Shell 宿主、原生编辑窗口与改名事务 |
-| [面板层级](pane-drag-order.md) | 普通、文件夹和搜索面板的层级与菜单交互 |
-| [后台调度](event-driven-runtime.md) | 事件唤醒、在途请求与维护期限 |
-| [选择与刷新时序](selection-latency.md) | 选择互斥、后台清单读取和过滤发布 |
-| [运行时托盘](tray.md) | 托盘消息、资源释放和验证入口 |
-| [验证与兼容边界](validation.md) | 检查方法、平台限制与验收要求 |
-| [MSIX 打包与运行](../msix.md) | 包标记、桌面 DLL 缓存、签名及更新行为 |
+| 构建、打包或发布 | [构建与验证](build.md) → [包验收与兼容边界](validation.md)；MSIX 另见[打包与运行](../msix.md) |
+| 图标收纳、释放或 Explorer 恢复 | [成员过滤](hybrid-desktop.md) → [选择与刷新时序](selection-latency.md) → [后台调度](event-driven-runtime.md) |
+| 菜单、重命名、选择或焦点异常 | [菜单与重命名](pane-item-rename.md) → [面板层级](pane-drag-order.md) → [选择时序](selection-latency.md) |
+| 绘制、材质、首帧或资源占用 | [绘图与绑定](rendering.md) → [背景材质](mica-materials.md) → [图标内存管理](memory-optimization.md) |
+| 标签切换、排序或窗口合并 | [普通面板标签页](pane-tabs.md) → [面板层级](pane-drag-order.md) → [存储](storage.md) |
+| 设置页、语言或字体布局 | [设置组件](settings-components.md) → [多语言](localization.md) → [绘图](rendering.md) |
+| 配置、数据兼容或备份恢复 | [配置与工作区存储](storage.md) → [API 与提交边界](rust-api-review.md) → [验证要求](validation.md) |
+| 托盘入口或任务栏重建 | [运行时托盘](tray.md) → [架构说明](architecture.md) |
+
+## 文档索引
+
+### 工程基础
+
+| 文档 | 内容 |
+| --- | --- |
+| [构建与验证](build.md) | 环境准备、构建命令、工具链、打包、CI、发布与版本编号 |
+| [架构说明](architecture.md) | 模块和进程职责、启动流程、通信及退出恢复 |
+| [目录结构](structure.md) | 源码目录、功能归属、工具与新增文件约定 |
+| [Rust API 与资源生命周期约定](rust-api-review.md) | 所有权、COM 线程、重入、错误与 unsafe 边界 |
+| [验证与兼容边界](validation.md) | 检查层次、实机流程、包验收、平台限制与结果记录 |
+
+### 桌面与交互
+
+| 文档 | 内容 |
+| --- | --- |
+| [原生桌面与成员过滤](hybrid-desktop.md) | 身份、收纳、过滤名单、组件加载与恢复 |
+| [后台调度](event-driven-runtime.md) | 事件唤醒、在途请求、维护期限与空闲退避 |
+| [选择与刷新时序](selection-latency.md) | 双向选择、清单校验、过滤提交和确认 |
+| [图标菜单与重命名](pane-item-rename.md) | Shell 宿主、编辑窗口、身份交接与提交后恢复 |
+| [面板层级](pane-drag-order.md) | 桌面层级、临时抬升、置顶及菜单焦点 |
+| [普通面板标签页](pane-tabs.md) | 状态归属、切换、关闭、排序、分离和合并 |
+| [运行时托盘](tray.md) | 操作入口、延迟分派、定位、重建与释放 |
+
+### 界面与数据
+
+| 文档 | 内容 |
+| --- | --- |
+| [绘图与绑定](rendering.md) | 绘制、呈现重试、设备资源、绑定转换与首帧 |
+| [背景材质与主题](mica-materials.md) | 材质参数、主题、系统策略及回退 |
+| [图标内存管理](memory-optimization.md) | 像素共享、CPU/GPU 缓存预算及回收 |
+| [设置页公共组件](settings-components.md) | 场景与 Action、动态布局、滚动、字体搜索和测试 |
+| [多语言](localization.md) | Fluent 资源、语言注册、字体回退及布局验证 |
+| [配置与工作区存储](storage.md) | TOML 与数据库分工、限定升级、保存和备份恢复 |
+
+### 相关文档与工具说明
+
+| 入口 | 用途 |
+| --- | --- |
+| [MSIX 打包与运行](../msix.md) | 包身份、标记、签名、DLL 缓存及更新 |
+| [配置示例](../config.example.toml) | 可编辑 TOML 字段和默认值示例 |
+| [品牌规范](../brand.md) | 名称、标识与数据目录兼容规则 |
+| [渲染诊断](../../tools/render-diagnostics/RENDER-TEST.md) | 诊断变体、开关与日志 |
+| [崩溃转储](../../tools/render-diagnostics/CRASH-DUMPS.md) | 转储采集、符号与恢复步骤 |
 
 ## 文档维护约定
 
-仅维护与当前实现一致的说明；已替代方案、旧测量和临时排查过程通过 Git 历史查询。
+只描述当前实现和仍适用的约束；已替代方案、旧测量与临时排查过程通过 Git 历史查询。实现保留的兼容读取规则仍需说明，不能为了删去历史叙述而删掉有效约束。
 
-- 介绍与使用说明放在 `docs` 根目录，避免混入 ABI、日志开关和测试夹具细节。
-- 开发指南放在 `docs/development`，不再追加已失效的实验记录。
-- 正文使用中文；代码、API 名称、命令和必要的原始日志保持原样。
-- 变更行为时同步更新指南，删除失效描述；验证记录注明环境和局限，不把旧结果作为当前验收结论。
-- 相对源码路径以仓库根目录为基准；Markdown 链接以所在文档目录为基准。
+- 用户介绍与使用说明放在 `docs` 根目录；模块机制和开发约束放在本目录，工具操作细节随工具维护。
+- 正文使用中文，保留 API、命令和必要原始错误信息；相对源码路径以仓库根目录为基准，Markdown 链接以文档目录为基准。
+- 专题文档负责具体规则，本入口负责导航。调整行为、默认值、路径、测试或兼容范围时，同步所属专题和必要的交叉链接。
+- 文档中的命令是执行入口，不是已经通过的证明。区分自动测试、快照检查与真实桌面结论，不将调度参数写成性能保证。
+- 新增、重命名或移除文档时更新索引，核对本地链接与锚点；新增页面、语言或测试范围时核对代码中的显式枚举。
+- 文档优化按专题逐份核对源码，保留最终实现方式；测试日志与一次性验收结果放在提交、问题报告或本地产物中。
