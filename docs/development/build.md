@@ -5,7 +5,7 @@
 ## 环境
 
 - 主要使用 Windows 11 x64 交互桌面验证，Explorer 正常运行；Windows 10 已由用户完成实机验证，平台记录见[验证记录](validation.md)。
-- Rust MSVC 工具链；`rust-toolchain.toml` 固定本地与 CI 使用 Rust 1.95.0，使用 edition 2024。
+- Rust MSVC 工具链；`rust-toolchain.toml` 固定本地与 CI 使用 Rust 1.98.1，使用 edition 2024。
 - Visual Studio C++ 构建工具与 Windows SDK，用于链接 Win32 库。
 
 首次获取依赖时省略 `--offline`。已有锁文件和依赖缓存后，可按以下方式离线构建。
