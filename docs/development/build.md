@@ -173,4 +173,6 @@ Release 包含一个安装包、两个 ZIP 及各自的 SHA256 文件，均附�
 
 已有版本记录和 Git 标签不追溯重编号。尚未发布的变更先记录在双语 Changelog 的“未发布 / Unreleased”章节，确定版本后移入对应版本章节。发布时同步 `Cargo.lock`、双语 README 徽章和双语 Changelog；CI 验证版本一致性，发布标签必须为 `<应用版本>` 或 `v<应用版本>`。
 
-构建环境统一：CI 使用 `windows-2022`，本地与 CI 共用 `rust-toolchain.toml` 和固定的 Inno Setup 6.7.3。`build.json` 记录 Rust、Cargo 及 CI runner 版本。Windows SDK、链接器、时间戳和构建路径仍可能造成二进制差异；校验值不同本身不代表文件被篡改。
+构建环境统一：CI 使用 `windows-2025-vs2026`，本地与 CI 共用 Rust 1.98.1、Inno Setup 6.7.3，以及 `tools/windows-toolchain.json` 指定的 MSVC 14.51.36231（链接器 14.51.36257.0）和 SDK 10.0.26100.0。`tools/use-windows-toolchain.ps1` 选择 x64 构建环境、校验 cl/link/lib/rc 的 SHA256 并显式指定 Cargo 链接器；工具缺失或哈希不符时停止，不回退。`build.json` 记录 Rust、Cargo、MSVC、SDK、工具校验值及 CI runner 版本。时间戳和构建路径仍可能造成二进制差异；校验值不同本身不代表文件被篡改。
+
+直接执行 Cargo 构建前，在同一 PowerShell 会话执行 `.\tools\use-windows-toolchain.ps1`；发布打包脚本自动执行该步骤。安装或更新 Visual Studio 后若工具哈希变化，应先核对来源并更新固定配置。

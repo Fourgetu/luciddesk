@@ -1,0 +1,11 @@
+{
+  "msvc": "14.51.36231",
+  "linker": "14.51.36257.0",
+  "windowsSdk": "10.0.26100.0",
+  "tools": {
+    "cl.exe": "315a654ea116864516a1674858e587e535e3bc3045ff32ed2f2739a2c1ec5640",
+    "link.exe": "610aae3d74a66fa5ef54cac5df8ea8bcbb1fdd2a3db9087eb92088bd395eaf34",
+    "lib.exe": "782b0f66bc46159e008d2e9f2efa0e9212c8d0a468d0c610630d5c724a44adc6",
+    "rc.exe": "65db0d7b4f10ba0f55973fd9356543a556da9ec1c777a0c05f05a0329c8a100a"
+  }
+}

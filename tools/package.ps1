@@ -7,6 +7,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $previousRevision = $env:LUCIDPANE_BUILD_REVISION
 Push-Location -LiteralPath $repoRoot
 try {
+    & (Join-Path $PSScriptRoot 'use-windows-toolchain.ps1')
     $revision = & git rev-parse --short HEAD
     if ($LASTEXITCODE -ne 0) { throw 'Could not read Git revision.' }
     $dirty = [bool](& git status --porcelain --untracked-files=no)
@@ -75,6 +76,7 @@ try {
         buildEnvironment = [ordered]@{
             rustc = ($hostInfo -join "`n"); cargo = $cargoVersion
             runnerImage = $env:ImageOS; runnerVersion = $env:ImageVersion
+            windows = ($env:LUCIDDESK_WINDOWS_BUILD_ENVIRONMENT | ConvertFrom-Json)
         }
         files = $files
     } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $stage 'build.json') -Encoding UTF8
