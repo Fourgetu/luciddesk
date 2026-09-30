@@ -174,6 +174,9 @@ ui-collapse-panel = { "패널 접기" }
 # 类型
 ui-type = { "유형" }
 
+# 文件夹类型
+ui-folder-type = { "폴더" }
+
 # 修改时间
 ui-modified = { "수정한 날짜" }
 

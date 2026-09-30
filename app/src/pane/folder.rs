@@ -26,6 +26,7 @@ pub(super) struct Source {
     pub items: Vec<Item>,
     pub status: Option<String>,
     pub loading: bool,
+    pending_rename: Option<PathBuf>,
 }
 
 struct Commands {
@@ -279,6 +280,7 @@ impl Source {
             items: Vec::new(),
             status: None,
             loading: true,
+            pending_rename: None,
         })
     }
     pub fn refresh(&self) {
@@ -316,7 +318,7 @@ pub(super) fn ensure(state: &mut PaneApp, id: PanelId) -> Result<(), String> {
     Ok(())
 }
 
-pub(super) fn poll(state: &mut PaneApp) {
+pub(super) fn poll(state: &mut PaneApp) -> Vec<(PanelId, ShellIdentity)> {
     let mut changed = false;
     for source in state.folders.values_mut() {
         let mut latest = None;
@@ -363,6 +365,23 @@ pub(super) fn poll(state: &mut PaneApp) {
     if changed {
         refresh_views(state);
     }
+    let mut renames = Vec::new();
+    for view in &state.views {
+        let Some(source) = state.folders.get_mut(&view.id) else { continue; };
+        let Some(path) = &source.pending_rename else { continue; };
+        let mut model = view.model.borrow_mut();
+        if let Some(index) = model.items.iter().position(|item| item.identity.file_system_path() == Some(path.as_path())) {
+            let identity = model.items[index].identity.clone();
+            model.select_item(index, false, false);
+            let mut bounds = RECT::default();
+            unsafe { windows_sys::Win32::UI::WindowsAndMessaging::GetClientRect(view.window.hwnd().cast(), &raw mut bounds); }
+            let scale = unsafe { windows_sys::Win32::UI::HiDpi::GetDpiForWindow(view.window.hwnd().cast()) }.max(96) as f32 / 96.0;
+            let grid = model.grid(bounds.right as f32 / scale, bounds.bottom as f32 / scale);
+            model.scroll = (index / grid.columns.max(1)).min(grid.max_scroll(model.items.len()));
+            source.pending_rename = None;
+            renames.push((view.id, identity));
+        }
+    }
     // Re-evaluate the viewport while work arrives, including after scrolling or
     // changing the sort order. Unseen files remain queued behind these entries.
     for view in &state.views {
@@ -379,6 +398,17 @@ pub(super) fn poll(state: &mut PaneApp) {
         let priority: Vec<_> = model.items.iter().skip(start).take(count).map(|item| item.identity.persistent_key()).collect();
         source.cache.lock().unwrap().touch(&priority);
         *source.request.priority.lock().unwrap() = priority;
+    }
+    renames
+}
+
+pub(super) fn item_created(state: &mut PaneApp, id: PanelId, path: PathBuf) {
+    if let Some(source) = state.folders.get_mut(&id) {
+        // A delayed Shell callback must not rename an item in a newly navigated directory.
+        if path.parent() == Some(source.path.as_path()) {
+            source.pending_rename = Some(path);
+            source.refresh();
+        }
     }
 }
 
@@ -692,6 +722,49 @@ pub(super) fn request_picker(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn new_item_is_selected_after_scan_and_stale_navigation_is_ignored() {
+        let _sta = ShellApartment::initialize_sta().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let id = PanelId::new(1);
+        let state = Rc::new(RefCell::new(super::super::tests::test_state()));
+        state.borrow_mut().workspace.panel_mut(id).unwrap().set_folder(Some(root.path().into()));
+        ensure(&mut state.borrow_mut(), id).unwrap();
+        create_view(&state, id).unwrap();
+        let path = root.path().join("New folder");
+        std::fs::create_dir(&path).unwrap();
+        item_created(&mut state.borrow_mut(), id, path.clone());
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let rename = loop {
+            if let Some(rename) = poll(&mut state.borrow_mut()).into_iter().next() { break rename; }
+            assert!(Instant::now() < deadline, "created item must arrive without a timer refresh");
+            std::thread::sleep(Duration::from_millis(5));
+        };
+        assert_eq!(rename.0, id);
+        assert_eq!(rename.1.file_system_path(), Some(path.as_path()));
+        let model = state.borrow().views[0].model.clone();
+        assert_eq!(model.borrow().selected_identities(), [rename.1]);
+        item_created(&mut state.borrow_mut(), id, root.path().join("elsewhere").join("stale"));
+        assert!(state.borrow().folders[&id].pending_rename.is_none());
+        assert!(poll(&mut state.borrow_mut()).is_empty(), "rename must only be requested once");
+
+    }
+
+    #[test]
+    fn folder_type_follows_live_language_despite_cached_shell_name() {
+        let mut details = ItemDetails { folder: true, kind: "文件夹".into(), ..Default::default() };
+        for (locale, expected) in [
+            (2, "Folder"), (0, "文件夹"), (1, "資料夾"), (3, "フォルダー"),
+            (4, "폴더"), (5, "Ordner"), (6, "Папка"), (2, "Folder"),
+        ] {
+            crate::i18n::with_locale(locale, || assert_eq!(details.kind_text(), expected));
+            assert_eq!(details.kind, "文件夹", "cached metadata must remain unchanged");
+        }
+        details.folder = false;
+        details.kind = "Custom document type".into();
+        crate::i18n::with_locale(2, || assert_eq!(details.kind_text(), "Custom document type"));
+    }
 
     fn patch_item() -> Item {
         Item {

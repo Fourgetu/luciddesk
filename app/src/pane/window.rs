@@ -2022,9 +2022,7 @@ where
                                     Ok(true) => {
                                         event(Event::RenameItem(identity));
                                     }
-                                    Ok(false) => {
-                                        event(Event::Refresh);
-                                    }
+                                    Ok(false) => {}
                                     Err(message) => error(&message.to_string()),
                                 }
                                 return;
@@ -2055,6 +2053,29 @@ where
                             }
                             // Inventory polling detects rename/delete; dismissing a menu must not
                             // discard every image and trigger a visible reload.
+                            return;
+                        }
+                        let background = {
+                            let m = model.borrow();
+                            let y = if lparam == -1 { None } else {
+                                let mut p = anchor;
+                                unsafe { windows_sys::Win32::Graphics::Gdi::ScreenToClient(hwnd, &raw mut p); }
+                                Some(p.y as f32 / scale(hwnd))
+                            };
+                            super::folder_context::is_content_background(&m, y, wparam != 0)
+                        };
+                        if background && tab_context.is_none() {
+                            model.borrow_mut().clear_selection();
+                            update_pointer(hwnd, &model, None);
+                            invalidate(hwnd);
+                            if lparam == -1 {
+                                anchor = POINT { x: (16.0 * scale(hwnd)) as i32,
+                                    y: ((model.borrow().content_header() + 48.0) * scale(hwnd)) as i32 };
+                                unsafe { ClientToScreen(hwnd, &raw mut anchor); }
+                            }
+                            if let Err(message) = super::folder_context::show(hwnd, anchor, &model, |value| { event(value); }) { error(&message); }
+                            update_pointer(hwnd, &model, None);
+                            invalidate(hwnd);
                             return;
                         }
                         let (auto_hide, locked, theme, backdrop, collapsed) = {

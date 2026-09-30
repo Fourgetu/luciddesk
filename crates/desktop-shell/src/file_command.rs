@@ -104,9 +104,9 @@ pub fn drag_file_items(owner: HWND, selected: &[ShellIdentity]) -> Result<()> {
     Ok(())
 }
 
-struct MenuMessages {
-    context: IContextMenu,
-    owner: HWND,
+pub(super) struct MenuMessages {
+    pub(super) context: IContextMenu,
+    pub(super) owner: HWND,
 }
 impl Drop for MenuMessages {
     fn drop(&mut self) {
@@ -119,7 +119,7 @@ impl Drop for MenuMessages {
         }
     }
 }
-unsafe extern "system" fn menu_messages(
+pub(super) unsafe extern "system" fn menu_messages(
     hwnd: windows_sys::Win32::Foundation::HWND,
     msg: u32,
     wp: usize,
@@ -256,7 +256,7 @@ fn open_location(identity: &ShellIdentity) -> Result<()> {
     }
 }
 
-struct Menu(HMENU);
+pub(super) struct Menu(pub(super) HMENU);
 impl Drop for Menu {
     fn drop(&mut self) {
         unsafe {

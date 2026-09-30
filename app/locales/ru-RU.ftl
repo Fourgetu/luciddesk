@@ -174,6 +174,9 @@ ui-collapse-panel = { "Свернуть панель" }
 # 类型
 ui-type = { "Тип" }
 
+# 文件夹类型
+ui-folder-type = { "Папка" }
+
 # 修改时间
 ui-modified = { "Дата изменения" }
 

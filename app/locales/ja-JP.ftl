@@ -174,6 +174,9 @@ ui-collapse-panel = { "パネルを折りたたむ" }
 # 类型
 ui-type = { "種類" }
 
+# 文件夹类型
+ui-folder-type = { "フォルダー" }
+
 # 修改时间
 ui-modified = { "更新日時" }
 

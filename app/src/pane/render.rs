@@ -836,7 +836,7 @@ impl Renderer {
                         if list {
                             let size = super::folder::size_text(item.details.size, item.details.folder);
                             for (column, text) in
-                                [&item.label, &item.details.kind, &item.details.modified, &size]
+                                [item.label.as_str(), item.details.kind_text(), item.details.modified.as_str(), size.as_str()]
                                     .iter()
                                     .enumerate()
                             {

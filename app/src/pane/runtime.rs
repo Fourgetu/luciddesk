@@ -360,7 +360,7 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
                         if let Err(error) = result { eprintln!("Language refresh: {error}"); }
                     }
 
-                    {
+                    let folder_renames = {
                         let mut s = state.borrow_mut();
                         if let Some(runtime) = &mut s.runtime {
                             if std::mem::take(&mut layout_dirty) {
@@ -371,11 +371,17 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
                                 runtime.last_attempt = Instant::now() - reconnect_delay(0);
                             }
                         }
-                        folder::poll(&mut s);
+                        let folder_renames = folder::poll(&mut s);
                         if s.session.is_some() {
                             if let Err(error) = hybrid::tick(&mut s) {
                                 eprintln!("Desktop synchronization: {error}");
                             }
+                        }
+                        folder_renames
+                    };
+                    for (id, identity) in folder_renames {
+                        if let Err(message) = events::handle(&state, id, Event::RenameItem(identity)) {
+                            eprintln!("New folder item rename: {message}");
                         }
                     }
                     let previous = {

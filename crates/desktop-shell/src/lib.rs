@@ -4,6 +4,7 @@ mod apartment;
 mod desktop;
 mod error;
 mod file_command;
+mod folder_menu;
 mod menu_frame;
 mod menu_theme;
 mod namespace;
@@ -21,6 +22,7 @@ pub use file_command::{
     FileCommand, copy_to_folder, drag_file_items, invoke_file_commands, paste_into_folder,
     show_file_items_menu,
 };
+pub use folder_menu::{FolderMenuResult, show_folder_menu};
 pub use namespace::{
     DesktopShellItem, ShellAttributes, desktop_source_revision, enumerate_desktop_namespace,
     enumerate_desktop_source, enumerate_folder, local_app_data_path,

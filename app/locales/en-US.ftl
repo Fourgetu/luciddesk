@@ -174,6 +174,9 @@ ui-collapse-panel = { "Collapse panel" }
 # 类型
 ui-type = { "Type" }
 
+# 文件夹类型
+ui-folder-type = { "Folder" }
+
 # 修改时间
 ui-modified = { "Modified" }
 

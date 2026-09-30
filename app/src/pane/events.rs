@@ -160,6 +160,10 @@ pub(super) fn handle(
         folder::sort(&mut state.borrow_mut(), id, column)?;
         return Ok(false);
     }
+    if let Event::FolderItemCreated(path) = event {
+        folder::item_created(&mut state.borrow_mut(), id, path);
+        return Ok(false);
+    }
     if let Event::SetFolderColumns(widths) = event {
         folder::save_columns(&state.borrow(), id, widths)?;
         return Ok(false);
@@ -738,6 +742,7 @@ pub(super) fn handle(
         | Event::NewTab(_) | Event::SelectTab(_) | Event::CloseTab | Event::CloseTabId(_)
         | Event::MoveTab(_) => unreachable!("Tabs handled before borrowing PaneApp"),
         Event::SortFolder(_)
+        | Event::FolderItemCreated(_)
         | Event::SetFolderColumns(_)
         | Event::ToggleFolderColumn(_)
         | Event::FolderBack

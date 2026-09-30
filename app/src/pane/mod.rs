@@ -19,6 +19,7 @@ mod display_layout;
 mod drag_drop;
 mod events;
 mod folder;
+mod folder_context;
 mod hybrid;
 mod keyboard;
 mod label;
@@ -80,6 +81,14 @@ pub struct ItemDetails {
     pub folder: bool,
     pub modified_time: Option<std::time::SystemTime>,
     pub size: Option<u64>,
+}
+
+impl ItemDetails {
+    pub fn kind_text(&self) -> &str {
+        // Shell type names use the Windows language and may be cached across
+        // application language changes. Resolve folders when rendering instead.
+        if self.folder { crate::i18n::text("ui-folder-type") } else { &self.kind }
+    }
 }
 
 fn same_items(left: &[Item], right: &[Item]) -> bool {
@@ -184,6 +193,7 @@ enum Event {
     SetFolder(std::path::PathBuf),
     OpenFolder,
     SortFolder(u8),
+    FolderItemCreated(std::path::PathBuf),
     SetFolderColumns([f32; 4]),
     ToggleFolderColumn(u8),
     FolderBack,
