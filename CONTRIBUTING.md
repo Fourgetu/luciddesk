@@ -38,7 +38,7 @@ python tools/check-locales.py
 cargo test -p luciddesk --bin luciddesk i18n::tests --locked
 ```
 
-UI、Explorer 集成和安装卸载改动还需对应的 Windows 实机验证，见[验证记录](docs/development/validation.md)。应用主程序与 DLL 的生命周期修改尤其应验证正常退出、重连及文件释放。
+UI、Explorer 集成和安装卸载改动还需对应的 Windows 实机验证，见[验证与兼容边界](docs/development/validation.md)。应用主程序与 DLL 的生命周期修改尤其应验证正常退出、重连及文件释放。
 
 翻译请阅读[本地化指南](docs/development/localization.md)，保留资源键与占位参数；新增文案同步维护各语言资源。可见行为变化同步更新使用说明，发布相关改动遵循双语 Changelog 的现有结构。
 

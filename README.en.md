@@ -81,7 +81,7 @@ See the [installer](docs/installer.md), [standard ZIP](docs/package.md) or [port
 **ZIP packages:**
 
 1. Exit any running copy and extract the entire ZIP to a writable folder.
-2. Run `luciddesk.exe`. Keep `luciddesk_desktop.dll` beside it; portable mode also requires `portable.marker`. Do not run the app inside the ZIP.
+2. Run `luciddesk.exe`. Keep `luciddesk_desktop.dll` beside it; portable mode also requires `portable`. Do not run the app inside the ZIP.
 3. Drag desktop icons into a panel. Use the tray menu to create panels or folder panels and open Settings.
 
 Click the tray icon to show panels. Its menu also provides creation, search, refresh, configuration folder and exit actions.
@@ -109,7 +109,7 @@ Use **Settings → About → Check for updates**, then **Open update page** to d
 | --- | --- |
 | Installer | Run the new installer; it reuses the install folder and can close the running app after confirmation |
 | Standard ZIP | Exit the app and replace all program files; keep the separate settings folder |
-| Portable | Exit the app and replace program files; preserve `data` and `portable.marker` |
+| Portable | Exit the app and replace program files; preserve `data` and `portable` |
 
 Keep the EXE and DLL from the same build together. Uninstall keeps user settings by default. Uncheck **Keep user settings** to remove the current account's default settings, layouts and backups. See the [installer guide](docs/installer.md) (Chinese).
 

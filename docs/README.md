@@ -17,6 +17,6 @@ LucidDesk 为 Windows 桌面提供分组、文件夹和 Everything 搜索面板�
 
 从[构建指南](development/build.md)开始，再按改动范围查看[开发文档](development/README.md)。[目录结构](development/structure.md)说明文件归属，[crates 导航](../crates/README.md)解释库边界，[Rust API 与资源约定](development/rust-api-review.md)说明接口与资源生命周期约束。
 
-0.10.5 的面板交互规则见[面板层级](development/pane-drag-order.md)，测试结果和未验证范围见[验证记录](development/validation.md)。Windows 11 x64 为优先维护平台，Windows 10 已由用户完成实机验证。
+面板交互规则见[面板层级](development/pane-drag-order.md)，验证方法和限制见[验证与兼容边界](development/validation.md)。Windows 11 x64 为优先维护平台，Windows 10 已由用户完成实机验证。
 
 文档仅保留当前使用与维护所需的说明；旧方案和历史实验可通过 Git 历史查询。

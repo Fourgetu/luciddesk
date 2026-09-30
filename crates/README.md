@@ -56,7 +56,7 @@ desktop-window/src/
 - 存储实现放在 `store/`，配置和恢复作为其子模块共享私有状态，避免把连接字段公开到 crate 外部。
 - Shell 内部的身份／PIDL 帮助函数通过明确的 `namespace` 路径复用，不塞回根入口。
 - `desktop-core` 不依赖 Windows 或数据库；当前 `desktop-storage`、`desktop-shell`、`desktop-window` 使用其领域类型。
-- 修改生成绑定时同步相应工具；旧几何后端与 MinHook 已从主线移除，历史实现见 `hook` 分支。
+- 修改生成绑定时同步相应工具、筛选清单和生成结果。
 - 小库无需为了目录对称而继续拆分。`desktop-window` 的显示器模块和错误入口已足够清楚。
 
 构建与验证命令见[开发指南](../docs/development/build.md)，整体目录规则见[目录结构](../docs/development/structure.md)。

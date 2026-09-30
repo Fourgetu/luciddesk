@@ -21,7 +21,7 @@
 
 Everything、PowerToys 和 QuickLook 不包含在本包中。Windows 10 已由用户完成实机验证；ARM64 和远程桌面环境尚未经过完整验证。
 
-开发版使用 `config.toml` 和 `workspace.db`，不迁移旧库。旧版数据请使用独立目录保留；本版不会读取 `hook-desktop.db`。
+应用使用 `config.toml` 和 `workspace.db`；数据库结构不兼容时报告错误并保留原文件，不自动迁移。
 
 快捷键、文件夹映射等操作见 `usage.md`。`build.json` 记录版本、Git 修订和主程序和 Hook DLL 的 SHA-256；ZIP 同目录的 `.sha256` 可核对下载完整性。
 

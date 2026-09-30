@@ -1,10 +1,10 @@
 # 应用图标
 
-`lucidpane.ico` 使用用户选定的 [三色绿色原稿](../../docs/design/luciddesk-green-simple-v17.png)：左侧翡翠绿、右上薄荷绿、右下深松绿。保留曲面、圆角、透明背景和三面板布局。
+`lucidpane.ico` 使用 [三色绿色原稿](../../docs/design/luciddesk-green-simple-v17.png)：左侧翡翠绿、右上薄荷绿、右下深松绿。保留曲面、圆角、透明背景和三面板布局。
 
 ## 尺寸与导出
 
-按 [Microsoft 应用图标构建规范](https://learn.microsoft.com/en-us/windows/apps/design/iconography/app-icon-construction)提供多尺寸资源。当前是 Win32 应用，使用 ICO，不采用 MSIX 的磁贴资源命名。
+按 [Microsoft 应用图标构建规范](https://learn.microsoft.com/en-us/windows/apps/design/iconography/app-icon-construction)提供多尺寸资源。Win32 窗口与 EXE 使用 ICO；MSIX 打包脚本从同一图标生成清单所需的 PNG 资源。
 
 ICO 包含 16、20、24、30、32、36、40、48、60、64、72、80、96、128、256 px 共 15 个尺寸，覆盖系统托盘、标题栏、任务栏和开始菜单的常见缩放比例。关于页读取 256 px PNG 图层。
 
@@ -14,7 +14,7 @@ ICO 包含 16、20、24、30、32、36、40、48、60、64、72、80、96、128�
 
 ## Shell 透明度兼容
 
-导出采用预乘 Alpha 的分级缩放，16–64 px 最后一级使用高质量双线性过滤，其余使用高质量双三次过滤。16–128 px 使用 32 位 DIB 和 AND mask，RGB 按 Alpha 预乘，以兼容已在 tesla-dashcam 项目实测的 Explorer 详情面板绘制路径；256 px PNG 和文档 PNG 保留常规 Alpha。此兼容处理可能让其他绘制路径的半透明边缘略暗，需在不同 Windows/DPI 下继续验证。
+导出采用预乘 Alpha 的分级缩放，16–64 px 最后一级使用高质量双线性过滤，其余使用高质量双三次过滤。16–128 px 使用 32 位 DIB 和 AND mask，RGB 按 Alpha 预乘，以兼容 Explorer 详情面板绘制路径；256 px PNG 和文档 PNG 保留常规 Alpha。此兼容处理可能让其他绘制路径的半透明边缘略暗，需在不同 Windows/DPI 下继续验证。
 
 关于页使用 256 px PNG 帧，避免使用经过 Shell 兼容调整的小图层。
 
@@ -28,4 +28,4 @@ EXE 资源正确但 Explorer 显示旧图标时，可运行 `tools/Refresh-App-I
 
 `app.rc` 将 ICO 以资源 ID 1 嵌入 EXE。窗口、托盘和关于页都从该资源加载，无需读取外部图片。中英文 README 和功能示意图使用同源 PNG。
 
-验证入口：`cargo test -p luciddesk app_icon::tests`，检查各尺寸加载和窗口图标设置。旧蓝青图稿仅用于历史追溯。
+验证入口：`cargo test -p luciddesk app_icon::tests`，检查各尺寸加载和窗口图标设置。

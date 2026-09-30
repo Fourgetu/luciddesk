@@ -1,10 +1,10 @@
 # 架构说明
 
-更新：2026-09-29（0.10.5）。当前应用使用视图成员过滤后端，Pane 图标保持自绘。Windows 11 x64 为优先维护平台，Windows 10 已由用户完成实机验证。
+当前应用使用视图成员过滤后端，Pane 图标保持自绘。Windows 11 x64 为优先维护平台，Windows 10 已由用户完成实机验证。
 
 ## 系统分工
 
-Explorer 负责未收纳图标的绘制、排列、命中和原生交互。LucidPane 使用独立窗口绘制分组内容。过滤 Hook 在 Explorer 桌面线程内调用 `IShellFolderView::RemoveObject`，将已收纳项目从视图集合移除；开启系统自动排列时，由 Explorer 补位。
+Explorer 负责未收纳图标的绘制、排列、命中和原生交互。LucidDesk 使用独立窗口绘制分组内容。过滤 Hook 在 Explorer 桌面线程内调用 `IShellFolderView::RemoveObject`，将已收纳项目从视图集合移除；开启系统自动排列时，由 Explorer 补位。
 
 收纳不移动文件，不切换系统自动排列设置。原生排列会更新实际视图位置；恢复时在用户没有改变布局的前提下，按原视图顺序恢复基线坐标。完整身份与分组状态由控制端维护，Hook 接收有大小边界的 Shell 解析名集合。
 
@@ -15,6 +15,7 @@ Win11 文件精简菜单由 Explorer 内的独立 Shell 宿主提供文件身份
 | 模块 | 职责 |
 | --- | --- |
 | `app/src/main.rs` | 参数解析、DPI/STA 初始化、配置路径与启动错误 |
+| `app/src/desktop_component.rs` | 桌面 DLL 路径选择、MSIX 缓存部署、内容校验与清理 |
 | `app/src/pane/hybrid.rs` | Hook 生命周期、桌面输入、清单结果核验与同步顺序 |
 | `app/src/pane/hybrid/audit.rs`、`icons.rs` | 后台审计通道与在途请求、图标批次加载和刷新 |
 | `app/src/pane/runtime.rs`、`display_layout.rs` | 连接重试、窗口恢复、显示器布局切换与自动备份调度 |
@@ -64,12 +65,12 @@ Win11 文件精简菜单由 Explorer 内的独立 Shell 宿主提供文件身份
 1. 初始化 DPI 与 COM，解析唯一可选参数 `--title`。
 2. 获取当前会话的单实例互斥量；重复启动广播唤起消息。
 3. 读取 `config.toml` 与 `workspace.db`，载入全局设置、工作区和显示器布局；旧格式不自动迁移。
-4. 直接加载 EXE 同目录的 `luciddesk_desktop.dll`，在 Explorer 的异步桌面线程回调中探测 `IShellFolderView`；成功后同步原生视图与独立来源清单。
+4. 由 `desktop_component.rs` 选择桌面 DLL：普通包直接加载同目录文件；具有 `msix` 标记和包身份时部署到 LocalState 缓存。随后在 Explorer 的异步桌面线程回调中探测 `IShellFolderView`；成功后同步原生视图与独立来源清单。
 5. 创建可用的分组、独立文件夹和搜索窗口、托盘及运行时监控窗口；消息循环调度同步、重连、快捷键与备份。
 6. 正常退出先停止监控和托盘，取出 Hook 会话后在不持有 `PaneApp` 可变借用的情况下分离 Explorer，再释放状态中的窗口与渲染资源；控制端消失时由存活监测触发清理。
 7. `GraphicsLifetime` 在 OLE 守卫之后、应用状态之前声明，确保窗口释放后依次清空 WinRT 合成运行时、DirectComposition 设备和 GPU 设备缓存，最后才退出 OLE/COM。错误返回也沿用此析构顺序，避免图形缓存留到进程退出时的 TLS 清理阶段。
 
-启动与重连均直接使用程序目录的 DLL，不计算内容哈希、不创建运行副本。分离会恢复视图成员并撤销回调和定时器；已固定到目标进程的 DLL 代码不立即卸载，以免留下悬空回调。
+启动与重连的包类型判断、内容校验和缓存清理见[MSIX 桌面组件加载](../msix.md#桌面组件加载)。分离时恢复视图成员，撤销回调和定时器；`filter/library.rs` 等待菜单线程结束及桌面 STA 离开 DLL 回调栈，再由原生线程释放模块引用。Explorer 无响应或清理失败时保留引用，避免卸载仍在执行的代码；新连接先检查残留组件。
 
 ## 拖放与成员同步
 
@@ -81,7 +82,7 @@ Win11 文件精简菜单由 Explorer 内的独立 Shell 宿主提供文件身份
 
 ## 当前兼容边界
 
-- 应用使用 `FilterSession` 和成员协议 v1，不安装原有五个几何 detour，不依赖固定 RVA 或 PDB。
+- 应用使用 `FilterSession` 和成员协议 v1，通过运行期接口探测连接 Explorer。
 - `IShellFolderView` 是已被微软标记为不再提供使用的旧接口；连接时按运行期能力判断是否可用；已验证环境不代表所有 Windows 构建均兼容。
 - 刷新/列表变化触发重新过滤，1 秒定时器补查遗漏变化并监视控制端；刷新期间仍可能短暂出现原生项目。
 - Hook 会话可在故障时缺失；文件夹与搜索 pane 独立运行，桌面分组保留归属并等待重连。

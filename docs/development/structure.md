@@ -1,6 +1,6 @@
 # 项目目录结构
 
-更新：2026-09-29。路径均相对仓库根目录。
+路径均相对仓库根目录。
 
 ## 顶层分工
 
@@ -18,6 +18,7 @@
 ```text
 app/src/
 ├── main.rs                 # 启动与参数
+├── desktop_component.rs    # 包标记、桌面 DLL 部署与缓存
 ├── tray.rs                 # 托盘生命周期
 ├── diagnostics.rs
 ├── app_icon.rs
@@ -65,14 +66,14 @@ app/src/
 ```
 
 搜索配置和快捷键仅在 `pane` 范围内可见；调用方显式从 `search` 导入，
-不在父模块重新暴露旧的平铺模块路径。拖放描述是 `drag_drop` 内部实现。
+父模块只暴露功能所需的入口。拖放描述是 `drag_drop` 内部实现。
 窗口、模型、绘图等多个功能共用的模块继续留在 `pane`，避免仅按名称搬动后增加循环依赖。
 
 ## 库与生成文件
 
 - `desktop-core/src/`：`identity`、`geometry`、`appearance`、`item`、`panel`、`workspace`，由 `lib.rs` 重导出公共类型。
 - `desktop-storage/src/`：`lib.rs` 导出 API，`error.rs` 定义错误，`store/` 包含事务、配置、恢复、编解码和测试。
-- `desktop-shell/src/`：`lib.rs` 导出 API，`namespace`、`desktop`、`notification`、`activation`、`apartment`、`error` 及原有文件操作、原生菜单、布局和重命名模块分别维护。
+- `desktop-shell/src/`：`lib.rs` 导出 API，`namespace`、`desktop`、`notification`、`activation`、`apartment`、`error` 及文件操作、原生菜单、布局和重命名模块分别维护。
 - `desktop-hook/src/filter.rs` 和 `filter/`：当前视图成员过滤后端、客户端、IPC、Shell 项目恢复。
 - `app/src/pane/hybrid/inventory.rs`：合并原生视图与独立桌面来源，保留已过滤的分组身份。
 - `app/src/pane/hybrid/audit.rs`：封装后台审计的通道、在途请求和调度操作；`hybrid.rs` 核验返回的成员修订，再更新模型和发布过滤名单。

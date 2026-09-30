@@ -1,6 +1,6 @@
 # 保留下一次崩溃转储
 
-这不是修复程序。已有临时转储被清理后，只能为后续崩溃保留新的转储。
+这些脚本配置 Windows Error Reporting，为后续崩溃保留转储，并支持恢复原设置。
 
 1. 解压到一个固定目录。右键 Enable-Crash-Dumps.cmd，选择“以管理员身份运行”。
 2. 保留此目录和生成的 crash-dump-settings-backup.json。正常使用即可，无需反复触发崩溃。
