@@ -2,9 +2,17 @@
 
 [简体中文](CHANGELOG.md) · English
 
-User-facing changes in each release. The current version is **0.13.0**. Windows 11 x64 is the primary validation platform.
+User-facing changes in each release. The current version is **0.14.0**. Windows 11 x64 is the primary validation platform.
 
 Exit the app before upgrading a portable installation and preserve its `data` folder. See the [portable guide](docs/portable.md) (Chinese).
+
+## 0.14.0 · 2026-09-30
+
+- Use the current directory’s classic Explorer background menu for empty folder-pane content, including native file operations and extensions. Keep panel management in the title menu and support inline rename for newly created items reported by Shell.
+- Fix folder type labels remaining in Chinese in the English interface; update them immediately with all seven app languages.
+- Preserve pane content and icons instead of reloading the whole pane when dismissing file context menus.
+- Complete both READMEs with folder-panel and About screenshots. Show the feature illustration above the screenshots without collapsing it, and center the introduction, illustration and caption.
+- Run GitHub Actions builds, packaging and publishing only when tags are pushed, supporting release versions with or without the `v` prefix; branch pushes and pull requests no longer trigger the workflow.
 
 ## 0.13.0 · 2026-09-30
 
