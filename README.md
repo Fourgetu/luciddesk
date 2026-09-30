@@ -16,17 +16,19 @@
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square)](#系统与兼容性)
 [![架构](https://img.shields.io/badge/arch-x64-475569?style=flat-square)](docs/portable.md)
 
-[下载安装包 / ZIP](https://github.com/Yuch3nE/luciddesk/releases) · [界面截图](#界面截图) · [开始使用](#开始使用) · [使用指南](docs/usage.md) · [更新记录](CHANGELOG.md) · [参与开发](#参与开发)
+[⬇️ 下载](https://github.com/Yuch3nE/luciddesk/releases) · [📸 截图](#界面截图) · [🚀 开始使用](#开始使用) · [📖 使用指南](docs/usage.md) · [📋 更新记录](CHANGELOG.md) · [🤝 参与开发](#参与开发)
 
-LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。将零散图标收进面板，把常用目录放到桌面，配合标签、文件搜索与预览，让常用内容更容易找到。
+把零散图标收进面板，把常用目录放到桌面，再用 Everything 搜索快速找到文件。LucidDesk 使用 Rust 开发，让 Windows 桌面上的常用内容触手可及。
 
 ![LucidDesk 功能示意：面板标签、文件夹浏览与 Everything 搜索](docs/images/overview.svg)
 
-此图用于说明功能，并非实际界面截图。
+<sub>功能示意图 · 实际界面见下方截图</sub>
 
 </div>
 
-## 界面截图
+<a id="界面截图"></a>
+
+## 📸 界面截图
 
 | 桌面面板 | 主题与材质 |
 | :---: | :---: |
@@ -38,7 +40,9 @@ LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。将零散图标�
 
 点击截图查看原图。图中为深色亚克力，实际效果随壁纸和系统设置变化；Mica 系列仅在 Windows 11 提供。
 
-## 功能
+<a id="功能"></a>
+
+## ✨ 功能
 
 | 功能 | 你可以做什么 |
 | --- | --- |
@@ -54,7 +58,9 @@ LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。将零散图标�
 
 **面板不会搬动你的文件。** 将图标拖入面板只改变桌面上的收纳方式；拖回桌面即可移出，关闭面板也不会删除原文件。文件菜单中的删除、重命名和剪切，以及文件夹面板中的拖入、粘贴，会操作真实文件。
 
-## 开始使用
+<a id="开始使用"></a>
+
+## 🚀 开始使用
 
 ### 选择下载版本
 
@@ -94,7 +100,9 @@ LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。将零散图标�
 
 这些软件不包含在 LucidDesk 的任何发布包中。更多操作和快捷键见[使用说明](docs/usage.md)。
 
-## 升级与备份
+<a id="升级与备份"></a>
+
+## 🔄 升级与备份
 
 “设置 → 关于”提供“检查更新”和“打开更新页面”。查看版本后，在 Release 页面自行下载对应发布包。
 
@@ -106,13 +114,13 @@ LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。将零散图标�
 
 EXE 与 DLL 必须来自同次构建。安装版卸载时默认勾选“保留用户配置”；取消勾选才会删除当前账户的默认设置、布局和备份。详见[安装说明](docs/installer.md)。
 
-安装版的开始菜单、桌面快捷方式与应用进程使用一致的 Windows 应用身份。卸载会清理指向本安装的快捷方式，并通知系统刷新应用列表；Windows 的应用备份记录可能仍然保留。
-
 在“设置 → 备份与恢复”中可以打开配置目录、导出配置或恢复备份。备份只包含设置与布局，**不包含面板引用的原文件**；复制便携目录时，原文件也不会自动跟随。
 
 普通版的设置默认位于 `%LOCALAPPDATA%\LucidDesk`。从旧版升级时会按条件继续使用原来的 `LucidPane` 数据目录；从普通版改用便携版时，可通过备份与恢复转入配置。自定义数据位置和详细升级步骤见[便携版说明](docs/portable.md)与[使用说明](docs/usage.md)。
 
-## 界面语言
+<a id="界面语言"></a>
+
+## 🌐 界面语言
 
 支持简体中文、繁體中文、English、日本語、한국어、Deutsch 和 Русский。默认跟随 Windows 显示语言，其他语言回退到英语。在“设置 → 语言”中手动选择，立即生效。
 
@@ -120,7 +128,9 @@ EXE 与 DLL 必须来自同次构建。安装版卸载时默认勾选“保留�
 
 语言资源内置于程序，无需下载语言包。用户命名的面板、文件名和 Windows 原生文件菜单保持原样。
 
-## 系统与兼容性
+<a id="系统与兼容性"></a>
+
+## 🖥️ 系统与兼容性
 
 | 环境 | 支持情况 |
 | --- | --- |
@@ -130,15 +140,21 @@ EXE 与 DLL 必须来自同次构建。安装版卸载时默认勾选“保留�
 
 系统停用背景效果时，材质会回退为随深浅主题变化的底色，保留原来的材质设置。系统重新允许效果后恢复。具体验证范围见[验证记录](docs/development/validation.md)。
 
-## 常见问题
+<a id="常见问题"></a>
+
+## 💬 常见问题
 
 **桌面面板无法连接怎么办？** 在“设置 → 关于”查看连接状态并尝试重新连接。程序会保留面板配置并自动重试；文件夹与搜索面板仍可独立使用。
 
 **如何反馈问题？** 请提供复现步骤、预期与实际表现，以及“设置 → 关于 → 复制诊断”中的信息。显示异常时，附上截图、屏幕缩放比例和所选材质，便于定位。
 
-## 源码构建
+<a id="源码构建"></a>
 
-准备 Windows、Rust 1.95 或更新的 MSVC 工具链，以及 Visual Studio C++ 构建工具和 Windows SDK。先获取公开仓库：
+## 🛠️ 源码构建
+
+准备 Windows x64、rustup、Visual Studio C++ 构建工具和 Windows SDK。仓库通过 `rust-toolchain.toml` 指定 Rust 版本，环境脚本自动选择满足最低版本要求的已安装 x64 MSVC 和 SDK；详见[构建指南](docs/development/build.md)。
+
+先获取公开仓库：
 
 ```powershell
 git clone https://github.com/Yuch3nE/luciddesk.git
@@ -148,6 +164,7 @@ cd luciddesk
 在仓库根目录执行：
 
 ```powershell
+.\tools\use-windows-toolchain.ps1
 cargo build -p luciddesk -p desktop-hook --locked
 .\target\debug\luciddesk.exe
 ```
@@ -162,9 +179,13 @@ cargo build -p luciddesk -p desktop-hook --locked
 
 安装包位于 `target/installers/`，普通 ZIP 位于 `target/packages/`，便携 ZIP 位于 `target/portable/时间戳/`。各发布包附带 SHA256 校验文件。测试命令、诊断构建和绑定生成见[构建指南](docs/development/build.md)。
 
-## 参与开发
+<a id="参与开发"></a>
+
+## 🤝 参与开发
 
 欢迎通过 [Issue](https://github.com/Yuch3nE/luciddesk/issues) 和 [Pull Request](https://github.com/Yuch3nE/luciddesk/pulls) 提交问题、改进建议或代码。
+
+开始前请阅读[贡献指南](CONTRIBUTING.md)；数据保存、联网检查及诊断分享见[隐私政策](PRIVACY.md)。
 
 - **反馈问题**：附上复现步骤、系统版本和“设置 → 关于 → 复制诊断”的信息；界面问题请附截图与缩放比例。
 - **提出功能**：说明使用场景和期望的操作方式，便于讨论是否适合桌面工作流。
@@ -172,13 +193,26 @@ cargo build -p luciddesk -p desktop-hook --locked
 
 提交日志前请检查其中的个人文件路径等信息。项目作者：**Yuchen95**。
 
-## 文档
+<a id="文档"></a>
 
-- [使用说明](docs/usage.md)：面板操作、快捷键、外观与故障处理。
-- [更新记录](CHANGELOG.md)：各版本的新功能与修复。
-- [安装版](docs/installer.md) · [普通 ZIP](docs/package.md) · [便携版](docs/portable.md)：安装、升级与配置保存。
-- [开发文档](docs/development/README.md)：架构、绘图、存储与验证。
+## 📚 文档
 
-## 许可证
+| 文档 | 内容 |
+| --- | --- |
+| [使用说明](docs/usage.md) | 面板操作、快捷键、外观与故障处理 |
+| [安装版](docs/installer.md) · [普通 ZIP](docs/package.md) · [便携版](docs/portable.md) | 安装、升级与配置保存 |
+| [更新记录](CHANGELOG.md) | 各版本的应用功能与修复 |
+| [开发文档](docs/development/README.md) | 架构、构建、存储与验证 |
+| [贡献指南](CONTRIBUTING.md) · [隐私政策](PRIVACY.md) | 参与方式与数据处理说明 |
+
+<a id="友情链接"></a>
+
+## 🔗 友情链接
+
+[**Linux DO**](https://linux.do/)
+
+<a id="许可证"></a>
+
+## 📄 许可证
 
 LucidDesk 使用 [MIT 许可证](LICENSE)。第三方依赖仍遵循各自的许可证。
