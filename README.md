@@ -12,12 +12,11 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Build CI](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml/badge.svg)](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml)
-[![版本](https://img.shields.io/badge/version-0.14.0-087EA4?style=flat-square)](CHANGELOG.md)
+[![版本](https://img.shields.io/badge/version-0.15.0-087EA4?style=flat-square)](CHANGELOG.md)
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square)](#系统与兼容性)
 [![架构](https://img.shields.io/badge/arch-x64-475569?style=flat-square)](docs/portable.md)
-[![Rust](https://img.shields.io/badge/Rust-1.95%2B-CE6F32?style=flat-square)](Cargo.toml)
 
-[下载发布包](https://github.com/Yuch3nE/luciddesk/releases) · [界面截图](#界面截图) · [开始使用](#开始使用) · [使用指南](docs/usage.md) · [更新记录](CHANGELOG.md) · [参与开发](#参与开发)
+[下载安装包 / ZIP](https://github.com/Yuch3nE/luciddesk/releases) · [界面截图](#界面截图) · [开始使用](#开始使用) · [使用指南](docs/usage.md) · [更新记录](CHANGELOG.md) · [参与开发](#参与开发)
 
 LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。将零散图标收进面板，把常用目录放到桌面，配合标签、文件搜索与预览，让常用内容更容易找到。
 
@@ -33,9 +32,7 @@ LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。将零散图标�
 | :---: | :---: |
 | <a href="screenshot/zh/pane.png"><img src="screenshot/zh/pane.png" height="220" alt="中文桌面面板" /></a> | <a href="screenshot/zh/setting.png"><img src="screenshot/zh/setting.png" height="220" alt="中文主题与材质设置" /></a> |
 | 拖入图标，按需折叠与整理 | 调整深浅主题与背景材质 |
-
-| 文件夹面板 | 关于与运行状态 |
-| :---: | :---: |
+| **文件夹面板** | **关于与运行状态** |
 | <a href="screenshot/zh/folder.png"><img src="screenshot/zh/folder.png" height="220" alt="中文文件夹面板列表视图" /></a> | <a href="screenshot/zh/about.png"><img src="screenshot/zh/about.png" height="220" alt="中文关于页面与运行状态" /></a> |
 | 浏览常用目录，查看类型、修改时间与大小 | 查看版本、项目入口与运行状态 |
 
@@ -61,16 +58,21 @@ LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。将零散图标�
 
 ### 选择下载版本
 
-在 [GitHub Releases](https://github.com/Yuch3nE/luciddesk/releases) 下载 ZIP。**普通版和便携版均免安装，功能相同，区别在于配置保存位置。**
+在 [GitHub Releases](https://github.com/Yuch3nE/luciddesk/releases) 下载。日常使用推荐安装版；三种发布包功能相同。
 
 | 版本 | 如何识别发布包 | 默认配置位置 | 适合场景 |
 | --- | --- | --- | --- |
-| 普通版（非便携版） | 名称含 `windows-x64`，不含 `portable` | `%LOCALAPPDATA%\LucidDesk` | 在同一 Windows 账户下使用，程序与配置分开保存 |
+| 安装版 | `windows-x64-setup.exe` | `%LOCALAPPDATA%\LucidDesk` | 安装向导、开始菜单与卸载入口 |
+| 普通 ZIP（非便携版） | `.zip`，不含 `portable` | `%LOCALAPPDATA%\LucidDesk` | 免安装，程序与配置分开保存 |
 | 便携版 | 名称含 `windows-x64-portable` | 程序目录中的 `data` 文件夹 | 希望配置随程序目录一起携带 |
 
-普通版说明见[发布包说明](docs/package.md)，便携版说明见[便携版说明](docs/portable.md)。若尚无发布包，可按[源码构建](#源码构建)自行打包。
+详见[安装说明](docs/installer.md)、[普通 ZIP 说明](docs/package.md)和[便携版说明](docs/portable.md)。若尚无发布包，可按[源码构建](#源码构建)自行打包。
 
-### 解压并启动
+### 启动与整理
+
+**安装版**：运行 `windows-x64-setup.exe`，按向导安装后从开始菜单启动。支持当前用户安装，也可选择所有用户安装到 Program Files。
+
+**ZIP 版**：
 
 1. 退出正在运行的旧版，将压缩包完整解压到有写入权限的文件夹。
 2. 双击 `luciddesk.exe` 启动。请保留包内其他文件，不要只复制 EXE，也不要直接在压缩包中运行。
@@ -94,10 +96,15 @@ LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。将零散图标�
 
 ## 升级与备份
 
-升级前先退出程序，再完整更新包内运行文件，避免混用不同版本的 EXE 与 DLL。
+“设置 → 关于”提供“检查更新”和“打开更新页面”。查看版本后，在 Release 页面自行下载对应发布包。
 
-- **普通版**：配置与程序目录分开保存，替换程序文件时保留原配置目录即可。
-- **便携版**：保留原目录中的 `data` 文件夹和 `portable.marker`；`data` 保存你的配置、面板和布局。
+| 版本 | 升级方式 |
+| --- | --- |
+| 安装版 | 运行新安装包，沿用安装目录；程序运行时可确认自动退出后升级 |
+| 普通 ZIP | 退出程序，完整替换程序文件；配置目录保留 |
+| 便携版 | 退出程序，替换程序文件，保留 `data` 和 `portable.marker` |
+
+EXE 与 DLL 必须来自同次构建。安装版卸载时默认勾选“保留用户配置”；取消勾选才会删除当前账户的默认设置、布局和备份。详见[安装说明](docs/installer.md)。
 
 在“设置 → 备份与恢复”中可以打开配置目录、导出配置或恢复备份。备份只包含设置与布局，**不包含面板引用的原文件**；复制便携目录时，原文件也不会自动跟随。
 
@@ -143,18 +150,19 @@ cargo build -p luciddesk -p desktop-hook --locked
 .\target\debug\luciddesk.exe
 ```
 
-主程序和 `luciddesk_desktop.dll` 必须来自同次构建并放在同一目录。分别生成普通版与便携版 ZIP：
+主程序和 `luciddesk_desktop.dll` 必须来自同次构建并放在同一目录。生成安装包与 ZIP：
 
 ```powershell
-.\tools\package.ps1
+.\tools\ensure-inno.ps1
+.\tools\package.ps1 -Installer
 .\tools\package.ps1 -Portable
 ```
 
-普通版产物位于 `target/packages/`，便携版位于 `target/portable/时间戳/`。测试命令、诊断构建和绑定生成见[构建指南](docs/development/build.md)。
+安装包位于 `target/installers/`，普通 ZIP 位于 `target/packages/`，便携 ZIP 位于 `target/portable/时间戳/`。各发布包附带 SHA256 校验文件。测试命令、诊断构建和绑定生成见[构建指南](docs/development/build.md)。
 
 ## 参与开发
 
-公开仓库位于 [Yuch3nE/luciddesk](https://github.com/Yuch3nE/luciddesk)，由维护者从本地开发仓库同步。欢迎通过 [Issue](https://github.com/Yuch3nE/luciddesk/issues) 和 [Pull Request](https://github.com/Yuch3nE/luciddesk/pulls) 提交问题、改进建议或代码。
+欢迎通过 [Issue](https://github.com/Yuch3nE/luciddesk/issues) 和 [Pull Request](https://github.com/Yuch3nE/luciddesk/pulls) 提交问题、改进建议或代码。
 
 - **反馈问题**：附上复现步骤、系统版本和“设置 → 关于 → 复制诊断”的信息；界面问题请附截图与缩放比例。
 - **提出功能**：说明使用场景和期望的操作方式，便于讨论是否适合桌面工作流。
@@ -166,7 +174,7 @@ cargo build -p luciddesk -p desktop-hook --locked
 
 - [使用说明](docs/usage.md)：面板操作、快捷键、外观与故障处理。
 - [更新记录](CHANGELOG.md)：各版本的新功能与修复。
-- [便携版说明](docs/portable.md)：启动、升级与配置携带。
+- [安装版](docs/installer.md) · [普通 ZIP](docs/package.md) · [便携版](docs/portable.md)：安装、升级与配置保存。
 - [开发文档](docs/development/README.md)：架构、绘图、存储与验证。
 
 ## 许可证

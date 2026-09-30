@@ -12,10 +12,9 @@ Desktop panels · Folder panels · Everything search · Spacebar preview
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Build CI](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml/badge.svg)](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml)
-[![Version](https://img.shields.io/badge/version-0.14.0-087EA4?style=flat-square)](CHANGELOG.en.md)
+[![Version](https://img.shields.io/badge/version-0.15.0-087EA4?style=flat-square)](CHANGELOG.en.md)
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square)](#compatibility)
 [![Architecture](https://img.shields.io/badge/arch-x64-475569?style=flat-square)](docs/portable.md)
-[![Rust](https://img.shields.io/badge/Rust-1.95%2B-CE6F32?style=flat-square)](Cargo.toml)
 
 [Downloads](https://github.com/Yuch3nE/luciddesk/releases) · [Screenshots](#screenshots) · [Getting started](#getting-started) · [Changelog](CHANGELOG.en.md) · [Contributing](#contributing)
 
@@ -33,9 +32,7 @@ This illustration explains the features; it is not an actual screenshot.
 | :---: | :---: |
 | <a href="screenshot/en/pane.png"><img src="screenshot/en/pane.png" height="220" alt="Desktop panel in English" /></a> | <a href="screenshot/en/setting.png"><img src="screenshot/en/setting.png" height="220" alt="Theme and material settings in English" /></a> |
 | Drag in icons to organize your desktop | Customize the theme and background |
-
-| Folder panel | About & status |
-| :---: | :---: |
+| **Folder panel** | **About & status** |
 | <a href="screenshot/en/folder.png"><img src="screenshot/en/folder.png" height="220" alt="Folder panel list view in English" /></a> | <a href="screenshot/en/about.png"><img src="screenshot/en/about.png" height="220" alt="About page and runtime status in English" /></a> |
 | Browse folders with type, modified date and size columns | View the version, project links and runtime status |
 
@@ -61,16 +58,21 @@ Panels can move, resize, collapse, auto-hide, snap to edges, lock, or stay on to
 
 ### Choose a package
 
-Download a ZIP from [GitHub Releases](https://github.com/Yuch3nE/luciddesk/releases). **Both packages run without installation and provide the same features; they differ in where settings are stored.**
+Download from [GitHub Releases](https://github.com/Yuch3nE/luciddesk/releases). The installer is recommended for everyday use. All three packages have the same features.
 
 | Package | File name | Default settings location | Best suited for |
 | --- | --- | --- | --- |
-| Standard (non-portable) | Contains `windows-x64`, without `portable` | `%LOCALAPPDATA%\LucidDesk` | Keeping settings separate from app files under one Windows account |
+| Installer | `windows-x64-setup.exe` | `%LOCALAPPDATA%\LucidDesk` | Setup wizard, Start menu and uninstall entry |
+| Standard ZIP (non-portable) | `.zip`, without `portable` | `%LOCALAPPDATA%\LucidDesk` | Running without installation, with separate settings |
 | Portable | Contains `windows-x64-portable` | The `data` folder beside the executable | Carrying settings with the app folder |
 
-See the [standard package guide](docs/package.md) or [portable guide](docs/portable.md) (Chinese). If no release is available, [build from source](#build-from-source).
+See the [installer](docs/installer.md), [standard ZIP](docs/package.md) or [portable](docs/portable.md) guide (Chinese). If no release is available, [build from source](#build-from-source).
 
-### Extract and launch
+### Launch and organize
+
+**Installer:** run `windows-x64-setup.exe`, follow the wizard, then launch from the Start menu. Install for the current user or choose all users to install in Program Files.
+
+**ZIP packages:**
 
 1. Exit any running copy and extract the entire ZIP to a writable folder.
 2. Run `luciddesk.exe`. Keep `luciddesk_desktop.dll` beside it; portable mode also requires `portable.marker`. Do not run the app inside the ZIP.
@@ -87,7 +89,7 @@ Search and preview are **disabled by default** and require separately installed 
 | File search | Install and run Everything, then enable the search panel in **Settings → Everything search** |
 | Spacebar preview | Install PowerToys Peek or QuickLook, then select and enable it in **Settings → File preview** |
 
-These tools are not bundled with either package. See the [user guide](docs/usage.md) (Chinese) for more controls and shortcuts.
+These tools are not bundled with LucidDesk. See the [user guide](docs/usage.md) (Chinese) for more controls and shortcuts.
 
 An optional **Show all panels** global shortcut is available in **Settings → Panel layout**. It is off by default, with `Ctrl + Shift + D` as the preset. It performs the same action as **Show panels** in the tray and preserves each panel’s always-on-top setting.
 
@@ -101,10 +103,15 @@ Translations are embedded in the executable. Saved panel names and file names ar
 
 ## Upgrading and backups
 
-Exit the app before upgrading and replace the complete set of app files so the executable and DLL come from the same build.
+Use **Settings → About → Check for updates**, then **Open update page** to download the appropriate package from GitHub Releases.
 
-- **Standard:** keep the settings directory, which is separate from the app folder and defaults to `%LOCALAPPDATA%\LucidDesk`.
-- **Portable:** preserve the `data` folder and `portable.marker` beside the executable.
+| Package | Upgrade |
+| --- | --- |
+| Installer | Run the new installer; it reuses the install folder and can close the running app after confirmation |
+| Standard ZIP | Exit the app and replace all program files; keep the separate settings folder |
+| Portable | Exit the app and replace program files; preserve `data` and `portable.marker` |
+
+Keep the EXE and DLL from the same build together. Uninstall keeps user settings by default. Uncheck **Keep user settings** to remove the current account's default settings, layouts and backups. See the [installer guide](docs/installer.md) (Chinese).
 
 Upgrades may continue using an existing `LucidPane` data directory. To switch from standard to portable mode, export and restore your configuration.
 
@@ -136,15 +143,16 @@ cargo build -p luciddesk -p desktop-hook --locked
 Build packages from the repository root:
 
 ```powershell
-.\tools\package.ps1
+.\tools\ensure-inno.ps1
+.\tools\package.ps1 -Installer
 .\tools\package.ps1 -Portable
 ```
 
-Standard ZIPs are written to `target/packages/`; portable ZIPs are written to `target/portable/<timestamp>/`. Keep `luciddesk.exe` and `luciddesk_desktop.dll` from the same build together. See the [build guide](docs/development/build.md) for checks and diagnostic builds.
+Installers are written to `target/installers/`, standard ZIPs to `target/packages/`, and portable ZIPs to `target/portable/<timestamp>/`. Each package includes a SHA256 checksum file. Keep `luciddesk.exe` and `luciddesk_desktop.dll` from the same build together. See the [build guide](docs/development/build.md) for checks and diagnostic builds.
 
 ## Contributing
 
-The public [GitHub repository](https://github.com/Yuch3nE/luciddesk) is synchronized from the maintainer's local development repository. Issues and pull requests are welcome.
+[Issues](https://github.com/Yuch3nE/luciddesk/issues) and [pull requests](https://github.com/Yuch3nE/luciddesk/pulls) are welcome.
 
 Include reproduction steps, Windows version, and the information from **Settings → About → Copy diagnostics** in bug reports. For rendering issues, include a screenshot, display scaling and the selected material. Review logs for personal file paths before sharing them.
 

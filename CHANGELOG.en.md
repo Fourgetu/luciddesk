@@ -2,9 +2,31 @@
 
 [简体中文](CHANGELOG.md) · English
 
-User-facing changes in each release. The current version is **0.14.0**. Windows 11 x64 is the primary validation platform.
+Current version: **0.15.0**. Features and fixes by release.
 
 Exit the app before upgrading a portable installation and preserve its `data` folder. See the [portable guide](docs/portable.md) (Chinese).
+
+## 0.15.0 · 2026-09-30
+
+### feat
+
+- Add an installer with per-user installation or all-users installation in Program Files.
+- Add Check for updates and Open update page in About; release packages are downloaded manually.
+- Offer graceful app exit during installation and uninstall; keep user settings by default with a checkbox in the uninstall confirmation.
+
+### fix
+
+- Release the desktop DLL on exit so upgrades and uninstall can proceed.
+- Check for old components in Explorer before installation and attachment to prevent crashes from mixed DLL builds.
+- Correct uninstall messages and wait for the app and desktop component to exit before continuing.
+
+### docs
+
+- Simplify both READMEs and organize screenshots, package choices, upgrades and build instructions.
+
+### ci
+
+- Publish the installer, standard ZIP, portable ZIP and SHA256 checksums from tag builds.
 
 ## 0.14.0 · 2026-09-30
 
