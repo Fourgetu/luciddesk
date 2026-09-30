@@ -153,3 +153,123 @@ fn loaded_fences(pid: u32) -> bool {
         found
     }
 }
+
+/// Confirm that Explorer no longer has any desktop component mapped, including
+/// legacy pinned images loaded from a different installation or a renamed file.
+/// # Errors
+/// Returns an error if the desktop process or its module list cannot be inspected.
+pub fn desktop_component_released() -> Result<bool, String> {
+    let view = desktop_view()?;
+    let mut pid = 0;
+    unsafe {
+        GetWindowThreadProcessId(view as HWND, &raw mut pid);
+    }
+    component_released_in(pid)
+}
+
+pub(crate) fn component_released_in(pid: u32) -> Result<bool, String> {
+    use windows_sys::Win32::{
+        Foundation::{
+            CloseHandle, ERROR_BAD_LENGTH, ERROR_NO_MORE_FILES, GetLastError, INVALID_HANDLE_VALUE,
+        },
+        System::{Diagnostics::ToolHelp::*, Threading::Sleep},
+    };
+    if pid == 0 {
+        return Err("无法确定 Explorer 进程".into());
+    }
+    unsafe {
+        let mut snapshot = INVALID_HANDLE_VALUE;
+        for _ in 0..10 {
+            snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid);
+            if snapshot != INVALID_HANDLE_VALUE {
+                break;
+            }
+            if GetLastError() != ERROR_BAD_LENGTH {
+                break;
+            }
+            Sleep(10);
+        }
+        if snapshot == INVALID_HANDLE_VALUE {
+            return Err(std::io::Error::last_os_error().to_string());
+        }
+        let mut entry = MODULEENTRY32W {
+            dwSize: size_of::<MODULEENTRY32W>() as u32,
+            ..std::mem::zeroed()
+        };
+        let mut available = Module32FirstW(snapshot, &raw mut entry);
+        let mut released = true;
+        while available != 0 {
+            let end = entry
+                .szModule
+                .iter()
+                .position(|c| *c == 0)
+                .unwrap_or(entry.szModule.len());
+            if String::from_utf16_lossy(&entry.szModule[..end])
+                .eq_ignore_ascii_case("luciddesk_desktop.dll")
+            {
+                released = false;
+                break;
+            }
+            available = Module32NextW(snapshot, &raw mut entry);
+        }
+        let error = GetLastError();
+        CloseHandle(snapshot);
+        if released && error != ERROR_NO_MORE_FILES {
+            return Err(format!("无法确认 Explorer 桌面组件已释放 ({error})"));
+        }
+        Ok(released)
+    }
+}
+
+#[cfg(test)]
+mod component_tests {
+    use super::*;
+    use windows_sys::Win32::{
+        Foundation::FreeLibrary,
+        System::{LibraryLoader::LoadLibraryExW, Threading::GetCurrentProcessId},
+    };
+
+    #[test]
+    fn mapped_component_blocks_attach_before_any_hook_is_installed() {
+        let dll = std::env::current_exe()
+            .unwrap()
+            .with_file_name("luciddesk_desktop.dll");
+        let path: Vec<u16> = dll
+            .to_string_lossy()
+            .encode_utf16()
+            .chain(Some(0))
+            .collect();
+        unsafe {
+            let module = LoadLibraryExW(path.as_ptr(), null_mut(), 0);
+            assert!(!module.is_null(), "{}", std::io::Error::last_os_error());
+            let window = windows_sys::Win32::UI::WindowsAndMessaging::CreateWindowExW(
+                0,
+                windows_sys::w!("STATIC"),
+                windows_sys::w!("component guard test"),
+                windows_sys::Win32::UI::WindowsAndMessaging::WS_POPUP,
+                0,
+                0,
+                1,
+                1,
+                null_mut(),
+                null_mut(),
+                null_mut(),
+                null_mut(),
+            );
+            assert!(!window.is_null());
+            assert!(!component_released_in(GetCurrentProcessId()).unwrap());
+            let result =
+                crate::filter::FilterSession::connect(window as isize, window as isize, &dll);
+            assert!(result.err().unwrap().contains("旧桌面组件尚未释放"));
+            windows_sys::Win32::UI::WindowsAndMessaging::DestroyWindow(window);
+            assert_ne!(FreeLibrary(module), 0);
+            assert!(component_released_in(GetCurrentProcessId()).unwrap());
+        }
+    }
+
+    #[test]
+    fn invalid_process_is_an_error_not_a_safe_to_install_result() {
+        assert!(component_released_in(0).is_err());
+        assert!(component_released_in(u32::MAX).is_err());
+    }
+}

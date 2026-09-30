@@ -11,6 +11,14 @@ use desktop_shell::{ShellApartment, local_app_data_path};
 use std::{ffi::OsString, fs, path::PathBuf};
 
 fn main() -> Result<(), String> {
+    // Installer preflight only: no COM, application windows, data access or hooks.
+    if std::env::args_os().skip(1).eq([OsString::from("--check-desktop-component")]) {
+        std::process::exit(match luciddesk_desktop::desktop_component_released() {
+            Ok(true) => 0,
+            Ok(false) => 1,
+            Err(_) => 2,
+        });
+    }
     unsafe {
         windows_sys::Win32::UI::HiDpi::SetProcessDpiAwarenessContext(
             windows_sys::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,

@@ -360,7 +360,20 @@ impl Drop for MenuHost {
             }
             let _ = self.browser.Destroy();
             DestroyWindow(self.hwnd);
+            // DLL-owned classes are not automatically removed when a DLL unloads.
+            // Only the last destroyed host can unregister the shared class.
+            unregister_host_class();
         }
+    }
+}
+fn unregister_host_class() {
+    unsafe {
+        let mut instance = null_mut();
+        windows_sys::Win32::System::LibraryLoader::GetModuleHandleExW(
+            windows_sys::Win32::System::LibraryLoader::GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+                | windows_sys::Win32::System::LibraryLoader::GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            (host_messages as *const ()).cast(), &raw mut instance);
+        UnregisterClassW(windows_sys::w!("LucidPane.IsolatedShellHost.v1"), instance);
     }
 }
 unsafe extern "system" fn menu_messages(

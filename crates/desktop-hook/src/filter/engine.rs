@@ -16,7 +16,7 @@ use windows::{
 };
 use windows_sys::Win32::{
     Foundation::{CloseHandle, HANDLE, HWND},
-    System::{DataExchange::COPYDATASTRUCT, LibraryLoader::*, Threading::*},
+    System::{DataExchange::COPYDATASTRUCT, Threading::*},
     UI::{
         Controls::*,
         Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
@@ -50,6 +50,8 @@ struct State {
     read_retry: retry::ReadRetry,
     drag_start: Option<windows_sys::Win32::Foundation::POINT>,
     user_menu: bool,
+    // Last field: release is signaled only after all COM objects are dropped.
+    _library: library::StaLease,
 }
 impl Drop for State {
     fn drop(&mut self) {
@@ -110,16 +112,10 @@ fn attach_inner(hwnd: HWND, owner: HWND) -> Result<()> {
         if process.is_null() {
             return Err(windows::core::Error::from_thread());
         }
-        let mut module = null_mut();
-        if GetModuleHandleExW(
-            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
-            (LucidPaneFilterHook as *const ()).cast(),
-            &raw mut module,
-        ) == 0
-        {
-            CloseHandle(process);
-            return Err(windows::core::Error::from_thread());
-        }
+        let library = match library::StaLease::new() {
+            Ok(library) => library,
+            Err(error) => { CloseHandle(process); return Err(error); }
+        };
         let mut state = State {
             hwnd,
             owner,
@@ -141,6 +137,7 @@ fn attach_inner(hwnd: HWND, owner: HWND) -> Result<()> {
             read_retry: Default::default(),
             drag_start: None,
             user_menu: false,
+            _library: library,
         };
         state.owner_watch = Some(owner::OwnerWatch::new(process, owner, hwnd)?);
         // The caller may abandon a stale view while Shell COM initialization
@@ -423,6 +420,7 @@ unsafe extern "system" fn subclass(
     _: usize,
     _: usize,
 ) -> isize {
+    let _callback = library::Callback::enter();
     let frozen = FROZEN_VIEW.with(Cell::get);
     if !frozen.is_null() && msg == WM_NOTIFY && lp != 0 {
         let header = unsafe { &*(lp as *const NMHDR) };
@@ -699,6 +697,7 @@ unsafe extern "system" fn subclass(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 
     #[test]
     fn menu_redraw_gate_survives_reentrant_calls_and_releases() {

@@ -69,6 +69,7 @@ impl Drop for OwnerWatch {
     }
 }
 unsafe extern "system" fn exited(context: *mut core::ffi::c_void, _: bool) {
+    let _callback = super::library::Callback::enter();
     unsafe {
         PostMessageW(context.cast(), super::work_message(), 0, 0);
     }
@@ -82,6 +83,7 @@ unsafe extern "system" fn destroyed(
     _: u32,
     _: u32,
 ) {
+    let _callback = super::library::Callback::enter();
     if object == 0 && child == 0 {
         WINDOWS.with(|windows| {
             let (owner, view) = windows.get();

@@ -153,8 +153,11 @@ impl Worker {
                 drop(current);
                 drop(retired);
                 CoUninitialize();
+                // Also covers a class registered before a failed host creation.
+                super::unregister_host_class();
             })
             .map_err(|error| windows::core::Error::new(E_FAIL, error.to_string()))?;
+        super::super::library::keep_thread(&thread)?;
         Ok(Self {
             requests,
             signal,

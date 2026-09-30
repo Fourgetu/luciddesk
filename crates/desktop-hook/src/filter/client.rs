@@ -100,6 +100,12 @@ impl FilterSession {
                 return Err("桌面过滤已有活动连接".into());
             }
             let target = AttachTarget::capture(view)?;
+            // SetWindowsHookEx translates the entry RVA into Explorer's module.
+            // A legacy image with the same name/path can have a different RVA;
+            // never inject while that image (or an old session) is still mapped.
+            if !crate::discovery::component_released_in(target.process)? {
+                return Err("Explorer 中的旧桌面组件尚未释放。请稍后重试；若持续出现，请重启资源管理器后再启动 LucidDesk。".into());
+            }
             let path = std::fs::canonicalize(dll).map_err(|e| e.to_string())?;
             let path: Vec<u16> = path
                 .to_string_lossy()

@@ -4,6 +4,7 @@ mod diagnostics;
 mod engine;
 mod explorer;
 mod items;
+mod library;
 mod menu;
 mod owner;
 mod retry;
@@ -45,6 +46,7 @@ fn work_message() -> u32 {
 /// The callback payload must be a valid Windows MSG supplied by WH_GETMESSAGE.
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn LucidPaneFilterHook(code: i32, wp: usize, lp: isize) -> isize {
+    let _callback = library::Callback::enter();
     if code >= 0 && wp == PM_REMOVE as usize && lp != 0 {
         let _ = std::panic::catch_unwind(|| {
             let msg = unsafe { &*(lp as *const MSG) };

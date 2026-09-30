@@ -3,4 +3,4 @@ mod discovery;
 pub mod filter;
 pub mod notifications;
 
-pub use discovery::{conflicting_desktop_extension, desktop_view};
+pub use discovery::{conflicting_desktop_extension, desktop_component_released, desktop_view};
