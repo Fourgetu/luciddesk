@@ -11,7 +11,7 @@ jobs:
     runs-on: windows-2025-vs2026
     steps:
       - uses: actions/checkout@v4
-      - name: Select pinned MSVC and Windows SDK
+      - name: Select latest installed x64 MSVC and Windows SDK
         shell: pwsh
         run: ./tools/use-windows-toolchain.ps1 -GitHubActions
       - name: Install Rust
