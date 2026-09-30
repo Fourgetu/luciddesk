@@ -64,6 +64,7 @@ impl Drop for State {
 
 pub fn attach(hwnd: HWND, owner: HWND) {
     let result = attach_inner(hwnd, owner);
+
     if let Err(error) = result {
         unsafe {
             SetPropW(hwnd, ERROR, error.code().0 as u32 as usize as _);
@@ -189,6 +190,19 @@ impl State {
     fn redraw(&mut self, enabled: bool) {
         set_redraw(self.hwnd, &mut self.redraw_paused, enabled);
     }
+    fn apply_membership(&mut self) -> std::result::Result<(), items::ApplyError> {
+        let mut redraw = MembershipRedraw::new(
+            self.hwnd,
+            &mut self.redraw_paused,
+            self.paused || self.updating,
+        );
+        self.membership.apply_before_write(
+            &self.folder,
+            &self.object_view,
+            self.paused,
+            || redraw.before_write(),
+        )
+    }
     fn restore(&mut self) {
         if self.membership.restore(&self.folder, &self.object_view).is_err() {
             // A refresh asks the real data source to rebuild membership. It does
@@ -234,10 +248,7 @@ impl State {
                     return Ok(());
                 }
                 self.updating = false;
-                let result = self
-                    .membership
-                    .apply(&self.folder, &self.object_view, self.paused);
-                self.redraw(true);
+                let result = self.apply_membership();
                 unsafe {
                     SetPropW(
                         self.hwnd,
@@ -327,13 +338,7 @@ impl State {
             }
             _ => {}
         }
-        let result = self
-            .membership
-            .apply(&self.folder, &self.object_view, self.paused);
-        if !self.paused && !self.updating {
-            self.redraw(true);
-        }
-        result
+        self.apply_membership()
     }
     fn apply_result(
         &mut self,
@@ -387,6 +392,32 @@ fn remove_registration(hwnd: HWND) {
             REQUEST_ERROR,
         ] {
             RemovePropW(hwnd, property);
+        }
+    }
+}
+
+// Every filtering entry point gates COM-reentrant painting, even during reads.
+// Only actual writes disable native redraw and invalidate the view on release.
+// Peek/rename transactions retain their gate until their explicit end request.
+struct MembershipRedraw<'a> {
+    hwnd: HWND,
+    paused: &'a mut bool,
+    retain: bool,
+}
+impl<'a> MembershipRedraw<'a> {
+    fn new(hwnd: HWND, paused: &'a mut bool, retain: bool) -> Self {
+        FROZEN_VIEW.with(|view| view.set(hwnd));
+        Self { hwnd, paused, retain }
+    }
+    fn before_write(&mut self) {
+        set_redraw(self.hwnd, self.paused, false);
+    }
+}
+impl Drop for MembershipRedraw<'_> {
+    fn drop(&mut self) {
+        if !self.retain {
+            set_redraw(self.hwnd, self.paused, true);
+            FROZEN_VIEW.with(|view| view.set(null_mut()));
         }
     }
 }
@@ -455,6 +486,18 @@ unsafe extern "system" fn subclass(
             };
             let state = slot.as_mut()?;
             if hwnd != state.hwnd {
+                if msg == WM_NOTIFY && lp != 0 {
+                    let header = unsafe { &*(lp as *const NMHDR) };
+                    if header.hwndFrom == state.hwnd
+                        && matches!(header.code, LVN_INSERTITEM | LVN_DELETEITEM | LVN_DELETEALLITEMS)
+                    {
+                        // Explorer can update its view without sending the public
+                        // LVM_* messages through the child subclass. Observe the
+                        // resulting notifications too; never mutate inside them.
+
+                        state.queue();
+                    }
+                }
                 if msg == WM_COMMAND && !state.paused && state.user_menu {
                     state.membership.user_changed_layout();
                     state.user_menu = false;
@@ -481,35 +524,19 @@ unsafe extern "system" fn subclass(
                 slot.take();
                 return None;
             }
-            // Shell rename notifications may arrive after UPDATE_END. Process
-            // queued membership changes before painting their newly inserted row.
-            if msg == WM_PAINT
-                && (state.queued || state.read_retry.pending())
-                && !state.paused
-                && !state.updating
-                && !state.failed
-            {
+            // Startup refreshes can bypass both LVM_* and LVN_* notifications.
+            // A retained hide list therefore needs checking before every native
+            // paint, even when no work was queued. No timer or repaint is added
+            // for an unchanged view, and membership is never mutated in custom draw.
+            if filter_before_paint(msg, !state.membership.desired.is_empty(),
+                state.queued || state.read_retry.pending(), state.paused, state.updating, state.failed) {
                 if state.read_retry.waiting() {
                     unsafe {
                         windows_sys::Win32::Graphics::Gdi::ValidateRect(hwnd, std::ptr::null());
                     }
                     return Some(0);
                 }
-                // Reading an unchanged view must not invalidate the whole desktop.
-                // Freeze only immediately before a native write, while retaining
-                // the reentrant paint gate for AddObject/RemoveObject callbacks.
-                // COM reads can also pump messages: keep newly inserted rows
-                // from painting during enumeration without toggling WM_SETREDRAW.
-                FROZEN_VIEW.with(|view| view.set(hwnd));
-                let paused = &mut state.redraw_paused;
-                let result = state.membership.apply_before_write(
-                    &state.folder,
-                    &state.object_view,
-                    false,
-                    || set_redraw(hwnd, paused, false),
-                );
-                state.redraw(true);
-                FROZEN_VIEW.with(|view| view.set(null_mut()));
+                let result = state.apply_membership();
                 if state.apply_result(result).is_some() && !state.failed {
                     unsafe {
                         windows_sys::Win32::Graphics::Gdi::ValidateRect(hwnd, std::ptr::null());
@@ -558,7 +585,7 @@ unsafe extern "system" fn subclass(
                     // Do not restore all members on a cleanup/read error. Normal
                     // filtering will retry; presentation must always be released.
                     state.updating = false;
-                    let result = state.membership.apply(&state.folder, &state.object_view, false);
+                    let result = state.apply_membership();
                     state.apply_result(result);
                     state.redraw(true);
                     unsafe {
@@ -610,7 +637,7 @@ unsafe extern "system" fn subclass(
                         Ok(())
                     } else {
                         let _sample = diagnostics::Sample::start(state.hwnd);
-                        state.membership.apply(&state.folder, &state.object_view, false)
+                        state.apply_membership()
                     };
                     if let Some(error) = state.apply_result(result) {
                         if request.is_some() {
@@ -694,17 +721,38 @@ unsafe extern "system" fn subclass(
     handled.unwrap_or_else(|| unsafe { DefSubclassProc(hwnd, msg, wp, lp) })
 }
 
+fn filter_before_paint(msg: u32, has_members: bool, pending: bool, paused: bool, updating: bool, failed: bool) -> bool {
+    matches!(msg, WM_PAINT | WM_PRINTCLIENT)
+        && (has_members || pending)
+        && !paused && !updating && !failed
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 
     #[test]
+    fn silent_refresh_is_filtered_before_paint_without_a_queued_notification() {
+        for msg in [WM_PAINT, WM_PRINTCLIENT] {
+            assert!(filter_before_paint(msg, true, false, false, false, false),
+                "a refresh can reinsert managed rows without any observed list notification");
+            assert!(filter_before_paint(msg, false, true, false, false, false));
+            assert!(!filter_before_paint(msg, false, false, false, false, false));
+            assert!(!filter_before_paint(msg, true, true, true, false, false));
+            assert!(!filter_before_paint(msg, true, true, false, true, false));
+            assert!(!filter_before_paint(msg, true, true, false, false, true));
+        }
+        assert!(!filter_before_paint(WM_TIMER, true, false, false, false, false));
+        assert!(!filter_before_paint(WM_NOTIFY, true, false, false, false, false));
+    }
+
+    #[test]
     fn menu_redraw_gate_survives_reentrant_calls_and_releases() {
         unsafe {
             // Use DefWindowProc's observable SysSetRedraw flag. Common controls
             // have their own redraw state and need not expose that flag.
-            let class = windows_sys::w!("LucidPaneRedrawGateTest");
+            let class = windows_sys::w!("LucidDeskRedrawGateTest");
             let instance = GetModuleHandleW(std::ptr::null());
             let definition = WNDCLASSW {
                 lpfnWndProc: Some(DefWindowProcW),
@@ -731,16 +779,64 @@ mod tests {
             assert_ne!(SetWindowSubclass(hwnd, Some(subclass), MAGIC, 0), 0);
             windows_sys::Win32::Graphics::Gdi::ValidateRect(hwnd, std::ptr::null());
             let mut paused = false;
+            let disabled = || !GetPropW(hwnd, windows_sys::w!("SysSetRedraw")).is_null();
+            let draw = NMCUSTOMDRAW {
+                hdr: NMHDR {
+                    hwndFrom: hwnd,
+                    code: NM_CUSTOMDRAW,
+                    ..Default::default()
+                },
+                dwDrawStage: CDDS_PREPAINT,
+                ..Default::default()
+            };
+            // The queued-work path also reads Shell metadata while STATE is
+            // borrowed. Reentrant custom drawing must be blocked before writes.
+            STATE.with(|slot| {
+                let _borrow = slot.borrow_mut();
+                let _redraw = MembershipRedraw::new(hwnd, &mut paused, false);
+                assert!(!disabled());
+                assert_eq!(
+                    SendMessageW(hwnd, WM_NOTIFY, 0, (&raw const draw) as isize),
+                    CDRF_SKIPDEFAULT as isize
+                );
+                assert_eq!(SendMessageW(hwnd, WM_ERASEBKGND, 0, 0), 1);
+                assert_eq!(SendMessageW(hwnd, WM_PRINTCLIENT, 0, 0), 0);
+            });
+            assert!(FROZEN_VIEW.with(Cell::get).is_null());
             set_redraw(hwnd, &mut paused, true);
             assert_eq!(
                 windows_sys::Win32::Graphics::Gdi::GetUpdateRect(hwnd, std::ptr::null_mut(), 0),
                 0,
                 "a read-only membership check must not invalidate the desktop"
             );
-            set_redraw(hwnd, &mut paused, false);
-            let disabled = || !GetPropW(hwnd, windows_sys::w!("SysSetRedraw")).is_null();
+            // Errors and unwinding must release a non-transactional write gate.
+            let error: Result<()> = (|| {
+                let mut redraw = MembershipRedraw::new(hwnd, &mut paused, false);
+                redraw.before_write();
+                assert!(disabled());
+                Err(windows::Win32::Foundation::E_FAIL.into())
+            })();
+            assert!(error.is_err());
+            assert!(!paused);
+            assert!(!disabled());
+            assert!(FROZEN_VIEW.with(Cell::get).is_null());
+            let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let mut redraw = MembershipRedraw::new(hwnd, &mut paused, false);
+                redraw.before_write();
+                panic!("simulated filtering unwind");
+            }));
+            assert!(panic.is_err());
+            assert!(!paused);
+            assert!(!disabled());
+            assert!(FROZEN_VIEW.with(Cell::get).is_null());
+            // A successful pass inside Peek/rename must retain the outer gate.
+            {
+                let mut redraw = MembershipRedraw::new(hwnd, &mut paused, true);
+                redraw.before_write();
+            }
+            assert!(paused);
             assert!(disabled());
-            FROZEN_VIEW.with(|view| view.set(hwnd));
+            assert_eq!(FROZEN_VIEW.with(Cell::get), hwnd);
             // Match synchronous callbacks made while State::apply_request owns
             // the mutable state borrow, then the later menu message loop.
             STATE.with(|slot| {

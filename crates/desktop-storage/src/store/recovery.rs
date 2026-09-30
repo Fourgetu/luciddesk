@@ -40,7 +40,7 @@ mod tests {
     }
 
     fn temp(label: &str) -> PathBuf {
-        unique_backup_path(&std::env::temp_dir().join("lucidpane-recovery"), label)
+        unique_backup_path(&std::env::temp_dir().join("luciddesk-recovery"), label)
     }
     #[test]
     fn backup_restores_layout_preferences_and_monitor_profiles() {

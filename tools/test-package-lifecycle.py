@@ -152,7 +152,7 @@ def tray(process):
 def launch(directory, data=None, title=None):
     environment = os.environ.copy()
     environment.pop("LUCIDDESK_DATA_DIR", None)
-    environment.pop("LUCIDPANE_DATA_DIR", None)
+    environment.pop("LUCIDDESK_DATA_DIR", None)
     if data is not None:
         environment["LUCIDDESK_DATA_DIR"] = str(data)
     command = [str(directory / "luciddesk.exe")]
@@ -314,7 +314,7 @@ def main():
     assert not user.FindWindowW("windows-window.Window", "LucidDesk Tray"), "Exit existing LucidDesk before testing"
     root = ROOT / "target/package-lifecycle" / (args.mode + "-" + str(uuid.uuid4()))
     root.mkdir(parents=True)
-    protected = [Path(os.environ["LOCALAPPDATA"]) / "LucidPane", Path(os.environ["LOCALAPPDATA"]) / "LucidDesk"]
+    protected = [Path(os.environ["LOCALAPPDATA"]) / "LucidDesk", Path(os.environ["LOCALAPPDATA"]) / "LucidDesk"]
     before = [snapshot(p) for p in protected]
     checks = []
     try:

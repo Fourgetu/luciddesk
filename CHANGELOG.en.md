@@ -2,9 +2,21 @@
 
 [简体中文](CHANGELOG.md) · English
 
-Current version: **0.16.0**. Features and fixes by release.
+Current version: **0.16.1**. Features and fixes by release.
 
 Exit the app before upgrading a portable installation and preserve its `data` folder. See the [portable guide](docs/portable.md) (Chinese).
+
+## 0.16.1 · 2026-10-01
+
+### fix
+
+- Fix collected icons briefly reappearing on the native desktop after login startup: check membership before painting even without change notifications, and observe parent list notifications.
+- Unify redraw protection across filtering entry points to block Shell-reentrant painting while preserving Peek and rename transaction boundaries.
+
+### changed
+
+- Standardize resource names, internal communication identifiers and environment variables on LucidDesk. The default data directory is `%LOCALAPPDATA%\LucidDesk`, with `LUCIDDESK_DATA_DIR` as the only override.
+- Remove compatibility with previous-brand data directories, environment variables and shortcut names. Old settings are not migrated automatically. Exit the old app before upgrading; users of the previous-brand data directory should export a backup and restore it in the new version.
 
 ## 0.16.0 · 2026-10-01
 

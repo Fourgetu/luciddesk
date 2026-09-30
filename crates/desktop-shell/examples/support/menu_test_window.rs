@@ -27,7 +27,7 @@ pub fn run(view: &IShellView) -> windows::core::Result<()> {
         busy: std::cell::Cell::new(false),
     };
     unsafe {
-        let class = windows_sys::w!("LucidPaneMenuProbe");
+        let class = windows_sys::w!("LucidDeskMenuProbe");
         let definition = WNDCLASSW {
             lpfnWndProc: Some(window_proc),
             lpszClassName: class,
@@ -39,7 +39,7 @@ pub fn run(view: &IShellView) -> windows::core::Result<()> {
         let window = CreateWindowExW(
             0,
             class,
-            windows_sys::w!("LucidPane native menu test - right-click inside"),
+            windows_sys::w!("LucidDesk native menu test - right-click inside"),
             WS_OVERLAPPEDWINDOW | WS_VISIBLE,
             600,
             300,

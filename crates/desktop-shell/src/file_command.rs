@@ -453,7 +453,7 @@ mod tests {
     fn folder_item_menu_copy_and_missing_paste_destination() {
         let _apartment = crate::ShellApartment::initialize_sta().unwrap();
         let root = std::env::temp_dir().join(format!(
-            "lucidpane-folder-shell-{}-{}",
+            "luciddesk-folder-shell-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -519,7 +519,7 @@ mod tests {
         }
         let _clipboard = Clipboard(unsafe { OleGetClipboard().ok() });
         let root = std::env::temp_dir().join(format!(
-            "lucidpane-clipboard-{}-{}",
+            "luciddesk-clipboard-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

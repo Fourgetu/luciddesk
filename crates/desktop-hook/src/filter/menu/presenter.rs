@@ -144,7 +144,7 @@ impl NativePresenter {
     pub fn dismiss(&self) {
         if !self.site.closed.get() {
             unsafe {
-                (self.site.presenter.vtable().dismiss)(self.site.presenter.as_raw(), windows_sys::w!("LucidPane.Cancel"));
+                (self.site.presenter.vtable().dismiss)(self.site.presenter.as_raw(), windows_sys::w!("LucidDesk.Cancel"));
             }
         }
     }

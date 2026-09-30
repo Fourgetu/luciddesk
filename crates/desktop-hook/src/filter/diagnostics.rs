@@ -4,9 +4,9 @@
 use std::time::Instant;
 use windows_sys::Win32::{Foundation::HWND, UI::WindowsAndMessaging::*};
 
-const ENABLED: windows_sys::core::PCWSTR = windows_sys::w!("LucidPane.Filter.Perf.Enabled");
-const COUNT: windows_sys::core::PCWSTR = windows_sys::w!("LucidPane.Filter.Perf.Count");
-const MICROS: windows_sys::core::PCWSTR = windows_sys::w!("LucidPane.Filter.Perf.Micros");
+const ENABLED: windows_sys::core::PCWSTR = windows_sys::w!("LucidDesk.Filter.Perf.Enabled");
+const COUNT: windows_sys::core::PCWSTR = windows_sys::w!("LucidDesk.Filter.Perf.Count");
+const MICROS: windows_sys::core::PCWSTR = windows_sys::w!("LucidDesk.Filter.Perf.Micros");
 
 pub(super) fn clear(hwnd: HWND) {
     unsafe {

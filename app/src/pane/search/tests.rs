@@ -511,7 +511,7 @@ fn compact_render_keeps_rows_and_border_inside_the_pane() {
             .chunks_exact(4)
             .any(|p| p[0] > 180 && p[1] > 180 && p[2] > 180 && p[3] > 200)
     );
-    if let Some(dir) = std::env::var_os("LUCIDPANE_RENDER_OUTPUT") {
+    if let Some(dir) = std::env::var_os("LUCIDDESK_RENDER_OUTPUT") {
         let dir = std::path::PathBuf::from(dir);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("search.bgra"), pixels).unwrap();
@@ -562,7 +562,7 @@ fn compact_render_keeps_rows_and_border_inside_the_pane() {
                     GetClientRect(hwnd, &raw mut r);
                 }
                 assert_eq!(pixels.len(), (r.right * r.bottom * 4) as usize);
-                if let Some(dir) = std::env::var_os("LUCIDPANE_RENDER_OUTPUT") {
+                if let Some(dir) = std::env::var_os("LUCIDDESK_RENDER_OUTPUT") {
                     let mut bmp = vec![0u8; 54];
                     bmp[..2].copy_from_slice(b"BM");
                     bmp[2..6].copy_from_slice(&(54 + pixels.len() as u32).to_le_bytes());

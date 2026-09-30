@@ -180,7 +180,7 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let root = std::env::temp_dir().join(format!("lucidpane-shell-rename-{suffix}"));
+        let root = std::env::temp_dir().join(format!("luciddesk-shell-rename-{suffix}"));
         std::fs::create_dir(&root).unwrap();
         let before = root.join("旧名字.txt");
         let after = root.join("新名字.txt");

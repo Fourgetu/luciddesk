@@ -13,31 +13,31 @@ mod wire;
 pub use client::FilterSession;
 
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
-pub(crate) const OWNER: windows_sys::core::PCWSTR = windows_sys::w!("LucidPane.Filter.Owner.v1");
-pub(crate) const ACK: windows_sys::core::PCWSTR = windows_sys::w!("LucidPane.Filter.Ack.v1");
-pub(crate) const ERROR: windows_sys::core::PCWSTR = windows_sys::w!("LucidPane.Filter.Error.v1");
-pub(crate) const RENAME: windows_sys::core::PCWSTR = windows_sys::w!("LucidPane.Filter.Rename.v1");
+pub(crate) const OWNER: windows_sys::core::PCWSTR = windows_sys::w!("LucidDesk.Filter.Owner.v1");
+pub(crate) const ACK: windows_sys::core::PCWSTR = windows_sys::w!("LucidDesk.Filter.Ack.v1");
+pub(crate) const ERROR: windows_sys::core::PCWSTR = windows_sys::w!("LucidDesk.Filter.Error.v1");
+pub(crate) const RENAME: windows_sys::core::PCWSTR = windows_sys::w!("LucidDesk.Filter.Rename.v1");
 pub(crate) const MENU_HOST: windows_sys::core::PCWSTR =
-    windows_sys::w!("LucidPane.Filter.MenuHost.v1");
+    windows_sys::w!("LucidDesk.Filter.MenuHost.v1");
 pub(crate) const MENU_ERROR: windows_sys::core::PCWSTR =
-    windows_sys::w!("LucidPane.Filter.MenuError.v1");
+    windows_sys::w!("LucidDesk.Filter.MenuError.v1");
 const UPDATE_RELEASE: windows_sys::core::PCWSTR =
-    windows_sys::w!("LucidPane.Filter.UpdateRelease.v1");
+    windows_sys::w!("LucidDesk.Filter.UpdateRelease.v1");
 const UPDATE_RELEASED: windows_sys::core::PCWSTR =
-    windows_sys::w!("LucidPane.Filter.UpdateReleased.v1");
+    windows_sys::w!("LucidDesk.Filter.UpdateReleased.v1");
 const REQUEST_ERROR: windows_sys::core::PCWSTR =
-    windows_sys::w!("LucidPane.Filter.RequestError.v1");
+    windows_sys::w!("LucidDesk.Filter.RequestError.v1");
 const MAGIC: usize = 0x4c504631;
 fn message() -> u32 {
     static ID: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
     *ID.get_or_init(|| unsafe {
-        RegisterWindowMessageW(windows_sys::w!("LucidPane.Filter.Attach.v1"))
+        RegisterWindowMessageW(windows_sys::w!("LucidDesk.Filter.Attach.v1"))
     })
 }
 fn work_message() -> u32 {
     static ID: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
     *ID.get_or_init(|| unsafe {
-        RegisterWindowMessageW(windows_sys::w!("LucidPane.Filter.Work.v1"))
+        RegisterWindowMessageW(windows_sys::w!("LucidDesk.Filter.Work.v1"))
     })
 }
 
@@ -45,7 +45,7 @@ fn work_message() -> u32 {
 /// # Safety
 /// The callback payload must be a valid Windows MSG supplied by WH_GETMESSAGE.
 #[unsafe(no_mangle)]
-pub unsafe extern "system" fn LucidPaneFilterHook(code: i32, wp: usize, lp: isize) -> isize {
+pub unsafe extern "system" fn LucidDeskFilterHook(code: i32, wp: usize, lp: isize) -> isize {
     let _callback = library::Callback::enter();
     if code >= 0 && wp == PM_REMOVE as usize && lp != 0 {
         let _ = std::panic::catch_unwind(|| {

@@ -47,7 +47,7 @@ foreach ($file in @('luciddesk.exe', 'luciddesk_desktop.dll', 'build.json', 'LIC
 
 # Generate package logos from the application's existing icon.
 Add-Type -AssemblyName System.Drawing
-$stream = [IO.File]::OpenRead((Join-Path $repoRoot 'app/assets/lucidpane.ico'))
+$stream = [IO.File]::OpenRead((Join-Path $repoRoot 'app/assets/luciddesk.ico'))
 try {
     $icon = [Drawing.Icon]::new($stream, 256, 256)
     try {

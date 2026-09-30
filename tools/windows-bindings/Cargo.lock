@@ -3,7 +3,7 @@
 version = 4
 
 [[package]]
-name = "lucidpane-windows-bindings"
+name = "luciddesk-windows-bindings"
 version = "0.0.0"
 dependencies = [
  "windows-bindgen",

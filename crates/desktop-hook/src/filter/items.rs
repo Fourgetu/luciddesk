@@ -228,6 +228,7 @@ impl Membership {
             error,
             before_write: true,
         })?;
+
         let layout: BTreeMap<_, _> = current
             .iter()
             .map(|row| (row.name.clone(), row.position))
@@ -438,7 +439,7 @@ mod tests {
             CoInitializeEx(None, COINIT_APARTMENTTHREADED).ok().unwrap();
         }
         let root = std::env::temp_dir().join(format!(
-            "lucidpane-membership-rename-{}-{}",
+            "luciddesk-membership-rename-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

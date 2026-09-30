@@ -62,7 +62,7 @@ pub fn run(desktop: &IFolderView2, mode: isize, log: &mut String) -> Result<()> 
             .or_else(|| source.iter().find(|item| item.identity.file_system_path().is_some())).unwrap();
         writeln!(log, "target_is_filtered={}", !before.items.iter().any(|(v,_,_)| v.identity.equivalent_to(&target.identity))).ok();
         let browser: IExplorerBrowser = CoCreateInstance(&ExplorerBrowser, None, CLSCTX_INPROC_SERVER)?;
-        let hwnd = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST, windows_sys::w!("STATIC"), windows_sys::w!("LucidPane isolated menu probe"), WS_POPUP | WS_VISIBLE,
+        let hwnd = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST, windows_sys::w!("STATIC"), windows_sys::w!("LucidDesk isolated menu probe"), WS_POPUP | WS_VISIBLE,
             600, 450, 1, 1, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null());
         let mut host = Host { browser, hwnd, presenter: None };
         host.browser.Initialize(HWND(hwnd), &RECT {left:0,top:0,right:640,bottom:480}, Some(&FOLDERSETTINGS {ViewMode:FVM_ICON.0 as u32, fFlags:FWF_AUTOARRANGE.0 as u32}))?;

@@ -257,4 +257,4 @@ Windows 11 的“设置 → 面板布局”提供“使用 Windows 11 风格右�
 
 系统更新后的兼容性、真实拖放、多显示器和混合 DPI 行为仍需持续验证，不能仅以启动成功判断全部交互正常。
 
-品牌更名兼容：若新的数据目录不存在且旧目录 `%LOCALAPPDATA%\LucidPane` 已存在，继续使用旧目录。`LUCIDDESK_DATA_DIR` 优先，旧变量 `LUCIDPANE_DATA_DIR` 仍受支持；详见[品牌规范](brand.md)。
+只支持 `LUCIDDESK_DATA_DIR` 数据目录变量；不自动读取或迁移旧品牌目录。详见[品牌规范](brand.md)。

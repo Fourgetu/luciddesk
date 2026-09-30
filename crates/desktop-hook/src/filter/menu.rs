@@ -83,7 +83,7 @@ impl MenuHost {
             windows_sys::Win32::System::LibraryLoader::GetModuleHandleExW(
                 windows_sys::Win32::System::LibraryLoader::GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | windows_sys::Win32::System::LibraryLoader::GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                 (host_messages as *const ()).cast(), &raw mut instance);
-            let class = windows_sys::w!("LucidPane.IsolatedShellHost.v1");
+            let class = windows_sys::w!("LucidDesk.IsolatedShellHost.v1");
             let definition = WNDCLASSW {
                 lpfnWndProc: Some(host_messages),
                 hInstance: instance,
@@ -92,7 +92,7 @@ impl MenuHost {
                 ..Default::default()
             };
             RegisterClassW(&definition);
-            // LUCIDPANE_INSPECT marks the test Pane as APPWINDOW. Carry that
+            // LUCIDDESK_INSPECT marks the test Pane as APPWINDOW. Carry that
             // inspectability to its menu host without changing its empty region.
             let inspect =
                 GetWindowLongPtrW(context.owner as _, GWL_EXSTYLE) & WS_EX_APPWINDOW as isize != 0;
@@ -103,7 +103,7 @@ impl MenuHost {
                     WS_EX_TOOLWINDOW
                 }) | WS_EX_NOACTIVATE,
                 class,
-                windows_sys::w!("LucidPane Menu Host"),
+                windows_sys::w!("LucidDesk Menu Host"),
                 WS_POPUP,
                 context.x.saturating_sub(32),
                 context.y.saturating_sub(32),
@@ -195,7 +195,7 @@ impl MenuHost {
                 .inspect_err(|_error| {
                     #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
                     if let Ok(hwnd) = view.GetWindow() {
-                        SetPropW(hwnd.0, windows_sys::w!("LucidPane.Menu.PresenterError"), _error.code().0 as u32 as usize as _);
+                        SetPropW(hwnd.0, windows_sys::w!("LucidDesk.Menu.PresenterError"), _error.code().0 as u32 as usize as _);
                     }
                 })
                 .ok()
@@ -207,7 +207,7 @@ impl MenuHost {
             host.presenter = presenter.clone();
             let view_hwnd = view.GetWindow()?.0;
             #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
-            SetPropW(view_hwnd, windows_sys::w!("LucidPane.Menu.Presenter"),
+            SetPropW(view_hwnd, windows_sys::w!("LucidDesk.Menu.Presenter"),
                 if presenter.is_some() { 1usize } else { 2usize } as _);
             let callbacks = Rc::new(MenuCallbacks {
                 first,
@@ -373,7 +373,7 @@ fn unregister_host_class() {
             windows_sys::Win32::System::LibraryLoader::GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
                 | windows_sys::Win32::System::LibraryLoader::GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
             (host_messages as *const ()).cast(), &raw mut instance);
-        UnregisterClassW(windows_sys::w!("LucidPane.IsolatedShellHost.v1"), instance);
+        UnregisterClassW(windows_sys::w!("LucidDesk.IsolatedShellHost.v1"), instance);
     }
 }
 unsafe extern "system" fn menu_messages(
@@ -420,7 +420,7 @@ unsafe extern "system" fn menu_messages(
         }
         // UI activation must happen on the Shell STA, after the app has installed
         // its popup observer and handed foreground permission to Explorer.
-        if msg == RegisterWindowMessageW(windows_sys::w!("LucidPane.IsolatedMenu.Open.v1")) {
+        if msg == RegisterWindowMessageW(windows_sys::w!("LucidDesk.IsolatedMenu.Open.v1")) {
             if callbacks.invocation.cancelled() || callbacks.retired.get() {
                 return 0;
             }
@@ -444,7 +444,7 @@ unsafe extern "system" fn menu_messages(
                     if let Some(presenter) = &callbacks.presenter {
                         presenter.set_keyboard_invocation(wp != 0, hwnd as isize);
                         #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
-                        for name in [windows_sys::w!("LucidPane.Menu.PrepareCalled"), windows_sys::w!("LucidPane.Menu.PrepareResult"), windows_sys::w!("LucidPane.Menu.ReadyCalled"), windows_sys::w!("LucidPane.Menu.ReadyResult"), windows_sys::w!("LucidPane.Menu.ShowCalled")] { RemovePropW(hwnd, name); }
+                        for name in [windows_sys::w!("LucidDesk.Menu.PrepareCalled"), windows_sys::w!("LucidDesk.Menu.PrepareResult"), windows_sys::w!("LucidDesk.Menu.ReadyCalled"), windows_sys::w!("LucidDesk.Menu.ReadyResult"), windows_sys::w!("LucidDesk.Menu.ShowCalled")] { RemovePropW(hwnd, name); }
                     }
                     callbacks.first.set(None);
                     let menu: IContextMenu = callbacks.view.GetItemObject(SVGIO_SELECTION)?;
@@ -452,7 +452,7 @@ unsafe extern "system" fn menu_messages(
                     #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
                     SetPropW(
                         hwnd,
-                        windows_sys::w!("LucidPane.Menu.GetItemUs"),
+                        windows_sys::w!("LucidDesk.Menu.GetItemUs"),
                         started.elapsed().as_micros().saturating_add(1) as usize as _,
                     );
                     callbacks.invocation.check()?;
@@ -486,7 +486,7 @@ unsafe extern "system" fn menu_messages(
             #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
             SetPropW(
                 hwnd,
-                windows_sys::w!("LucidPane.Menu.BuildUs"),
+                windows_sys::w!("LucidDesk.Menu.BuildUs"),
                 started.elapsed().as_micros().saturating_add(1) as usize as _,
             );
             if let Err(error) = result {
@@ -545,7 +545,7 @@ mod fallback_tests {
             );
             assert!(!owner.is_null());
             let path = std::env::temp_dir().join(format!(
-                "lucidpane-classic-capability-{}.txt",
+                "luciddesk-classic-capability-{}.txt",
                 std::process::id()
             ));
             std::fs::write(&path, b"owned menu fixture").unwrap();

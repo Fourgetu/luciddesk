@@ -18,7 +18,7 @@ foreach ($base in @($env:ProgramData, $env:LOCALAPPDATA)) {
         try {
             if (-not (Test-Path -LiteralPath $root)) { continue }
             foreach ($folder in Get-ChildItem -LiteralPath $root -Directory) {
-                if ($folder.Name -notmatch '(?i)^AppCrash_(explorer|luciddesk|lucidpane)\.exe_') { continue }
+                if ($folder.Name -notmatch '(?i)^AppCrash_(explorer|luciddesk|luciddesk)\.exe_') { continue }
                 if ($folder.LastWriteTime -lt $since) { continue }
                 foreach ($file in Get-ChildItem -LiteralPath $folder.FullName -File -Recurse -ErrorAction Stop) {
                     if ($file.Extension -in @('.dmp', '.mdmp', '.hdmp', '.cab')) {
@@ -50,7 +50,7 @@ $localDumps = Join-Path $env:LOCALAPPDATA 'CrashDumps'
 try {
     if (Test-Path -LiteralPath $localDumps) {
         Get-ChildItem -LiteralPath $localDumps -File | Where-Object {
-            $_.Name -match '(?i)^(explorer|luciddesk|lucidpane)\.exe.*\.dmp$' -and $_.LastWriteTime -ge $since
+            $_.Name -match '(?i)^(explorer|luciddesk|luciddesk)\.exe.*\.dmp$' -and $_.LastWriteTime -ge $since
         } | ForEach-Object { [void]$files.Add($_.FullName) }
     }
 } catch { $notes.Add("Cannot read ${localDumps}: $($_.Exception.Message)") }

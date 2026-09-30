@@ -40,7 +40,7 @@ pub fn gpu_device() -> Result<windows_canvas::GpuDevice> {
                 return Ok(device.clone());
             }
         }
-        let device = if std::env::var("LUCIDPANE_RENDERER")
+        let device = if std::env::var("LUCIDDESK_RENDERER")
             .is_ok_and(|value| value.eq_ignore_ascii_case("warp"))
         {
             canvas_result(windows_canvas::GpuDevice::new_warp())?
@@ -139,7 +139,7 @@ mod shutdown_tests {
             let output = std::process::Command::new(std::env::current_exe().unwrap())
                 .args(["--exact", "pane::native_graphics::shutdown_tests::graphics_caches_release_before_apartment_and_process_exit",
                     "--test-threads=1", "--nocapture"])
-                .env(CHILD, "1").env("LUCIDPANE_SHARED_PANE_TREE", "0")
+                .env(CHILD, "1").env("LUCIDDESK_SHARED_PANE_TREE", "0")
                 .output().unwrap();
             assert!(output.status.success(), "graphics shutdown failed: {:?}\n{}\n{}",
                 output.status, String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));

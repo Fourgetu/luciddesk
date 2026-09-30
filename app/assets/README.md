@@ -1,6 +1,6 @@
 # 应用图标
 
-`lucidpane.ico` 使用 [三色绿色原稿](../../docs/design/luciddesk-green-simple-v17.png)：左侧翡翠绿、右上薄荷绿、右下深松绿。保留曲面、圆角、透明背景和三面板布局。
+`luciddesk.ico` 使用 [三色绿色原稿](../../docs/design/luciddesk-green-simple-v17.png)：左侧翡翠绿、右上薄荷绿、右下深松绿。保留曲面、圆角、透明背景和三面板布局。
 
 ## 尺寸与导出
 

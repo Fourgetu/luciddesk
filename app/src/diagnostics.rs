@@ -6,13 +6,13 @@ use windows_version::OsVersion;
 // They never change the stored appearance settings.
 pub fn shared_pane_tree() -> bool {
     static ENABLED: LazyLock<bool> = LazyLock::new(||
-        std::env::var("LUCIDPANE_SHARED_PANE_TREE").is_ok_and(|value| value == "1"));
+        std::env::var("LUCIDDESK_SHARED_PANE_TREE").is_ok_and(|value| value == "1"));
     *ENABLED
 }
 
 pub fn disable_backdrop() -> bool {
     static ENABLED: LazyLock<bool> = LazyLock::new(||
-        std::env::var("LUCIDPANE_DISABLE_BACKDROP").is_ok_and(|value| value == "1"));
+        std::env::var("LUCIDDESK_DISABLE_BACKDROP").is_ok_and(|value| value == "1"));
     *ENABLED
 }
 
@@ -23,7 +23,7 @@ struct RenderTrace {
 }
 static RENDER_TRACE: LazyLock<Option<std::sync::Mutex<RenderTrace>>> = LazyLock::new(|| {
     use std::io::Write;
-    let path = std::env::var_os("LUCIDPANE_RENDER_TRACE")?;
+    let path = std::env::var_os("LUCIDDESK_RENDER_TRACE")?;
     let mut file = std::fs::File::create(path).ok()?;
     let _ = writeln!(file, "{}pid={} shared_tree={} disable_backdrop={}",
         report(), std::process::id(), shared_pane_tree(), disable_backdrop());
@@ -78,7 +78,7 @@ impl SystemInfo {
         format!(
             "LucidDesk {}\r\nBuild: {}\r\nProcess architecture: {}\r\n{}\r\nService pack: {}\r\n",
             env!("CARGO_PKG_VERSION"),
-            env!("LUCIDPANE_BUILD_REVISION"),
+            env!("LUCIDDESK_BUILD_REVISION"),
             std::env::consts::ARCH,
             self.summary(),
             self.version.pack
@@ -139,7 +139,7 @@ mod tests {
             server: false,
         };
         assert_eq!(info.summary(), "Windows 10.0.26100.1234");
-        assert!(info.report().contains(env!("LUCIDPANE_BUILD_REVISION")));
+        assert!(info.report().contains(env!("LUCIDDESK_BUILD_REVISION")));
         let server = SystemInfo {
             server: true,
             ..info

@@ -32,10 +32,8 @@ $mutexName = "Local\LucidDesk.Setup.Test.$fixtureId"
 $windowClass = "LucidDesk.Installer.Test.$fixtureId"
 $windowName = "LucidDesk Installer Test Window $fixtureId"
 $userDataName = "LucidDesk.Installer.Test.$fixtureId"
-$legacyDataName = "LucidPane.Installer.Test.$fixtureId"
 $localDataBase = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
 $userData = Join-Path $localDataBase $userDataName
-$legacyData = Join-Path $localDataBase $legacyDataName
 $unrelatedData = Join-Path $testRoot 'unrelated-data'
 $uninstaller = Join-Path $installed 'unins000.exe'
 $mutex = $null
@@ -46,7 +44,7 @@ $shortcutFixture = Join-Path $programsBase $fixtureName
 $desktopFixtureLink = Join-Path $desktopBase "$fixtureName renamed.lnk"
 function Compile-Fixture([string]$Version) {
     $output = Join-Path $testRoot $Version
-    & $InnoCompiler /Q "/DAppVersion=$Version" "/DSourcePath=$SourcePath" "/DOutputPath=$output" "/DProductId={{$fixtureId}" "/DProductName=$fixtureName" "/DAppMutexName=$mutexName" "/DAppWindowClass=$windowClass" "/DAppWindowName=$windowName" "/DUserDataFolderName=$userDataName" "/DLegacyUserDataFolderName=$legacyDataName" /DShutdownTimeout=1000 (Join-Path $repo 'installer/LucidDesk.iss')
+    & $InnoCompiler /Q "/DAppVersion=$Version" "/DSourcePath=$SourcePath" "/DOutputPath=$output" "/DProductId={{$fixtureId}" "/DProductName=$fixtureName" "/DAppMutexName=$mutexName" "/DAppWindowClass=$windowClass" "/DAppWindowName=$windowName" "/DUserDataFolderName=$userDataName" /DShutdownTimeout=1000 (Join-Path $repo 'installer/LucidDesk.iss')
     if ($LASTEXITCODE -ne 0) { throw "Fixture compilation failed for $Version" }
     Join-Path $output "LucidDesk-$Version-windows-x64-setup.exe"
 }
@@ -66,7 +64,7 @@ function Run-Uninstall([string[]]$ExtraArguments = @()) {
     (Start-Process -FilePath $uninstaller -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru).ExitCode
 }
 try {
-    foreach ($directory in @($userData, $legacyData)) {
+    foreach ($directory in @($userData)) {
         New-Item -ItemType Directory -Path $directory | Out-Null
         'retain configuration' | Set-Content -LiteralPath (Join-Path $directory 'config.toml') -Encoding ASCII
         New-Item -ItemType Directory -Path (Join-Path $directory 'backups') | Out-Null
@@ -228,8 +226,8 @@ public static class InstallerImageLock {
     $shortcutShell = New-Object -ComObject WScript.Shell
     $ownedLinks = @($desktopFixtureLink)
     # User-created Start Menu links are not part of the installer's [Icons] log.
-    $preservedLinks = @((Join-Path $shortcutFixture 'nested/renamed.lnk'), (Join-Path $shortcutFixture 'legacy.lnk'), (Join-Path $shortcutFixture 'other-install.lnk'), (Join-Path $shortcutFixture 'unrelated.lnk'), (Join-Path $outsideShortcuts 'outside.lnk'))
-    $linkTargets = @((Join-Path $installed 'luciddesk.exe'), (Join-Path $installed 'luciddesk.exe'), (Join-Path $installed 'lucidpane.exe'), (Join-Path $SourcePath 'luciddesk.exe'), (Join-Path $env:WINDIR 'notepad.exe'), (Join-Path $installed 'luciddesk.exe'))
+    $preservedLinks = @((Join-Path $shortcutFixture 'nested/renamed.lnk'), (Join-Path $shortcutFixture 'user-copy.lnk'), (Join-Path $shortcutFixture 'other-install.lnk'), (Join-Path $shortcutFixture 'unrelated.lnk'), (Join-Path $outsideShortcuts 'outside.lnk'))
+    $linkTargets = @((Join-Path $installed 'luciddesk.exe'), (Join-Path $installed 'luciddesk.exe'), (Join-Path $installed 'luciddesk.exe'), (Join-Path $SourcePath 'luciddesk.exe'), (Join-Path $env:WINDIR 'notepad.exe'), (Join-Path $installed 'luciddesk.exe'))
     $fixtureLinks = $ownedLinks + $preservedLinks
     for ($index = 0; $index -lt $fixtureLinks.Count; $index++) {
         $shortcut = $shortcutShell.CreateShortcut($fixtureLinks[$index]); $shortcut.TargetPath = $linkTargets[$index]; $shortcut.Save()
@@ -246,7 +244,7 @@ public static class InstallerImageLock {
     if (Test-Path -LiteralPath (Join-Path $installed 'luciddesk.exe')) { throw 'Uninstall left the application behind.' }
     if (Test-Path -LiteralPath $uninstallKey) { throw 'Uninstall left its registry entry behind.' }
     if ((Get-Content -LiteralPath (Join-Path $data 'keep.txt') -Raw).Trim() -ne 'retain configuration') { throw 'Uninstall removed user data.' }
-    foreach ($directory in @($userData, $legacyData)) {
+    foreach ($directory in @($userData)) {
         if ((Get-Content -LiteralPath (Join-Path $directory 'config.toml') -Raw).Trim() -ne 'retain configuration') { throw 'Default uninstall removed default settings.' }
     }
     if ((Run-Setup $current) -ne 0) { throw 'Reinstall for settings options failed.' }
@@ -254,7 +252,7 @@ public static class InstallerImageLock {
     if (-not (Test-Path -LiteralPath (Join-Path $userData 'config.toml'))) { throw 'Keep-settings option did not take priority.' }
     if ((Run-Setup $current) -ne 0) { throw 'Reinstall for deleting settings failed.' }
     if ((Run-Uninstall @('/DELETEUSERDATA')) -ne 0) { throw 'Delete-settings uninstall failed.' }
-    if ((Test-Path -LiteralPath $userData) -or (Test-Path -LiteralPath $legacyData)) { throw 'Selected default settings folders were not removed.' }
+    if (Test-Path -LiteralPath $userData) { throw 'Selected default settings folders were not removed.' }
     if ((Get-Content -LiteralPath (Join-Path $unrelatedData 'keep.txt') -Raw).Trim() -ne 'retain unrelated file') { throw 'Settings cleanup followed a junction into unrelated files.' }
     if ((Get-Content -LiteralPath (Join-Path $data 'keep.txt') -Raw).Trim() -ne 'retain configuration') { throw 'Settings cleanup removed a custom data directory.' }
     $scope = if ($AllUsers) { 'All users in Program Files (HKLM)' } else { 'Current user (HKCU)' }

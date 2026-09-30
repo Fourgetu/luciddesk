@@ -123,7 +123,7 @@ mod tests {
     #[test]
     fn executable_availability_tracks_configured_path() {
         let dir = std::env::temp_dir().join(format!(
-            "lucidpane-availability-Everything.exe-{}",
+            "luciddesk-availability-Everything.exe-{}",
             std::process::id()
         ));
         std::fs::create_dir_all(&dir).unwrap();

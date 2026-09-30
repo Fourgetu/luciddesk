@@ -116,7 +116,7 @@ fn fixture() -> std::io::Result<Vec<PathBuf>> {
                 .write(true)
                 .create_new(true)
                 .open(&path)?;
-            file.write_all(b"Disposable LucidPane Shell Pane prototype test file.\r\n")?;
+            file.write_all(b"Disposable LucidDesk Shell Pane prototype test file.\r\n")?;
         }
         paths.push(path.canonicalize()?);
     }
@@ -182,7 +182,7 @@ unsafe fn run(
         {
             return Err(windows::core::Error::from_thread());
         }
-        let class = windows_sys::w!("LucidPane.ShellPanePrototype.v1");
+        let class = windows_sys::w!("LucidDesk.ShellPanePrototype.v1");
         let definition = WNDCLASSW {
             lpfnWndProc: Some(window_proc),
             hInstance: instance,
@@ -202,7 +202,7 @@ unsafe fn run(
         let hwnd = CreateWindowExW(
             0,
             class,
-            windows_sys::w!("LucidPane Shell Pane prototype - native view"),
+            windows_sys::w!("LucidDesk Shell Pane prototype - native view"),
             WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
@@ -289,7 +289,7 @@ unsafe fn run(
                     SetWindowTextW(
                         hwnd,
                         windows_sys::w!(
-                            "LucidPane Shell Pane prototype - compact experiment (F6: direct request)"
+                            "LucidDesk Shell Pane prototype - compact experiment (F6: direct request)"
                         ),
                     );
                 }
@@ -298,7 +298,7 @@ unsafe fn run(
                     SetWindowTextW(
                         hwnd,
                         windows_sys::w!(
-                            "LucidPane Shell Pane prototype - compact unavailable; native default"
+                            "LucidDesk Shell Pane prototype - compact unavailable; native default"
                         ),
                     );
                 }
@@ -319,7 +319,7 @@ unsafe fn run(
         if retain {
             SetWindowTextW(
                 hwnd,
-                windows_sys::w!("LucidPane Shell Pane prototype - Explorer original loop"),
+                windows_sys::w!("LucidDesk Shell Pane prototype - Explorer original loop"),
             );
             RETAINED_HOST.with(|slot| *slot.borrow_mut() = Some(host));
             println!("original_explorer_loop=true startup_returned=true");

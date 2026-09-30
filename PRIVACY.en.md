@@ -20,7 +20,7 @@ To provide its features, the application reads or stores:
 | Windows, application and desktop connection diagnostics | Troubleshooting; you choose whether to copy or share them |
 | Configuration and layout backups | Restore settings and layouts; referenced original files are not included |
 
-Settings and workspace data normally reside in `%LOCALAPPDATA%\LucidDesk`, or an existing `%LOCALAPPDATA%\LucidPane` directory for compatibility. Portable builds use `data` next to the program; environment variables can select a different data directory. See the [storage guide](docs/development/storage.md). These files and backups may contain personal file paths. LucidDesk does not automatically upload them to the maintainer.
+Settings and workspace data normally reside in `%LOCALAPPDATA%\LucidDesk`. Portable builds use `data` next to the program; environment variables can select a different data directory. See the [storage guide](docs/development/storage.md). These files and backups may contain personal file paths. LucidDesk does not automatically upload them to the maintainer.
 
 Organizing desktop panels stores references without moving original files. Explicit file operations such as delete, rename, cut, paste and folder operations affect actual files.
 
@@ -44,7 +44,7 @@ Diagnostics and debugging information are handled locally. Diagnostic builds or 
 
 You control local settings and workspace data. Automatic backups retain the latest 10 snapshots; manually exported copies remain under your control. After closing LucidDesk, you may delete its data directory to remove local settings. Back up anything you want to keep first.
 
-Inno Setup uninstall keeps user settings by default. Unchecking **Keep user settings** removes the current account's default current and legacy data directories. Custom directories, portable data, other accounts' data and manually exported backups require separate removal. Windows application history, caches and backup records, and data held by third-party services, are not collectively removed by the LucidDesk uninstaller.
+Inno Setup uninstall keeps user settings by default. Unchecking **Keep user settings** removes the current account's default data directory. Custom directories, portable data, other accounts' data and manually exported backups require separate removal. Windows application history, caches and backup records, and data held by third-party services, are not collectively removed by the LucidDesk uninstaller.
 
 ## Contact and changes
 

@@ -8,7 +8,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         volume_id: None,
         file_id: None,
     };
-    let window = windows_window::Window::new("LucidPane native menu theme check - right click")
+    let window = windows_window::Window::new("LucidDesk native menu theme check - right click")
         .size(480, 320)
         .style(WS_OVERLAPPEDWINDOW)
         .on_message(move |raw, message, _, lparam| {

@@ -832,7 +832,7 @@ mod tests {
 
     #[test]
     fn refresh_event_reads_an_unchanged_folder_again() {
-        let root = std::env::temp_dir().join(format!("lucidpane-manual-refresh-{}-{}",
+        let root = std::env::temp_dir().join(format!("luciddesk-manual-refresh-{}-{}",
             std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         std::fs::create_dir(&root).unwrap();
         let state = Rc::new(RefCell::new(super::super::tests::test_state()));
@@ -900,9 +900,9 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Read-only thumbnail diagnostic; set LUCIDPANE_TEST_FOLDER"]
+    #[ignore = "Read-only thumbnail diagnostic; set LUCIDDESK_TEST_FOLDER"]
     fn real_folder_images_survive_parent_child_navigation() {
-        let root = PathBuf::from(std::env::var_os("LUCIDPANE_TEST_FOLDER").expect("test folder"));
+        let root = PathBuf::from(std::env::var_os("LUCIDDESK_TEST_FOLDER").expect("test folder"));
         let cache: images::SharedCache = Arc::default();
         let started = Instant::now();
         let source = Source::start_with(root.clone(), Default::default(), Arc::clone(&cache), (2, true)).unwrap();
@@ -940,9 +940,9 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Read-only diagnostic; set LUCIDPANE_TEST_FOLDER to an existing directory"]
+    #[ignore = "Read-only diagnostic; set LUCIDDESK_TEST_FOLDER to an existing directory"]
     fn real_folder_snapshot_matches_directory_and_sorts_newest_first() {
-        let root = PathBuf::from(std::env::var_os("LUCIDPANE_TEST_FOLDER").expect("test folder"));
+        let root = PathBuf::from(std::env::var_os("LUCIDDESK_TEST_FOLDER").expect("test folder"));
         let mut expected: Vec<_> = std::fs::read_dir(&root)
             .unwrap()
             .map(|entry| entry.unwrap().path())
@@ -984,7 +984,7 @@ mod tests {
             FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_SYSTEM, SetFileAttributesW,
         };
         let root = std::env::temp_dir().join(format!(
-            "lucidpane-complete-{}-{}",
+            "luciddesk-complete-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -1046,7 +1046,7 @@ mod tests {
     fn dropping_an_idle_source_wakes_worker_and_releases_handles() {
         let source = Source::start(
             std::env::temp_dir().join(format!(
-                "lucidpane-missing-watch-{}-{}",
+                "luciddesk-missing-watch-{}-{}",
                 std::process::id(),
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -1150,7 +1150,7 @@ mod tests {
     #[test]
     fn navigation_and_sort_keep_the_mapping_and_back_history() {
         let root = std::env::temp_dir().join(format!(
-            "lucidpane-navigation-{}-{}",
+            "luciddesk-navigation-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -1252,7 +1252,7 @@ mod tests {
     #[test]
     fn folder_watch_tracks_children_and_recovers_after_missing_directory() {
         let root = std::env::temp_dir().join(format!(
-            "lucidpane-folder-{}-{}",
+            "luciddesk-folder-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

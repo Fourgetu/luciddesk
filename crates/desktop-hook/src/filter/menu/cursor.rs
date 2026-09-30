@@ -14,7 +14,7 @@ pub(super) fn normal_pointer() {
         let len = GetClassNameW(foreground, class.as_mut_ptr(), class.len() as i32);
         if len <= 0
             || class[..len as usize]
-                != "LucidPane.IsolatedShellHost.v1"
+                != "LucidDesk.IsolatedShellHost.v1"
                     .encode_utf16()
                     .collect::<Vec<_>>()
         {
@@ -27,7 +27,7 @@ pub(super) fn normal_pointer() {
             SetCursor(LoadCursorW(std::ptr::null_mut(), IDC_ARROW));
             #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
             {
-                let key = windows_sys::w!("LucidPane.Menu.BusyCursorCleared");
+                let key = windows_sys::w!("LucidDesk.Menu.BusyCursorCleared");
                 let count = GetPropW(foreground, key) as usize;
                 SetPropW(foreground, key, count.saturating_add(1) as _);
             }

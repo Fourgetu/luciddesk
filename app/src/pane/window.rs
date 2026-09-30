@@ -40,8 +40,8 @@ pub(super) const SYNC_POINTER: u32 = WM_APP + 11;
 pub(super) const RUN_POSTED_ACTION: u32 = WM_APP + 12;
 pub(super) const TAB_CHANGED: u32 = WM_APP + 13;
 pub(super) const RESTORE_MERGE: u32 = WM_APP + 14;
-const DESKTOP_LAYER: windows_sys::core::PCWSTR = windows_sys::w!("LucidPane.DesktopLayer");
-const CLOSING_PANE: windows_sys::core::PCWSTR = windows_sys::w!("LucidPane.ClosingPane");
+const DESKTOP_LAYER: windows_sys::core::PCWSTR = windows_sys::w!("LucidDesk.DesktopLayer");
+const CLOSING_PANE: windows_sys::core::PCWSTR = windows_sys::w!("LucidDesk.ClosingPane");
 
 pub(super) fn is_desktop_layer(hwnd: HWND) -> bool {
     unsafe { !GetPropW(hwnd, DESKTOP_LAYER).is_null() }
@@ -791,7 +791,7 @@ where
     let menu_active = Rc::new(std::cell::Cell::new(false));
     let mut paint_error = false;
     let model_init = Rc::clone(&model);
-    let inspect = std::env::var_os("LUCIDPANE_INSPECT").is_some();
+    let inspect = std::env::var_os("LUCIDDESK_INSPECT").is_some();
     let window_title = format!("LucidDesk — {}", model.borrow().title);
     let prepared = Rc::new(std::cell::Cell::new(false));
     let show_prepared = Rc::clone(&prepared);

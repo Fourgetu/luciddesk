@@ -57,7 +57,9 @@ pub(super) fn reconnect(state: &Rc<RefCell<PaneApp>>) {
         runtime.last_attempt = Instant::now();
         runtime.path.clone()
     };
+
     let error = hybrid::connect(state, &path).err();
+
     let mut s = state.borrow_mut();
     if let Some(runtime) = &mut s.runtime {
         runtime.reconnecting = false;
@@ -265,7 +267,7 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
     let mut search_state = None;
     let mut search_enabled = false;
     let mut search_checked = Instant::now();
-    let show_message = unsafe { RegisterWindowMessageW(windows_sys::w!("LucidPane.ShowExisting")) };
+    let show_message = unsafe { RegisterWindowMessageW(windows_sys::w!("LucidDesk.ShowExisting")) };
     let taskbar_created = unsafe { RegisterWindowMessageW(windows_sys::w!("TaskbarCreated")) };
     let mut language_dirty = false;
     let mut layout_dirty = false;
@@ -516,7 +518,7 @@ mod tests {
     #[test]
     fn folder_completion_reaches_supervisor_without_timer_polling() {
         let root = std::env::temp_dir().join(format!(
-            "lucidpane-wake-folder-{}-{}",
+            "luciddesk-wake-folder-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

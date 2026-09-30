@@ -121,7 +121,7 @@ cargo test -p luciddesk --release --target-dir target/production --locked --bin 
 
 后两项创建原生合成窗口，必须各自独立运行以隔离 STA 图形生命周期。检查要求与平台限制见[验证与兼容边界](validation.md)。
 
-资源验证命令的前三项检查资源键、变量、Fluent 解析、语言匹配和配置兼容；CI 执行资源检查和 Fluent 测试。最后一项在 Windows 中离屏绘制七种语言的设置页面，覆盖深浅主题、100%、150%、200% 缩放及导航宽度。可设置 `LUCIDPANE_TEST_EXPORT_SNAPSHOTS=1` 导出 `target/i18n-语言索引-页面编号.bmp`，检查后移除环境变量。离屏检查不代替母语审校、实际多显示器操作或 Windows Shell 界面验证。
+资源验证命令的前三项检查资源键、变量、Fluent 解析、语言匹配和配置兼容；CI 执行资源检查和 Fluent 测试。最后一项在 Windows 中离屏绘制七种语言的设置页面，覆盖深浅主题、100%、150%、200% 缩放及导航宽度。可设置 `LUCIDDESK_TEST_EXPORT_SNAPSHOTS=1` 导出 `target/i18n-语言索引-页面编号.bmp`，检查后移除环境变量。离屏检查不代替母语审校、实际多显示器操作或 Windows Shell 界面验证。
 
 ### 检查范围与手动验收
 

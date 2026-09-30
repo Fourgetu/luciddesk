@@ -77,7 +77,7 @@ impl Worker {
         let signal = RequestSignal::new()?;
         let worker_signal = signal.clone();
         let thread = std::thread::Builder::new()
-            .name("LucidPane native menu".into())
+            .name("LucidDesk native menu".into())
             .spawn(move || unsafe {
                 let initialized = CoInitializeEx(std::ptr::null(), COINIT_APARTMENTTHREADED as u32);
                 if initialized < 0 {

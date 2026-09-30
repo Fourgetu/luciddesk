@@ -454,7 +454,7 @@ fn backup_config_controls_stay_within_minimum_width() {
 fn settings_layout_and_rendering_at_multiple_scales() {
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
     let painter = Painter::new().unwrap();
-    let export_snapshots = std::env::var_os("LUCIDPANE_TEST_EXPORT_SNAPSHOTS").is_some();
+    let export_snapshots = std::env::var_os("LUCIDDESK_TEST_EXPORT_SNAPSHOTS").is_some();
     {
         let device = windows_canvas::GpuDevice::new_warp().unwrap();
         for (viewport_width, viewport_height) in [(800.0, 560.0), (940.0, 620.0)] {
@@ -977,7 +977,7 @@ fn material_choices_reach_the_preview_with_their_strength() {
                         &Default::default(),
                     )
                     .unwrap();
-                if std::env::var_os("LUCIDPANE_TEST_EXPORT_SNAPSHOTS").is_some() {
+                if std::env::var_os("LUCIDDESK_TEST_EXPORT_SNAPSHOTS").is_some() {
                     let pixels = bitmap.pixels().unwrap();
                     let mut bmp = vec![0u8; 54];
                     bmp[0..2].copy_from_slice(b"BM");
@@ -1137,7 +1137,7 @@ fn all_languages_layout_and_render_without_control_overflow() {
                     for dark in [true, false] {
                         painter.paint(&bitmap.target, &scene, width, height, scale, dark, false, None, None, &Default::default()).unwrap();
                     }
-                    if scale == 1.0 && std::env::var_os("LUCIDPANE_TEST_EXPORT_SNAPSHOTS").is_some() {
+                    if scale == 1.0 && std::env::var_os("LUCIDDESK_TEST_EXPORT_SNAPSHOTS").is_some() {
                         let pixels = bitmap.pixels().unwrap();
                         let mut bmp = vec![0u8; 54];
                         bmp[..2].copy_from_slice(b"BM");

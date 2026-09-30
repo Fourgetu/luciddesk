@@ -56,14 +56,14 @@ fn record_presenter(host: isize) {
     use std::io::Write;
     use windows_sys::Win32::UI::WindowsAndMessaging::GetPropW;
     let (mode, error) = unsafe {
-        (GetPropW(host as _, windows_sys::w!("LucidPane.Menu.Presenter")) as usize,
-         GetPropW(host as _, windows_sys::w!("LucidPane.Menu.PresenterError")) as usize as u32)
+        (GetPropW(host as _, windows_sys::w!("LucidDesk.Menu.Presenter")) as usize,
+         GetPropW(host as _, windows_sys::w!("LucidDesk.Menu.PresenterError")) as usize as u32)
     };
     let Ok(base) = desktop_shell::local_app_data_path() else { return; };
     if let Ok(mut log) = std::fs::OpenOptions::new().create(true).append(true)
         .open(base.join("LucidDesk").join("menu-presenter.log")) {
         let values = unsafe { ["PrepareCalled", "PrepareResult", "ReadyCalled", "ReadyResult", "ShowCalled"].map(|name| {
-            let key: Vec<u16> = format!("LucidPane.Menu.{name}").encode_utf16().chain(Some(0)).collect();
+            let key: Vec<u16> = format!("LucidDesk.Menu.{name}").encode_utf16().chain(Some(0)).collect();
             GetPropW(host as _, key.as_ptr()) as usize as u32
         }) };
         let _ = writeln!(log, "{:?} host={host:x} presenter={mode} initialization_hresult=0x{error:08X} prepare_called={} prepare_hresult=0x{:08X} ready_called={} ready={} show={}", std::time::SystemTime::now(), values[0], values[1], values[2], values[3], values[4]);

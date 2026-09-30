@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 if ($RenderDiagnostics -and -not $Portable) { throw 'Rendering comparison launchers require -Portable.' }
 if ($Installer -and $Portable) { throw 'Installer and portable packages are separate channels.' }
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$previousRevision = $env:LUCIDPANE_BUILD_REVISION
+$previousRevision = $env:LUCIDDESK_BUILD_REVISION
 Push-Location -LiteralPath $repoRoot
 try {
     & (Join-Path $PSScriptRoot 'use-windows-toolchain.ps1')
@@ -12,7 +12,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Could not read Git revision.' }
     $dirty = [bool](& git status --porcelain --untracked-files=no)
     $revisionLabel = if ($dirty) { "$revision-dirty" } else { $revision }
-    $env:LUCIDPANE_BUILD_REVISION = $revisionLabel
+    $env:LUCIDDESK_BUILD_REVISION = $revisionLabel
     $toolchain = Get-Content -LiteralPath (Join-Path $repoRoot 'rust-toolchain.toml') -Raw
     $pinnedVersion = [regex]::Match($toolchain, 'channel\s*=\s*"([^"]+)"').Groups[1].Value
     $hostInfo = & rustc -vV
@@ -104,6 +104,6 @@ try {
         Write-Output $setup
     }
 } finally {
-    $env:LUCIDPANE_BUILD_REVISION = $previousRevision
+    $env:LUCIDDESK_BUILD_REVISION = $previousRevision
     Pop-Location
 }

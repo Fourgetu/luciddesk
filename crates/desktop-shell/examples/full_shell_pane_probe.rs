@@ -425,7 +425,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         host.update_region()?;
 
         let instance = GetModuleHandleW(std::ptr::null());
-        let class = windows_sys::w!("LucidPane.FullShellPaneControl.v1");
+        let class = windows_sys::w!("LucidDesk.FullShellPaneControl.v1");
         let wc = WNDCLASSW {
             lpfnWndProc: Some(window_proc),
             hInstance: instance,
@@ -442,9 +442,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             0,
             class,
             if pane {
-                windows_sys::w!("LucidPane Shell 内容联动原型")
+                windows_sys::w!("LucidDesk Shell 内容联动原型")
             } else {
-                windows_sys::w!("LucidPane 完整 Shell 对照：右键下方文件测试")
+                windows_sys::w!("LucidDesk 完整 Shell 对照：右键下方文件测试")
             },
             if pane {
                 WS_OVERLAPPEDWINDOW

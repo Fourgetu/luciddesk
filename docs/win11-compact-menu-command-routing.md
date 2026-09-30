@@ -51,7 +51,7 @@ sequenceDiagram
 - 目标改变时创建新的已验证视图。旧宿主若仍拥有可见命令窗口（例如属性），先保留，待窗口关闭后在菜单 STA 上释放。
 - 属性窗口仍打开时，不复用它的宿主打开下一份菜单，避免禁用 owner 或模态状态影响输入。
 - 控制进程退出、过滤会话断开时，worker 请求通道断开，宿主和 COM 对象在其创建线程清理；不停止或重启 Explorer。
-- 生产宿主使用空窗口区域提供焦点与 Shell 上下文，本身不绘制文件内容。项目已有 `LUCIDPANE_INSPECT` 测试入口只改变窗口的可检查样式，菜单宿主仍保持空区域。
+- 生产宿主使用空窗口区域提供焦点与 Shell 上下文，本身不绘制文件内容。项目已有 `LUCIDDESK_INSPECT` 测试入口只改变窗口的可检查样式，菜单宿主仍保持空区域。
 
 ## 命令识别与执行边界
 
@@ -98,7 +98,7 @@ Pane 将鼠标或键盘来源传给菜单。Presenter 适配层在 `DoContextMen
 
 ## 光标与等待
 
-激活独立视图、获取选择菜单、转发 `QueryContextMenu` 及弹出调用返回时检查光标。只有当前菜单 STA 拥有前台 `LucidPane.IsolatedShellHost.v1`，且光标为 `IDC_WAIT` 或 `IDC_APPSTARTING` 时，才恢复 `IDC_ARROW`。不修改其他前台窗口或全局系统光标。
+激活独立视图、获取选择菜单、转发 `QueryContextMenu` 及弹出调用返回时检查光标。只有当前菜单 STA 拥有前台 `LucidDesk.IsolatedShellHost.v1`，且光标为 `IDC_WAIT` 或 `IDC_APPSTARTING` 时，才恢复 `IDC_ARROW`。不修改其他前台窗口或全局系统光标。
 
 菜单等待使用有超时的消息唤醒；持有桌面状态借用期间只处理同步发送消息，不派发已投递的过滤修改请求。宿主复用不能消除原生菜单和第三方扩展的加载成本。
 

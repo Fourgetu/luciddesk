@@ -23,7 +23,7 @@
 
 EXE、窗口、托盘和关于页共用程序内嵌图标资源；README 使用同源 PNG，MSIX 图像由打包脚本从应用图标生成。修改图标时更新原稿及对应导出物，避免各入口使用不同版本。
 
-当前 ICO 源文件路径为 `app/assets/lucidpane.ico`。该内部文件名不代表产品展示名称，不应只为统一品牌文字而单独重命名、破坏资源引用。尺寸、留白、透明度、生成及验证方式以[应用资源说明](../app/assets/README.md)为准。
+当前 ICO 源文件路径为 `app/assets/luciddesk.ico`。资源引用与生成、验证工具使用同一文件名。尺寸、留白、透明度、生成及验证方式以[应用资源说明](../app/assets/README.md)为准。
 
 ## 程序与产物命名
 
@@ -41,19 +41,17 @@ EXE、窗口、托盘和关于页共用程序内嵌图标资源；README 使用�
 
 AppUserModelID、安装器 AppId 和 MSIX 包身份承担不同职责，不是可互换的字符串。品牌文案调整不应顺带改变这些身份或在每次版本更新时生成新值；相关变更需要单独评估快捷方式、升级与包注册行为。
 
-## 数据目录与兼容标识
+## 数据目录与内部标识
 
 数据目录选择按以下优先级执行：
 
-1. 优先使用 `LUCIDDESK_DATA_DIR`；未设置时兼容 `LUCIDPANE_DATA_DIR`。两者同时设置时新变量优先。
+1. 已设置 `LUCIDDESK_DATA_DIR` 时使用指定目录。
 2. 未指定环境变量，且程序旁存在 `portable` 文件时，使用程序旁的 `data`。
-3. 其他情况默认使用 `%LOCALAPPDATA%\LucidDesk`。仅当该目录不存在、而 `%LOCALAPPDATA%\LucidPane` 已存在时，继续原地使用后者。
+3. 其他情况使用 `%LOCALAPPDATA%\LucidDesk`。
 
-默认目录回退不会自动搬移或合并文件，也不应通过品牌替换把已有配置、布局和备份拆到两个目录。配置与数据的具体分工见[存储说明](development/storage.md)。
+程序不再识别旧品牌的数据目录、环境变量或通信标识，也不自动迁移或合并旧工作区。配置与数据的具体分工见[存储说明](development/storage.md)。
 
-部分内部标识仍使用 `LucidPane`，例如单实例互斥量 `Local\LucidPane.DesktopSession` 和唤醒消息 `LucidPane.ShowExisting`；Hook 通信及部分诊断、构建环境变量也保留既有名称。这些是当前兼容接口，不能对仓库执行无差别的名称替换。
-
-用户界面、使用文档和发布产物使用 LucidDesk；源码路径、协议名和环境变量按实际接口原样书写。内部名称的存在不应变成面向用户的第二套品牌。
+内部标识统一使用 `LucidDesk`，例如单实例互斥量 `Local\LucidDesk.DesktopSession`、唤醒消息 `LucidDesk.ShowExisting` 和 Hook 通信名称；环境变量使用 `LUCIDDESK_` 前缀。
 
 ## 修改时的核对项
 

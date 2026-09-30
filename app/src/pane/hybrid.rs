@@ -267,7 +267,7 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), S
             } else if message == ICON_CHANGE_MESSAGE {
                 notify.set(true);
                 work_ready.notify();
-                if std::env::var_os("LUCIDPANE_ICON_TRACE").is_some() {
+                if std::env::var_os("LUCIDDESK_ICON_TRACE").is_some() {
                     eprintln!("icon-notify event={:x}", lparam);
                 }
                 icon_notify
@@ -276,7 +276,7 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), S
                 Some(0)
             } else if message == RECYCLE_CHANGE_MESSAGE {
                 work_ready.notify();
-                if std::env::var_os("LUCIDPANE_ICON_TRACE").is_some() {
+                if std::env::var_os("LUCIDDESK_ICON_TRACE").is_some() {
                     eprintln!("recycle-notify event={:x}", lparam);
                 }
                 icon_notify

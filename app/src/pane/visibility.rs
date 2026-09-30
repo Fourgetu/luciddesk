@@ -7,7 +7,7 @@ const CLOSE: u32 = WM_APP + 198;
 pub(super) const RESTORE: u32 = WM_APP + 196;
 pub(super) const CLOSED: u32 = WM_APP + 197;
 const TIMER: usize = 0x4c5056;
-const CLOSE_STATE: windows_sys::core::PCWSTR = windows_sys::w!("LucidPane.CloseAnimation");
+const CLOSE_STATE: windows_sys::core::PCWSTR = windows_sys::w!("LucidDesk.CloseAnimation");
 
 pub(super) fn request_close(hwnd: HWND) -> bool {
     let phase = unsafe { GetPropW(hwnd, CLOSE_STATE) } as usize;

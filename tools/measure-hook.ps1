@@ -9,7 +9,7 @@ Add-Type @"
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
-public static class LucidPaneHookMeasurement {
+public static class LucidDeskHookMeasurement {
     public delegate bool Callback(IntPtr h, IntPtr p);
     [DllImport("user32.dll")] static extern bool EnumWindows(Callback c, IntPtr p);
     [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr h, Callback c, IntPtr p);
@@ -20,7 +20,7 @@ public static class LucidPaneHookMeasurement {
         var result = new List<IntPtr>();
         EnumWindows((h,p) => {
             EnumChildWindows(h,(c,q) => {
-                if(GetProp(c,"LucidPane.Filter.Owner.v1") != IntPtr.Zero) result.Add(c);
+                if(GetProp(c,"LucidDesk.Filter.Owner.v1") != IntPtr.Zero) result.Add(c);
                 return true;
             },IntPtr.Zero);
             return true;
@@ -29,30 +29,30 @@ public static class LucidPaneHookMeasurement {
     }
 }
 "@
-$hooks = @([LucidPaneHookMeasurement]::Find())
-if ($hooks.Count -ne 1) { throw 'Expected exactly one attached LucidPane desktop hook.' }
+$hooks = @([LucidDeskHookMeasurement]::Find())
+if ($hooks.Count -ne 1) { throw 'Expected exactly one attached LucidDesk desktop hook.' }
 $window = $hooks[0]
-$owner = [LucidPaneHookMeasurement]::GetProp($window,'LucidPane.Filter.Owner.v1')
-$prefix = 'LucidPane.Filter.Perf.'
-if ([LucidPaneHookMeasurement]::GetProp($window,$prefix+'Enabled') -ne [IntPtr]::Zero) {
+$owner = [LucidDeskHookMeasurement]::GetProp($window,'LucidDesk.Filter.Owner.v1')
+$prefix = 'LucidDesk.Filter.Perf.'
+if ([LucidDeskHookMeasurement]::GetProp($window,$prefix+'Enabled') -ne [IntPtr]::Zero) {
     throw 'Another hook measurement is already active.'
 }
 try {
     foreach ($name in @('Count','Micros')) {
-        $null = [LucidPaneHookMeasurement]::RemoveProp($window,$prefix+$name)
+        $null = [LucidDeskHookMeasurement]::RemoveProp($window,$prefix+$name)
     }
-    if (-not [LucidPaneHookMeasurement]::SetProp($window,$prefix+'Enabled',[IntPtr]1)) {
+    if (-not [LucidDeskHookMeasurement]::SetProp($window,$prefix+'Enabled',[IntPtr]1)) {
         throw 'Cannot enable hook measurement. Use the same desktop/user permissions as Explorer.'
     }
     $watch = [Diagnostics.Stopwatch]::StartNew()
     Start-Sleep -Seconds $Seconds
     $elapsed = $watch.Elapsed.TotalSeconds
-    if ([LucidPaneHookMeasurement]::GetProp($window,'LucidPane.Filter.Owner.v1') -ne $owner -or
-        [LucidPaneHookMeasurement]::GetProp($window,$prefix+'Enabled') -eq [IntPtr]::Zero) {
+    if ([LucidDeskHookMeasurement]::GetProp($window,'LucidDesk.Filter.Owner.v1') -ne $owner -or
+        [LucidDeskHookMeasurement]::GetProp($window,$prefix+'Enabled') -eq [IntPtr]::Zero) {
         throw 'Hook changed or detached during measurement; discard this sample.'
     }
-    $count = [LucidPaneHookMeasurement]::GetProp($window,$prefix+'Count').ToInt64()
-    $micros = [LucidPaneHookMeasurement]::GetProp($window,$prefix+'Micros').ToInt64()
+    $count = [LucidDeskHookMeasurement]::GetProp($window,$prefix+'Count').ToInt64()
+    $micros = [LucidDeskHookMeasurement]::GetProp($window,$prefix+'Micros').ToInt64()
     $json = [pscustomobject]@{
         seconds = $elapsed
         scans = $count
@@ -63,9 +63,9 @@ try {
     if ($OutputPath) { $json | Set-Content -LiteralPath $OutputPath -Encoding utf8 }
     $json
 } finally {
-    if ([LucidPaneHookMeasurement]::GetProp($window,'LucidPane.Filter.Owner.v1') -eq $owner) {
+    if ([LucidDeskHookMeasurement]::GetProp($window,'LucidDesk.Filter.Owner.v1') -eq $owner) {
         foreach ($name in @('Enabled','Count','Micros')) {
-            $null = [LucidPaneHookMeasurement]::RemoveProp($window,$prefix+$name)
+            $null = [LucidDeskHookMeasurement]::RemoveProp($window,$prefix+$name)
         }
     }
 }

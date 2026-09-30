@@ -1,5 +1,5 @@
 // Keep this ID in sync with APP_ICON in src/app_icon.rs.
-1 ICON "assets/lucidpane.ico"
+1 ICON "assets/luciddesk.ico"
 
 #include <winver.h>
 

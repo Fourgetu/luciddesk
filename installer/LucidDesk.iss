@@ -6,7 +6,7 @@
   #define ProductName "LucidDesk"
 #endif
 #ifndef AppMutexName
-  #define AppMutexName "Local\LucidPane.DesktopSession"
+  #define AppMutexName "Local\LucidDesk.DesktopSession"
 #endif
 #ifndef AppWindowClass
   #define AppWindowClass "windows-window.Window"
@@ -22,9 +22,6 @@
 #endif
 #ifndef UserDataFolderName
   #define UserDataFolderName "LucidDesk"
-#endif
-#ifndef LegacyUserDataFolderName
-  #define LegacyUserDataFolderName "LucidPane"
 #endif
 
 [Setup]
@@ -57,7 +54,7 @@ RestartIfNeededByRun=no
 WizardStyle=modern
 Compression=lzma2
 SolidCompression=yes
-SetupIconFile=..\app\assets\lucidpane.ico
+SetupIconFile=..\app\assets\luciddesk.ico
 OutputDir={#OutputPath}
 OutputBaseFilename=LucidDesk-{#AppVersion}-windows-x64-setup
 VersionInfoVersion={#AppVersion}
@@ -128,16 +125,15 @@ var
 begin
   Base := ExpandFileName(ExpandConstant('{localappdata}'));
   Result := ExpandFileName(AddBackslash(Base) + Name);
-  // Only these two direct children of LocalAppData are eligible for cleanup.
+  // Only this direct child of LocalAppData is eligible for cleanup.
   if (CompareText(ExtractFileDir(Result), Base) <> 0) or
-     ((Name <> '{#UserDataFolderName}') and (Name <> '{#LegacyUserDataFolderName}')) then
+     (Name <> '{#UserDataFolderName}') then
     RaiseException('Invalid LucidDesk user data directory.');
 end;
 
 function UserDataDirectoryList: String;
 begin
-  Result := UserDataDirectory('{#UserDataFolderName}') + #13#10 +
-    UserDataDirectory('{#LegacyUserDataFolderName}');
+  Result := UserDataDirectory('{#UserDataFolderName}');
 end;
 
 function HasArgument(Value: String): Boolean;
@@ -426,7 +422,6 @@ end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
-  Index: Integer;
   Target, Failed, StartupCommand: String;
 begin
   if CurUninstallStep = usAppMutexCheck then DeinitializeUninstall;
@@ -445,9 +440,8 @@ begin
   // Run only after the user confirmed the uninstall and application removal completed.
   if (CurUninstallStep <> usPostUninstall) or not DeleteUserData then Exit;
   Failed := '';
-  for Index := 0 to 1 do begin
-    if Index = 0 then Target := UserDataDirectory('{#UserDataFolderName}')
-    else Target := UserDataDirectory('{#LegacyUserDataFolderName}');
+  begin
+    Target := UserDataDirectory('{#UserDataFolderName}');
     Log('Removing selected LucidDesk user data directory: ' + Target);
     // DelTree removes junctions themselves without following their targets.
     if DirExists(Target) and not DelTree(Target, True, True, True) then

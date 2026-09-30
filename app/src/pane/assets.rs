@@ -88,7 +88,7 @@ fn recycle_icon(size: i32) -> windows::core::Result<Pixels> {
     unsafe {
         SHQueryRecycleBinW(PCWSTR::null(), &raw mut info)?;
     }
-    if std::env::var_os("LUCIDPANE_ICON_TRACE").is_some() {
+    if std::env::var_os("LUCIDDESK_ICON_TRACE").is_some() {
         eprintln!(
             "recycle-state items={} bytes={}",
             info.i64NumItems, info.i64Size
@@ -243,11 +243,11 @@ mod padding_tests {
     }
 
     #[test]
-    #[ignore = "Read-only icon diagnostic; set LUCIDPANE_TEST_FOLDER and LUCIDPANE_ICON_OUTPUT"]
+    #[ignore = "Read-only icon diagnostic; set LUCIDDESK_TEST_FOLDER and LUCIDDESK_ICON_OUTPUT"]
     fn downloads_icons_preserve_transparency_and_fill_the_canvas() {
         let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
-        let root = std::path::PathBuf::from(std::env::var_os("LUCIDPANE_TEST_FOLDER").unwrap());
-        let output = std::path::PathBuf::from(std::env::var_os("LUCIDPANE_ICON_OUTPUT").unwrap());
+        let root = std::path::PathBuf::from(std::env::var_os("LUCIDDESK_TEST_FOLDER").unwrap());
+        let output = std::path::PathBuf::from(std::env::var_os("LUCIDDESK_ICON_OUTPUT").unwrap());
         std::fs::create_dir_all(&output).unwrap();
         for name in [
             "openfences.exe",

@@ -1,5 +1,5 @@
 //! Live production-backend regression: remove, refresh, pause, restore, owner death.
-//! Run with LucidPane closed. Never deletes, moves, or opens desktop file content.
+//! Run with LucidDesk closed. Never deletes, moves, or opens desktop file content.
 use luciddesk_desktop::filter::FilterSession;
 use desktop_shell::{NativeDesktopSnapshot, native_desktop_snapshot};
 use std::{
@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let before = native_desktop_snapshot()?;
     let view = luciddesk_desktop::desktop_view()?;
-    let owner = windows_window::Window::new("LucidPane Filter Regression")
+    let owner = windows_window::Window::new("LucidDesk Filter Regression")
         .size(1, 1)
         .style(WS_POPUP)
         .ex_style(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)
@@ -105,7 +105,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let after = native_desktop_snapshot()?;
         assert!(prior.items.iter().all(|(old,x,y)| after.items.iter().any(|(new,nx,ny)| old.identity.equivalent_to(&new.identity) && x==nx && y==ny)));
     }
-    assert!(hook.prepare_menu(owner.hwnd() as isize, &["C:\\LucidPane-missing-menu-test-item.invalid".into()], 600, 450).is_err());
+    assert!(hook.prepare_menu(owner.hwnd() as isize, &["C:\\LucidDesk-missing-menu-test-item.invalid".into()], 600, 450).is_err());
     check(&before, &targets)?;
     assert!(hook.is_alive(), "Menu failures must not disable desktop filtering");
     let recovered = hook.prepare_menu(owner.hwnd() as isize, &targets, 620, 470)?;
@@ -127,21 +127,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Simulate losing the ordinary UPDATE_END transport entirely. The owner
     // remains alive; only the independent release marker reaches Explorer.
     hook.begin_update()?;
-    let generation = unsafe { GetPropW(view as _, windows_sys::w!("LucidPane.Filter.Ack.v1")) };
-    unsafe { SetPropW(view as _, windows_sys::w!("LucidPane.Filter.UpdateRelease.v1"), generation); }
+    let generation = unsafe { GetPropW(view as _, windows_sys::w!("LucidDesk.Filter.Ack.v1")) };
+    unsafe { SetPropW(view as _, windows_sys::w!("LucidDesk.Filter.UpdateRelease.v1"), generation); }
     let deadline = Instant::now() + Duration::from_secs(3);
-    while unsafe { GetPropW(view as _, windows_sys::w!("LucidPane.Filter.UpdateReleased.v1")) } != generation {
+    while unsafe { GetPropW(view as _, windows_sys::w!("LucidDesk.Filter.UpdateReleased.v1")) } != generation {
         assert!(Instant::now() < deadline, "timer must release an abandoned update with a live owner");
         std::thread::sleep(Duration::from_millis(20));
     }
     check(&before, &targets)?;
     hook.finish_update()?;
     hook.begin_update()?;
-    let next = unsafe { GetPropW(view as _, windows_sys::w!("LucidPane.Filter.Ack.v1")) };
+    let next = unsafe { GetPropW(view as _, windows_sys::w!("LucidDesk.Filter.Ack.v1")) };
     assert_ne!(generation, next);
     // The preceding marker is still present and must not release this update.
     std::thread::sleep(Duration::from_millis(1100));
-    assert_ne!(unsafe { GetPropW(view as _, windows_sys::w!("LucidPane.Filter.UpdateReleased.v1")) }, next);
+    assert_ne!(unsafe { GetPropW(view as _, windows_sys::w!("LucidDesk.Filter.UpdateReleased.v1")) }, next);
     hook.finish_update()?;
     let _ = hook.prepare_menu(owner.hwnd() as isize, &targets, 620, 470)?;
     hook.cancel_menu()?;

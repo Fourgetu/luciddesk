@@ -789,7 +789,7 @@ impl Renderer {
                                 ))?;
                                 self.images
                                     .insert(key, (Arc::clone(image), bitmap, size));
-                                if std::env::var_os("LUCIDPANE_ICON_TRACE").is_some()
+                                if std::env::var_os("LUCIDDESK_ICON_TRACE").is_some()
                                     && item.identity.persistent_key()
                                         .to_ascii_lowercase()
                                         .contains("645ff040-5081-101b-9f08-00aa002f954e")
@@ -1276,7 +1276,7 @@ mod tests {
                     let mut blank = model.clone();
                     for (_, title) in &mut blank.tabs { title.clear(); }
                     assert_ne!(pixels, renderer.pixels(w, h, scale, &blank).unwrap());
-                    if std::env::var_os("LUCIDPANE_TEST_EXPORT_SNAPSHOTS").is_some() && scale == 1.0 && width == 420 && dark {
+                    if std::env::var_os("LUCIDDESK_TEST_EXPORT_SNAPSHOTS").is_some() && scale == 1.0 && width == 420 && dark {
                         let mut bmp = vec![0u8; 54];
                         bmp[..2].copy_from_slice(b"BM");
                         bmp[2..6].copy_from_slice(&(54u32 + pixels.len() as u32).to_le_bytes());
@@ -1314,7 +1314,7 @@ mod tests {
             for scale in [1.0, 1.5, 2.0] {
                 let pixels = renderer.pixels((320.0 * scale) as u32, (180.0 * scale) as u32, scale, &model).unwrap();
                 assert!(renderer.images.is_empty(), "placeholders must not upload textures");
-                if scale == 1.0 && std::env::var_os("LUCIDPANE_TEST_EXPORT_SNAPSHOTS").is_some() {
+                if scale == 1.0 && std::env::var_os("LUCIDDESK_TEST_EXPORT_SNAPSHOTS").is_some() {
                     let mut bmp = vec![0u8; 54];
                     bmp[0..2].copy_from_slice(b"BM");
                     bmp[2..6].copy_from_slice(&(54 + pixels.len() as u32).to_le_bytes());

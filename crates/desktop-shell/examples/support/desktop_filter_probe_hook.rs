@@ -23,14 +23,14 @@ pub unsafe extern "system" fn DesktopFilterProbeHook(code: i32, wp: usize, lp: i
     if code >= 0 && wp == PM_REMOVE as usize && lp != 0 {
         let message = unsafe { &*(lp as *const MSG) };
         if message.message
-            == unsafe { RegisterWindowMessageW(windows_sys::w!("LucidPane.DesktopFilterProbe.v1")) }
+            == unsafe { RegisterWindowMessageW(windows_sys::w!("LucidDesk.DesktopFilterProbe.v1")) }
             && message.wParam == 0x4c504650
             && !BUSY.swap(true, Ordering::SeqCst)
         {
             if (3..=5).contains(&message.lParam) || (7..=8).contains(&message.lParam) {
                 unsafe {
                     windows_sys::Win32::UI::Shell::SetWindowSubclass(message.hwnd, Some(menu_work), 0x4c504d57, 0);
-                    PostMessageW(message.hwnd, RegisterWindowMessageW(windows_sys::w!("LucidPane.MenuProbe.Work.v1")), 0, message.lParam);
+                    PostMessageW(message.hwnd, RegisterWindowMessageW(windows_sys::w!("LucidDesk.MenuProbe.Work.v1")), 0, message.lParam);
                 }
                 return unsafe { CallNextHookEx(std::ptr::null_mut(), code, wp, lp) };
             }
@@ -50,7 +50,7 @@ pub unsafe extern "system" fn DesktopFilterProbeHook(code: i32, wp: usize, lp: i
 
 unsafe extern "system" fn menu_work(hwnd: windows_sys::Win32::Foundation::HWND, msg: u32, wp: usize, lp: isize, _: usize, _: usize) -> isize {
     unsafe {
-        if msg == RegisterWindowMessageW(windows_sys::w!("LucidPane.MenuProbe.Work.v1")) {
+        if msg == RegisterWindowMessageW(windows_sys::w!("LucidDesk.MenuProbe.Work.v1")) {
             windows_sys::Win32::UI::Shell::RemoveWindowSubclass(hwnd, Some(menu_work), 0x4c504d57);
             let result = std::panic::catch_unwind(|| inspect(lp));
             let mut report = match result {
@@ -94,7 +94,7 @@ fn inspect(command: isize) -> windows::core::Result<String> {
         }
         if command == 6 {
             // Keep the experiment separate from the real desktop STA and state.
-            std::thread::Builder::new().name("LucidPane visible Shell probe".into()).spawn(|| {
+            std::thread::Builder::new().name("LucidDesk visible Shell probe".into()).spawn(|| {
                 let result = visible_shell_probe::run_in_explorer();
                 if let Err(error) = result {
                     let _ = std::fs::write(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/visible-shell-probe-error.log"),error.to_string());

@@ -19,7 +19,7 @@ use windows_sys::Win32::{
         WindowsAndMessaging::*,
     },
 };
-const PROPERTY: windows_sys::core::PCWSTR = windows_sys::w!("LucidPane.RenameEdit");
+const PROPERTY: windows_sys::core::PCWSTR = windows_sys::w!("LucidDesk.RenameEdit");
 const SUBCLASS: usize = 0x4c50_524e;
 const FINISH: u32 = WM_APP + 71;
 

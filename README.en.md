@@ -12,7 +12,7 @@ Desktop panels · Folder panels · Everything search · Spacebar preview
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Build CI](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml/badge.svg)](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml)
-[![Version](https://img.shields.io/badge/version-0.16.0-087EA4?style=flat-square)](CHANGELOG.en.md)
+[![Version](https://img.shields.io/badge/version-0.16.1-087EA4?style=flat-square)](CHANGELOG.en.md)
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square)](#compatibility)
 [![Architecture](https://img.shields.io/badge/arch-x64-475569?style=flat-square)](docs/portable.md)
 
@@ -113,7 +113,7 @@ Use **Settings → About → Check for updates**, then **Open update page** to d
 
 Keep the EXE and DLL from the same build together. Uninstall keeps user settings by default. Uncheck **Keep user settings** to remove the current account's default settings, layouts and backups. See the [installer guide](docs/installer.md) (Chinese).
 
-Upgrades may continue using an existing `LucidPane` data directory. To switch from standard to portable mode, export and restore your configuration.
+Upgrades may continue using an existing `LucidDesk` data directory. To switch from standard to portable mode, export and restore your configuration.
 
 Use **Settings → Backup & restore** to export or restore your configuration. Backups contain settings and layouts, not the original files referenced by panels. Moving a portable folder does not move those original files.
 

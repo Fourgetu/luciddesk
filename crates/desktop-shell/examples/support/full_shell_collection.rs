@@ -82,7 +82,7 @@ pub fn open(browser: &IShellBrowser, fixture: &Path) -> Result<IShellView, Box<d
         let scope = scope?;
         let condition: ICondition = conditions.CreateCompoundFromArray(CT_OR_CONDITION, &leaves, CONDITION_CREATION_DEFAULT)?;
         let factory: ISearchFolderItemFactory = CoCreateInstance(&SearchFolderItemFactory, None, CLSCTX_INPROC_SERVER)?;
-        factory.SetDisplayName(windows::core::w!("LucidPane collection probe"))?;
+        factory.SetDisplayName(windows::core::w!("LucidDesk collection probe"))?;
         factory.SetScope(&scope)?;
         factory.SetCondition(&condition)?;
         factory.SetFolderLogicalViewMode(FLVM_ICONS)?;

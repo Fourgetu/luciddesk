@@ -11,7 +11,7 @@ impl Timings {
         Self {
             start: Instant::now(),
             stages: Vec::new(),
-            enabled: std::env::var_os("LUCIDPANE_MENU_PERF").is_some(),
+            enabled: std::env::var_os("LUCIDDESK_MENU_PERF").is_some(),
         }
     }
     pub fn mark(&mut self, name: &'static str) {
@@ -36,7 +36,7 @@ impl Drop for Timings {
             return;
         };
         let path = std::path::PathBuf::from(base)
-            .join("LucidPane")
+            .join("LucidDesk")
             .join("menu-performance.log");
         if let Ok(mut file) = std::fs::OpenOptions::new()
             .create(true)

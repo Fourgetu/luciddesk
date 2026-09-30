@@ -29,7 +29,7 @@ fn module() -> windows::core::Result<HMODULE> {
     if unsafe {
         GetModuleHandleExW(
             GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
-            (super::LucidPaneFilterHook as *const ()).cast(),
+            (super::LucidDeskFilterHook as *const ()).cast(),
             &raw mut module,
         )
     } == 0

@@ -120,7 +120,7 @@ impl FilterSession {
             if module.is_null() {
                 return Err(std::io::Error::last_os_error().to_string());
             }
-            let Some(proc) = GetProcAddress(module, windows_sys::s!("LucidPaneFilterHook")) else {
+            let Some(proc) = GetProcAddress(module, windows_sys::s!("LucidDeskFilterHook")) else {
                 FreeLibrary(module);
                 return Err("Hook DLL 缺少视图过滤入口".into());
             };
@@ -495,7 +495,7 @@ mod update_tests {
             else { unsafe { DefWindowProcW(hwnd, msg, wp, lp) } }
         }
         unsafe {
-            let class = windows_sys::w!("LucidPaneAsyncMembershipTest");
+            let class = windows_sys::w!("LucidDeskAsyncMembershipTest");
             let instance = GetModuleHandleW(null_mut());
             assert_ne!(RegisterClassW(&WNDCLASSW { lpfnWndProc: Some(accept), hInstance: instance,
                 lpszClassName: class, ..Default::default() }), 0);
@@ -571,7 +571,7 @@ mod update_tests {
             assert!(!owner.is_null());
             let (sender, receiver) = std::sync::mpsc::channel();
             let worker = std::thread::spawn(move || {
-                let class = windows_sys::w!("LucidPaneMembershipCallbackTest");
+                let class = windows_sys::w!("LucidDeskMembershipCallbackTest");
                 let instance = GetModuleHandleW(null_mut());
                 assert_ne!(RegisterClassW(&WNDCLASSW { lpfnWndProc: Some(peer), hInstance: instance,
                     lpszClassName: class, ..Default::default() }), 0);
@@ -611,7 +611,7 @@ mod update_tests {
             } else { unsafe { DefWindowProcW(hwnd, msg, wp, lp) } }
         }
         unsafe {
-            let class = windows_sys::w!("LucidPaneDisconnectBeforeAckTest");
+            let class = windows_sys::w!("LucidDeskDisconnectBeforeAckTest");
             let instance = GetModuleHandleW(null_mut());
             assert_ne!(RegisterClassW(&WNDCLASSW { lpfnWndProc: Some(disconnected), hInstance: instance,
                 lpszClassName: class, ..Default::default() }), 0);

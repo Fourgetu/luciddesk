@@ -144,7 +144,7 @@ cargo test -p luciddesk editor_click_raises_search_among_panes_but_hotkey_stays_
 cargo test -p luciddesk graphics_caches_release_before_apartment_and_process_exit --offline -- --test-threads=1
 ```
 
-设置页渲染测试默认不写图片。需要视觉检查时，设置环境变量 `LUCIDPANE_TEST_EXPORT_SNAPSHOTS=1` 后运行 `settings_layout_and_rendering_at_multiple_scales`，图片输出至 `target/settings-*.bmp`；检查后移除该环境变量即可恢复无图片写入的常规测试。
+设置页渲染测试默认不写图片。需要视觉检查时，设置环境变量 `LUCIDDESK_TEST_EXPORT_SNAPSHOTS=1` 后运行 `settings_layout_and_rendering_at_multiple_scales`，图片输出至 `target/settings-*.bmp`；检查后移除该环境变量即可恢复无图片写入的常规测试。
 
 Canvas 集成测试可能连带构建主程序；若可执行文件正被占用，在命令末尾添加 `--target-dir target\convergence-check`。
 
@@ -181,7 +181,7 @@ cargo build -p desktop-shell --example filter_backend_probe --locked
 
 检查要求及兼容边界见[验证与兼容边界](validation.md)。
 
-品牌更名兼容：若新的数据目录不存在且旧目录 `%LOCALAPPDATA%\LucidPane` 已存在，继续使用旧目录。`LUCIDDESK_DATA_DIR` 优先，旧变量 `LUCIDPANE_DATA_DIR` 仍受支持；详见[品牌规范](../brand.md)。
+数据目录仅支持 `LUCIDDESK_DATA_DIR` 覆盖、便携标记和默认 `%LOCALAPPDATA%\LucidDesk`；详见[品牌规范](../brand.md)。
 
 ## GitHub Release
 

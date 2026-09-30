@@ -330,7 +330,7 @@ mod tests {
             );
         }
         assert_eq!(
-            query("lucidpane-no-match-7af4d18cb03e", 0).unwrap().total,
+            query("luciddesk-no-match-7af4d18cb03e", 0).unwrap().total,
             0
         );
     }

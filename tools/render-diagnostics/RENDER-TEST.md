@@ -3,7 +3,7 @@
 ## Explorer 退出错误
 
 若此前退出时 Explorer 重启，不必再次复现。运行 `Collect-Explorer-Error.cmd`，
-它只读取最近 7 天内与 explorer.exe、luciddesk.exe、lucidpane.exe 有关的应用错误事件和已有 WER 文本报告，保存为 `explorer-errors.txt`。
+它只读取最近 7 天内与 explorer.exe、luciddesk.exe、luciddesk.exe 有关的应用错误事件和已有 WER 文本报告，保存为 `explorer-errors.txt`。
 请把采集脚本放在测试版 exe 同目录，以便同时记录构建信息和 exe / DLL 的 SHA256。报告可能包含本机路径及用户名。
 不会启动、退出或重启任何程序，也不会自动上传。反馈问题时可附上该文件和对应渲染日志。
 

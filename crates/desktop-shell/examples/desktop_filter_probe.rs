@@ -118,7 +118,7 @@ fn run_in_process(
             windows_sys::Win32::Foundation::FreeLibrary(module);
             return Err(std::io::Error::last_os_error().into());
         }
-        let message = RegisterWindowMessageW(windows_sys::w!("LucidPane.DesktopFilterProbe.v1"));
+        let message = RegisterWindowMessageW(windows_sys::w!("LucidDesk.DesktopFilterProbe.v1"));
         let log = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../target/desktop-filter-inprocess.log"

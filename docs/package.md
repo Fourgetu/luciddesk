@@ -38,8 +38,7 @@ LucidDesk 提供桌面分组、文件夹面板和 Everything 搜索入口。开�
 数据路径遵循以下规则：
 
 - `LUCIDDESK_DATA_DIR` 可指定独立数据目录，适合隔离测试。
-- 未设置新变量时兼容 `LUCIDPANE_DATA_DIR`；两者同时存在时新变量优先。
-- 未指定环境变量时，若新默认目录不存在但 `%LOCALAPPDATA%\LucidPane` 已存在，继续原地使用旧目录。
+- 未指定环境变量时，使用 `%LOCALAPPDATA%\LucidDesk`。
 
 完整名称和目录约定见[品牌规范](brand.md)。不要随意添加 `portable` 或其他包标记来切换模式；使用对应发行包，避免误判配置位置。
 

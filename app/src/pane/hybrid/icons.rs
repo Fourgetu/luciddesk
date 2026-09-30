@@ -43,7 +43,7 @@ fn apply_pane_images(
     loaded: Vec<(String, assets::Pixels)>,
 ) -> bool {
     let live = pane_image_keys(workspace);
-    let trace = std::env::var_os("LUCIDPANE_ICON_TRACE").is_some();
+    let trace = std::env::var_os("LUCIDDESK_ICON_TRACE").is_some();
     let mut changed = false;
     for (key, image) in loaded {
         // A worker can complete after the item was released to Explorer.
@@ -213,7 +213,7 @@ fn refresh_changed_icons(s: &mut PaneApp) -> bool {
                         return;
                     };
                     let affected = pending.affected(identities);
-                    if std::env::var_os("LUCIDPANE_ICON_TRACE").is_some() {
+                    if std::env::var_os("LUCIDDESK_ICON_TRACE").is_some() {
                         eprintln!(
                             "icon-targets {:?}",
                             affected
@@ -273,7 +273,7 @@ pub(super) fn queue_pane_icons(s: &mut PaneApp, force: bool) {
         let started = Instant::now();
         let requested = requests.iter().map(ShellIdentity::persistent_key).collect();
         let images = load_icon_batch(requests, size);
-        if std::env::var_os("LUCIDPANE_ICON_TRACE").is_some() {
+        if std::env::var_os("LUCIDDESK_ICON_TRACE").is_some() {
             eprintln!(
                 "startup-icon-batch requested={count} loaded={} elapsed_ms={}",
                 images.len(),

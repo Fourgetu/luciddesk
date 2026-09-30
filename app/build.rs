@@ -61,8 +61,8 @@ fn main() {
             println!("cargo:rerun-if-changed={}", root.join(path).display());
         }
     }
-    println!("cargo:rerun-if-env-changed=LUCIDPANE_BUILD_REVISION");
-    let revision = std::env::var("LUCIDPANE_BUILD_REVISION")
+    println!("cargo:rerun-if-env-changed=LUCIDDESK_BUILD_REVISION");
+    let revision = std::env::var("LUCIDDESK_BUILD_REVISION")
         .ok()
         .map(|value| value.trim().to_owned())
         .filter(|value| !value.is_empty() && value != "unknown")
@@ -73,7 +73,7 @@ fn main() {
             Some(format!("{revision}{}", if dirty { "-dirty" } else { "" }))
         })
         .unwrap_or_else(|| "unknown".into());
-    println!("cargo:rustc-env=LUCIDPANE_BUILD_REVISION={revision}");
+    println!("cargo:rustc-env=LUCIDDESK_BUILD_REVISION={revision}");
     let version = std::env::var("CARGO_PKG_VERSION").unwrap();
     let numeric_version = ["MAJOR", "MINOR", "PATCH"]
         .map(|part| {

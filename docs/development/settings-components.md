@@ -103,12 +103,12 @@ cargo test -p luciddesk --bin luciddesk pane::settings --locked --offline -- --t
 需要人工查看离屏快照时，在 PowerShell 中单独运行导出测试：
 
 ```powershell
-$previousSnapshots = $env:LUCIDPANE_TEST_EXPORT_SNAPSHOTS
+$previousSnapshots = $env:LUCIDDESK_TEST_EXPORT_SNAPSHOTS
 try {
-    $env:LUCIDPANE_TEST_EXPORT_SNAPSHOTS = '1'
+    $env:LUCIDDESK_TEST_EXPORT_SNAPSHOTS = '1'
     cargo test -p luciddesk --bin luciddesk settings_layout_and_rendering_at_multiple_scales --locked --offline -- --test-threads=1
 } finally {
-    $env:LUCIDPANE_TEST_EXPORT_SNAPSHOTS = $previousSnapshots
+    $env:LUCIDDESK_TEST_EXPORT_SNAPSHOTS = $previousSnapshots
 }
 ```
 

@@ -66,7 +66,7 @@ impl Drop for ReturnFocus {
 // Opt-in diagnostics contain window classes/handles only, never window titles
 // or filenames. Keep filesystem work out of the Explorer hook and paint paths.
 fn focus_trace(stage: &str, owner: HWND, desktop: HWND, accepted: Option<i32>) {
-    if std::env::var_os("LUCIDPANE_MENU_TRACE").is_none() {
+    if std::env::var_os("LUCIDDESK_MENU_TRACE").is_none() {
         return;
     }
     use std::io::Write;
@@ -77,7 +77,7 @@ fn focus_trace(stage: &str, owner: HWND, desktop: HWND, accepted: Option<i32>) {
         return;
     };
     let path = std::path::PathBuf::from(base)
-        .join("LucidPane")
+        .join("LucidDesk")
         .join("menu-focus.log");
     let Ok(mut file) = std::fs::OpenOptions::new()
         .create(true)
@@ -133,7 +133,7 @@ pub fn show_isolated_item_menu(owner: HWND, host: HWND, invocation: MenuInvocati
         if windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW(
             host.0,
             windows_sys::Win32::UI::WindowsAndMessaging::RegisterWindowMessageW(windows_sys::w!(
-                "LucidPane.IsolatedMenu.Open.v1"
+                "LucidDesk.IsolatedMenu.Open.v1"
             )),
             usize::from(invocation == MenuInvocation::Keyboard),
             0,
@@ -147,13 +147,13 @@ pub fn show_isolated_item_menu(owner: HWND, host: HWND, invocation: MenuInvocati
             use windows_sys::Win32::UI::WindowsAndMessaging::GetPropW;
             eprintln!(
                 "menu_shell_get_item_us={} menu_shell_build_us={} busy_cursor_cleared={}",
-                (GetPropW(host.0, windows_sys::w!("LucidPane.Menu.GetItemUs")) as usize)
+                (GetPropW(host.0, windows_sys::w!("LucidDesk.Menu.GetItemUs")) as usize)
                     .saturating_sub(1),
-                (GetPropW(host.0, windows_sys::w!("LucidPane.Menu.BuildUs")) as usize)
+                (GetPropW(host.0, windows_sys::w!("LucidDesk.Menu.BuildUs")) as usize)
                     .saturating_sub(1),
                 GetPropW(
                     GetAncestor(host.0, GA_ROOT),
-                    windows_sys::w!("LucidPane.Menu.BusyCursorCleared")
+                    windows_sys::w!("LucidDesk.Menu.BusyCursorCleared")
                 ) as usize
             );
         }

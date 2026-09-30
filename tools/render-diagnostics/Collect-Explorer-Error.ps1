@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 $reportPath = Join-Path $PSScriptRoot 'explorer-errors.txt'
 $lines = [System.Collections.Generic.List[string]]::new()
 $since = (Get-Date).AddDays(-7)
-$appPattern = '(?i)\b(?:explorer|luciddesk|lucidpane)\.exe\b'
+$appPattern = '(?i)\b(?:explorer|luciddesk|luciddesk)\.exe\b'
 $lines.Add('Explorer and LucidDesk errors from the last 7 days. This script does not start or stop any application.')
 $lines.Add("Collected: $((Get-Date).ToString('o'))")
 foreach ($name in @('build.json', 'luciddesk.exe', 'luciddesk_desktop.dll')) {
@@ -38,7 +38,7 @@ foreach ($base in @($env:ProgramData, $env:LOCALAPPDATA)) {
         try {
             if (-not (Test-Path -LiteralPath $root)) { continue }
             $folders = Get-ChildItem -LiteralPath $root -Directory -ErrorAction Stop |
-                Where-Object { $_.Name -match '(?i)(explorer|luciddesk|lucidpane)\.exe' }
+                Where-Object { $_.Name -match '(?i)(explorer|luciddesk|luciddesk)\.exe' }
             foreach ($folder in $folders) {
                 $report = Join-Path $folder.FullName 'Report.wer'
                 try {

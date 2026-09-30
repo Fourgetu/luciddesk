@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let window = Window(CreateWindowExW(
             0,
             windows_sys::w!("STATIC"),
-            windows_sys::w!("LucidPane isolated Shell host probe"),
+            windows_sys::w!("LucidDesk isolated Shell host probe"),
             WS_POPUP,
             0,
             0,

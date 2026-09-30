@@ -107,7 +107,7 @@ fn all_pane_types_fade_and_close_after_the_transition() {
             assert_ne!(unsafe { IsWindow(hwnd) }, 0);
             let opacity = unsafe { SendMessageW(hwnd, WM_APP + 199, 0, 0) };
             assert!((1..1000).contains(&opacity), "closing opacity: {opacity}");
-            let editor = unsafe { GetPropW(hwnd, windows_sys::w!("LucidPane.SearchInput")) };
+            let editor = unsafe { GetPropW(hwnd, windows_sys::w!("LucidDesk.SearchInput")) };
             if !editor.is_null() {
                 let mut alpha = 0;
                 let mut key = 0;
@@ -345,10 +345,10 @@ fn search_pane_creation_and_close_preserve_desktop_membership() {
         unsafe { GetWindowLongW(hwnd, GWL_STYLE) } as u32 & WS_CAPTION,
         0
     );
-    let edit = unsafe { GetPropW(hwnd, windows_sys::w!("LucidPane.SearchInput")) };
+    let edit = unsafe { GetPropW(hwnd, windows_sys::w!("LucidDesk.SearchInput")) };
     assert!(!edit.is_null());
     unsafe {
-        SetWindowTextW(edit, windows_sys::w!("lucidpane-query-test"));
+        SetWindowTextW(edit, windows_sys::w!("luciddesk-query-test"));
     }
     unsafe {
         windows_sys::Win32::UI::WindowsAndMessaging::SendMessageW(hwnd, search::INPUT, 0, 0);
@@ -412,7 +412,7 @@ fn search_pane_creation_and_close_preserve_desktop_membership() {
 fn folder_pane_creation_switch_and_close_preserve_real_files() {
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
     let root = std::env::temp_dir().join(format!(
-        "lucidpane-folder-ui-{}-{}",
+        "luciddesk-folder-ui-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -516,7 +516,7 @@ fn folder_pane_creation_switch_and_close_preserve_real_files() {
 fn activation_releases_state_and_model_before_shell_reentry() {
     // Pumping real windows leaves native rendering state in this UI thread.
     // Isolate this message-loop regression from the other GPU/window fixtures.
-    const CHILD: &str = "LUCIDPANE_ACTIVATION_TEST_CHILD";
+    const CHILD: &str = "LUCIDDESK_ACTIVATION_TEST_CHILD";
     if std::env::var_os(CHILD).is_none() {
         let mut child = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
@@ -720,7 +720,7 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
     // Real focus/default-key dispatch interacts with process-wide windowing
     // state left by other live UI fixtures. Exercise it in a fresh process,
     // while still requiring all of the native message assertions to pass.
-    const ISOLATED: &str = "LUCIDPANE_KEYBOARD_TEST_CHILD";
+    const ISOLATED: &str = "LUCIDDESK_KEYBOARD_TEST_CHILD";
     if std::env::var_os(ISOLATED).is_none() {
         let mut child = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
@@ -967,7 +967,7 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
     // before dismissing it. The old in-callback modal loop loses its ticks.
     unsafe {
         use windows_sys::Win32::UI::WindowsAndMessaging::*;
-        const RESULT: windows_sys::core::PCWSTR = windows_sys::w!("LucidPane.FoldMenuTest");
+        const RESULT: windows_sys::core::PCWSTR = windows_sys::w!("LucidDesk.FoldMenuTest");
         unsafe extern "system" fn check_fold(
             hwnd: windows_sys::Win32::Foundation::HWND,
             _: u32,
@@ -1757,7 +1757,7 @@ fn corner_slider_drags_to_both_limits_and_saves() {
 fn settings_window_applies_clicks_and_closes_without_exiting() {
     // Composition owns native dispatch state beyond Rust test-thread lifetimes.
     // Run the complete window scenario in one fresh process/STA, like the app.
-    const CHILD: &str = "LUCIDPANE_SETTINGS_TEST_CHILD";
+    const CHILD: &str = "LUCIDDESK_SETTINGS_TEST_CHILD";
     if std::env::var_os(CHILD).is_none() {
         use std::os::windows::process::CommandExt;
         let result = std::process::Command::new(std::env::current_exe().unwrap())

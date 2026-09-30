@@ -4,7 +4,7 @@
 // Diagnostics must never panic across a Windows callback when output is unavailable.
 macro_rules! trace {
     ($($arg:tt)*) => {
-        if cfg!(debug_assertions) || std::env::var_os("LUCIDPANE_MENU_TRACE").is_some() {
+        if cfg!(debug_assertions) || std::env::var_os("LUCIDDESK_MENU_TRACE").is_some() {
             use std::io::Write;
             let _ = writeln!(std::io::stderr().lock(), $($arg)*);
         }

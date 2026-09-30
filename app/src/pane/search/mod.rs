@@ -51,7 +51,7 @@ const ROW: f32 = 48.0;
 const FOOTER: f32 = 32.0;
 const ROW_INSET: f32 = 4.0;
 const VISIBLE: usize = 8;
-const EDIT_PROPERTY: windows_sys::core::PCWSTR = windows_sys::w!("LucidPane.SearchInput");
+const EDIT_PROPERTY: windows_sys::core::PCWSTR = windows_sys::w!("LucidDesk.SearchInput");
 #[cfg(test)]
 fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(Some(0)).collect()
@@ -662,7 +662,7 @@ unsafe extern "system" fn input_proc(
         }
         return 0;
     }
-    const COMPOSING: windows_sys::core::PCWSTR = windows_sys::w!("LucidPane.SearchComposing");
+    const COMPOSING: windows_sys::core::PCWSTR = windows_sys::w!("LucidDesk.SearchComposing");
     if msg == WM_IME_STARTCOMPOSITION {
         unsafe {
             SetPropW(hwnd, COMPOSING, 1usize as _);

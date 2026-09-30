@@ -209,9 +209,9 @@ unsafe extern "system" fn prepare(this: *mut c_void, location: u32, site: *mut c
         let value = &*(this as *const Adapter);
         let result = (value.native().prepare)(value.inner.as_raw(), location, site, point, menu, first, last, count, verbs, test, item);
         #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
-        trace(windows_sys::w!("LucidPane.Menu.PrepareCalled"), 1);
+        trace(windows_sys::w!("LucidDesk.Menu.PrepareCalled"), 1);
         #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
-        trace(windows_sys::w!("LucidPane.Menu.PrepareResult"), result.0 as u32 as usize);
+        trace(windows_sys::w!("LucidDesk.Menu.PrepareResult"), result.0 as u32 as usize);
         result
     }
 }
@@ -223,9 +223,9 @@ unsafe extern "system" fn is_ready(this: *mut c_void, test: GUID, point: POINT) 
         let value = &*(this as *const Adapter);
         let result = (value.native().is_ready)(value.inner.as_raw(), test, point);
         #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
-        trace(windows_sys::w!("LucidPane.Menu.ReadyCalled"), 1);
+        trace(windows_sys::w!("LucidDesk.Menu.ReadyCalled"), 1);
         #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
-        trace(windows_sys::w!("LucidPane.Menu.ReadyResult"), result as u32 as usize);
+        trace(windows_sys::w!("LucidDesk.Menu.ReadyResult"), result as u32 as usize);
         result
     }
 }
@@ -237,7 +237,7 @@ unsafe extern "system" fn show(this: *mut c_void, menu: HMENU, flags: u32, test:
             return;
         }
         #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
-        trace(windows_sys::w!("LucidPane.Menu.ShowCalled"), 1);
+        trace(windows_sys::w!("LucidDesk.Menu.ShowCalled"), 1);
         (value.native().show)(value.inner.as_raw(), menu, value.flags(flags), test);
     }
 }
@@ -256,7 +256,7 @@ unsafe extern "system" fn show_tip(
         }
         let native = &**(value.inner.as_raw() as *const *const TipVtable);
         #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
-        trace(windows_sys::w!("LucidPane.Menu.ShowCalled"), 2);
+        trace(windows_sys::w!("LucidDesk.Menu.ShowCalled"), 2);
         (native.show)(
             value.inner.as_raw(),
             menu,

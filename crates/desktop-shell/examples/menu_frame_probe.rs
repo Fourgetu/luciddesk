@@ -14,7 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let enabled = std::env::args().any(|arg| arg == "--frame");
     let verify = std::env::args().any(|arg| arg == "--verify");
     let path = std::env::args_os().skip(1).find(|arg| arg != "--frame" && arg != "--verify" && arg != "--light");
-    let window = windows_window::Window::new("LucidPane frame padding experiment - right click")
+    let window = windows_window::Window::new("LucidDesk frame padding experiment - right click")
         .size(640, 400).style(WS_OVERLAPPEDWINDOW)
         .on_message(move |raw, msg, _, lp| unsafe {
             let hwnd = raw.cast();

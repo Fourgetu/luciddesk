@@ -23,7 +23,7 @@ fn filesystem_identity_survives_a_rename() {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let root = std::env::temp_dir().join(format!("lucidpane-file-id-{unique}"));
+    let root = std::env::temp_dir().join(format!("luciddesk-file-id-{unique}"));
     fs::create_dir_all(&root).unwrap();
     let before_path = root.join("before.txt");
     let after_path = root.join("after.txt");

@@ -486,7 +486,7 @@ mod tests {
     #[test]
     fn executable_availability_tracks_configured_path() {
         let dir = std::env::temp_dir().join(format!(
-            "lucidpane-availability-PowerToys.Peek.UI.exe-{}",
+            "luciddesk-availability-PowerToys.Peek.UI.exe-{}",
             std::process::id()
         ));
         std::fs::create_dir_all(&dir).unwrap();

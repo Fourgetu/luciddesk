@@ -1,6 +1,6 @@
 # 配置与工作区存储
 
-应用使用 `config.toml`（格式版本 1）和 `workspace.db`。默认目录为 `%LOCALAPPDATA%\LucidDesk`，`LUCIDDESK_DATA_DIR` 可以指定独立目录；便携版使用程序旁的 `data`。旧目录与环境变量的兼容规则见[品牌规范](../brand.md)。
+应用使用 `config.toml`（格式版本 1）和 `workspace.db`。默认目录为 `%LOCALAPPDATA%\LucidDesk`，`LUCIDDESK_DATA_DIR` 可以指定独立目录；便携版使用程序旁的 `data`。数据目录与环境变量规则见[品牌规范](../brand.md)。
 
 ## 实现入口与数据路径
 

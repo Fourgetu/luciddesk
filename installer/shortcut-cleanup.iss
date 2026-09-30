@@ -26,8 +26,7 @@ begin
     Target := Link.TargetPath;
     if Target = '' then Exit;
     Target := ExpandFileName(Target);
-    Result := (CompareText(Target, ExpandConstant('{app}\luciddesk.exe')) = 0) or
-      (CompareText(Target, ExpandConstant('{app}\lucidpane.exe')) = 0);
+    Result := CompareText(Target, ExpandConstant('{app}\luciddesk.exe')) = 0;
   except
     Log('Skipping unreadable shortcut: ' + Path);
   end;

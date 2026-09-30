@@ -2,7 +2,7 @@
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $sourceImage = Join-Path $projectRoot 'docs\design\luciddesk-green-simple-v17.png'
-$iconOutput = Join-Path $projectRoot 'app\assets\lucidpane.ico'
+$iconOutput = Join-Path $projectRoot 'app\assets\luciddesk.ico'
 # Measure the visible artwork, ignoring almost-transparent generation artifacts.
 # Use this mask only for bounds; leave the selected design untouched.
 $artBounds = & magick $sourceImage -alpha extract -threshold '25%' -format '%@' info:

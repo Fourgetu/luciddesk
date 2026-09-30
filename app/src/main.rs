@@ -59,7 +59,7 @@ impl Instance {
             let handle = CreateMutexW(
                 std::ptr::null(),
                 0,
-                windows_sys::w!("Local\\LucidPane.DesktopSession"),
+                windows_sys::w!("Local\\LucidDesk.DesktopSession"),
             );
             if handle.is_null() {
                 return Err(std::io::Error::last_os_error().to_string());
@@ -69,7 +69,7 @@ impl Instance {
                 if show_existing {
                     PostMessageW(
                         HWND_BROADCAST,
-                        RegisterWindowMessageW(windows_sys::w!("LucidPane.ShowExisting")),
+                        RegisterWindowMessageW(windows_sys::w!("LucidDesk.ShowExisting")),
                         0,
                         0,
                     );
@@ -115,9 +115,7 @@ fn parse_options(arguments: impl IntoIterator<Item = OsString>) -> Result<Option
 }
 
 fn database_path() -> Result<PathBuf, String> {
-    if let Some(root) = std::env::var_os("LUCIDDESK_DATA_DIR")
-        .or_else(|| std::env::var_os("LUCIDPANE_DATA_DIR"))
-    {
+    if let Some(root) = std::env::var_os("LUCIDDESK_DATA_DIR") {
         return Ok(PathBuf::from(root).join("workspace.db"));
     }
     let executable = std::env::current_exe().map_err(|error| error.to_string())?;
@@ -130,10 +128,7 @@ fn database_path() -> Result<PathBuf, String> {
 }
 
 fn default_data_directory(root: &std::path::Path) -> PathBuf {
-    let current = root.join("LucidDesk");
-    let legacy = root.join("LucidPane");
-    // Reuse legacy data in place; never move a live database or split its backups.
-    if !current.exists() && legacy.exists() { legacy } else { current }
+    root.join("LucidDesk")
 }
 
 fn portable_data_directory(executable_directory: &std::path::Path) -> Option<PathBuf> {
@@ -153,13 +148,12 @@ mod tests {
         assert!(!root.path().join("data").exists());
     }
     #[test]
-    fn brand_change_preserves_existing_data_directory() {
+    fn diagnostics_do_not_change_data_directory() {
         let root = tempfile::tempdir().unwrap();
         let current = root.path().join("LucidDesk");
-        let legacy = root.path().join("LucidPane");
         assert_eq!(default_data_directory(root.path()), current);
-        std::fs::create_dir(&legacy).unwrap();
-        assert_eq!(default_data_directory(root.path()), legacy);
+        std::fs::create_dir(root.path().join("LucidDesk-Diagnostics")).unwrap();
+        assert_eq!(default_data_directory(root.path()), current);
         std::fs::create_dir(&current).unwrap();
         assert_eq!(default_data_directory(root.path()), current);
     }
