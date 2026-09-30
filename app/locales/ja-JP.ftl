@@ -1194,3 +1194,12 @@ ui-rename-panel = { "パネルの名前を変更…" }
 
 compact-menu-title = Windows 11 スタイルのメニューを使用
 compact-menu-description = 通常パネルの項目にコンパクトメニューを使用します。オフにすると、次回から従来のメニューを表示します。
+# 手動更新
+update-title = ソフトウェアの更新
+update-check = 更新を確認
+update-open-page = 更新ページを開く
+update-manual = 更新を手動で確認し、リリースページからダウンロードします。
+update-checking = 新しいバージョンを確認中…
+update-current = 最新バージョンです。
+update-available = バージョン { $version } が利用可能です
+update-failed = 確認に失敗しました。再試行してください

@@ -1194,3 +1194,12 @@ ui-rename-panel = { "重新命名面板…" }
 
 compact-menu-title = 使用 Windows 11 風格快顯功能表
 compact-menu-description = 一般面板中的項目使用精簡功能表。關閉後使用傳統功能表，下次開啟時生效。
+# 手動更新
+update-title = 軟體更新
+update-check = 檢查更新
+update-open-page = 開啟更新頁面
+update-manual = 手動檢查新版本，前往更新頁面下載。
+update-checking = 正在檢查新版本…
+update-current = 已是最新版本。
+update-available = 發現新版本 { $version }
+update-failed = 檢查失敗，請重試

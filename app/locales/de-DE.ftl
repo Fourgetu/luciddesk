@@ -1194,3 +1194,12 @@ ui-rename-panel = { "Panel umbenennen…" }
 
 compact-menu-title = Windows-11-Kontextmenüs verwenden
 compact-menu-description = Kompakte Menüs für Elemente in normalen Panels. Ausschalten für klassische Menüs. Gilt beim nächsten Öffnen.
+# Manuelle Updates
+update-title = Softwareupdates
+update-check = Updates suchen
+update-open-page = Update-Seite öffnen
+update-manual = Manuell nach Updates suchen und auf der Release-Seite herunterladen.
+update-checking = Suche nach Updates…
+update-current = Die Version ist aktuell.
+update-available = Version { $version } ist verfügbar
+update-failed = Suche fehlgeschlagen. Bitte erneut versuchen

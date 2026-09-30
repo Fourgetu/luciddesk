@@ -1194,3 +1194,12 @@ ui-rename-panel = { "重命名面板…" }
 
 compact-menu-title = 使用 Windows 11 风格右键菜单
 compact-menu-description = 普通面板中的项目使用精简菜单。关闭后使用普通菜单，下次打开菜单生效。
+# 手动更新
+update-title = 软件更新
+update-check = 检查更新
+update-open-page = 打开更新页面
+update-manual = 手动检查新版本，前往更新页面下载。
+update-checking = 正在检查新版本…
+update-current = 已是最新版本。
+update-available = 发现新版本 { $version }
+update-failed = 检查失败，请重试

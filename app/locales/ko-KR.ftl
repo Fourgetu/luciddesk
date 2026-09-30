@@ -1194,3 +1194,12 @@ ui-rename-panel = { "패널 이름 바꾸기…" }
 
 compact-menu-title = Windows 11 스타일 메뉴 사용
 compact-menu-description = 일반 패널 항목에 간소화된 메뉴를 사용합니다. 끄면 다음부터 기존 메뉴가 표시됩니다.
+# 수동 업데이트
+update-title = 소프트웨어 업데이트
+update-check = 업데이트 확인
+update-open-page = 업데이트 페이지 열기
+update-manual = 새 버전을 수동으로 확인하고 릴리스 페이지에서 다운로드하세요.
+update-checking = 새 버전 확인 중…
+update-current = 최신 버전입니다.
+update-available = 버전 { $version } 사용 가능
+update-failed = 확인 실패. 다시 시도하세요

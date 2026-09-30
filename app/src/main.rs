@@ -6,6 +6,7 @@ mod i18n;
 mod pane;
 mod tray;
 mod window_visibility;
+mod updates;
 
 use desktop_shell::{ShellApartment, local_app_data_path};
 use std::{ffi::OsString, fs, path::PathBuf};

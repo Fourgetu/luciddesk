@@ -17,6 +17,7 @@ use windows_sys::Win32::{
     UI::{HiDpi::GetDpiForWindow, Input::KeyboardAndMouse::*, WindowsAndMessaging::*},
 };
 const FONT_LOAD_TIMER: usize = 0x4c5046;
+const UPDATE_TIMER: usize = 0x4c5056;
 const SELECT_PANEL: u32 = WM_APP + 95;
 const PREPARE_REVEAL: u32 = WM_APP + 96;
 const REVEAL_TIMER: usize = 0x4c5055;
@@ -58,6 +59,7 @@ enum Action {
     BackupStatus,
     ProjectLink(&'static str),
     CopyDiagnostics,
+    Update,
     Window(u32),
     Page(usize),
     Language(&'static str),
@@ -513,6 +515,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
     let mut scroll_page = page;
     let mut desktop_status = String::new();
     let mut diagnostics_copied = false;
+    let mut updates = crate::updates::Controller::default();
     let mut backup_view = recovery::View::default();
     let mut backup_policy = recovery::Policy::default();
     let mut backup_offset = 0usize;
@@ -538,6 +541,13 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
             let Some(state) = weak.upgrade() else {
                 return Some(0);
             };
+            if msg == WM_TIMER && wp == UPDATE_TIMER {
+                updates.poll();
+                if !updates.busy() { unsafe { KillTimer(hwnd, UPDATE_TIMER); } }
+                scene_key = None;
+                unsafe { InvalidateRect(hwnd, std::ptr::null(), 0); }
+                return Some(0);
+            }
             if msg == WM_TIMER && wp == FONT_LOAD_TIMER {
                 if let Some(load) = &font_load {
                     match load.poll() {
@@ -684,6 +694,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 return Some(0);
             }
             if msg == WM_CLOSE {
+                updates = crate::updates::Controller::default();
                 let Ok(mut owner) = state.try_borrow_mut() else {
                     unsafe {
                         PostMessageW(hwnd, WM_CLOSE, 0, 0);
@@ -714,6 +725,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 unsafe {
                     KillTimer(hwnd, TOGGLE_TIMER);
                     KillTimer(hwnd, FONT_LOAD_TIMER);
+                    KillTimer(hwnd, UPDATE_TIMER);
                 }
                 // Drop outside the PaneApp borrow: native destruction can send
                 // focus messages to other panes. The callback's render resources
@@ -890,7 +902,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     show_hotkey::settings(&state.borrow().store), show_hotkey::status()),
                 unsafe { IsZoomed(hwnd) } != 0,
                 search_visible,
-                (desktop_status.clone(), header_divider::enabled(), compact_menu::enabled()),
+                (desktop_status.clone(), header_divider::enabled(), compact_menu::enabled(), updates.status()),
             );
             if scroll_page != page { scroll_offset = 0.0; scroll_page = page; }
             let scene_changed = snapshot_changed || scene_key.as_ref() != Some(&key);
@@ -914,7 +926,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     if page==9 {layout::backup_history(&mut body,w,&backup_view,backup_offset);} else {layout::backup_page(&mut body,w,&backup_view,backup_policy,page==10);}
                 }
                 if page == 5 {
-                    layout::about_status(&mut body, w, &desktop_status, diagnostics_copied);
+                    layout::about_updates(&mut body, w, &desktop_status, diagnostics_copied, &updates);
                 }
                 let mut full = with_titlebar(body, w, key.9);
                 full.scroll_to(w, h, &mut scroll_offset);
@@ -1459,6 +1471,17 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         match crate::diagnostics::copy(hwnd as isize, &report) {
                             Ok(()) => { diagnostics_copied = true; scene_key = None; }
                             Err(error) => window::error(&error.to_string()),
+                        }
+                    }
+                    Action::Update => {
+                        if !updates.busy() {
+                            let result = updates.check();
+                            if let Err(error) = result { window::error(&error); }
+                            if updates.busy() && unsafe { SetTimer(hwnd, UPDATE_TIMER, 200, None) } == 0 {
+                                updates = crate::updates::Controller::default();
+                                window::error(crate::i18n::text("update-failed"));
+                            }
+                            scene_key = None;
                         }
                     }
                     Action::ProjectLink(url) => {

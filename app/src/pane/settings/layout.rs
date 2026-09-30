@@ -499,9 +499,22 @@ fn scene_with_mica(
 }
 
 // Shared by the live page and raster tests so status and actions use the same layout.
+#[cfg(test)]
 pub(super) fn about_status(s: &mut Scene, width: f32, status: &str, copied: bool) {
+    about_updates(s, width, status, copied, &crate::updates::Controller::default());
+}
+
+pub(super) fn about_updates(s: &mut Scene, width: f32, status: &str, copied: bool, updates: &crate::updates::Controller) {
     let mut form = SettingsForm::new(s, width, crate::i18n::text("ui-turn-your-windows-desktop-into-a-workspace-that-works-for-you"));
     form.brand();
+    form.actions(
+        crate::i18n::text("update-title"),
+        &updates.status(),
+        vec![
+            (crate::i18n::text("update-check"), Action::Update),
+            (crate::i18n::text("update-open-page"), Action::ProjectLink(crate::updates::PAGE)),
+        ],
+    );
     form.button(
         crate::i18n::text("ui-developer-license"),
         concat!(env!("CARGO_PKG_AUTHORS"), " · ", env!("CARGO_PKG_LICENSE")),
@@ -530,6 +543,9 @@ pub(super) fn about_status(s: &mut Scene, width: f32, status: &str, copied: bool
             ),
         ],
     );
+    for control in &mut s.controls {
+        if matches!(control.action, Action::Update) { control.enabled = !updates.busy(); }
+    }
 }
 
 pub(super) fn backup_page(
