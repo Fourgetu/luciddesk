@@ -13,11 +13,15 @@ spec.loader.exec_module(notes)
 
 class ReleaseNotesTests(unittest.TestCase):
     def test_both_languages_and_tagged_links(self):
-        zh = "## 1.2.3 · 2026-09-30\n\n- 中文 [指南](docs/usage.md)\n\n## 1.2.2\n\nOLD"
-        en = "## 1.2.3 · 2026-09-30\n\n- English [Guide](docs/usage.md) [Web](https://example.com)\n"
+        zh = "## 1.2.3 · 2026-09-30\n\n### feat · 新增功能\n\n- 中文 [指南](docs/usage.md)\n\n### fix · 问题修复\n\n- 中文修复\n\n## 1.2.2\n\nOLD"
+        en = "## 1.2.3 · 2026-09-30\n\n### feat · Features\n\n- English [Guide](docs/usage.md) [Web](https://example.com)\n\n### fix · Fixes\n\n- English fix\n"
         result = notes.bilingual(zh, en, "v1.2.3", "owner/repo")
-        self.assertLess(result.index("## 简体中文"), result.index("## English"))
-        self.assertIn("### 1.2.3 · 2026-09-30", result)
+        self.assertLess(result.index("- 中文"), result.index("- English"))
+        self.assertEqual(result.count("## 1.2.3 · 2026-09-30"), 1)
+        self.assertNotIn("## 简体中文", result)
+        self.assertNotIn("## English", result)
+        for category in ["### feat · 新增功能", "### fix · 问题修复", "### feat · Features", "### fix · Fixes"]:
+            self.assertIn(category, result)
         self.assertEqual(result.count("https://github.com/owner/repo/blob/v1.2.3/docs/usage.md"), 2)
         self.assertIn("https://example.com", result)
         self.assertNotIn("OLD", result)
@@ -33,7 +37,7 @@ class ReleaseNotesTests(unittest.TestCase):
         zh = "## 1.2.3 · 2026-09-30\n\n- 中文 [指南](docs/usage.md)\n\n## 1.2.2\n\nOLD"
         en = "## 1.2.3 · 2026-09-30\n\n- English [Guide](docs/usage.md)\n"
         result = notes.bilingual(zh, en, "1.2.3", "owner/repo")
-        self.assertEqual(result.count("### 1.2.3 · 2026-09-30"), 2)
+        self.assertEqual(result.count("## 1.2.3 · 2026-09-30"), 1)
         self.assertEqual(result.count("https://github.com/owner/repo/blob/1.2.3/docs/usage.md"), 2)
         self.assertNotIn("blob/v1.2.3/", result)
         self.assertNotIn("OLD", result)

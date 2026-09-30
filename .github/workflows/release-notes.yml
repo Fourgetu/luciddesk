@@ -1,0 +1,48 @@
+name: Sync release notes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - CHANGELOG.md
+      - CHANGELOG.en.md
+      - tools/release-notes.py
+      - tools/test_release_notes.py
+      - .github/workflows/release-notes.yml
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    if: github.repository == 'Yuch3nE/luciddesk'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release-notes-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test release notes
+        run: python3 -m unittest discover -s tools -p "test_release_notes.py"
+      - name: Update existing release notes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          version=$(python3 -c 'import tomllib; from pathlib import Path; print(tomllib.loads(Path("app/Cargo.toml").read_text())["package"]["version"])')
+          updated=false
+          for tag in "v$version" "$version"; do
+            if gh release view "$tag" --json tagName >/dev/null 2>&1; then
+              python3 tools/release-notes.py --tag "$tag" --repository "$GH_REPO" --output release-notes.md
+              gh release edit "$tag" --notes-file release-notes.md
+              echo "Updated release notes for $tag"
+              updated=true
+            fi
+          done
+          if [[ "$updated" == false ]]; then
+            echo "No existing release for $version; nothing to update."
+          fi

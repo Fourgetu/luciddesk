@@ -30,8 +30,9 @@ def extract(text, tag, repository):
 def bilingual(chinese, english, tag, repository):
     zh = extract(chinese, tag, repository)
     en = extract(english, tag, repository)
-    # Keep each original version heading beneath a language heading.
-    return "## 简体中文\n\n" + "#" + zh + "\n---\n\n## English\n\n" + "#" + en
+    # Show the version once; preserve category headings without language banners.
+    english_body = en.split("\n", 1)[1].lstrip()
+    return zh.rstrip() + "\n\n---\n\n" + english_body
 
 
 if __name__ == "__main__":

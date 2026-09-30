@@ -8,11 +8,22 @@ Exit the app before upgrading a portable installation and preserve its `data` fo
 
 ## 0.14.0 · 2026-09-30
 
-- Use the current directory’s classic Explorer background menu for empty folder-pane content, including native file operations and extensions. Keep panel management in the title menu and support inline rename for newly created items reported by Shell.
-- Fix folder type labels remaining in Chinese in the English interface; update them immediately with all seven app languages.
-- Preserve pane content and icons instead of reloading the whole pane when dismissing file context menus.
-- Complete both READMEs with folder-panel and About screenshots. Show the feature illustration above the screenshots without collapsing it, and center the introduction, illustration and caption.
-- Run GitHub Actions builds, packaging and publishing only when tags are pushed, supporting release versions with or without the `v` prefix; branch pushes and pull requests no longer trigger the workflow.
+### feat
+
+- Use the current folder's classic Explorer background menu, including native commands and extensions.
+
+### fix
+
+- Follow the app language for folder type labels.
+- Avoid reloading panes when dismissing file menus.
+
+### docs
+
+- Complete screenshots in both READMEs and show the illustration expanded and centered.
+
+### ci
+
+- Build and publish only on tag pushes; the `v` prefix is optional for version tags.
 
 ## 0.13.0 · 2026-09-30
 
