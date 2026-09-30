@@ -19,9 +19,13 @@
 
 [下载发布包](https://github.com/Yuch3nE/luciddesk/releases) · [界面截图](#界面截图) · [开始使用](#开始使用) · [使用指南](docs/usage.md) · [更新记录](CHANGELOG.md) · [参与开发](#参与开发)
 
-</div>
-
 LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。将零散图标收进面板，把常用目录放到桌面，配合标签、文件搜索与预览，让常用内容更容易找到。
+
+![LucidDesk 功能示意：面板标签、文件夹浏览与 Everything 搜索](docs/images/overview.svg)
+
+此图用于说明功能，并非实际界面截图。
+
+</div>
 
 ## 界面截图
 
@@ -30,16 +34,12 @@ LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。将零散图标�
 | <a href="screenshot/zh/pane.png"><img src="screenshot/zh/pane.png" height="220" alt="中文桌面面板" /></a> | <a href="screenshot/zh/setting.png"><img src="screenshot/zh/setting.png" height="220" alt="中文主题与材质设置" /></a> |
 | 拖入图标，按需折叠与整理 | 调整深浅主题与背景材质 |
 
+| 文件夹面板 | 关于与运行状态 |
+| :---: | :---: |
+| <a href="screenshot/zh/folder.png"><img src="screenshot/zh/folder.png" height="220" alt="中文文件夹面板列表视图" /></a> | <a href="screenshot/zh/about.png"><img src="screenshot/zh/about.png" height="220" alt="中文关于页面与运行状态" /></a> |
+| 浏览常用目录，查看类型、修改时间与大小 | 查看版本、项目入口与运行状态 |
+
 点击截图查看原图。图中为深色亚克力，实际效果随壁纸和系统设置变化；Mica 系列仅在 Windows 11 提供。
-
-<details>
-<summary>查看功能示意图</summary>
-
-![LucidDesk 功能示意：面板标签、文件夹浏览与 Everything 搜索](docs/images/overview.svg)
-
-此图用于说明功能，并非实际界面截图。
-
-</details>
 
 ## 功能
 

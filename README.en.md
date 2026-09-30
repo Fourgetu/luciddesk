@@ -19,9 +19,13 @@ Desktop panels · Folder panels · Everything search · Spacebar preview
 
 [Downloads](https://github.com/Yuch3nE/luciddesk/releases) · [Screenshots](#screenshots) · [Getting started](#getting-started) · [Changelog](CHANGELOG.en.md) · [Contributing](#contributing)
 
-</div>
-
 LucidDesk is a Windows desktop organizer written in Rust. Collect desktop icons into panels, keep frequently used folders within reach, and use tabs, file search and previews to find what you need.
+
+![LucidDesk feature illustration: panel tabs, folder browsing and Everything search](docs/images/overview.en.svg)
+
+This illustration explains the features; it is not an actual screenshot.
+
+</div>
 
 ## Screenshots
 
@@ -30,16 +34,12 @@ LucidDesk is a Windows desktop organizer written in Rust. Collect desktop icons 
 | <a href="screenshot/en/pane.png"><img src="screenshot/en/pane.png" height="220" alt="Desktop panel in English" /></a> | <a href="screenshot/en/setting.png"><img src="screenshot/en/setting.png" height="220" alt="Theme and material settings in English" /></a> |
 | Drag in icons to organize your desktop | Customize the theme and background |
 
+| Folder panel | About & status |
+| :---: | :---: |
+| <a href="screenshot/en/folder.png"><img src="screenshot/en/folder.png" height="220" alt="Folder panel list view in English" /></a> | <a href="screenshot/en/about.png"><img src="screenshot/en/about.png" height="220" alt="About page and runtime status in English" /></a> |
+| Browse folders with type, modified date and size columns | View the version, project links and runtime status |
+
 Click a screenshot to view the original. These show dark Acrylic; the appearance varies with your wallpaper and system settings. Mica materials require Windows 11.
-
-<details>
-<summary>View the feature illustration</summary>
-
-![LucidDesk feature illustration: panel tabs, folder browsing and Everything search](docs/images/overview.en.svg)
-
-This illustration explains the features; it is not an actual screenshot.
-
-</details>
 
 ## Features
 
