@@ -1,0 +1,44 @@
+name: Refresh release packages
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag (for example v0.15.0)
+        required: true
+        type: string
+      source_run_id:
+        description: Successful Build CI run containing verified packages
+        required: true
+        type: string
+      source_sha:
+        description: Full source commit SHA of that build
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  refresh:
+    if: github.repository == 'Yuch3nE/luciddesk'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    concurrency:
+      group: release-refs/tags/${{ inputs.release_tag }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: LucidDesk-windows-x64
+          path: artifacts
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+      - name: Verify and replace existing release packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: python3 tools/refresh-release.py
