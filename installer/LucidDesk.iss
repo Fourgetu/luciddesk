@@ -427,11 +427,21 @@ end;
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   Index: Integer;
-  Target, Failed: String;
+  Target, Failed, StartupCommand: String;
 begin
   if CurUninstallStep = usAppMutexCheck then DeinitializeUninstall;
   if CurUninstallStep = usUninstall then CollectUninstallShortcuts;
   if CurUninstallStep = usPostUninstall then CleanupUninstallShortcuts;
+  // Runtime-created startup registration is independent of keeping user data.
+  // Never remove another installation's registration or Windows approval state.
+  if CurUninstallStep = usPostUninstall then begin
+    if RegQueryStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run',
+        'LucidDesk', StartupCommand) and
+        (CompareText(StartupCommand, '"' + ExpandConstant('{app}\luciddesk.exe') + '" --startup') = 0) then begin
+      if not RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'LucidDesk') then
+        Log('Unable to remove this installation''s current-user startup registration.');
+    end;
+  end;
   // Run only after the user confirmed the uninstall and application removal completed.
   if (CurUninstallStep <> usPostUninstall) or not DeleteUserData then Exit;
   Failed := '';
