@@ -2,9 +2,25 @@
 
 [简体中文](CHANGELOG.md) · English
 
-Current version: **0.15.1**. Features and fixes by release.
+Current version: **0.16.0**. Features and fixes by release.
 
 Exit the app before upgrading a portable installation and preserve its `data` folder. See the [portable guide](docs/portable.md) (Chinese).
+
+## 0.16.0 · 2026-10-01
+
+### feat
+
+- Add a startup toggle in Settings → General and detect when Windows disables startup.
+- Add MSIX packaging and desktop component caching; MSIX startup uses StartupTask and preserves its state across updates.
+
+### fix
+
+- Remove this installation's startup entry during standard uninstall and let the installer manage Start menu shortcuts.
+- Improve slider and scrollbar colors and contrast in light settings.
+
+### docs
+
+- Add bilingual contribution guidelines, privacy policies, and usage, installation and development documentation.
 
 ## 0.15.1 · 2026-09-30
 
