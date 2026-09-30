@@ -149,6 +149,21 @@ impl Painter {
                     ..color(palette.border)
                 }))?;
                 let accent = canvas_result(t.create_solid_brush(color(palette.accent)))?;
+                // Light sliders need opaque strokes on translucent cards.
+                let slider_track = canvas_result(t.create_solid_brush(ColorF {
+                    a: if dark && native { 0.45 } else { 1.0 },
+                    ..color(palette.slider_track)
+                }))?;
+                let slider_border = canvas_result(t.create_solid_brush(ColorF {
+                    a: if dark && native { 0.45 } else { 1.0 },
+                    ..color(palette.slider_border)
+                }))?;
+                let slider_surface = canvas_result(t.create_solid_brush(if dark {
+                    chrome.card
+                } else {
+                    color(0xffffff)
+                }))?;
+                let scroll_thumb = canvas_result(t.create_solid_brush(color(palette.scroll_thumb)))?;
                 let [nav_selection, nav_hover, nav_selection_hover] =
                     components::navigation_colors(s.material, dark);
                 let nav_selected = canvas_result(t.create_solid_brush(nav_selection))?;
@@ -361,7 +376,7 @@ impl Painter {
                             radius_x: 2.0,
                             radius_y: 2.0,
                         };
-                        t.fill_rounded_rect(&rail, &border);
+                        t.fill_rounded_rect(&rail, &slider_track);
                         let (fill_start, fill_width) = if slider.centered {
                             let middle = (left + right) * 0.5;
                             t.fill_rect(
@@ -412,7 +427,7 @@ impl Painter {
                                 radius_x: 8.0,
                                 radius_y: 8.0,
                             },
-                            &card,
+                            &slider_surface,
                         );
                         t.draw_ellipse(
                             &Ellipse {
@@ -420,7 +435,7 @@ impl Painter {
                                 radius_x: 8.0,
                                 radius_y: 8.0,
                             },
-                            &border,
+                            &slider_border,
                             1.0,
                         );
                         t.fill_ellipse(
@@ -824,7 +839,7 @@ impl Painter {
                             radius_x: 2.0,
                             radius_y: 2.0,
                         },
-                        &muted,
+                        &scroll_thumb,
                     );
                 }
                 t.finish()

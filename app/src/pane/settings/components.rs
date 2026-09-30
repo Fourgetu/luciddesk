@@ -23,6 +23,9 @@ pub(super) struct Palette {
     pub muted: u32,
     pub border: u32,
     pub accent: u32,
+    pub slider_track: u32,
+    pub slider_border: u32,
+    pub scroll_thumb: u32,
 }
 impl Palette {
     pub fn for_theme(dark: bool) -> Self {
@@ -33,6 +36,9 @@ impl Palette {
                 muted: 0xadadad,
                 border: 0x424242,
                 accent: 0x76b9ed,
+                slider_track: 0x424242,
+                slider_border: 0x424242,
+                scroll_thumb: 0xadadad,
             }
         } else {
             Self {
@@ -41,6 +47,9 @@ impl Palette {
                 muted: 0x666666,
                 border: 0xdfdfdf,
                 accent: 0x0067c0,
+                slider_track: 0x8a8a8a,
+                slider_border: 0xc4c4c4,
+                scroll_thumb: 0x888888,
             }
         }
     }
