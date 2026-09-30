@@ -1,22 +1,65 @@
 # 文档导航
 
-LucidDesk 为 Windows 桌面提供分组、文件夹和 Everything 搜索面板。功能示意与快速开始见[项目首页](../README.md)。
+LucidDesk 为 Windows 桌面提供桌面分组、文件夹面板和 Everything 搜索面板。功能示意与快速开始见[项目首页](../README.md)；本页按安装方式、使用任务和维护工作组织详细说明。
 
-## 使用 LucidDesk
+桌面分组收纳的是项目引用，文件夹与搜索结果中的删除、剪切和重命名会操作真实文件。首次使用前可先阅读[使用说明](usage.md)。
+
+## 选择发行方式
+
+| 方式 | 适合的用途 | 说明 |
+| --- | --- | --- |
+| 安装版 | 通过向导安装，管理快捷方式与卸载入口 | [安装与更新](installer.md) |
+| 普通免安装 ZIP | 解压运行，配置默认保存在用户目录 | [免安装版说明](package.md) |
+| 便携 ZIP | 程序与配置一起携带，默认使用程序旁的 data | [便携版说明](portable.md) |
+| MSIX | 了解包部署、身份、签名、组件缓存及更新 | [MSIX 打包与运行](msix.md) |
+
+免安装和便携不是同一种数据保存方式。环境变量可覆盖默认数据位置，更新或迁移前先通过托盘“打开配置目录”确认实际路径。MSIX 的组件缓存也不等于全部应用数据。
+
+## 按使用任务查找
 
 | 任务 | 阅读入口 |
 | --- | --- |
-| 第一次启动、整理桌面 | [启动与三种面板](usage.md#启动) |
-| 查看文件操作与快捷键 | [键盘操作](usage.md#键盘操作) |
-| 调整文字、圆角与背景 | [外观设置](usage.md#外观设置) |
-| 找到配置、导出和恢复备份 | [数据与备份](usage.md#数据与备份) · [配置示例](config.example.toml) |
-| 排查连接与启动问题 | [常见问题](usage.md#常见问题) |
-| 了解发布包与版本变化 | [发布包说明](package.md) · [版本记录](../CHANGELOG.md) |
+| 第一次运行 | [启动](usage.md#启动) |
+| 收纳桌面图标、调整面板 | [桌面面板](usage.md#桌面面板) |
+| 切换、合并或分离标签 | [标签页](usage.md#标签页) |
+| 浏览目录、排序与文件操作 | [文件夹面板](usage.md#文件夹面板) |
+| 配置 Everything 并搜索 | [Everything 搜索面板](usage.md#everything-搜索面板) |
+| 多选、复制、粘贴和改名 | [键盘操作](usage.md#键盘操作) |
+| 使用 Peek 或 QuickLook | [文件预览](usage.md#文件预览) |
+| 找回面板、刷新内容 | [托盘与显示面板](usage.md#托盘与显示面板) · [全局快捷键](usage.md#显示所有面板的全局快捷键) |
+| 调整材质、文字和圆角 | [外观设置](usage.md#外观设置) · [字体](usage.md#字体) |
+| 更换语言或菜单样式 | [界面语言](usage.md#界面语言) · [Windows 11 风格右键菜单](usage.md#windows-11-风格右键菜单) |
+| 编辑配置、导出或恢复备份 | [数据与备份](usage.md#数据与备份) · [配置示例](config.example.toml) |
+| 排查启动、连接和数据问题 | [常见问题](usage.md#常见问题) |
+
+Everything、PowerToys Peek 和 QuickLook 需另行安装，相关功能按设置启用。配置与布局备份不包含真实文件内容，也不携带这些外部程序。
+
+## 配置、版本与品牌
+
+- [配置示例](config.example.toml)：当前默认值、字段范围、快捷键和 Windows 路径写法；手动修改后需重新加载或重启。
+- [品牌规范](brand.md)：产品文案、图标资源、产物命名及仍生效的数据目录与内部标识约定。
+- [中文版本记录](../CHANGELOG.md)与[英文版本记录](../CHANGELOG.en.md)：按版本查看应用变化。
+- [隐私说明](../PRIVACY.md)：数据和网络行为说明。
+
+配置示例不是完整工作区备份。面板位置、标签、文件夹映射和部分偏好由数据库保存，详细维护规则见[配置与工作区存储](development/storage.md)。
 
 ## 开发与维护
 
-从[构建指南](development/build.md)开始，再按改动范围查看[开发文档](development/README.md)。[目录结构](development/structure.md)说明文件归属，[crates 导航](../crates/README.md)解释库边界，[Rust API 与资源约定](development/rust-api-review.md)说明接口与资源生命周期约束。
+从[构建指南](development/build.md)准备环境，再通过[开发文档导航](development/README.md)按任务阅读专题。本页不重复开发目录的完整索引。
 
-面板交互规则见[面板层级](development/pane-drag-order.md)，验证方法和限制见[验证与兼容边界](development/validation.md)。Windows 11 x64 为优先维护平台，Windows 10 已由用户完成实机验证。
+| 工作 | 入口 |
+| --- | --- |
+| 理解模块、进程和代码位置 | [架构说明](development/architecture.md) · [目录结构](development/structure.md) · [crates 导航](../crates/README.md) |
+| 修改原生接口与资源管理 | [Rust API 与资源生命周期约定](development/rust-api-review.md) |
+| 排查 Windows 11 精简菜单命令 | [独立 Shell 菜单命令路由](win11-compact-menu-command-routing.md) |
+| 打包、签名与发布 | [构建指南](development/build.md) · [MSIX 打包](msix.md) |
+| 选择测试和记录验收结果 | [验证与兼容边界](development/validation.md) |
+| 提交贡献或问题报告 | [贡献指南](../CONTRIBUTING.md) |
 
-文档仅保留当前使用与维护所需的说明；旧方案和历史实验可通过 Git 历史查询。
+Windows 11 x64 为主要验证与维护平台。Windows 10 的用户反馈不能替代本次版本验收；ARM64、远程桌面、混合 DPI 及不同分发渠道需要对应环境验证。具体边界以验证文档和本次测试记录为准。
+
+## 文档范围
+
+使用说明、发行方式和配置示例放在 docs 根目录；模块实现与验证细节放在开发文档中。安装、普通 ZIP 和便携包会附带部分使用文档，随包 README 对应各自发行方式。
+
+文档仅保留当前使用与维护所需的实现和兼容规则；已替代方案与历史实验通过 Git 历史查询。修改文档名称或标题时同步检查导航与锚点，功能变更以所属专题为准，避免在多个入口重复维护同一组细节。

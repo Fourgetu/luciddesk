@@ -1,46 +1,83 @@
-# LucidDesk global settings. Reload from Settings after editing.
+# LucidDesk 全局配置示例：以下字段和值与程序内置默认配置一致。
+# 实际 config.toml 位于当前数据目录，可从托盘“打开配置目录”定位。
+# 修改后在“设置 → 备份与恢复”重新加载配置，或重启程序；不会自动监听文件。
+# 编辑已有配置时只修改所需字段，不必用整个示例覆盖，以免重置其他设置。
+# 面板位置、标签、文件夹映射、字体和备份策略等不由本文件完整表示。
+# 更多说明：usage.md 的“数据与备份”和 development/storage.md。
+
+# 配置格式版本，不是应用版本；当前必须保留整数 1。
 config_version = 1
-# system, zh-CN, zh-TW, en-US, ja-JP, ko-KR, de-DE, ru-RU; Settings changes apply immediately. Reload configuration after editing this file.
+
+# 界面语言：system、zh-CN、zh-TW、en-US、ja-JP、ko-KR、de-DE、ru-RU。
+# system 跟随 Windows 显示语言，不支持的语言回退英语。
 language = "system"
 
 [appearance]
+# system / light / dark：跟随系统 / 浅色 / 深色。
 theme = "system"
+# acrylic / mica / mica_alt / solid / translucent。
+# mica_alt 使用固定预设；translucent 为解析器支持的半透明配置值。
+# 系统能力或透明效果策略可能使实际显示回退，保存的材质选择仍保留。
 material = "mica"
 
 [appearance.acrylic]
+# 0–100 的整数；50 为默认配方，对应界面相对强度 0。
+# 界面显示值为配置值减 50，不是不透明度百分比。
 strength = 50
 
 [appearance.mica]
+# 与亚克力分别保存，切换材质不丢失各自强度。
 strength = 50
 
 [appearance.translucent]
+# 背景不透明度，0.0–1.0；0 为全透明，1 为不透明。
 opacity = 0.86
 
 [appearance.solid]
+# 必须使用带 # 的六位十六进制颜色字符串，不包含 Alpha 通道。
 color = "#24364B"
+# 背景不透明度，0.0–1.0；不降低文字与图标的不透明度。
 opacity = 0.85
 
 [panel_defaults]
+# 圆角：0–24 DIP，允许小数；0 为直角。
 corner_radius = 6.0
-# Grid scale percentage; 100% = 88 x 96 DIP.
+# 图标网格缩放：50–200，允许小数；100% 对应 88 × 96 DIP。
+# 图标视图的图标、文字和网格同步缩放，列表视图不受影响。
 grid_scale = 100.0
+# 面板边框与移动/缩放吸附。
 border = true
 snap = true
+# auto / light / dark：自动选择 / 浅色文字 / 深色文字。
 text = "auto"
+# 是否启用文字明暗底色保护；默认关闭以保留通透效果。
 text_protection = false
 
+# 快捷键写法：用 + 连接 Ctrl、Shift、Alt 和一个主键。
+# 主键支持 Space、字母、数字、F1–F24（功能键使用大写 F）。不支持 Win 修饰键。
+# 全局快捷键须包含 Ctrl 或 Alt，不能使用 F12；系统及文件操作保留组合会被拒绝。
+# 语法有效不代表注册成功；被其他程序占用时需在界面中调整。
 [show_panels]
+# 全局显示面板快捷键；独立于 Everything 搜索，默认关闭。
 enabled = false
 shortcut = "Ctrl+Shift+D"
 
 [search]
+# 启用 Everything 搜索面板及其全局快捷键；Everything 需另行安装并运行。
 enabled = false
 shortcut = "Ctrl+Shift+Space"
+# 空字符串使用自动检测。指定路径时填写 Everything.exe，不附加命令行参数。
+# Windows 路径建议使用 TOML 单引号字符串，例如 'C:\Apps\Everything\Everything.exe'。
 everything_path = ""
 
 [preview]
+# 面板内文件预览，默认关闭；不是全局快捷键。
 enabled = false
+# peek / quicklook：只使用所选程序，不自动在两者之间切换。
 provider = "peek"
+# 可不带修饰键，但不能与文件操作或多选快捷键冲突。
 shortcut = "Space"
+# 两种工具分别保存路径；空字符串使用自动检测，路径必须为单行字符串。
+# PowerToys Peek 与 QuickLook 需另行安装，示例不会自动安装或启用它们。
 peek_path = ""
 quicklook_path = ""
