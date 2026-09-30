@@ -65,7 +65,29 @@ cargo build -p luciddesk -p desktop-hook --locked --offline --target-dir target\
 .\tools\package.ps1 -Offline
 ```
 
-产物位于 `target\packages`。包内配置仍默认保存在 LocalAppData；未提交代码会在包名和 `build.json` 中标记为 dirty。GitHub Actions 的 Build CI 工作流执行全目标编译、核心和存储测试后，同时上传非便携版、便携版 ZIP 及 SHA256 校验文件；原生桌面 UI 测试仍在交互会话运行。
+产物位于 `target\packages`。包内配置仍默认保存在 LocalAppData；未提交代码会在包名和 `build.json` 中标记为 dirty。GitHub Actions 的 Build CI 工作流执行全目标编译、核心和存储测试后，同时上传安装包、普通 ZIP、便携 ZIP 及 SHA256 校验文件；原生桌面 UI 测试仍在交互会话运行。
+
+安装包使用固定版本的 Inno Setup 编译器。以下命令安装经 SHA256 校验的官方编译器到 `target\tooling`，生成普通 ZIP 和安装包；已安装其他版本的编译器时可传 `-InnoCompiler <ISCC.exe>`：
+
+```powershell
+.\tools\ensure-inno.ps1
+.\tools\package.ps1 -Installer -Offline
+```
+
+安装包位于 `target\installers\版本-修订-时间戳`。安装器支持当前用户或所有用户安装，后者申请管理员权限并默认安装到 Program Files；快捷方式与卸载注册分别使用对应范围。固定 AppId，升级沿用原安装范围和目录，确认后请求应用正常退出并等待进程结束，阻止降级并保留用户数据。无响应时停止安装；`/NOCLOSEAPPLICATIONS` 禁用自动关闭。中文语言文件来自 Inno Setup 官方仓库 `is-6_7_3/Files/Languages/Unofficial/ChineseSimplified.isl`，保留文件中的译者署名。
+
+关于页仅支持手动检查新版本与打开 Release 页面。检查使用后台 WinHTTP 请求 GitHub Releases API，支持 Windows 代理和显式 `HTTPS_PROXY` HTTP 代理，并比较稳定版本号（标签可有 `v` 前缀）。更新包由用户在浏览器中自行下载。
+
+验证命令（安装器测试使用随机测试 AppId、快捷方式名称和工作区临时目录，安装与卸载自己的测试注册项）：
+
+```powershell
+cargo test -p luciddesk --bin luciddesk updates::tests --locked --offline
+.\tools\test-installer.ps1 -SourcePath <普通ZIP解压目录>
+# 在管理员 PowerShell 中验证 Program Files 安装、升级和卸载
+.\tools\test-installer.ps1 -AllUsers -SourcePath <普通ZIP解压目录>
+# 可选：检查实际 GitHub Release 元数据
+cargo test -p luciddesk --bin luciddesk updates::tests::live_release_check --locked --offline -- --ignored --exact
+```
 
 便携版使用以下命令，产物位于 `target\portable\时间戳`，含 `portable.marker`，配置保存在包旁的 `data` 中：
 
@@ -138,7 +160,7 @@ cargo build -p desktop-shell --example filter_backend_probe
 
 Build CI 仅在推送标签时运行，不限定 `v` 前缀；普通分支推送和 PR 不触发，也不提供手动启动入口。发布标签支持 `<版本>` 和 `v<版本>`（例如 `0.14.0` 或 `v0.14.0`）。公开仓库 `Yuch3nE/luciddesk` 核对标签与应用 Cargo 版本，完成检查与双版本打包，再发布对应 GitHub Release；其他标签会在版本校验阶段报错。同步本地仓库时需要一并同步标签；已触发的运行可在 Actions 页面重新运行。
 
-Release 包含两个 ZIP 及各自的 SHA256 文件，两个 ZIP 均附带中英文更新记录。发布任务先验证校验值；正文从标签对应源码中的 `CHANGELOG.md` 和 `CHANGELOG.en.md` 分别提取匹配版本章节，按中文、英文顺序合并，中间使用分隔线，不添加语言大标题，只显示一次版本标题与日期。新增功能和问题修复分别放在 `feat`、`fix` 分类下，文档和发布流程使用 `docs`、`ci` 分类；保留完整内容，并将相对链接转换为该标签下的 GitHub 链接。任一语言的章节缺失、重复或为空时中止发布；构建阶段会运行双语提取测试。重跑时同步更新正文与同名附件。发布权限仅授予独立的 Release 任务。
+Release 包含一个安装包、两个 ZIP 及各自的 SHA256 文件，均附带中英文更新记录。发布任务先验证校验值；正文从标签对应源码中的 `CHANGELOG.md` 和 `CHANGELOG.en.md` 分别提取匹配版本章节，按中文、英文顺序合并，中间使用分隔线，不添加语言大标题，只显示一次版本标题与日期。新增功能和问题修复分别放在 `feat`、`fix` 分类下，文档和发布流程使用 `docs`、`ci` 分类；保留完整内容，并将相对链接转换为该标签下的 GitHub 链接。任一语言的章节缺失、重复或为空时中止发布；构建阶段会运行双语提取测试。重跑时同步更新正文与同名附件。发布权限仅授予独立的 Release 任务。
 
 推送到 `main` 的更新记录或生成器改动会触发 `Sync release notes`，只同步当前应用版本已存在的 Release 正文，支持带或不带 `v` 的标签。这个任务不编译程序，不创建或移动标签，也不替换附件；修改旧版本说明时需同步对应版本的 Release 正文。
 
