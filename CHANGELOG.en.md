@@ -10,13 +10,9 @@ Exit the app before upgrading a portable installation and preserve its `data` fo
 
 ### fix
 
-- Assign the same stable Windows AppUserModelID to Start menu shortcuts, desktop shortcuts and the application process, independent of version and installation path.
-- Remove renamed, copied and legacy-name shortcuts targeting this installation during uninstall, preserving links to other installations and applications without traversing directory junctions.
-- Notify Windows Shell to refresh shortcut directories and the AppsFolder application list after uninstall.
-
-### docs
-
-- Update both READMEs and the installer and build guides to distinguish the installer AppId, Windows application identity and system backup records, and document shortcut property checks.
+- Use a consistent Windows application identity for the app and its Start menu and desktop shortcuts, independent of version and installation path. ([ca1e551](https://github.com/Yuch3nE/luciddesk/commit/ca1e551c87a848e1135c428b081ef40881bb9b6b))
+- Remove renamed, copied and legacy-name shortcuts targeting this installation during uninstall, preserving links to other installations and applications. ([ca1e551](https://github.com/Yuch3nE/luciddesk/commit/ca1e551c87a848e1135c428b081ef40881bb9b6b))
+- Notify Windows to refresh shortcuts and the application list after uninstall. ([ca1e551](https://github.com/Yuch3nE/luciddesk/commit/ca1e551c87a848e1135c428b081ef40881bb9b6b))
 
 ## 0.15.0 · 2026-09-30
 

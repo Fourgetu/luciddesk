@@ -10,13 +10,9 @@
 
 ### fix
 
-- 为开始菜单、桌面快捷方式和应用进程统一设置固定的 Windows AppUserModelID，不随版本或安装路径变化。
-- 卸载时按目标路径清理本次安装的改名、复制及旧名称快捷方式，保留其他安装和其他程序的链接，不遍历目录联接。
-- 卸载后通知 Windows Shell 刷新快捷方式目录及 AppsFolder 应用列表。
-
-### docs
-
-- 更新双语 README、安装和构建说明，区分安装器 AppId、Windows 应用身份与系统备份记录，并补充快捷方式属性验证说明。
+- 统一应用与开始菜单、桌面快捷方式的 Windows 应用身份，不随版本或安装路径变化。([ca1e551](https://github.com/Yuch3nE/luciddesk/commit/ca1e551c87a848e1135c428b081ef40881bb9b6b))
+- 卸载时清理指向本次安装的改名、复制及旧名称快捷方式，保留其他安装和其他程序的链接。([ca1e551](https://github.com/Yuch3nE/luciddesk/commit/ca1e551c87a848e1135c428b081ef40881bb9b6b))
+- 卸载后通知 Windows 刷新快捷方式和应用列表。([ca1e551](https://github.com/Yuch3nE/luciddesk/commit/ca1e551c87a848e1135c428b081ef40881bb9b6b))
 
 ## 0.15.0 · 2026-09-30
 
