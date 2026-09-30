@@ -1,7 +1,8 @@
 [CmdletBinding()]
-param([switch]$Offline, [switch]$Portable, [switch]$RenderDiagnostics)
+param([switch]$Offline, [switch]$Portable, [switch]$RenderDiagnostics, [switch]$Installer, [string]$InnoCompiler)
 $ErrorActionPreference = 'Stop'
 if ($RenderDiagnostics -and -not $Portable) { throw 'Rendering comparison launchers require -Portable.' }
+if ($Installer -and $Portable) { throw 'Installer and portable packages are separate channels.' }
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $previousRevision = $env:LUCIDPANE_BUILD_REVISION
 Push-Location -LiteralPath $repoRoot
@@ -48,6 +49,9 @@ try {
     }
     Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\usage.md') -Destination (Join-Path $stage 'usage.md')
     Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\brand.md') -Destination (Join-Path $stage 'brand.md')
+    foreach ($guide in @('installer.md', 'portable.md')) {
+        Copy-Item -LiteralPath (Join-Path $repoRoot "docs\$guide") -Destination (Join-Path $stage $guide)
+    }
     Copy-Item -LiteralPath (Join-Path $repoRoot 'LICENSE') -Destination (Join-Path $stage 'LICENSE')
     foreach ($changelog in @('CHANGELOG.md', 'CHANGELOG.en.md')) {
         Copy-Item -LiteralPath (Join-Path $repoRoot $changelog) -Destination (Join-Path $stage $changelog)
@@ -68,6 +72,21 @@ try {
     $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
     "$hash  $name.zip" | Set-Content -LiteralPath "$archive.sha256" -Encoding ASCII
     Write-Output $archive
+    if ($Installer) {
+        if (-not $InnoCompiler) {
+            $InnoCompiler = Join-Path $repoRoot 'target\tooling\inno-6.7.3\ISCC.exe'
+            if (-not (Test-Path -LiteralPath $InnoCompiler)) {
+                throw 'Install the compiler with ./tools/ensure-inno.ps1, or pass -InnoCompiler <ISCC.exe>.'
+            }
+        }
+        $setupRoot = Join-Path $repoRoot "target\installers\$version-$revisionLabel-$stamp"
+        & $InnoCompiler /Q "/DAppVersion=$version" "/DSourcePath=$stage" "/DOutputPath=$setupRoot" (Join-Path $repoRoot 'installer\LucidDesk.iss')
+        if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed.' }
+        $setup = Join-Path $setupRoot "LucidDesk-$version-windows-x64-setup.exe"
+        $setupHash = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+        "$setupHash  $(Split-Path -Leaf $setup)" | Set-Content -LiteralPath "$setup.sha256" -Encoding ASCII
+        Write-Output $setup
+    }
 } finally {
     $env:LUCIDPANE_BUILD_REVISION = $previousRevision
     Pop-Location

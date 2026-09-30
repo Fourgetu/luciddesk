@@ -12,6 +12,8 @@
 
 更新时先退出程序，保留原 `data` 目录，再替换程序文件。首次便携启动不会自动导入旧版 LocalAppData 数据，需要时可通过设置中的备份与恢复导入。
 
+新版直接加载程序目录中的 `luciddesk_desktop.dll`，正常退出后会从 Explorer 卸载，可以直接覆盖。旧版使用过永久固定组件的方式；如果首次升级仍提示 DLL 被占用，请退出程序并注销、重新登录 Windows 后再覆盖。已固定的旧组件不能仅靠关闭 LucidDesk 释放。
+
 如果设置了 `LUCIDDESK_DATA_DIR` 或旧变量 `LUCIDPANE_DATA_DIR`，其指定目录优先于便携目录。不要从 ZIP 内直接运行，也不要放在禁止写入的目录。
 
 ## 使用与校验
@@ -19,3 +21,5 @@
 操作见 [使用说明](usage.md)，本次变化见随包提供的 `CHANGELOG.md`（中文）与 `CHANGELOG.en.md`（英文）。Everything、PowerToys Peek 和 QuickLook 需另行安装，默认关闭相关功能。
 
 `build.json` 保留实际构建来源和二进制文件校验值。ZIP 旁的 `.sha256` 用于验证包完整性。
+
+“设置 → 关于”可检查新版本并打开更新页面。自行下载便携 ZIP，退出程序后解压覆盖原程序目录，保留原来的 `data` 和 `portable.marker`。

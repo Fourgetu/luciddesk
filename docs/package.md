@@ -23,6 +23,8 @@ Everything、PowerToys 和 QuickLook 不包含在本包中。Windows 10 已由�
 
 开发版使用 `config.toml` 和 `workspace.db`，不迁移旧库。旧版数据请使用独立目录保留；本版不会读取 `hook-desktop.db`。
 
-快捷键、文件夹映射等操作见 `usage.md`。`build.json` 记录版本、Git 修订和两个二进制文件的 SHA-256；ZIP 同目录的 `.sha256` 可核对下载完整性。
+快捷键、文件夹映射等操作见 `usage.md`。`build.json` 记录版本、Git 修订和主程序和 Hook DLL 的 SHA-256；ZIP 同目录的 `.sha256` 可核对下载完整性。
+
+“设置 → 关于”可手动检查新版本并打开更新页面。请自行下载 Release 中的安装包或 ZIP。更新前退出程序，普通 ZIP 版的 LocalAppData 配置会继续使用；安装与升级细节见[安装说明](installer.md)。
 
 品牌更名兼容：若新的数据目录不存在且旧目录 `%LOCALAPPDATA%\LucidPane` 已存在，继续使用旧目录。`LUCIDDESK_DATA_DIR` 优先，旧变量 `LUCIDPANE_DATA_DIR` 仍受支持；详见[品牌规范](brand.md)。

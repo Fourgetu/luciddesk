@@ -50,6 +50,10 @@ impl Tray {
                     return Some(0);
                 }
                 let hwnd = raw.cast();
+                if message == WM_CLOSE {
+                    action(Action::Exit);
+                    return Some(0);
+                }
                 if message == crate::i18n::CHANGED {
                     unsafe { Shell_NotifyIconW(NIM_MODIFY, &data(hwnd, callback_icon.0)); }
                     return Some(0);
@@ -234,6 +238,21 @@ fn make_icon() -> Result<Icon, String> {
 mod tests {
     use super::*;
     use std::cell::Cell;
+
+    #[test]
+    #[ignore = "Requires the interactive Windows notification area; run alone with --ignored"]
+    fn native_close_requests_normal_exit_without_destroying_tray_early() {
+        let exits = Rc::new(Cell::new(0));
+        let observed = Rc::clone(&exits);
+        let tray = Tray::new(
+            || (desktop_core::PanelTheme::System, desktop_core::Backdrop::Mica, false),
+            move |action| { if matches!(action, Action::Exit) { observed.set(observed.get() + 1); } },
+        ).unwrap();
+        let hwnd = tray.window.hwnd().cast();
+        unsafe { SendMessageW(hwnd, WM_CLOSE, 0, 0); }
+        assert_eq!(exits.get(), 1);
+        assert_ne!(unsafe { IsWindow(hwnd) }, 0, "Tray stays alive until normal application teardown");
+    }
 
     #[test]
     fn common_actions_follow_search_setting_and_exit_is_separate() {
