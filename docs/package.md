@@ -27,7 +27,7 @@ LucidDesk 提供桌面分组、文件夹面板和 Everything 搜索入口。开�
 | `installer.md`、`portable.md`、`brand.md` | 安装、便携和名称与目录约定 |
 | `CHANGELOG.md`、`CHANGELOG.en.md` | 中英文更新记录 |
 | `PRIVACY.md`、`PRIVACY.en.md`、`LICENSE` | 隐私说明与许可 |
-| `Refresh-App-Icon.ps1` | 通知 Shell 刷新程序及目录的图标显示 |
+| `Refresh-App-Icon.ps1` | 应用图标刷新工具 |
 
 普通包不含 `portable` 标记，也不附带个人配置。Everything、PowerToys Peek 和 QuickLook 需另行安装；不要把它们视为包内依赖程序。
 
@@ -77,7 +77,6 @@ Get-FileHash -LiteralPath '<下载的 ZIP 完整路径>' -Algorithm SHA256
 | 显示器组合改变 | 等待变化稳定后恢复对应布局，将不可见面板移入可用屏幕；混合 DPI 与热插拔需实机检查 |
 | Everything 不可用 | 先安装并运行 Everything，再在设置中检测或选择程序路径并启用搜索 |
 | Peek 或 QuickLook 不可用 | 不影响基本面板操作；在设置中配置所选预览工具或关闭预览 |
-| EXE 图标仍显示旧图像 | 可运行随包的 `Refresh-App-Icon.ps1` 通知 Shell 刷新；它不替换程序，也不删除全局图标缓存 |
 
 Windows 10 的用户反馈不等于每个构建均完成验收；ARM64 和远程桌面也不能由 Windows 11 x64 启动成功推断支持。系统更新和第三方 Shell 扩展可能影响菜单或桌面连接，报告问题时附上 Windows 构建号、应用版本、复现步骤与错误信息。
 
