@@ -1223,3 +1223,6 @@ startup-policy-disabled = 系統原則已停用自動啟動。
 startup-policy-enabled = 系統原則已啟用自動啟動。
 startup-working = 正在讀取或修改啟動狀態…
 startup-package-invalid = MSIX 套件身分或標記無效，未修改啟動設定。
+
+title-emoji-rendering = 彩色圖示呈現
+title-emoji-rendering-description = 套用於所有面板和分頁標題，切換後立即生效。

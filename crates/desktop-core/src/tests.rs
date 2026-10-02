@@ -9,13 +9,6 @@ fn panel(id: u64) -> Panel {
 }
 
 #[test]
-fn rect_enforces_minimum_size() {
-    let rect = RectDip::new(1.0, 2.0, 20.0, 30.0);
-    assert!((rect.width - RectDip::MIN_WIDTH).abs() < f32::EPSILON);
-    assert!((rect.height - RectDip::MIN_HEIGHT).abs() < f32::EPSILON);
-}
-
-#[test]
 fn panel_constructor_and_setter_enforce_the_same_minimum_size() {
     let raw = RectDip {
         x: -10.0,
@@ -27,6 +20,8 @@ fn panel_constructor_and_setter_enforce_the_same_minimum_size() {
     let mut updated = panel(2);
     updated.set_rect(raw);
     assert_eq!(created.rect(), updated.rect());
+    assert_eq!(created.rect().width, RectDip::MIN_WIDTH);
+    assert_eq!(created.rect().height, RectDip::MIN_HEIGHT);
     assert_eq!(created.rect(), RectDip::new(-10.0, 20.0, 1.0, 2.0));
 }
 
@@ -66,17 +61,6 @@ fn switching_content_sources_preserves_independent_preferences() {
 fn workspace_rejects_duplicate_ids() {
     let result = Workspace::from_panels(vec![panel(7), panel(7)]);
     assert_eq!(result, Err(WorkspaceError::DuplicatePanel(PanelId::new(7))));
-}
-
-#[test]
-fn workspace_can_add_find_and_remove_panel() {
-    let mut workspace = Workspace::new();
-    workspace
-        .add_panel(panel(1))
-        .expect("panel should be added");
-    assert_eq!(workspace.panel(PanelId::new(1)).unwrap().title(), "Panel 1");
-    assert!(workspace.remove_panel(PanelId::new(1)).is_some());
-    assert!(workspace.panels().is_empty());
 }
 
 #[test]

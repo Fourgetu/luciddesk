@@ -1223,3 +1223,6 @@ startup-policy-disabled = Автозагрузка отключена систе
 startup-policy-enabled = Автозагрузка включена системной политикой.
 startup-working = Проверка или изменение автозагрузки…
 startup-package-invalid = Недопустимый идентификатор или маркер MSIX. Настройки не изменены.
+
+title-emoji-rendering = Цветное отображение значков
+title-emoji-rendering-description = Сразу применяется к заголовкам всех панелей и вкладок.

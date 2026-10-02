@@ -1223,3 +1223,6 @@ startup-policy-disabled = 系统策略已禁用自启。
 startup-policy-enabled = 系统策略已启用自启。
 startup-working = 正在读取或修改自启状态…
 startup-package-invalid = MSIX 包身份或标记无效，未修改自启设置。
+
+title-emoji-rendering = 彩色图标渲染
+title-emoji-rendering-description = 用于所有面板和标签页标题，切换后立即生效。

@@ -595,6 +595,59 @@ fn client(hwnd: HWND) -> RECT {
     }
     r
 }
+
+fn drag_preview(hwnd: HWND, m: &GroupModel, index: usize) -> Option<(super::assets::Pixels, POINT)> {
+    let s = scale(hwnd);
+    let grid = grid(hwnd, m);
+    let selected = if m.selection.contains(&index) {
+        m.selection.iter().copied().collect::<Vec<_>>()
+    } else {
+        vec![index]
+    };
+    let placeholder = super::assets::Pixels {
+        width: 1,
+        height: 1,
+        data: vec![0; 4],
+    };
+    let cells = selected
+        .into_iter()
+        .filter_map(|index| {
+            let item = m.items.get(index)?;
+            let render = if m.is_list() {
+                super::drag_drop::image::list_item_pixels
+            } else {
+                super::drag_drop::image::item_pixels
+            };
+            let pixels = render(
+                item.image.as_deref().unwrap_or(&placeholder),
+                &item.label,
+                grid,
+                s,
+            )?;
+            let (x, y) = m.cell(grid, index);
+            Some((
+                pixels,
+                POINT {
+                    x: (x * s).round() as i32,
+                    y: (y * s).round() as i32,
+                },
+            ))
+        })
+        .collect::<Vec<_>>();
+    super::drag_drop::image::selection_pixels(&cells)
+}
+
+fn update_marquee(hwnd: HWND, model: &mut GroupModel, marquee: &mut super::marquee::Marquee, point: POINT) {
+    let s = scale(hwnd);
+    let bounds = client(hwnd);
+    let viewport = RectDip {
+        x: 0.0, y: model.content_header(),
+        width: bounds.right as f32 / s,
+        height: (bounds.bottom as f32 / s - model.content_header()).max(0.0),
+    };
+    marquee.update(model, grid(hwnd, model), s, point, viewport);
+}
+
 fn grid(hwnd: HWND, model: &GroupModel) -> Grid {
     let r = client(hwnd);
     let s = scale(hwnd);
@@ -775,6 +828,7 @@ where
     let mut surface: Option<Surface> = None;
     let mut visibility = super::visibility::Transition::default();
     let mut drag: Option<(usize, POINT, bool)> = None;
+    let mut marquee: Option<super::marquee::Marquee> = None;
     let mut column_drag: Option<ColumnDrag> = None;
     let mut scrollbar_drag: Option<f32> = None;
     let mut scrollbar_motion = super::animation::Motion::settled(0.0, std::time::Instant::now());
@@ -862,6 +916,8 @@ where
             match message {
                 TAB_CHANGED => {
                     tab_press = None;
+                    marquee = None;
+                    renderer.marquee = None;
                     drag = None;
                     drag_image = None;
                     column_drag = None;
@@ -1439,6 +1495,12 @@ where
                             m.hit(grid(hwnd, &m), p.x as f32 / s, p.y as f32 / s, s)
                         };
                         let modifiers = super::keyboard::Modifiers::current();
+                        let box_select = selected.is_none()
+                            && model.borrow().folder.is_none()
+                            && !model.borrow().collapsed;
+                        if box_select {
+                            marquee = Some(super::marquee::Marquee::new(p, &model.borrow(), modifiers.ctrl, modifiers.shift));
+                        }
                         {
                             let mut m = model.borrow_mut();
                             if let Some(index) = selected {
@@ -1452,7 +1514,7 @@ where
                                 m.clear_selection();
                             }
                         }
-                        if selected.is_some() {
+                        if selected.is_some() || box_select {
                             event(Event::PaneItemFocus);
                         }
                         drag = selected
@@ -1462,7 +1524,7 @@ where
                             selected.map(|index| model.borrow().items[index].identity.clone());
                         unsafe {
                             SetFocus(hwnd);
-                            if drag.is_some() {
+                            if drag.is_some() || box_select {
                                 SetCapture(hwnd);
                             }
                         }
@@ -1471,6 +1533,16 @@ where
                     Some(0)
                 }
                 WM_MOUSEMOVE => {
+                    if let Some(selection) = &mut marquee {
+                        let current = point(lparam);
+                        let dpi = unsafe { GetDpiForWindow(hwnd) }.max(96);
+                        if selection.rect.is_some() || tab_drag_threshold(selection.start, current, dpi) {
+                            update_marquee(hwnd, &mut model.borrow_mut(), selection, current);
+                            renderer.marquee = selection.rect;
+                            invalidate(hwnd);
+                        }
+                        return Some(0);
+                    }
                     if let Some((_, origin)) = tab_press {
                         let current = point(lparam);
                         let dpi = unsafe { GetDpiForWindow(hwnd) }.max(96);
@@ -1515,7 +1587,6 @@ where
                     }
                     update_pointer(hwnd, &model, Some(point(lparam)));
                     track_client_leave(hwnd);
-                    let s = scale(hwnd);
                     if let Some((index, start, moved)) = drag.as_mut() {
                         let current = drag_identity.as_ref().and_then(|identity| {
                             model
@@ -1532,59 +1603,38 @@ where
                         *moved |= (p.x - start.x).abs() > unsafe { GetSystemMetrics(SM_CXDRAG) }
                             || (p.y - start.y).abs() > unsafe { GetSystemMetrics(SM_CYDRAG) };
                         if *moved {
-                            if model.borrow().folder.is_some() {
-                                drag = None;
-                                drag_identity = None;
-                                unsafe {
-                                    ReleaseCapture();
-                                }
-                                event(Event::FileDrag);
-                                return Some(0);
-                            }
                             let mut screen = p;
                             unsafe {
                                 ClientToScreen(hwnd, &raw mut screen);
                             }
+                            if model.borrow().folder.is_some()
+                                || super::drag_drop::over_explorer(screen)
+                            {
+                                let preview = drag_preview(hwnd, &model.borrow(), *index)
+                                    .map(|(pixels, origin)| desktop_shell::FileDragImage {
+                                        width: pixels.width,
+                                        height: pixels.height,
+                                        pixels: pixels.data,
+                                        hotspot: windows::Win32::Foundation::POINT {
+                                            x: start.x - origin.x,
+                                            y: start.y - origin.y,
+                                        },
+                                    });
+                                // Group drags normally change membership or ordering.
+                                // Explorer needs an OLE data object while the button is
+                                // still down, rather than our internal mouse-up event.
+                                drag = None;
+                                drag_identity = None;
+                                drag_image = None;
+                                unsafe {
+                                    ReleaseCapture();
+                                }
+                                event(Event::FileDrag(preview));
+                                return Some(0);
+                            }
                             if drag_image.is_none() {
-                                let m = model.borrow();
-                                let grid = grid(hwnd, &m);
-                                let selected = if m.selection.contains(index) {
-                                    m.selection.iter().copied().collect::<Vec<_>>()
-                                } else {
-                                    vec![*index]
-                                };
-                                let placeholder = super::assets::Pixels {
-                                    width: 1,
-                                    height: 1,
-                                    data: vec![0; 4],
-                                };
-                                let cells = selected
-                                    .into_iter()
-                                    .filter_map(|index| {
-                                        let item = m.items.get(index)?;
-                                        let render = if m.is_list() {
-                                            super::drag_drop::image::list_item_pixels
-                                        } else {
-                                            super::drag_drop::image::item_pixels
-                                        };
-                                        let pixels = render(
-                                            item.image.as_deref().unwrap_or(&placeholder),
-                                            &item.label,
-                                            grid,
-                                            s,
-                                        )?;
-                                        let (x, y) = m.cell(grid, index);
-                                        Some((
-                                            pixels,
-                                            POINT {
-                                                x: (x * s).round() as i32,
-                                                y: (y * s).round() as i32,
-                                            },
-                                        ))
-                                    })
-                                    .collect::<Vec<_>>();
                                 if let Some((pixels, origin)) =
-                                    super::drag_drop::image::selection_pixels(&cells)
+                                    drag_preview(hwnd, &model.borrow(), *index)
                                 {
                                     let hotspot = POINT {
                                         x: start.x - origin.x,
@@ -1594,7 +1644,6 @@ where
                                         cx: pixels.width as i32,
                                         cy: pixels.height as i32,
                                     };
-                                    drop(m);
                                     drag_image = super::drag_drop::image::DragImage::new(
                                         hwnd, &pixels, screen, hotspot, size,
                                     );
@@ -1612,6 +1661,15 @@ where
                     Some(0)
                 }
                 WM_LBUTTONUP => {
+                    if let Some(mut selection) = marquee.take() {
+                        if selection.rect.is_some() {
+                            update_marquee(hwnd, &mut model.borrow_mut(), &mut selection, point(lparam));
+                        }
+                        renderer.marquee = None;
+                        unsafe { ReleaseCapture(); }
+                        invalidate(hwnd);
+                        return Some(0);
+                    }
                     if let Some((pressed, _)) = tab_press.take() {
                         unsafe { ReleaseCapture(); }
                         let p = point(lparam);
@@ -1714,6 +1772,10 @@ where
                     Some(0)
                 }
                 WM_CAPTURECHANGED | WM_CANCELMODE => {
+                    if let Some(selection) = marquee.take() {
+                        selection.restore(&mut model.borrow_mut());
+                    }
+                    renderer.marquee = None;
                     tab_press = None;
                     scrollbar_drag = None;
                     model.borrow_mut().scrollbar.dragging = false;
@@ -1775,6 +1837,14 @@ where
                         m.scroll.saturating_sub(1)
                     };
                     drop(m);
+                    if let Some(selection) = &mut marquee {
+                        if selection.rect.is_some() {
+                            let mut current = point(lparam);
+                            unsafe { windows_sys::Win32::Graphics::Gdi::ScreenToClient(hwnd, &raw mut current); }
+                            update_marquee(hwnd, &mut model.borrow_mut(), selection, current);
+                            renderer.marquee = selection.rect;
+                        }
+                    }
                     invalidate(hwnd);
                     Some(0)
                 }
@@ -1809,7 +1879,11 @@ where
                     };
                     match command {
                         Command::Cancel => {
-                            if drag.take().is_some() {
+                            if let Some(selection) = marquee.take() {
+                                selection.restore(&mut model.borrow_mut());
+                                renderer.marquee = None;
+                                unsafe { ReleaseCapture(); }
+                            } else if drag.take().is_some() {
                                 drag_identity = None;
                                 drag_image = None;
                                 unsafe {

@@ -1223,3 +1223,6 @@ startup-policy-disabled = 시스템 정책에 의해 시작이 비활성화되�
 startup-policy-enabled = 시스템 정책에 의해 시작이 활성화되었습니다.
 startup-working = 시작 상태를 확인하거나 변경하는 중…
 startup-package-invalid = MSIX 패키지 ID 또는 표시 파일이 잘못되었습니다. 시작 설정은 변경되지 않았습니다.
+
+title-emoji-rendering = 컬러 아이콘 렌더링
+title-emoji-rendering-description = 모든 패널 및 탭 제목에 즉시 적용됩니다.

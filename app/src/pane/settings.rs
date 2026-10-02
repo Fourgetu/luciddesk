@@ -491,6 +491,11 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
     let mut options = state.borrow().workspace.pane_options();
     let mut folder_defaults = folder::Defaults::load(&state.borrow().store)?;
     let mut folder_entry_mode = folder::EntryMode::load(&state.borrow().store)?;
+    let (mut show_panels_enabled, mut show_panels_shortcut, mut chosen_language) = {
+        let owner = state.borrow();
+        (show_hotkey::enabled(&owner.store), show_hotkey::settings(&owner.store),
+            owner.store.preference("language").ok().flatten().unwrap_or_else(|| "system".into()))
+    };
     let mut font_choices = Vec::<String>::new();
     let mut all_fonts = Vec::<String>::new();
     let mut font_load: Option<fonts::CandidateLoad> = None;
@@ -895,6 +900,9 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 let mode = folder::EntryMode::load(&state.store).unwrap_or_default();
                 snapshot_changed |= mode != folder_entry_mode;
                 folder_entry_mode = mode;
+                show_panels_enabled = show_hotkey::enabled(&state.store);
+                show_panels_shortcut = show_hotkey::settings(&state.store);
+                chosen_language = state.store.preference("language").ok().flatten().unwrap_or_else(|| "system".into());
                 options = state.workspace.pane_options();
                 appearance = state
                     .workspace
@@ -926,8 +934,8 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                 peek::settings(),
                 everything_settings::settings(),
                 (recording_peek, recording_search, search_hotkey::settings(), search_hotkey::status(),
-                    recording_show_panels, show_hotkey::enabled(&state.borrow().store),
-                    show_hotkey::settings(&state.borrow().store), show_hotkey::status()),
+                    recording_show_panels, show_panels_enabled,
+                    show_panels_shortcut, show_hotkey::status()),
                 unsafe { IsZoomed(hwnd) } != 0,
                 search_visible,
                 (desktop_status.clone(), header_divider::enabled(), compact_menu::enabled(), updates.status(), startup.status(), startup.busy()),
@@ -944,11 +952,10 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         options,
                     );
                 if page == 12 {
-                    let chosen = state.borrow().store.preference("language").ok().flatten().unwrap_or_else(|| "system".into());
-                    layout::language(&mut body, w, &chosen);
+                    layout::language(&mut body, w, &chosen_language);
                 }
                 if page == 13 { layout::general(&mut body, w, startup.status(), startup.busy()); }
-                if page == 1 { layout::show_panels_shortcut(&mut body, w, &state.borrow().store); }
+                if page == 1 { layout::show_panels_shortcut(&mut body, w, show_panels_enabled, show_panels_shortcut); }
                 if page == 11 { layout::fonts_status(&mut body, w, &font_choices, if !fonts_loaded { Some("font-loading") } else if font_load_failed { Some("font-load-failed") } else { None }); }
                 if page == 8 { layout::folder_defaults(&mut body, w, folder_defaults, folder_entry_mode); }
                 if matches!(page,6|9|10) {

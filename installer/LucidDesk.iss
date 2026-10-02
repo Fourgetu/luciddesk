@@ -401,6 +401,19 @@ begin
   if Result = '' then Result := CheckHookReleased(False);
 end;
 
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  AppPath: String;
+begin
+  if CurStep <> ssPostInstall then Exit;
+  AppPath := ExpandConstant('{app}\luciddesk.exe');
+  // Invalidate this installation's cached Shell icons after replacing the EXE.
+  NotifyShortcutPath($2000, $1005, AppPath, 0); // UPDATEITEM, PATHW | FLUSH
+  NotifyShortcutPath($1000, $1005, ExtractFileDir(AppPath), 0); // UPDATEDIR
+  NotifyShortcutPath($2000, $1005, ExpandConstant('{autoprograms}\{#ProductName}.lnk'), 0);
+  NotifyShortcutPath($2000, $1005, ExpandConstant('{autodesktop}\{#ProductName}.lnk'), 0);
+end;
+
 function InitializeUninstall: Boolean;
 var
   Error: String;

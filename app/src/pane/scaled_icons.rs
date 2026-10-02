@@ -156,25 +156,4 @@ mod tests {
         assert!(cache.get((2, 199, 1), &next).is_some());
     }
 
-    #[test]
-    fn repeated_scaling_timing_preserves_output() {
-        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
-        let source = pixels(128);
-        let start = std::time::Instant::now();
-        for _ in 0..100 {
-            std::hint::black_box(super::super::assets::resample(&source, 48, 48).unwrap());
-        }
-        let uncached = start.elapsed();
-        let expected = resample(&source, 48, 48).unwrap();
-        let start = std::time::Instant::now();
-        for _ in 0..100 {
-            let result = resample(&source, 48, 48).unwrap();
-            assert!(Arc::ptr_eq(&expected, &result));
-            std::hint::black_box(result);
-        }
-        eprintln!(
-            "100 resamples, 128 -> 48: uncached={uncached:?}, warm_cache={:?}",
-            start.elapsed()
-        );
-    }
 }

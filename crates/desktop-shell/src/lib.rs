@@ -2,6 +2,7 @@
 mod activation;
 mod apartment;
 mod desktop;
+mod drag_image;
 mod error;
 mod file_command;
 mod folder_menu;
@@ -16,6 +17,7 @@ mod rename;
 pub use activation::{drag_shell_identities, open_shell_identity};
 pub use apartment::ShellApartment;
 pub use desktop::desktop_icons_hidden;
+pub use drag_image::FileDragImage;
 pub use desktop_core::ShellIdentity;
 pub use error::ShellError;
 pub use file_command::{

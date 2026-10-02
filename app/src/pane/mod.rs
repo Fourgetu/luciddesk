@@ -7,6 +7,8 @@
 mod fonts;
 mod header_divider;
 mod compact_menu;
+mod title_emoji;
+mod marquee;
 mod acrylic;
 mod animation;
 mod visibility;
@@ -150,6 +152,7 @@ enum Event {
     PreviewPaneMove,
     ToggleHeaderDivider,
     ToggleCompactMenu,
+    SetTitleEmojiColor(bool),
     PaneItemFocus,
     BeginItemMenu(Rc<RefCell<Option<Result<Rc<luciddesk_desktop::filter::FilterSession>, String>>>>),
     EndItemMenu,
@@ -202,7 +205,7 @@ enum Event {
     ActivateSelection,
     Peek,
     FileCommand(desktop_shell::FileCommand),
-    FileDrag,
+    FileDrag(Option<desktop_shell::FileDragImage>),
     ToggleListView,
     Drop { index: usize, point: POINT },
     Geometry(RectDip),

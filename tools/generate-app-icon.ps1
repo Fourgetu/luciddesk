@@ -69,49 +69,6 @@ function Resize-IconImage([System.Drawing.Image]$image, [int]$size, [double]$sca
         return ,$bitmap
     } catch { $bitmap.Dispose(); throw }
 }
-function ConvertTo-IconBitmap([byte[]]$png) {
-    $input = [System.IO.MemoryStream]::new($png, $false)
-    try {
-        $bitmap = [System.Drawing.Bitmap]::new($input)
-        try {
-            $size = $bitmap.Width
-            $maskStride = [int]([Math]::Ceiling($size / 32.0) * 4)
-            $mask = [byte[]]::new($maskStride * $size)
-            $output = [System.IO.MemoryStream]::new()
-            try {
-                $writer = [System.IO.BinaryWriter]::new($output)
-                try {
-                    $writer.Write([uint32]40) # BITMAPINFOHEADER
-                    $writer.Write([int]$size)
-                    $writer.Write([int]($size * 2)) # Color bitmap followed by AND mask.
-                    $writer.Write([uint16]1)
-                    $writer.Write([uint16]32)
-                    $writer.Write([uint32]0) # BI_RGB
-                    $writer.Write([uint32]($size * $size * 4 + $mask.Length))
-                    foreach ($unused in 1..4) { $writer.Write([uint32]0) }
-                    for ($row = 0; $row -lt $size; ++$row) {
-                        for ($x = 0; $x -lt $size; ++$x) {
-                            $color = $bitmap.GetPixel($x, $size - 1 - $row)
-                            # Explorer's details pane treats small icon RGB as premultiplied.
-                            # Bake that compatibility adjustment into shell frames only;
-                            # keep alpha/masks and the large PNG/UI artwork unchanged.
-                            $writer.Write([byte][Math]::Floor(($color.B * $color.A + 127) / 255))
-                            $writer.Write([byte][Math]::Floor(($color.G * $color.A + 127) / 255))
-                            $writer.Write([byte][Math]::Floor(($color.R * $color.A + 127) / 255))
-                            $writer.Write([byte]$color.A)
-                            if ($color.A -eq 0) {
-                                $index = $row * $maskStride + [int][Math]::Floor($x / 8.0)
-                                $mask[$index] = $mask[$index] -bor (0x80 -shr ($x % 8))
-                            }
-                        }
-                    }
-                    $writer.Write($mask)
-                    return ,$output.ToArray()
-                } finally { $writer.Dispose() }
-            } finally { $output.Dispose() }
-        } finally { $bitmap.Dispose() }
-    } finally { $input.Dispose() }
-}
 
 try {
     & magick $sourcePath -crop $artBounds +repage -background none -gravity center `
@@ -121,15 +78,15 @@ try {
     try {
         foreach ($size in $sizes) {
             $png = ConvertTo-IconPng $size 1.0
-            if ($size -lt 256) { $frames.Add((ConvertTo-IconBitmap $png)) }
-            else { $frames.Add($png) }
+            $frames.Add($png)
         }
         $uiFrame = $png # Keep the 256px PNG straight-alpha for application rendering.
     } finally { $sourceImage.Dispose() }
 } finally {
     if (Test-Path -LiteralPath $normalized) { Remove-Item -LiteralPath $normalized }
 }
-# Small frames use native 32-bit DIB + AND masks; only the 256px frame is PNG.
+# Store every size as straight-alpha PNG so Shell and window loaders decode
+# transparency consistently, without DIB premultiplication ambiguity.
 $iconStream = [System.IO.File]::Create($iconOutput)
 try {
     $writer = [System.IO.BinaryWriter]::new($iconStream)

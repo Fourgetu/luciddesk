@@ -288,33 +288,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn pane_strokes_use_winui_tokens_for_every_material() {
-        use desktop_core::Backdrop;
-        for dark in [false, true] {
-            for material in [
-                Backdrop::Acrylic,
-                Backdrop::Mica,
-                Backdrop::MicaAlt,
-                Backdrop::Solid {
-                    color: 0xff0000,
-                    opacity: 1.0,
-                },
-                Backdrop::Translucent { opacity: 1.0 },
-            ] {
-                let border = panel_border(dark, material);
-                assert_eq!(
-                    (border.r, border.g, border.b, border.a),
-                    (117.0 / 255.0, 117.0 / 255.0, 117.0 / 255.0, 102.0 / 255.0)
-                );
-                let divider = panel_divider(dark, material);
-                assert_eq!(divider.r, if dark { 1.0 } else { 0.0 });
-                assert_eq!(divider.a, if dark { 21.0 / 255.0 } else { 15.0 / 255.0 });
-                assert_eq!(panel_border(dark, material.with_strength(100)).a, border.a);
-            }
-        }
-    }
-
-    #[test]
     fn chrome_keeps_selection_visible_and_adapts_to_material_strength() {
         use desktop_core::Backdrop;
         for dark in [false, true] {

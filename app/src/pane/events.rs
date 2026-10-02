@@ -106,6 +106,13 @@ pub(super) fn handle(
     id: PanelId,
     event: Event,
 ) -> Result<bool, String> {
+    if matches!(event, Event::SetTitleEmojiColor(_) | Event::ResetPaneOptions) {
+        let color = if let Event::SetTitleEmojiColor(color) = event { color } else { true };
+        let s = state.borrow();
+        title_emoji::save(&s.store, color)?;
+        for view in &s.views { unsafe { InvalidateRect(view.window.hwnd().cast(), std::ptr::null(), 0); } }
+        if matches!(event, Event::SetTitleEmojiColor(_)) { return Ok(false); }
+    }
     if matches!(event, Event::ToggleCompactMenu | Event::ResetPaneOptions) {
         compact_menu::save(&state.borrow().store, matches!(event, Event::ResetPaneOptions) || !compact_menu::enabled())?;
         if matches!(event, Event::ToggleCompactMenu) { return Ok(false); }
@@ -236,7 +243,7 @@ pub(super) fn handle(
         refresh_changed_views(&mut s, true);
         return Ok(false);
     }
-    if matches!(event, Event::FileDrag) {
+    if let Event::FileDrag(image) = event {
         let target = {
             let s = state.borrow();
             s.views.iter().find(|v| v.id == id).map(|v| {
@@ -251,6 +258,7 @@ pub(super) fn handle(
                 if let Err(error) = desktop_shell::drag_file_items(
                     windows::Win32::Foundation::HWND(owner as _),
                     &items,
+                    image.as_ref(),
                 ) {
                     window::error(&error.to_string());
                 }
@@ -738,7 +746,7 @@ pub(super) fn handle(
     }
     let mut s = state.borrow_mut();
     match event {
-        Event::DetachTab(_) | Event::PreviewPaneMove | Event::FinishPaneMove(_) | Event::RenameTab(_) | Event::MoveTabId(..) | Event::ToggleHeaderDivider | Event::ToggleCompactMenu
+        Event::DetachTab(_) | Event::PreviewPaneMove | Event::FinishPaneMove(_) | Event::RenameTab(_) | Event::MoveTabId(..) | Event::ToggleHeaderDivider | Event::ToggleCompactMenu | Event::SetTitleEmojiColor(_)
         | Event::NewTab(_) | Event::SelectTab(_) | Event::CloseTab | Event::CloseTabId(_)
         | Event::MoveTab(_) => unreachable!("Tabs handled before borrowing PaneApp"),
         Event::SortFolder(_)
@@ -760,7 +768,7 @@ pub(super) fn handle(
         | Event::ToggleListView
         | Event::ToggleSearch
         | Event::EnableSearch
-        | Event::FileDrag
+        | Event::FileDrag(_)
         | Event::NewFolder
         | Event::MapFolder(_)
         | Event::ChangeFolder

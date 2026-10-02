@@ -376,6 +376,12 @@ fn scene_with_mica(
                 Action::Change(Event::ToggleCompactMenu));
         }
         form.section(crate::i18n::text("ui-text-icons"));
+        form.toggle(
+            crate::i18n::text("title-emoji-rendering"),
+            crate::i18n::text("title-emoji-rendering-description"),
+            title_emoji::color(),
+            Action::Change(Event::SetTitleEmojiColor(!title_emoji::color())),
+        );
         form.choices(
             crate::i18n::text("ui-panel-text"),
             crate::i18n::text("ui-automatic-mode-selects-text-brightness-for-the-background"),
@@ -740,7 +746,7 @@ pub(super) fn language(s: &mut Scene, width: f32, selected: &str) {
 }
 
 
-pub(super) fn show_panels_shortcut(s: &mut Scene, width: f32, store: &WorkspaceStore) {
+pub(super) fn show_panels_shortcut(s: &mut Scene, width: f32, enabled: bool, shortcut: search_hotkey::Shortcut) {
     // Append below the existing panel-layout controls, retaining normal page scrolling.
     let bottom = s.cards.iter().map(|r| r.bottom)
         .chain(s.controls.iter().filter(|c| c.bounds.left >= Tokens::content_x()).map(|c| c.bounds.bottom))
@@ -748,9 +754,9 @@ pub(super) fn show_panels_shortcut(s: &mut Scene, width: f32, store: &WorkspaceS
     let mut form = SettingsForm::continuation(s, width, bottom + 24.0);
     form.section(crate::i18n::text("show-panels-hotkey"));
     form.toggle(crate::i18n::text("show-panels-enable"), crate::i18n::text("show-panels-description"),
-        show_hotkey::enabled(store), Action::ShowPanelsEnable);
+        enabled, Action::ShowPanelsEnable);
     let status = show_hotkey::status();
     form.shortcut(crate::i18n::text("ui-global-shortcut"),
         if status.is_empty() { crate::i18n::text("show-panels-disabled") } else { &status },
-        &search_hotkey::label(show_hotkey::settings(store)), Action::ShowPanelsShortcut, Action::ShowPanelsReset);
+        &search_hotkey::label(shortcut), Action::ShowPanelsShortcut, Action::ShowPanelsReset);
 }

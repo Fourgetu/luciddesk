@@ -2,9 +2,34 @@
 
 [简体中文](CHANGELOG.md) · English
 
-Current version: **0.16.2**. Features and fixes by release.
+Current version: **0.17.0**. Features and fixes by release.
 
 Exit the app before upgrading a portable installation and preserve its `data` folder. See the [portable guide](docs/portable.md) (Chinese).
+
+## Unreleased
+
+## 0.17.0 · 2026-10-03
+
+### feat
+
+- Add rubber-band selection from empty space in regular panes. Ctrl toggles selection, Shift adds to it, and Esc cancels the current selection gesture.
+- Support color emoji in panel and tab titles, aligning emoji and text by their visible glyph centers.
+- Add a Color icon rendering switch under Text & icons in settings, enabled by default. Turning it off renders title emoji in monochrome. Changes apply immediately and persist.
+
+### fix
+
+- Use PNG frames at every app icon size to avoid gray edges from small DIB transparency differences and extra alpha premultiplication. Notify Shell to refresh icons after installation.
+- Fix a settings-window crash when reentrant painting reads shortcut or language preferences during desktop synchronization.
+- Fix files in regular group panes failing to drag into an open File Explorer folder window.
+- Preserve pane icon sizes, file names, and multi-selection layouts when dragging files into File Explorer instead of switching to the default large drag preview.
+
+### test
+
+- Simplify duplicate tests and shared fixtures while retaining key regression scenarios. Update settings layout and slider interaction tests, and cover reentrant settings-window painting.
+
+### ci
+
+- Add selection rules, drag image alpha conversion, WARP color emoji and Canvas offscreen rendering, and workspace documentation example tests.
 
 ## 0.16.2 · 2026-10-01
 

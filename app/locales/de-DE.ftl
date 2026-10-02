@@ -1223,3 +1223,6 @@ startup-policy-disabled = Autostart ist durch eine Systemrichtlinie deaktiviert.
 startup-policy-enabled = Autostart ist durch eine Systemrichtlinie aktiviert.
 startup-working = Autostartstatus wird geprüft oder geändert…
 startup-package-invalid = Ungültige MSIX-Identität oder Markierungsdatei. Autostart wurde nicht geändert.
+
+title-emoji-rendering = Farbige Symboldarstellung
+title-emoji-rendering-description = Gilt sofort für alle Panel- und Tab-Titel.

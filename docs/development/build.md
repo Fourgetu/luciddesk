@@ -76,7 +76,7 @@ cargo build -p luciddesk -p desktop-hook --locked --offline --target-dir target\
 .\tools\package.ps1 -Offline
 ```
 
-产物位于 `target\packages`。包内配置仍默认保存在 LocalAppData；未提交代码会在包名和 `build.json` 中标记为 dirty。GitHub Actions 的 Build CI 工作流执行全目标编译、核心和存储测试后，同时上传安装包、普通 ZIP、便携 ZIP 及 SHA256 校验文件；原生桌面 UI 测试仍在交互会话运行。
+产物位于 `target\packages`。包内配置仍默认保存在 LocalAppData；未提交代码会在包名和 `build.json` 中标记为 dirty。GitHub Actions 的 Build CI 工作流执行全目标编译、核心与存储、多语言、更新检查、框选规则、拖动图像透明度、WARP 彩色 emoji 与 Canvas 兼容测试，以及工作区文档示例。完成安装与升级验证后，同时上传安装包、普通 ZIP、便携 ZIP 及 SHA256 校验文件；需要窗口、焦点或 Explorer 的桌面 UI 测试仍在交互会话运行。
 
 ### Inno Setup 安装包
 

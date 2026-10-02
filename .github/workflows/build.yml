@@ -42,6 +42,16 @@ jobs:
         run: cargo check --workspace --all-targets --locked
       - name: Test workspace data and layout rules
         run: cargo test -p desktop-core -p desktop-storage --lib --locked
+      - name: Test marquee selection rules
+        run: cargo test -p luciddesk --bin luciddesk pane::marquee::tests --locked -- --test-threads=1 --skip marquee_window_messages_commit_cancel_and_ignore_mapped_folders
+      - name: Test drag image alpha conversion
+        run: cargo test -p desktop-shell --lib drag_image::tests::alpha_conversion_preserves_transparency_and_edge_colors --locked -- --exact
+      - name: Test color emoji rendering with WARP
+        run: cargo test -p luciddesk --bin luciddesk pane::title_emoji::tests --locked -- --test-threads=1
+      - name: Test Canvas compatibility with WARP
+        run: cargo test -p luciddesk --test canvas_compat --locked -- --test-threads=1
+      - name: Test workspace documentation examples
+        run: cargo test --workspace --doc --locked
       - name: Install pinned Inno Setup compiler
         shell: pwsh
         run: ./tools/ensure-inno.ps1

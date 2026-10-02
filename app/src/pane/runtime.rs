@@ -212,6 +212,7 @@ pub(super) fn reload(state: &Rc<RefCell<PaneApp>>) -> Result<(), String> {
     fonts::load(&s.store)?;
     header_divider::load(&s.store)?;
     compact_menu::load(&s.store)?;
+    title_emoji::load(&s.store)?;
         search_hotkey::load(&s.store)?;
         everything_settings::load(&s.store)?;
         s.session.take();

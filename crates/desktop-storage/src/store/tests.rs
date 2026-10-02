@@ -275,30 +275,14 @@ fn workspace_round_trips() {
     });
     workspace.reconcile_desktop_items([desktop_item]);
     let mut store = WorkspaceStore::open_in_memory().unwrap();
-    store.save_workspace(&workspace).unwrap();
-    let loaded = store.load_workspace().unwrap();
-
-    assert_eq!(loaded, workspace);
-}
-
-#[test]
-fn theme_choices_round_trip() {
-    let mut store = WorkspaceStore::open_in_memory().unwrap();
-    let panel = Panel::new(PanelId::new(1), "Pane", RectDip::default());
-    let mut workspace = Workspace::from_panels(vec![panel]).unwrap();
-    for theme in [
-        desktop_core::PanelTheme::System,
-        desktop_core::PanelTheme::Light,
-        desktop_core::PanelTheme::Dark,
+    for (theme, backdrop) in [
+        (desktop_core::PanelTheme::System, Backdrop::MicaAlt),
+        (desktop_core::PanelTheme::Light, Backdrop::Translucent { opacity: 0.72 }),
+        (desktop_core::PanelTheme::Dark, Backdrop::Mica),
     ] {
-        workspace
-            .panel_mut(PanelId::new(1))
-            .unwrap()
-            .set_theme(theme);
-        workspace
-            .panel_mut(PanelId::new(1))
-            .unwrap()
-            .set_backdrop(Backdrop::MicaAlt);
+        let panel = workspace.panel_mut(PanelId::new(42)).unwrap();
+        panel.set_theme(theme);
+        panel.set_backdrop(backdrop);
         store.save_workspace(&workspace).unwrap();
         assert_eq!(store.load_workspace().unwrap(), workspace);
     }

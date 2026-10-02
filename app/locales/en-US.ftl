@@ -1223,3 +1223,6 @@ startup-policy-disabled = Startup is disabled by system policy.
 startup-policy-enabled = Startup is enabled by system policy.
 startup-working = Checking or updating startup status…
 startup-package-invalid = MSIX identity or marker is invalid. Startup settings were not changed.
+
+title-emoji-rendering = Color icon rendering
+title-emoji-rendering-description = Applies immediately to all panel and tab titles.

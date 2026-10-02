@@ -63,6 +63,7 @@ pub struct Renderer {
     labels: windows_canvas::TextFormat,
     title: windows_canvas::TextFormat,
     title_layout: Option<TitleLayout>,
+    pub(super) marquee: Option<desktop_core::RectDip>,
     details: windows_canvas::TextFormat,
     tab_title: windows_canvas::TextFormat,
     column_label_widths: [f32; 4],
@@ -252,6 +253,7 @@ impl Renderer {
             labels,
             title,
             title_layout: None,
+            marquee: None,
             details,
             tab_title,
             column_label_widths,
@@ -504,7 +506,7 @@ impl Renderer {
                         );
                     }
                     if model.tabs.len() < 2 && model.merge_preview.is_empty() {
-                        target.clipped_layout(&title, group_left + icon_width, canvas::text_ink_center_offset(&title)?, &white);
+                        target.clipped_color_layout(&model.title, &title, group_left + icon_width, canvas::text_ink_center_offset(&title)?, &white)?;
                     }
                     for button in 0..if !model.merge_preview.is_empty() { 0 } else if model.folder.is_some() { 4 } else { 2 } {
                         let top = super::layout::HEADER_INSET;
@@ -596,8 +598,8 @@ impl Renderer {
                         target.draw_rounded_rect(&RoundedRect { rect, radius_x: model.options.corner_radius, radius_y: model.options.corner_radius }, &edge, 1.0);
                     }
                     let text = model.tabs.iter().find(|(tab, _)| *tab == id).map_or("", |(_, title)| title.as_str());
-                    target.clipped_text(text, &self.tab_title, &Rect::from_xywh(rect.left + 10.0, rect.top, (bounds.width - 20.0).max(1.0), bounds.height),
-                        if id == model.active_tab { &white } else { &dim });
+                    target.clipped_color_text(text, &self.tab_title, &Rect::from_xywh(rect.left + 10.0, rect.top, (bounds.width - 20.0).max(1.0), bounds.height),
+                        if id == model.active_tab { &white } else { &dim })?;
                 }
                 for (text, incoming, active, bounds) in super::tabs::merge_strip(model, w) {
                     let rect = Rect::from_xywh(bounds.x, bounds.y, bounds.width, bounds.height);
@@ -622,8 +624,8 @@ impl Renderer {
                             y += 7.0;
                         }
                     }
-                    target.clipped_text(&text, &self.tab_title, &Rect::from_xywh(rect.left + 10.0, rect.top,
-                        (bounds.width - 20.0).max(1.0), bounds.height), if active || incoming { &white } else { &dim });
+                    target.clipped_color_text(&text, &self.tab_title, &Rect::from_xywh(rect.left + 10.0, rect.top,
+                        (bounds.width - 20.0).max(1.0), bounds.height), if active || incoming { &white } else { &dim })?;
                 }
                 if super::header_divider::enabled() && !model.collapsed && h > model.content_header() + 1.0 {
                     let divider = canvas_result(target.create_solid_brush(super::theme::panel_divider(model.dark, model.backdrop)))?;
@@ -931,6 +933,13 @@ impl Renderer {
                             &thumb,
                         );
                     }
+                }
+                if let Some(rect) = self.marquee.filter(|_| !model.collapsed) {
+                    let bounds = Rect::from_xywh(rect.x, rect.y, rect.width, rect.height);
+                    let fill = canvas_result(target.create_solid_brush(ColorF::new(0.2, 0.55, 1.0, 0.18)))?;
+                    let border = canvas_result(target.create_solid_brush(ColorF::new(0.3, 0.65, 1.0, 0.9)))?;
+                    target.fill_rect(&bounds, &fill);
+                    target.draw_rect(&bounds, &border, 1.0 / scale);
                 }
                 let result = target.finish();
                 // Retain only backgrounds used by this frame, including after resize,
@@ -1336,33 +1345,9 @@ mod tests {
 
     fn sample_model() -> GroupModel {
         GroupModel {
-            merge_preview: Vec::new(),
-        merge_occluded: false,
-            tabs: Vec::new(),
-            active_tab: desktop_core::PanelId::new(0),
-            folder_sort: (0, false),
-            folder_columns: None,
-            folder_visible_columns: 15,
-        folder_navigation: [false; 2],
-            list_view: false,
-            folder: None,
-            folder_status: None,
-            options: desktop_core::PaneOptions::default(),
-            theme: desktop_core::PanelTheme::Dark,
-            dark: true,
-
-            hovered_item: None,
-            scrollbar: Default::default(),
             focused: true,
-            auto_hide: false,
-            locked: false,
-            reveal: 1.0,
-            hovered_tab: None,
-        hovered_button: None,
-            pressed_button: None,
             backdrop: desktop_core::Backdrop::Acrylic,
             native_material: true,
-            title: "透明度验证".into(),
             items: vec![Item {
                 details: Default::default(),
                 identity: ShellIdentity::Namespace {
@@ -1375,14 +1360,7 @@ mod tests {
                     data: [80, 100, 200, 255].repeat(16 * 16),
                 })),
             }],
-            icon_size: 48.0,
-            selected: None,
-            selection: Default::default(),
-            selection_anchor: None,
-            renaming: None,
-            scroll: 0,
-            collapsed: false,
-            loading: false,
+            ..super::super::tests::test_model("透明度验证")
         }
     }
 
@@ -1579,24 +1557,6 @@ mod tests {
                 }
             }
         }
-    }
-
-    #[test]
-    fn large_directory_layout_timing() {
-        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
-        let mut model = sample_model();
-        let template = model.items[0].clone();
-        model.items = (0..10000).map(|index| Item {
-            label: format!("Document {index} with a longer file name.txt"), ..template.clone()
-        }).collect();
-        let grid = model.grid(600.0, 400.0);
-        let start = std::time::Instant::now();
-        let rows = model.row_contents(grid);
-        let old = start.elapsed();
-        let start = std::time::Instant::now();
-        for _ in 0..100 { std::hint::black_box(model.grid(600.0, 400.0)); }
-        eprintln!("10,000-file layout: full row measurement {:?}; viewport layout average {:?}", old, start.elapsed()/100);
-        assert_eq!(rows.len(), model.items.len().div_ceil(grid.columns));
     }
 
     #[test]

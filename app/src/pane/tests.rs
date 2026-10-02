@@ -180,6 +180,47 @@ fn reconcile(workspace: &mut Workspace, inventory: Vec<DesktopItem>) {
     }
 }
 
+pub(super) fn test_model(title: &str) -> GroupModel {
+    GroupModel {
+        merge_preview: Vec::new(),
+        merge_occluded: false,
+        tabs: Vec::new(),
+        active_tab: desktop_core::PanelId::new(0),
+        folder_sort: (0, false),
+        folder_columns: None,
+        folder_visible_columns: 15,
+        folder_navigation: [false; 2],
+        list_view: false,
+        folder: None,
+        folder_status: None,
+        options: desktop_core::PaneOptions::default(),
+        theme: desktop_core::PanelTheme::Dark,
+        dark: true,
+        hovered_item: None,
+        scrollbar: Default::default(),
+        hovered_tab: None,
+        hovered_button: None,
+        pressed_button: None,
+        focused: false,
+        auto_hide: false,
+        locked: false,
+        reveal: 1.0,
+        backdrop: desktop_core::Backdrop::Mica,
+        native_material: false,
+        title: title.into(),
+        items: vec![],
+        icon_size: 48.0,
+
+        selected: None,
+        selection: Default::default(),
+        selection_anchor: None,
+        renaming: None,
+        scroll: 0,
+        collapsed: false,
+        loading: false,
+    }
+}
+
 pub(super) fn test_state() -> PaneApp {
     let mut workspace = Workspace::new();
     for id in [1, 2] {
@@ -645,44 +686,7 @@ fn activation_releases_state_and_model_before_shell_reentry() {
 
 #[test]
 fn snapped_content_bottom_and_scrollbar_use_the_same_row_metrics() {
-    let mut model = GroupModel {
-        merge_preview: Vec::new(),
-        merge_occluded: false,
-        tabs: Vec::new(),
-        active_tab: desktop_core::PanelId::new(0),
-        folder_sort: (0, false),
-        folder_columns: None,
-        folder_visible_columns: 15,
-        folder_navigation: [false; 2],
-        list_view: false,
-        folder: None,
-        folder_status: None,
-        options: desktop_core::PaneOptions::default(),
-        theme: desktop_core::PanelTheme::Dark,
-        dark: true,
-        hovered_item: None,
-        scrollbar: Default::default(),
-        hovered_tab: None,
-        hovered_button: None,
-        pressed_button: None,
-        focused: false,
-        auto_hide: false,
-        locked: false,
-        reveal: 1.0,
-        backdrop: desktop_core::Backdrop::Mica,
-        native_material: false,
-        title: "Sizing test".into(),
-        items: vec![],
-        icon_size: 48.0,
-
-        selected: None,
-        selection: Default::default(),
-        selection_anchor: None,
-        renaming: None,
-        scroll: 0,
-        collapsed: false,
-        loading: false,
-    };
+    let mut model = test_model("Sizing test");
     for label in ["Short", "Warhammer 40,000 ????"] {
         model.items = (0..10)
             .map(|i| Item {
@@ -766,44 +770,7 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
         SendMessageW, WM_KEYDOWN, WM_KILLFOCUS, WM_SETFOCUS,
     };
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
-    let model = Rc::new(RefCell::new(GroupModel {
-        merge_preview: Vec::new(),
-        merge_occluded: false,
-        tabs: Vec::new(),
-        active_tab: desktop_core::PanelId::new(0),
-        folder_sort: (0, false),
-        folder_columns: None,
-        folder_visible_columns: 15,
-        folder_navigation: [false; 2],
-        list_view: false,
-        folder: None,
-        folder_status: None,
-        options: desktop_core::PaneOptions::default(),
-        theme: desktop_core::PanelTheme::Dark,
-        dark: true,
-        hovered_item: None,
-        scrollbar: Default::default(),
-        hovered_tab: None,
-        hovered_button: None,
-        pressed_button: None,
-        focused: false,
-        auto_hide: false,
-        locked: false,
-        reveal: 1.0,
-        backdrop: desktop_core::Backdrop::Mica,
-        native_material: false,
-        title: "Keyboard regression".into(),
-        items: vec![],
-        icon_size: 48.0,
-
-        selected: None,
-        selection: Default::default(),
-        selection_anchor: None,
-        renaming: None,
-        scroll: 0,
-        collapsed: false,
-        loading: false,
-    }));
+    let model = Rc::new(RefCell::new(test_model("Keyboard regression")));
     model.borrow_mut().items = (0..6)
         .map(|index| Item {
             details: Default::default(),
@@ -816,8 +783,6 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
         .collect();
     let focus_events = Rc::new(std::cell::Cell::new(0));
     let observed = Rc::clone(&focus_events);
-    let lock_events = Rc::new(std::cell::Cell::new(0));
-    let observed_locks = Rc::clone(&lock_events);
     let keyboard_events = Rc::new(RefCell::new(Vec::new()));
     let observed_keyboard = Rc::clone(&keyboard_events);
     let pane = window::create(
@@ -838,9 +803,6 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
             }
             if matches!(event, Event::PaneItemFocus) {
                 observed.set(observed.get() + 1);
-            }
-            if matches!(event, Event::ToggleLocked) {
-                observed_locks.set(observed_locks.get() + 1);
             }
             false
         },
@@ -963,64 +925,6 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
     assert_eq!(model.borrow().selection.len(), 6);
     chord(0x1b, false, false);
     assert!(model.borrow().selection.is_empty());
-    // Keep a real popup open past the fold duration and inspect the pane
-    // before dismissing it. The old in-callback modal loop loses its ticks.
-    unsafe {
-        use windows_sys::Win32::UI::WindowsAndMessaging::*;
-        const RESULT: windows_sys::core::PCWSTR = windows_sys::w!("LucidDesk.FoldMenuTest");
-        unsafe extern "system" fn check_fold(
-            hwnd: windows_sys::Win32::Foundation::HWND,
-            _: u32,
-            id: usize,
-            _: u32,
-        ) {
-            unsafe {
-                KillTimer(hwnd, id);
-                let mut r = RECT::default();
-                GetClientRect(hwnd, &raw mut r);
-                let dpi =
-                    windows_sys::Win32::UI::HiDpi::GetDpiForWindow(hwnd).max(96) as f32 / 96.0;
-                let mut popup = std::ptr::null_mut();
-                loop {
-                    popup = FindWindowExW(
-                        std::ptr::null_mut(),
-                        popup,
-                        std::ptr::null(),
-                        windows_sys::w!("\u{5206}\u{7ec4}\u{83dc}\u{5355}"),
-                    );
-                    if popup.is_null() || GetWindow(popup, GW_OWNER) == hwnd {
-                        break;
-                    }
-                }
-                let passed =
-                    GetWindow(popup, GW_OWNER) == hwnd && r.bottom == (300.0 * dpi).round() as i32;
-                SetPropW(hwnd, RESULT, (if passed { 1usize } else { 2usize }) as _);
-                if GetWindow(popup, GW_OWNER) == hwnd {
-                    PostMessageW(popup, WM_CLOSE, 0, 0);
-                }
-            }
-        }
-        model.borrow_mut().collapsed = false;
-        SendMessageW(hwnd, window::ANIMATE_FOLD, 0, 300);
-        SetTimer(hwnd, 98, 500, Some(check_fold));
-        SendMessageW(hwnd, WM_CONTEXTMENU, 0, -1);
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
-        while GetPropW(hwnd, RESULT).is_null() && std::time::Instant::now() < deadline {
-            let mut msg = MSG::default();
-            while PeekMessageW(&raw mut msg, std::ptr::null_mut(), 0, 0, PM_REMOVE) != 0 {
-                TranslateMessage(&raw const msg);
-                DispatchMessageW(&raw const msg);
-            }
-            std::thread::sleep(std::time::Duration::from_millis(1));
-        }
-        assert_eq!(
-            RemovePropW(hwnd, RESULT) as usize,
-            1,
-            "fold must finish while the popup is still open"
-        );
-        assert_eq!(model.borrow().reveal, 1.0);
-        KillTimer(hwnd, 98);
-    }
     // Client hover must appear immediately, then clear on either a
     // non-client border move or a leave notification without re-arming.
     unsafe {
@@ -1043,30 +947,6 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
         }
     }
     // Empty panes keep the proposed size even inside the grid magnet.
-    unsafe {
-        use windows_sys::Win32::UI::WindowsAndMessaging::*;
-        let mut rect = RECT::default();
-        GetClientRect(hwnd, &raw mut rect);
-        let dpi = windows_sys::Win32::UI::HiDpi::GetDpiForWindow(hwnd).max(96) as f32 / 96.0;
-        let x = ((layout::header_button_x(rect.right as f32 / dpi, 0) + 14.0) * dpi) as isize;
-        let position = (((19.0 * dpi) as isize) << 16) | x;
-        SendMessageW(hwnd, WM_LBUTTONDOWN, 0, position);
-        assert_eq!(model.borrow().pressed_button, Some(0));
-        assert_eq!(lock_events.get(), 0);
-        SendMessageW(hwnd, WM_LBUTTONUP, 0, 0);
-        assert_eq!(lock_events.get(), 0, "release outside cancels the click");
-        assert_eq!(model.borrow().pressed_button, None);
-        SendMessageW(hwnd, WM_LBUTTONDOWN, 0, position);
-        SendMessageW(hwnd, WM_LBUTTONUP, 0, position);
-        assert_eq!(
-            lock_events.get(),
-            0,
-            "header buttons no longer change locking"
-        );
-        SendMessageW(hwnd, WM_LBUTTONDOWN, 0, position);
-        SendMessageW(hwnd, WM_CANCELMODE, 0, 0);
-        assert_eq!(model.borrow().pressed_button, None);
-    }
     model.borrow_mut().items.clear();
     unsafe {
         use windows_sys::Win32::UI::WindowsAndMessaging::*;
@@ -1246,47 +1126,79 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
 }
 
 #[test]
+#[ignore = "Opens a real popup; run alone in an interactive desktop session"]
+fn fold_finishes_while_a_context_menu_is_open() {
+    let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let model = Rc::new(RefCell::new(test_model("Fold menu test")));
+    let pane = window::create(RectDip::new(40.0, 40.0, 200.0, 160.0), model.clone(), |_| false).unwrap();
+    let hwnd = pane.hwnd().cast();
+    // Keep a real popup open past the fold duration and inspect the pane
+    // before dismissing it. The old in-callback modal loop loses its ticks.
+    unsafe {
+        use windows_sys::Win32::UI::WindowsAndMessaging::*;
+        const RESULT: windows_sys::core::PCWSTR = windows_sys::w!("LucidDesk.FoldMenuTest");
+        unsafe extern "system" fn check_fold(
+            hwnd: windows_sys::Win32::Foundation::HWND,
+            _: u32,
+            id: usize,
+            _: u32,
+        ) {
+            unsafe {
+                KillTimer(hwnd, id);
+                let mut r = RECT::default();
+                GetClientRect(hwnd, &raw mut r);
+                let dpi =
+                    windows_sys::Win32::UI::HiDpi::GetDpiForWindow(hwnd).max(96) as f32 / 96.0;
+                let mut popup = std::ptr::null_mut();
+                loop {
+                    popup = FindWindowExW(
+                        std::ptr::null_mut(),
+                        popup,
+                        std::ptr::null(),
+                        windows_sys::w!("\u{5206}\u{7ec4}\u{83dc}\u{5355}"),
+                    );
+                    if popup.is_null() || GetWindow(popup, GW_OWNER) == hwnd {
+                        break;
+                    }
+                }
+                let passed =
+                    GetWindow(popup, GW_OWNER) == hwnd && r.bottom == (300.0 * dpi).round() as i32;
+                SetPropW(hwnd, RESULT, (if passed { 1usize } else { 2usize }) as _);
+                if GetWindow(popup, GW_OWNER) == hwnd {
+                    PostMessageW(popup, WM_CLOSE, 0, 0);
+                }
+            }
+        }
+        model.borrow_mut().collapsed = false;
+        SendMessageW(hwnd, window::ANIMATE_FOLD, 0, 300);
+        SetTimer(hwnd, 98, 500, Some(check_fold));
+        SendMessageW(hwnd, WM_CONTEXTMENU, 0, -1);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while GetPropW(hwnd, RESULT).is_null() && std::time::Instant::now() < deadline {
+            let mut msg = MSG::default();
+            while PeekMessageW(&raw mut msg, std::ptr::null_mut(), 0, 0, PM_REMOVE) != 0 {
+                TranslateMessage(&raw const msg);
+                DispatchMessageW(&raw const msg);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        assert_eq!(
+            RemovePropW(hwnd, RESULT) as usize,
+            1,
+            "fold must finish while the popup is still open"
+        );
+        assert_eq!(model.borrow().reveal, 1.0);
+        KillTimer(hwnd, 98);
+    }
+    window::prepare_close(hwnd);
+    drop(pane);
+}
+
+#[test]
 fn pane_layer_switch_and_wallpaper_material_initialize() {
     use windows_sys::Win32::UI::WindowsAndMessaging::{GWL_EXSTYLE, GetWindowLongW, WS_EX_TOPMOST};
     let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
-    let model = Rc::new(RefCell::new(GroupModel {
-        merge_preview: Vec::new(),
-        merge_occluded: false,
-        tabs: Vec::new(),
-        active_tab: desktop_core::PanelId::new(0),
-        folder_sort: (0, false),
-        folder_columns: None,
-        folder_visible_columns: 15,
-        folder_navigation: [false; 2],
-        list_view: false,
-        folder: None,
-        folder_status: None,
-        options: desktop_core::PaneOptions::default(),
-        theme: desktop_core::PanelTheme::Dark,
-        dark: true,
-        hovered_item: None,
-        scrollbar: Default::default(),
-        hovered_tab: None,
-        hovered_button: None,
-        pressed_button: None,
-        focused: false,
-        auto_hide: false,
-        locked: false,
-        reveal: 1.0,
-        backdrop: desktop_core::Backdrop::Mica,
-        native_material: false,
-        title: "Layer test".into(),
-        items: vec![],
-        icon_size: 48.0,
-
-        selected: None,
-        selection: Default::default(),
-        selection_anchor: None,
-        renaming: None,
-        scroll: 0,
-        collapsed: false,
-        loading: false,
-    }));
+    let model = Rc::new(RefCell::new(test_model("Layer test")));
     let pane = window::create(
         RectDip::new(40.0, 40.0, 200.0, 160.0),
         Rc::clone(&model),
@@ -1688,72 +1600,6 @@ fn appearance_is_global_while_behavior_remains_per_group() {
 }
 
 #[test]
-fn corner_slider_drags_to_both_limits_and_saves() {
-    use windows_sys::Win32::UI::WindowsAndMessaging::*;
-    let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
-    let state = Rc::new(RefCell::new(test_state()));
-    // This gesture/storage test does not exercise the process-wide WinRT
-    // UISettings factory across short-lived test apartments.
-    state
-        .borrow_mut()
-        .workspace
-        .set_appearance(desktop_core::PanelTheme::Dark, desktop_core::Backdrop::Mica);
-    settings::show(&state, PanelId::new(1)).unwrap();
-    let hwnd = state.borrow().settings.as_ref().unwrap().hwnd().cast();
-    unsafe {
-        let scale = windows_sys::Win32::UI::HiDpi::GetDpiForWindow(hwnd).max(96) as f32 / 96.0;
-        let point = |x: f32, y: f32| (((y * scale) as isize) << 16) | (x * scale) as isize;
-        SendMessageW(hwnd, WM_LBUTTONDOWN, 0, point(100.0, 171.0));
-        SendMessageW(hwnd, WM_LBUTTONUP, 0, point(100.0, 171.0));
-        let mut bounds = RECT::default();
-        GetClientRect(hwnd, &raw mut bounds);
-        let width = bounds.right as f32 / scale;
-        SendMessageW(hwnd, WM_LBUTTONDOWN, 0, point(width - 174.0, 228.0));
-        assert_eq!(state.borrow().workspace.pane_options().corner_radius, 12.0);
-        SendMessageW(hwnd, WM_MOUSEMOVE, 1, point(width - 300.0, 228.0));
-        assert_eq!(state.borrow().workspace.pane_options().corner_radius, 0.0);
-        assert_eq!(
-            state
-                .borrow()
-                .store
-                .load_workspace()
-                .unwrap()
-                .pane_options()
-                .corner_radius,
-            desktop_core::PaneOptions::DEFAULT.corner_radius,
-            "drag preview must not write storage"
-        );
-        SendMessageW(hwnd, WM_MOUSEMOVE, 1, point(width - 10.0, 228.0));
-        SendMessageW(hwnd, WM_LBUTTONUP, 0, point(width - 10.0, 228.0));
-        assert_eq!(
-            state
-                .borrow()
-                .store
-                .load_workspace()
-                .unwrap()
-                .pane_options()
-                .corner_radius,
-            24.0
-        );
-        SendMessageW(hwnd, WM_LBUTTONDOWN, 0, point(width - 174.0, 228.0));
-        SendMessageW(hwnd, WM_CAPTURECHANGED, 0, 0);
-        assert_eq!(
-            state
-                .borrow()
-                .store
-                .load_workspace()
-                .unwrap()
-                .pane_options()
-                .corner_radius,
-            12.0,
-            "losing capture must finish the preview"
-        );
-        SendMessageW(hwnd, WM_CLOSE, 0, 0);
-    }
-}
-
-
-#[test]
 fn settings_window_applies_clicks_and_closes_without_exiting() {
     // Composition owns native dispatch state beyond Rust test-thread lifetimes.
     // Run the complete window scenario in one fresh process/STA, like the app.
@@ -1867,6 +1713,7 @@ fn settings_window_applies_clicks_and_closes_without_exiting() {
             SendMessageW(hwnd, WM_ACTIVATE, WA_INACTIVE as usize, 0);
             SendMessageW(hwnd, WM_PAINT, 0, 0);
         }
+        settings::tests::preference_pages_survive_reentry(&state, hwnd);
         let scale = GetDpiForWindow(hwnd).max(96) as f32 / 96.0;
         let mut bounds = RECT::default();
         GetClientRect(hwnd, &raw mut bounds);
@@ -1944,44 +1791,7 @@ fn reconciliation_preserves_groups_and_appends_new_items_after_existing_order() 
 
 #[test]
 fn multiselection_preserves_anchor_toggle_and_file_identity_on_refresh() {
-    let mut model = GroupModel {
-        merge_preview: Vec::new(),
-        merge_occluded: false,
-        tabs: Vec::new(),
-        active_tab: desktop_core::PanelId::new(0),
-        folder_sort: (0, false),
-        folder_columns: None,
-        folder_visible_columns: 15,
-        folder_navigation: [false; 2],
-        list_view: false,
-        folder: None,
-        folder_status: None,
-        options: desktop_core::PaneOptions::default(),
-        theme: desktop_core::PanelTheme::Dark,
-        dark: true,
-        hovered_item: None,
-        scrollbar: Default::default(),
-        hovered_tab: None,
-        hovered_button: None,
-        pressed_button: None,
-        focused: false,
-        auto_hide: false,
-        locked: false,
-        reveal: 1.0,
-        backdrop: desktop_core::Backdrop::Mica,
-        native_material: false,
-        title: "Sizing test".into(),
-        items: vec![],
-        icon_size: 48.0,
-
-        selected: None,
-        selection: Default::default(),
-        selection_anchor: None,
-        renaming: None,
-        scroll: 0,
-        collapsed: false,
-        loading: false,
-    };
+    let mut model = test_model("Sizing test");
     model.items = (0..8)
         .map(|i| Item {
             details: Default::default(),

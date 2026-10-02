@@ -14,15 +14,15 @@ ICO 包含 16、20、24、30、32、36、40、48、60、64、72、80、96、128�
 
 ## Shell 透明度兼容
 
-导出采用预乘 Alpha 的分级缩放，16–64 px 最后一级使用高质量双线性过滤，其余使用高质量双三次过滤。16–128 px 使用 32 位 DIB 和 AND mask，RGB 按 Alpha 预乘，以兼容 Explorer 详情面板绘制路径；256 px PNG 和文档 PNG 保留常规 Alpha。此兼容处理可能让其他绘制路径的半透明边缘略暗，需在不同 Windows/DPI 下继续验证。
+导出采用预乘 Alpha 的分级缩放，16–64 px 最后一级使用高质量双线性过滤，其余使用高质量双三次过滤。全部 15 个尺寸使用常规（非预乘）Alpha 的 PNG 图层，避免小尺寸 DIB 在不同 Shell 绘制路径中的透明度差异。导出后不再对 RGB 预乘，保留抗锯齿边缘的颜色。
 
-关于页使用 256 px PNG 帧，避免使用经过 Shell 兼容调整的小图层。
+关于页使用 256 px PNG 帧。
 
 ## 构建验证与旧图标
 
 `tools/verify-app-icon.ps1 -Executable <EXE路径>` 将嵌入的 15 个图层逐字节与当前 ICO 比较；打包时自动检查，不一致即中止。
 
-EXE 资源正确但 Explorer 显示旧图标时，可运行 `tools/Refresh-App-Icon.ps1 -Executable <EXE路径>`。发布包内可直接运行 `Refresh-App-Icon.ps1`。脚本只通知该文件及所在目录发生变化，不删除全局缓存、不重启 Explorer；系统仍可能延迟刷新，可用新目录中的发布包排除旧路径缓存。旧程序文件本身不会因刷新而变为新版。
+安装完成后自动通知 Shell 刷新应用 EXE、所在目录及标准快捷方式的图标。EXE 资源正确但 Explorer 显示旧图标时，也可运行 `tools/Refresh-App-Icon.ps1 -Executable <EXE路径>`。发布包内可直接运行 `Refresh-App-Icon.ps1`。脚本只通知该文件及所在目录发生变化，不删除全局缓存、不重启 Explorer；系统仍可能延迟刷新，可用新目录中的发布包排除旧路径缓存。旧程序文件本身不会因刷新而变为新版。
 
 ## 程序内使用
 

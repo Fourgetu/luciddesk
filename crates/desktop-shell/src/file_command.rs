@@ -87,13 +87,19 @@ fn paste_into_item(owner: HWND, item: &IShellItem) -> Result<bool> {
 /// Starts a native file drag; Explorer determines destination copy/move semantics.
 /// # Errors
 /// Returns errors creating the Shell data object or starting the drag loop.
-pub fn drag_file_items(owner: HWND, selected: &[ShellIdentity]) -> Result<()> {
+pub fn drag_file_items(
+    owner: HWND,
+    selected: &[ShellIdentity],
+    image: Option<&crate::FileDragImage>,
+) -> Result<()> {
     use windows::Win32::System::{Com::IDataObject, Ole::*};
     if selected.is_empty() {
         return Ok(());
     }
     unsafe {
         let data: IDataObject = shell_items(selected)?.BindToHandler(None, &BHID_DataObject)?;
+        // A preview failure must not prevent the underlying file operation.
+        let _image_helper = image.and_then(|image| image.initialize(&data).ok());
         SHDoDragDrop(
             Some(owner),
             &data,
@@ -426,6 +432,32 @@ pub fn invoke_file_commands(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn drag_image_preserves_native_file_data() {
+        use super::*;
+        use windows::Win32::System::Com::{DVASPECT_CONTENT, FORMATETC, IDataObject, TYMED_HGLOBAL};
+        let _apartment = crate::ShellApartment::initialize_sta().unwrap();
+        let selected = [ShellIdentity::FileSystem {
+            path: std::env::current_exe().unwrap(), volume_id: None, file_id: None,
+        }];
+        unsafe {
+            let data: IDataObject = shell_items(&selected).unwrap().BindToHandler(None, &BHID_DataObject).unwrap();
+            let file_format = FORMATETC {
+                cfFormat: 15, // CF_HDROP
+                dwAspect: DVASPECT_CONTENT.0, lindex: -1,
+                tymed: TYMED_HGLOBAL.0 as u32, ..Default::default()
+            };
+            data.QueryGetData(&file_format).ok().unwrap();
+            let image = crate::FileDragImage {
+                width: 2, height: 2, pixels: [0, 0, 255, 255].repeat(4),
+                hotspot: windows::Win32::Foundation::POINT { x: 1, y: 1 },
+            };
+            let _helper = image.initialize(&data).unwrap();
+            data.QueryGetData(&file_format).ok().expect("Custom image must preserve file-drop formats");
+            assert_eq!(crate::drag_shell_identities(&data).unwrap(), selected);
+        }
+    }
+
     #[test]
     fn location_command_preserves_shell_ids_and_requires_a_single_filesystem_item() {
         use super::*;

@@ -1223,3 +1223,6 @@ startup-policy-disabled = システムポリシーによって無効になって
 startup-policy-enabled = システムポリシーによって有効になっています。
 startup-working = 起動状態を確認または変更しています…
 startup-package-invalid = MSIX のパッケージ ID またはマーカーが無効です。起動設定は変更されていません。
+
+title-emoji-rendering = カラーアイコン表示
+title-emoji-rendering-description = すべてのパネルとタブのタイトルにすぐに適用されます。
