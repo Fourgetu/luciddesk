@@ -2,17 +2,27 @@
 
 [简体中文](CHANGELOG.md) · English
 
-Current version: **0.17.0**. Features and fixes by release.
+Current version: **0.18.0**. Features and fixes by release.
 
 Exit the app before upgrading a portable installation and preserve its `data` folder. See the [portable guide](docs/portable.md) (Chinese).
 
 ## Unreleased
 
+## 0.18.0 · 2026-10-03
+
+### feat
+
+- Support EXE and MSI installers. Releases include EXE, standard ZIP and portable ZIP by default; MSI can be built from source when needed. Uninstall the previous installer edition and keep settings before switching formats.
+
 ### changed
 
-- Support EXE and MSI installers, defaulting to EXE, with an option to build both. Uninstall the previous installer edition and keep settings before switching formats.
-- Upgrade build tools to Rust 1.99.0 and Inno Setup 7.1.0 x64, and update CI checkout and artifact actions.
 - Adjust app icon panel spacing and proportions to form an overall square silhouette while preserving the gradient colors.
+- Upgrade build tools to Rust 1.99.0 and Inno Setup 7.1.0 x64, and update CI components.
+
+### perf
+
+- Use fast compression for EXE installers by default, with higher compression levels available. Reuse MSI installation-check components and compression caches to reduce repeated builds.
+- Build the app once for standard ZIP, portable ZIP and installers. Cache build dependencies and the Inno compiler in CI, and run language-resource and release-note checks in parallel.
 
 ## 0.17.0 · 2026-10-03
 
