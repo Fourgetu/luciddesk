@@ -3,13 +3,17 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 mod plan;
 pub mod transport;
-pub use plan::{Context, Operation, Plan};
+pub use plan::{Context, Operation, Plan, SettingValue, FolderColumn};
 pub const VERSION: u32 = 1;
 pub const MAX_FRAME: usize = 4 * 1024 * 1024;
 pub const COMMANDS: &[&str] = &[
     "status",
     "capabilities",
     "workspace.get",
+    "settings.get",
+    "monitor.list",
+    "folder.get",
+    "search.get",
     "pane.list",
     "pane.get",
     "item.list",
@@ -45,8 +49,8 @@ impl Request {
         if !COMMANDS.contains(&self.command.as_str()) {
             return Err("unsupported command");
         }
-        if matches!(self.command.as_str(), "pane.get" | "request.get") != self.id.is_some() {
-            return Err("--id is required for pane get or request get");
+        if matches!(self.command.as_str(), "pane.get" | "folder.get" | "search.get" | "request.get") != self.id.is_some() {
+            return Err("--id is required for pane get, folder get, search get or request get");
         }
         if self.command != "item.list" && (self.pane.is_some() || self.unassigned) {
             return Err("item filters require item list");
@@ -74,7 +78,7 @@ impl Request {
         {
             return Err("invalid query ID");
         }
-        let panel_id = self.id.as_ref().filter(|_| self.command == "pane.get");
+        let panel_id = self.id.as_ref().filter(|_| matches!(self.command.as_str(), "pane.get" | "folder.get" | "search.get"));
         for id in [panel_id, self.pane.as_ref()].into_iter().flatten() {
             if id
                 .parse::<u64>()

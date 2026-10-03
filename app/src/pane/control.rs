@@ -1,5 +1,10 @@
 //! CLI dispatcher. Requests use a dedicated message, not the maintenance wake.
 mod plans;
+mod settings;
+mod geometry;
+mod tab_plan;
+mod folders;
+mod transient;
 use super::*;
 use luciddesk_api::{Request, Response};
 use serde_json::json;
@@ -21,7 +26,7 @@ struct Snapshot {
     instance: String,
     item_ids: HashMap<String, String>,
     next_item: u64,
-    seen: Option<(Workspace, u64, String)>,
+    seen: Option<(Workspace, u64, String, String)>,
     version: u64,
     plans: plans::Plans,
 }
@@ -55,10 +60,12 @@ impl Snapshot {
                 );
             }
         }
+        let monitors = luciddesk_window::enumerate_monitors();
         let observed = (
             state.workspace.clone(),
             state.store.change_count(),
-            format!("{:?}", luciddesk_window::enumerate_monitors()),
+            format!("{monitors:?}"),
+            transient::fingerprint(state),
         );
         if self.seen.as_ref() != Some(&observed) {
             self.version += 1;
@@ -76,14 +83,33 @@ impl Snapshot {
             request.command.as_str(),
             "plan.preview" | "plan.apply" | "request.get"
         ) {
-            return self.plans.handle(state, &base, &self.item_ids, request);
+            return self.plans.handle(state, &base, &self.item_ids, request, &monitors);
         }
         let data = match request.command.as_str() {
+            "monitor.list" => geometry::monitors(&monitors),
+            "search.get" => {
+                let id=PanelId::new(request.id.as_ref().unwrap().parse().unwrap());
+                match transient::search_snapshot(state,id,true) {Ok(value)=>value,Err(error)=>return Response::failure(&request.request_id,"CAPABILITY_UNAVAILABLE",error)}
+            }
+
+            "folder.get" => {
+                let id=PanelId::new(request.id.as_ref().unwrap().parse().unwrap());
+                match folders::query(state,id) {Ok(value)=>value,Err(error)=>return Response::failure(&request.request_id,"NOT_FOUND",error)}
+            }
+
+            "settings.get" => {
+                let values = match state.store.settings() {
+                    Ok(values) => values,
+                    Err(error) => return Response::failure(&request.request_id, "CAPABILITY_UNAVAILABLE", error.to_string()),
+                };
+                let values = settings::values(values);
+                json!({"scope":"application_config","values":values,"runtime":settings::runtime(state)})
+            }
             "status" => {
                 json!({"application_version":env!("CARGO_PKG_VERSION"), "data_dir":directory, "desktop_connected":state.session.as_ref().is_some_and(hybrid::is_alive), "read_only":false})
             }
             "capabilities" => {
-                json!({"commands":luciddesk_api::COMMANDS,"protocol_version":1,"max_frame_bytes":luciddesk_api::MAX_FRAME,"writes":true,"plans":true,"concurrency_tokens":true,"plan_operations":["pane.create","pane.update","pane.remove","item.assign","item.release","item.reorder"],"pane_geometry":false,"item_ids":"opaque-instance-scoped","schema_version":1})
+                json!({"commands":luciddesk_api::COMMANDS,"protocol_version":1,"max_frame_bytes":luciddesk_api::MAX_FRAME,"writes":true,"plans":true,"concurrency_tokens":true,"plan_operations":["folder.navigate","folder.back","folder.home","search.query","search.refresh","search.more","folder.create","folder.update","tab.merge","tab.select","tab.reorder","tab.detach","pane.geometry","settings.update","pane.create","pane.update","pane.remove","item.assign","item.release","item.reorder"],"pane_geometry":true,"item_ids":"opaque-instance-scoped","schema_version":1})
             }
             command => {
                 let pane_values: Vec<_> = state.workspace.panels().iter().map(|panel| {
@@ -91,7 +117,7 @@ impl Snapshot {
                         .or_else(|| state.workspace.tab_group(panel.id()).and_then(|g| state.views.iter().find(|v| v.id == g.active)).map(|v| v.model.borrow().collapsed));
                     json!({"id":panel.id().get().to_string(),"title":panel.title(),
                         "kind":if panel.is_search(){"search"} else if panel.folder().is_some(){"folder"} else {"desktop"},
-                        "folder_path":panel.folder(),"locked":panel.locked(),"auto_hide":panel.auto_hide(),
+                        "geometry":geometry::query(state,panel,&monitors),"window_bounds_px":geometry::window_bounds(state,panel.id()),"folder_path":panel.folder(),"locked":panel.locked(),"auto_hide":panel.auto_hide(),
                         "manual_collapsed":panel.collapsed(),"effective_collapsed":effective,
                         "list_view":panel.list_view(),"always_on_top":panel.always_on_top()})
                 }).collect();
@@ -238,11 +264,41 @@ fn start_at(
                             let previous = state.borrow().store.change_count();
                             let before = (pending.request.command == "plan.apply")
                                 .then(|| state.borrow().workspace.clone());
-                            let response =
+                            let mut response =
                                 snapshot.respond(&mut state.borrow_mut(), &pending.request);
-                            if state.borrow().store.change_count() != previous {
+                            if pending.request.command=="plan.apply" {
+                                if let Some(action)=snapshot.plans.take_runtime_action(&response) {
+                                    let prior=transient::fingerprint(&state.borrow());
+                                    let result=transient::execute(&state,action);
+                                    response.data.as_mut().unwrap()["changed"]=json!(prior!=transient::fingerprint(&state.borrow()));
+                                    match result {
+                                        Ok(value)=>{
+                                            response.data.as_mut().unwrap()["runtime_result"]=value;
+                                            snapshot.plans.presentation_result(&mut response,Ok(()));
+                                        }
+                                        Err(error)=>snapshot.plans.presentation_result(&mut response,Err(error)),
+                                    }
+                                }
+                            }
+                            if state.borrow().store.change_count() != previous
+                                || response.data.as_ref().is_some_and(|data| data["scope"] == "settings" && data["presentation_status"] == "pending")
+                            {
                                 if let Some(before) = &before {
-                                    present(&state, before);
+                                    if response.data.as_ref().is_some_and(|data| data["scope"] == "settings") {
+                                        let result = settings::present(&state);
+                                        if let Err(error) = &result {
+                                            crate::diagnostics::log(crate::diagnostics::Level::Error, "cli.settings", error);
+                                        }
+                                        snapshot.plans.presentation_result(&mut response, result);
+                                    } else {
+                                        let view_result = present(&state, before);
+                                        let geometry_result = geometry::present(&state, before);
+                                        let result = view_result.and(geometry_result);
+                                        if let Err(error) = &result {
+                                            crate::diagnostics::log(crate::diagnostics::Level::Error, "cli.presentation", error);
+                                        }
+                                        snapshot.plans.presentation_result(&mut response, result);
+                                    }
                                 }
                             }
                             let _ = pending.reply.send(response);
@@ -290,14 +346,20 @@ mod tests {
         };
         for command in luciddesk_api::COMMANDS
             .iter()
-            .filter(|c| !matches!(**c, "plan.preview" | "plan.apply" | "request.get"))
+            .filter(|c| !matches!(**c, "plan.preview" | "plan.apply" | "request.get" | "folder.get" | "search.get"))
         {
             request.command = (*command).into();
             request.id = (*command == "pane.get").then(|| "1".into());
             assert!(snapshot.respond(&mut state, &request).ok, "{command}");
         }
-        request.command = "status".into();
+        request.command = "settings.get".into();
         request.id = None;
+        let settings = snapshot.respond(&mut state, &request).data.unwrap();
+        assert_eq!(settings["scope"], "application_config");
+        assert_eq!(settings["values"]["diagnostics.level"], "error");
+        assert!(settings["values"]["search.enabled"].is_boolean());
+        assert!(settings["values"]["panel_defaults.grid_scale"].is_number());
+        request.command = "status".into();
         request.protocol_version = 2;
         assert_eq!(snapshot.respond(&mut state, &request).exit_code(), 10);
         request.protocol_version = 1;
@@ -316,6 +378,35 @@ mod tests {
 mod integration_tests {
     use super::*;
     #[test]
+    fn committed_tab_selection_reuses_window_and_detach_restores_cached_content() {
+        let _sta=luciddesk_shell::ShellApartment::initialize_sta().unwrap();
+        let app=super::super::tests::test_state();
+        let state=Rc::new(RefCell::new(app));
+        create_view(&state,PanelId::new(1)).unwrap();
+        create_view(&state,PanelId::new(2)).unwrap();
+        let hwnd=state.borrow().views.iter().find(|v|v.id==PanelId::new(1)).unwrap().window.hwnd();
+        let before=state.borrow().workspace.clone();
+        tab_plan::apply(&mut state.borrow_mut().workspace,&luciddesk_api::Operation::TabMerge{pane_id:"2".into(),into_pane_id:"1".into()}).unwrap();
+        present(&state,&before).unwrap();
+        assert_eq!(state.borrow().views.len(),1);
+        state.borrow().views[0].model.borrow_mut().collapsed=true;
+        let before=state.borrow().workspace.clone();
+        tab_plan::apply(&mut state.borrow_mut().workspace,&luciddesk_api::Operation::TabSelect{pane_id:"2".into()}).unwrap();
+        let count=state.borrow().store.change_count();
+        present(&state,&before).unwrap();
+        assert_eq!(state.borrow().store.change_count(),count);
+        assert_eq!(state.borrow().views[0].window.hwnd(),hwnd);
+        assert_eq!(state.borrow().views[0].id,PanelId::new(2));
+        assert!(state.borrow().views[0].model.borrow().collapsed);
+        let before=state.borrow().workspace.clone();
+        tab_plan::apply(&mut state.borrow_mut().workspace,&luciddesk_api::Operation::TabDetach{pane_id:"1".into()}).unwrap();
+        present(&state,&before).unwrap();
+        assert_eq!(state.borrow().views.len(),2);
+        assert!(state.borrow().views.iter().all(|v|v.model.borrow().tabs.is_empty()));
+        for view in &state.borrow().views {window::prepare_close(view.window.hwnd().cast());}
+    }
+
+    #[test]
     fn presentation_removes_windows_without_resetting_transient_collapse() {
         let _sta=luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let mut app=super::super::tests::test_state();
@@ -324,12 +415,12 @@ mod integration_tests {
         state.borrow().views[0].model.borrow_mut().collapsed=true;
         let before=state.borrow().workspace.clone();
         state.borrow_mut().workspace.panel_mut(PanelId::new(1)).unwrap().set_title("renamed");
-        present(&state,&before);
+        present(&state,&before).unwrap();
         assert!(state.borrow().views.iter().find(|v|v.id==PanelId::new(1)).unwrap().model.borrow().collapsed);
         let before=state.borrow().workspace.clone();
         let hwnd=state.borrow().views.iter().find(|v|v.id==PanelId::new(1)).unwrap().window.hwnd();
         state.borrow_mut().workspace.remove_panel(PanelId::new(1));
-        present(&state,&before);
+        present(&state,&before).unwrap();
         assert!(state.borrow().views.iter().all(|v|v.id!=PanelId::new(1)));
         assert_eq!(unsafe{IsWindow(hwnd.cast())},0);
     }
@@ -394,7 +485,21 @@ mod integration_tests {
 }
 
 /// Presentation follows durable state. Failures never turn a committed plan into a retryable write.
-fn present(state: &Rc<RefCell<PaneApp>>, before: &Workspace) {
+fn present(state: &Rc<RefCell<PaneApp>>, before: &Workspace) -> Result<(), String> {
+    let mut errors = Vec::new();
+    let switches: Vec<_> = {
+        let s=state.borrow();
+        s.workspace.tab_groups().iter().filter_map(|g| {
+            if s.views.iter().any(|v|v.id==g.active) {return None;}
+            s.views.iter().find(|v|g.members.contains(&v.id)).map(|v|(v.id,g.active))
+        }).collect()
+    };
+    for (from,to) in switches {
+        if let Err(error)=tabs::present_selection(state,from,to) {
+            errors.push(error);
+        }
+    }
+
     // Destroy outside the RefCell borrow: native teardown may pump callbacks.
     let removed = {
         let mut s = state.borrow_mut();
@@ -407,13 +512,21 @@ fn present(state: &Rc<RefCell<PaneApp>>, before: &Workspace) {
                 let hwnd = view.window.hwnd().cast();
                 window::prepare_close(hwnd);
                 hybrid::unregister_drop(&mut s, hwnd);
-                s.tab_models.remove(&id);
-                s.folders.remove(&id);
+                if s.workspace.panel(id).is_some() {
+                    s.tab_models.insert(id, view.model.borrow().clone());
+                    if let Some(source)=s.folders.get(&id) {source.set_active(false);}
+                } else {
+                    s.tab_models.remove(&id);
+                    s.folders.remove(&id);
+                }
                 removed.push(view);
             } else {
                 at += 1;
             }
         }
+        let live: std::collections::HashSet<_> = s.workspace.panels().iter().map(Panel::id).collect();
+        s.tab_models.retain(|id,_| live.contains(id));
+        s.folders.retain(|id,_| live.contains(id));
         removed
     };
     drop(removed);
@@ -423,7 +536,7 @@ fn present(state: &Rc<RefCell<PaneApp>>, before: &Workspace) {
             .panels()
             .iter()
             .filter(|p| {
-                p.supports_tabs()
+                !p.is_search()
                     && s.workspace.tab_visible(p.id())
                     && !s.views.iter().any(|v| v.id == p.id())
             })
@@ -432,10 +545,16 @@ fn present(state: &Rc<RefCell<PaneApp>>, before: &Workspace) {
     };
     for id in missing {
         if let Err(error) = create_view(state, id) {
-            crate::diagnostics::log(crate::diagnostics::Level::Error, "cli.presentation", &error);
+            errors.push(error);
+        } else {
+            tabs::restore_cached_model(&mut state.borrow_mut(),id);
         }
     }
     let mut s = state.borrow_mut();
+    let folder_ids: Vec<_> = s.workspace.panels().iter().filter(|p|p.folder().is_some()).map(Panel::id).collect();
+    for id in folder_ids {
+        if let Err(error)=folder::apply_saved_preferences(&mut s,id) {errors.push(error);}
+    }
     for view in &s.views {
         if let Some(panel) = s.workspace.panel(view.id) {
             {
@@ -466,7 +585,8 @@ fn present(state: &Rc<RefCell<PaneApp>>, before: &Workspace) {
     }
     refresh_views(&mut s);
     if let Err(error) = hybrid::sync(&mut s) {
-        crate::diagnostics::log(crate::diagnostics::Level::Error, "cli.presentation", &error);
+        errors.push(error);
     }
     s.wake.notify();
+    if errors.is_empty() { Ok(()) } else { Err(errors.join("; ")) }
 }

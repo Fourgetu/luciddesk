@@ -18,6 +18,92 @@ pub struct Plan {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "op", deny_unknown_fields)]
 pub enum Operation {
+    #[serde(rename = "folder.navigate")]
+    FolderNavigate { pane_id: String, path: String },
+    #[serde(rename = "folder.back")]
+    FolderBack { pane_id: String },
+    #[serde(rename = "folder.home")]
+    FolderHome { pane_id: String },
+    #[serde(rename = "search.query")]
+    SearchQuery { pane_id: String, query: String },
+    #[serde(rename = "search.refresh")]
+    SearchRefresh { pane_id: String },
+    #[serde(rename = "search.more")]
+    SearchMore { pane_id: String },
+    #[serde(rename = "folder.create")]
+    FolderCreate {
+        #[serde(rename = "ref")]
+        reference: String,
+        title: String,
+        path: String,
+    },
+    #[serde(rename = "folder.update")]
+    FolderUpdate {
+        pane_id: String,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "optional"
+        )]
+        path: Option<String>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "optional"
+        )]
+        list_view: Option<bool>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "optional"
+        )]
+        sort_column: Option<FolderColumn>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "optional"
+        )]
+        descending: Option<bool>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "optional"
+        )]
+        column_widths: Option<[f32; 4]>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "optional"
+        )]
+        visible_columns: Option<Vec<FolderColumn>>,
+    },
+    #[serde(rename = "tab.merge")]
+    TabMerge {
+        pane_id: String,
+        into_pane_id: String,
+    },
+    #[serde(rename = "tab.select")]
+    TabSelect { pane_id: String },
+    #[serde(rename = "tab.reorder")]
+    TabReorder {
+        pane_id: String,
+        pane_ids: Vec<String>,
+    },
+    #[serde(rename = "tab.detach")]
+    TabDetach { pane_id: String },
+    #[serde(rename = "pane.geometry")]
+    Geometry {
+        pane_id: String,
+        monitor_id: String,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+    },
+    #[serde(rename = "settings.update")]
+    SettingsUpdate {
+        values: std::collections::BTreeMap<String, SettingValue>,
+    },
     #[serde(rename = "pane.create")]
     Create {
         #[serde(rename = "ref")]
@@ -81,6 +167,24 @@ pub enum Operation {
     },
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FolderColumn {
+    Name,
+    Modified,
+    Type,
+    Size,
+}
+
+/// JSON scalar settings preserve types and reject null, arrays and objects.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum SettingValue {
+    Boolean(bool),
+    Number(f64),
+    Text(String),
+}
+
 // Omission means unchanged; explicit null is invalid, never an implicit reset.
 fn optional<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
@@ -93,6 +197,17 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn setting_values_reject_null_and_structures() {
+        for raw in ["null", "[]", "{}"] {
+            let input =
+                format!(r#"{{"op":"settings.update","values":{{"search.enabled":{raw}}}}}"#);
+            assert!(serde_json::from_str::<Operation>(&input).is_err());
+        }
+        let input = r#"{"op":"settings.update","values":{"search.enabled":true,"panel_defaults.grid_scale":125,"language":"system"}}"#;
+        assert!(serde_json::from_str::<Operation>(input).is_ok());
+    }
+
     #[test]
     fn operations_reject_unknown_fields_and_preserve_string_ids() {
         let raw = r#"{"op":"pane.update","pane_id":"9007199254740993","title":"整理"}"#;

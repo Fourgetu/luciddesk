@@ -36,6 +36,14 @@ pub(super) fn select(
     from: PanelId,
     to: PanelId,
 ) -> Result<(), String> {
+    select_impl(state, from, to, true)
+}
+
+/// Reconcile a committed CLI selection without saving the same change again.
+pub(super) fn present_selection(state: &Rc<RefCell<PaneApp>>, from: PanelId, to: PanelId) -> Result<(), String> {
+    select_impl(state, from, to, false)
+}
+fn select_impl(state: &Rc<RefCell<PaneApp>>, from: PanelId, to: PanelId, persist: bool) -> Result<(), String> {
     if from == to {
         return Ok(());
     }
@@ -61,19 +69,21 @@ pub(super) fn select(
         if let Some(source) = s.folders.get(&to) {
             source.set_active(false);
         }
-        s.workspace.sync_tab_windows();
-        let mut groups = s.workspace.tab_groups().to_vec();
-        groups
-            .iter_mut()
-            .find(|g| g.members.contains(&from))
-            .unwrap()
-            .active = to;
-        s.workspace
-            .set_tab_groups(groups)
-            .map_err(|e| e.to_string())?;
-        if let Err(error) = s.store.save_active_tab(from, to) {
-            s.workspace = previous;
-            return Err(error.to_string());
+        if persist {
+            s.workspace.sync_tab_windows();
+            let mut groups = s.workspace.tab_groups().to_vec();
+            groups
+                .iter_mut()
+                .find(|g| g.members.contains(&from))
+                .unwrap()
+                .active = to;
+            s.workspace
+                .set_tab_groups(groups)
+                .map_err(|e| e.to_string())?;
+            if let Err(error) = s.store.save_active_tab(from, to) {
+                s.workspace = previous;
+                return Err(error.to_string());
+            }
         }
         s.tab_models.remove(&to);
         let panel = s.workspace.panel(to).unwrap();
@@ -348,9 +358,21 @@ pub(super) fn detach(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), St
         return Err(error);
     }
     let mut s = state.borrow_mut();
+    restore_cached_model(&mut s, id);
+    if let Some(source) = s.folders.get(&id) {
+        source.set_active(true);
+    }
+    refresh_changed_views(&mut s, true);
+    s.wake.notify();
+    Ok(())
+}
+
+pub(super) fn restore_cached_model(s: &mut PaneApp, id: PanelId) {
     if let Some(mut cached) = s.tab_models.remove(&id) {
         let view = s.views.iter().find(|v| v.id == id).unwrap();
         let fresh = view.model.borrow();
+        cached.title = fresh.title.clone();
+        cached.list_view = fresh.list_view;
         cached.theme = fresh.theme;
         cached.dark = fresh.dark;
         cached.backdrop = fresh.backdrop;
@@ -371,12 +393,7 @@ pub(super) fn detach(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), St
         cached.pressed_button = None;
         *view.model.borrow_mut() = cached;
     }
-    if let Some(source) = s.folders.get(&id) {
-        source.set_active(true);
-    }
-    refresh_changed_views(&mut s, true);
-    s.wake.notify();
-    Ok(())
+    if let Some(view) = s.views.iter().find(|v|v.id==id) { decorate(&s.workspace,id,&mut view.model.borrow_mut()); }
 }
 
 fn take_view(s: &mut PaneApp, id: PanelId) -> Option<View> {

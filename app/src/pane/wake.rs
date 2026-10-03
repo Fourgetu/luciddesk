@@ -46,6 +46,14 @@ impl Wake {
         Ok(())
     }
 
+    /// Called only on the UI thread, outside any PaneApp borrow.
+    pub fn refresh_hotkeys(&self) -> bool {
+        let hwnd = self.0.lock().unwrap().0;
+        hwnd != 0 && unsafe {
+            windows_sys::Win32::UI::WindowsAndMessaging::SendMessageW(hwnd as _, super::runtime::REFRESH_HOTKEYS, 0, 0)
+        } == 1
+    }
+
     pub fn notify(&self) {
         let mut state = self.0.lock().unwrap();
         if state.0 != 0 && !state.1 {

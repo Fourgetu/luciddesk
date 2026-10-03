@@ -44,7 +44,7 @@ impl Layouts {
         self.next_check
     }
 }
-fn key(monitors: &[MonitorDescriptor]) -> String {
+pub(super) fn key(monitors: &[MonitorDescriptor]) -> String {
     let mut parts: Vec<_> = monitors
         .iter()
         .map(|m| format!("{}:{:?}:{}", m.id.as_str(), m.work_area, m.dpi))

@@ -12,8 +12,15 @@ pub(super) struct Prepared {
     diff: serde_json::Value,
     membership: bool,
     applied: bool,
+    settings: Option<std::collections::BTreeMap<String, luciddesk_storage::SettingValue>>,
+    settings_changed: bool,
+    layout: Option<(String, Vec<(PanelId, RectDip)>)>,
+    folders: Vec<(PanelId, luciddesk_storage::FolderPreferences)>,
+    folders_changed: bool,
+    runtime_action: Option<Operation>,
 }
 struct Receipt {
+    runtime_action: Option<Operation>,
     id: String,
     signature: String,
     response: Response,
@@ -133,7 +140,7 @@ fn release(workspace: &mut Workspace, moving: &[String]) -> Result<(), (String, 
     Ok(())
 }
 fn summary(workspace: &Workspace) -> serde_json::Value {
-    json!({"panes":workspace.panels().iter().map(|p|json!({"id":p.id().get().to_string(),"title":p.title(),"locked":p.locked(),"auto_hide":p.auto_hide(),"manual_collapsed":p.collapsed(),"always_on_top":p.always_on_top()})).collect::<Vec<_>>(),
+    json!({"tabs":workspace.tab_groups().iter().map(|g|json!({"active":g.active.get().to_string(),"members":g.members.iter().map(|id|id.get().to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"panes":workspace.panels().iter().map(|p|json!({"id":p.id().get().to_string(),"title":p.title(),"locked":p.locked(),"auto_hide":p.auto_hide(),"manual_collapsed":p.collapsed(),"always_on_top":p.always_on_top(),"folder_path":p.folder(),"list_view":p.list_view()})).collect::<Vec<_>>(),
         "placements":workspace.desktop_items().iter().map(|item|{
             let placement=match item.placement(){DesktopPlacement::Pane{pane_id,position}=>json!({"pane_id":pane_id.get().to_string(),"column":position.column,"row":position.row}),_=>serde_json::Value::Null};
             (item.identity().persistent_key(),placement)
@@ -141,8 +148,10 @@ fn summary(workspace: &Workspace) -> serde_json::Value {
 }
 fn prepare(
     workspace: &Workspace,
+    store: &WorkspaceStore,
     plan: &Plan,
     ids: &HashMap<String, String>,
+    monitors: &[luciddesk_window::MonitorDescriptor],
 ) -> Result<Prepared, (String, String)> {
     if plan.protocol_version != 1 {
         return Err(("PROTOCOL_MISMATCH".into(), "plan protocol must be 1".into()));
@@ -150,9 +159,49 @@ fn prepare(
     if plan.operations.is_empty() || plan.operations.len() > 256 {
         return Err(invalid("expected 1..256 operations"));
     }
+    if plan.operations.iter().any(super::transient::is_runtime) {
+        if plan.operations.len()!=1 {return Err(invalid("runtime operations must be submitted in separate plans"));}
+        let action=super::transient::prepare(workspace,&plan.operations[0]).map_err(invalid)?;
+        return Ok(Prepared {
+            token:luciddesk_api::request_id(),base:plan.base.clone(),expires:Instant::now()+TTL,
+            next:workspace.clone(),refs:HashMap::new(),diff:json!({"runtime_action":action,"persistence":"none"}),membership:false,applied:false,
+            settings:None,settings_changed:false,layout:None,folders:Vec::new(),folders_changed:false,runtime_action:Some(action),
+        });
+    }
+    if plan.operations.iter().any(|op| matches!(op, Operation::SettingsUpdate { .. })) {
+        let [Operation::SettingsUpdate { values }] = plan.operations.as_slice() else {
+            return Err(invalid("settings.update must be the only operation; batch fields in values"));
+        };
+        if values.is_empty() { return Err(invalid("settings update requires at least one field")); }
+        let updates = values.iter().map(|(key, value)| {
+            use luciddesk_api::SettingValue as Wire;
+            use luciddesk_storage::SettingValue as Stored;
+            (key.clone(), match value {
+                Wire::Boolean(v) => Stored::Boolean(*v),
+                Wire::Number(v) => Stored::Number(*v),
+                Wire::Text(v) => Stored::Text(v.clone()),
+            })
+        }).collect();
+        let before = store.settings().map_err(|e| invalid(e.to_string()))?;
+        let after = store.preview_settings(&updates).map_err(|e| invalid(e.to_string()))?;
+        return Ok(Prepared {
+            token: luciddesk_api::request_id(), base: plan.base.clone(), expires: Instant::now() + TTL,
+            next: workspace.clone(), refs: HashMap::new(), membership: false, applied: false,
+            settings_changed: before != after,
+            diff: json!({"before":super::settings::values(before),"after":super::settings::values(after)}),
+            settings: Some(updates),
+            layout: None,
+            folders: Vec::new(),
+            folders_changed: false,
+            runtime_action: None,
+        });
+    }
     let mut next = workspace.clone();
     let mut refs = HashMap::new();
     let mut membership = false;
+    let mut geometry = HashMap::new();
+    let mut folders: HashMap<PanelId,luciddesk_storage::FolderPreferences> = HashMap::new();
+    let mut folders_before = serde_json::Map::new();
     let mut next_id = workspace
         .panels()
         .iter()
@@ -161,7 +210,48 @@ fn prepare(
         .unwrap_or(0);
     for operation in &plan.operations {
         match operation {
-            Operation::Create { reference, title } => {
+            Operation::FolderNavigate{..}|Operation::FolderBack{..}|Operation::FolderHome{..}|Operation::SearchQuery{..}|Operation::SearchRefresh{..}|Operation::SearchMore{..} => unreachable!("handled above"),
+            Operation::SettingsUpdate { .. } => unreachable!("handled above"),
+            Operation::FolderUpdate { pane_id, path, list_view, sort_column, descending, column_widths, visible_columns } => {
+                let target=id(pane_id)?;
+                let panel=next.panel(target).filter(|p|p.folder().is_some()).ok_or_else(||("NOT_FOUND".into(),"folder panel does not exist".into()))?;
+                if panel.locked(){return Err(("PANE_LOCKED".into(),"explicitly unlock the panel first".into()));}
+                if path.is_none() && list_view.is_none() && sort_column.is_none() && descending.is_none() && column_widths.is_none() && visible_columns.is_none(){return Err(invalid("folder update requires at least one field"));}
+                if !folders.contains_key(&target) {
+                    let original=store.folder_preferences(target).map_err(|e|invalid(e.to_string()))?;
+                    folders_before.insert(pane_id.clone(),super::folders::preferences(&original));
+                    folders.insert(target,original);
+                }
+                let settings=folders.get_mut(&target).unwrap();
+                if let Some(column)=sort_column {settings.sort_column=super::folders::sort(*column);}
+                if let Some(value)=descending {settings.descending=*value;}
+                if let Some(widths)=column_widths {settings.column_widths=Some(*widths);}
+                if let Some(columns)=visible_columns {settings.visible_columns=super::folders::mask(columns).map_err(invalid)?;}
+                settings.validate().map_err(|e|invalid(e.to_string()))?;
+                let panel=next.panel_mut(target).unwrap();
+                if let Some(path)=path {panel.set_folder(Some(super::folders::path(path).map_err(invalid)?));}
+                if let Some(value)=list_view {panel.set_list_view(*value);}
+            }
+
+            Operation::TabMerge { .. } | Operation::TabSelect { .. } | Operation::TabReorder { .. } | Operation::TabDetach { .. } => {
+                super::tab_plan::apply(&mut next, operation).map_err(invalid)?;
+            }
+
+            Operation::Geometry { pane_id, monitor_id, x, y, width, height } => {
+                let target = id(pane_id)?;
+                let panel = next.panel(target).ok_or_else(|| ("NOT_FOUND".into(), "panel does not exist".into()))?;
+                if panel.locked() { return Err(("PANE_LOCKED".into(), "explicitly unlock the panel first".into())); }
+                let monitor = monitors.iter().find(|m| m.id.as_str() == monitor_id)
+                    .ok_or_else(|| invalid("unknown monitor ID; query monitor list again"))?;
+                let (stored, physical) = super::geometry::convert(monitor, RectDip { x:*x,y:*y,width:*width,height:*height }).map_err(invalid)?;
+                let members = next.tab_group(target).map_or_else(||vec![target],|g|g.members.clone());
+                for member in members {
+                    next.panel_mut(member).unwrap().set_rect(stored);
+                    geometry.insert(member, physical);
+                }
+            }
+
+            Operation::Create { reference, title } | Operation::FolderCreate { reference, title, .. } => {
                 if reference.is_empty() || reference.len() > 128 || refs.contains_key(reference) {
                     return Err(invalid("invalid or duplicate panel ref"));
                 }
@@ -173,11 +263,17 @@ fn prepare(
                     .filter(|n| *n <= i64::MAX as u64)
                     .ok_or_else(|| invalid("panel ID exhausted"))?;
                 let number = next_id;
-                let panel = Panel::new(
+                let mut panel = Panel::new(
                     PanelId::new(number),
                     title,
                     display_layout::new_pane(&next, false),
                 );
+                if let Operation::FolderCreate { path, .. } = operation {
+                    panel.set_folder(Some(super::folders::path(path).map_err(invalid)?));
+                    let defaults=folder::Defaults::load(store).map_err(invalid)?;
+                    panel.set_list_view(defaults.list);
+                    folders.insert(panel.id(), luciddesk_storage::FolderPreferences { visible_columns:defaults.columns,..Default::default() });
+                }
                 next.add_panel(panel).map_err(|e| invalid(e.to_string()))?;
                 refs.insert(reference.clone(), number.to_string());
             }
@@ -193,8 +289,8 @@ fn prepare(
                 let panel = next
                     .panel(target)
                     .ok_or_else(|| ("NOT_FOUND".into(), "panel does not exist".into()))?;
-                if !panel.supports_tabs() {
-                    return Err(invalid("only desktop panels are currently supported"));
+                if panel.is_search() {
+                    return Err(invalid("search panel window options are controlled separately"));
                 }
                 if title.is_none()
                     && locked.is_none()
@@ -246,7 +342,9 @@ fn prepare(
                 release_items,
             } => {
                 let target = id(pane_id)?;
-                editable(&next, target)?;
+                let panel=next.panel(target).ok_or_else(||("NOT_FOUND".into(),"panel does not exist".into()))?;
+                if panel.is_search(){return Err(invalid("disable search through settings.update"));}
+                if panel.locked(){return Err(("PANE_LOCKED".into(),"panel is locked".into()));}
                 let members = ordered(&next, target);
                 if !members.is_empty() && !release_items {
                     return Err(invalid("panel is not empty; set release_items explicitly"));
@@ -327,24 +425,73 @@ fn prepare(
             }
         }
     }
+    if next.tab_groups() != workspace.tab_groups() {
+        let saved: HashMap<_,_> = store.monitor_layout(&display_layout::key(monitors)).map_err(|e|invalid(e.to_string()))?.into_iter().collect();
+        for group in next.tab_groups() {
+            let physical = geometry.get(&group.active).or_else(||saved.get(&group.active)).copied().unwrap_or_else(|| {
+                let r=next.panel(group.active).unwrap().rect();
+                let scale=monitors.first().map_or(1.0,|m|m.dpi as f32/96.0);
+                RectDip{x:r.x*scale,y:r.y*scale,width:r.width*scale,height:r.height*scale}
+            });
+            for id in &group.members {geometry.insert(*id,physical);}
+        }
+    }
+    let mut diff = json!({"before":before,"after":after});
+    folders.retain(|id,_| next.panel(*id).is_some());
+    let folders_after: serde_json::Map<_,_> = folders.iter().map(|(id,p)|(id.get().to_string(),super::folders::preferences(p))).collect();
+    let folders_changed = folders_before != folders_after;
+    if !folders.is_empty() {diff["folder_preferences"]=json!({"before":folders_before,"after":folders_after});}
+
+    let layout = if geometry.is_empty() { None } else {
+        geometry.retain(|id,_| next.panel(*id).is_some());
+        diff["geometry"] = json!(geometry.iter().map(|(id,r)|(id.get().to_string(),super::geometry::describe(*r,monitors))).collect::<std::collections::BTreeMap<_,_>>());
+        let topology = display_layout::key(monitors);
+        let mut positions: HashMap<_,_> = store.monitor_layout(&topology).map_err(|e|invalid(e.to_string()))?.into_iter().collect();
+        positions.retain(|id,_|next.panel(*id).is_some());
+        positions.extend(geometry);
+        Some((topology,positions.into_iter().collect()))
+    };
     Ok(Prepared {
         token: luciddesk_api::request_id(),
         base: plan.base.clone(),
         expires: Instant::now() + TTL,
         next,
         refs,
-        diff: json!({"before":before,"after":after}),
+        diff,
         membership,
         applied: false,
+        settings: None,
+        settings_changed: false,
+        layout,
+        folders: folders.into_iter().collect(),
+        folders_changed,
+        runtime_action: None,
     })
 }
 impl Plans {
+    pub(super) fn take_runtime_action(&mut self,response:&Response)->Option<Operation> {
+        self.receipts.iter_mut().find(|r|r.id==response.request_id)?.runtime_action.take()
+    }
+    pub(super) fn presentation_result(&mut self, response: &mut Response, result: Result<(), String>) {
+        let Some(data) = response.data.as_mut() else { return; };
+        match result {
+            Ok(()) => data["presentation_status"] = json!("applied"),
+            Err(error) => {
+                data["presentation_status"] = json!("failed");
+                data["presentation_error"] = json!(error);
+            }
+        }
+        if let Some(receipt) = self.receipts.iter_mut().find(|r| r.id == response.request_id) {
+            receipt.response = response.clone();
+        }
+    }
     pub(super) fn handle(
         &mut self,
         state: &mut PaneApp,
         context: &Context,
         ids: &HashMap<String, String>,
         request: &Request,
+        monitors: &[luciddesk_window::MonitorDescriptor],
     ) -> Response {
         let fail = |code: &str, msg: &str| Response::failure(&request.request_id, code, msg);
         let now = Instant::now();
@@ -360,13 +507,13 @@ impl Plans {
             if plan.base != *context {
                 return fail("CONFLICT", "workspace changed; query and preview again");
             }
-            match prepare(&state.workspace, plan, ids) {
+            match prepare(&state.workspace, &state.store, plan, ids, monitors) {
                 Err((code, message)) => fail(&code, &message),
                 Ok(plan) => {
                     let response = Response::success(
                         &request.request_id,
                         json!(context),
-                        json!({"plan_token":plan.token,"expires_in_seconds":300,"changed":plan.next!=state.workspace,"diff":plan.diff,"provisional_refs":plan.refs}),
+                        json!({"plan_token":plan.token,"expires_in_seconds":300,"changed":plan.runtime_action.is_some() || plan.settings_changed || plan.folders_changed || plan.next!=state.workspace,"diff":plan.diff,"provisional_refs":plan.refs}),
                     );
                     if serde_json::to_vec(&response)
                         .map_or(true, |bytes| bytes.len() > luciddesk_api::MAX_FRAME)
@@ -405,29 +552,42 @@ impl Plans {
             if plan.base != *context {
                 return fail("CONFLICT", "workspace changed; preview again");
             }
-            let changed = plan.next != state.workspace;
+            let changed = plan.runtime_action.is_some() || plan.settings_changed || plan.folders_changed || plan.next != state.workspace;
             if changed && plan.membership && !state.session.as_ref().is_some_and(hybrid::is_alive) {
                 return fail(
                     "CAPABILITY_UNAVAILABLE",
                     "desktop integration must be connected for item operations",
                 );
             }
-            if changed {
-                if let Err(error) = state.store.save_workspace(&plan.next) {
-                    return fail("PERSISTENCE_ERROR", &error.to_string());
+            if changed && plan.runtime_action.is_none() {
+                if let Some(updates) = &plan.settings {
+                    if let Err(error) = state.store.save_settings(updates) {
+                        return fail("PERSISTENCE_ERROR", &error.to_string());
+                    }
+                } else {
+                    if let Err(error) = state.store.save_workspace_with_folder_preferences(&plan.next, plan.layout.as_ref().map(|(key,entries)|(key.as_str(),entries.as_slice())), &plan.folders) {
+                        return fail("PERSISTENCE_ERROR", &error.to_string());
+                    }
+                    state.workspace = plan.next.clone();
+                    if let Some(runtime) = &mut state.runtime {
+                        runtime.layouts.positions.retain(|id,_|state.workspace.panel(*id).is_some());
+                    }
+                    if let (Some(runtime), Some((_,entries))) = (&mut state.runtime, &plan.layout) {
+                        runtime.layouts.positions.extend(entries.iter().copied());
+                    }
                 }
-                state.workspace = plan.next.clone();
             }
             plan.applied = true;
             let response = Response::success(
                 &request.request_id,
                 json!(context),
-                json!({"changed":changed,"commit_status":if changed{"committed"}else{"unchanged"},"presentation_status":if changed{"pending"}else{"applied"},"refs":plan.refs}),
+                json!({"changed":changed,"commit_status":if plan.runtime_action.is_some(){"not_persisted"}else if changed{"committed"}else{"unchanged"},"presentation_status":if changed || plan.settings.is_some(){"pending"}else{"applied"},"refs":plan.refs,"scope":if plan.runtime_action.is_some(){"runtime"}else if plan.settings.is_some(){"settings"}else{"workspace"}}),
             );
             if self.receipts.len() == 1024 {
                 self.receipts.pop_front();
             }
             self.receipts.push_back(Receipt {
+                runtime_action:plan.runtime_action.clone(),
                 id: request.request_id.clone(),
                 signature,
                 response: response.clone(),
@@ -476,6 +636,105 @@ mod tests {
         );
         req
     }
+    #[test]
+    fn folder_plan_preview_is_pure_updates_are_atomic_and_removal_keeps_files() {
+        let root=tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("keep.txt"),"keep").unwrap();
+        let mut state=super::super::super::tests::test_state();
+        state.store.save_workspace(&state.workspace).unwrap();
+        let mut snapshot=Snapshot::new();
+        let count=state.store.change_count();
+        let plan=preview(&mut snapshot,&mut state,json!([{"op":"folder.create","ref":"mapped","title":"Files","path":root.path()}]));
+        assert!(plan.ok,"{plan:?}");assert_eq!(state.store.change_count(),count);
+        let applied=snapshot.respond(&mut state,&apply(&plan));assert!(applied.ok,"{applied:?}");
+        let pane=applied.data.unwrap()["refs"]["mapped"].as_str().unwrap().to_owned();
+        let op=json!({"op":"folder.update","pane_id":pane,"sort_column":"modified","descending":true,"list_view":false,"visible_columns":["name","modified"],"column_widths":[0.4,0.2,0.2,0.2]});
+        let plan=preview(&mut snapshot,&mut state,json!([op.clone()]));
+        assert!(snapshot.respond(&mut state,&apply(&plan)).ok);
+        let count=state.store.change_count();
+        let noop=preview(&mut snapshot,&mut state,json!([op]));
+        assert!(!noop.data.as_ref().unwrap()["changed"].as_bool().unwrap());
+        assert!(snapshot.respond(&mut state,&apply(&noop)).ok);assert_eq!(state.store.change_count(),count);
+        let bad=preview(&mut snapshot,&mut state,json!([{"op":"pane.update","pane_id":pane,"title":"must rollback"},{"op":"folder.update","pane_id":pane,"visible_columns":["size"]}]));
+        assert!(!bad.ok);assert_eq!(state.workspace.panel(id(&pane).unwrap()).unwrap().title(),"Files");
+        let mut query=request("folder.get");query.id=Some(pane.clone());
+        let result=snapshot.respond(&mut state,&query);assert!(result.ok);
+        assert_eq!(result.data.unwrap()["preferences"]["sort_column"],"modified");
+        let removed=preview(&mut snapshot,&mut state,json!([{"op":"pane.remove","pane_id":pane}]));
+        assert!(snapshot.respond(&mut state,&apply(&removed)).ok);
+        assert_eq!(std::fs::read_to_string(root.path().join("keep.txt")).unwrap(),"keep");
+    }
+
+    #[test]
+    fn geometry_plan_persists_layout_atomically_and_rejects_locked_or_unknown_monitors() {
+        let mut state = super::super::super::tests::test_state();
+        state.store.save_workspace(&state.workspace).unwrap();
+        let mut snapshot = Snapshot::new();
+        let monitors = luciddesk_window::enumerate_monitors();
+        let monitor = monitors.first().expect("test desktop monitor");
+        let op = json!({"op":"pane.geometry","pane_id":"1","monitor_id":monitor.id.as_str(),"x":30,"y":40,"width":400,"height":240});
+        let count = state.store.change_count();
+        let plan = preview(&mut snapshot,&mut state,json!([op.clone()]));
+        assert!(plan.ok, "{plan:?}");
+        assert_eq!(state.store.change_count(),count);
+        let response=snapshot.respond(&mut state,&apply(&plan));
+        assert!(response.ok, "{response:?}");
+        let layout=state.store.monitor_layout(&display_layout::key(&monitors)).unwrap();
+        let px=layout.iter().find(|(id,_)|*id==PanelId::new(1)).unwrap().1;
+        let scale=monitor.dpi as f32/96.0;
+        assert_eq!(px.x,monitor.work_area.x as f32+(30.0*scale).round());
+        assert_eq!(state.store.load_workspace().unwrap().panel(PanelId::new(1)).unwrap().rect(),state.workspace.panel(PanelId::new(1)).unwrap().rect());
+        let count=state.store.change_count();
+        let noop=preview(&mut snapshot,&mut state,json!([op.clone()]));
+        assert!(snapshot.respond(&mut state,&apply(&noop)).ok);
+        assert_eq!(state.store.change_count(),count);
+        let mut invalid=op.clone();invalid["monitor_id"]=json!("absent");
+        assert!(!preview(&mut snapshot,&mut state,json!([invalid])).ok);
+        state.workspace.panel_mut(PanelId::new(1)).unwrap().set_locked(true);
+        let blocked=preview(&mut snapshot,&mut state,json!([op]));
+        assert_eq!(blocked.error.unwrap().code,"PANE_LOCKED");
+    }
+
+    #[test]
+    fn settings_plan_validates_before_writing_and_retains_presentation_receipt() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = super::super::super::tests::test_state();
+        state.store = WorkspaceStore::open(&dir.path().join("workspace.db")).unwrap();
+        let mut snapshot = Snapshot::new();
+        let count = state.store.change_count();
+        let invalid = preview(&mut snapshot, &mut state, json!([
+            {"op":"settings.update","values":{"diagnostics.level":"trace","panel_defaults.grid_scale":0}}
+        ]));
+        assert!(!invalid.ok);
+        let mixed = preview(&mut snapshot, &mut state, json!([
+            {"op":"settings.update","values":{"diagnostics.level":"debug"}},
+            {"op":"pane.create","ref":"x","title":"x"}
+        ]));
+        assert!(!mixed.ok);
+        let plan = preview(&mut snapshot, &mut state, json!([
+            {"op":"settings.update","values":{"diagnostics.level":"debug","panel_defaults.grid_scale":125}}
+        ]));
+        assert!(plan.ok);
+        assert_eq!(state.store.change_count(), count);
+        let req = apply(&plan);
+        let mut response = snapshot.respond(&mut state, &req);
+        assert!(response.ok);
+        assert_eq!(state.store.change_count(), count + 1);
+        assert_eq!(response.data.as_ref().unwrap()["presentation_status"], "pending");
+        snapshot.plans.presentation_result(&mut response, Err("injected unavailable shortcut".into()));
+        let retry = snapshot.respond(&mut state, &req);
+        assert_eq!(serde_json::to_value(retry).unwrap(), serde_json::to_value(response).unwrap());
+        assert_eq!(state.store.change_count(), count + 1);
+        let noop = preview(&mut snapshot, &mut state, json!([
+            {"op":"settings.update","values":{"diagnostics.level":"debug"}}
+        ]));
+        assert_eq!(noop.data.as_ref().unwrap()["changed"], false);
+        let response = snapshot.respond(&mut state, &apply(&noop));
+        assert!(response.ok);
+        assert_eq!(response.data.unwrap()["commit_status"], "unchanged");
+        assert_eq!(state.store.change_count(), count + 1);
+    }
+
     #[test]
     fn preview_is_pure_commit_is_idempotent_and_receipt_is_queryable() {
         let mut state = super::super::super::tests::test_state();
@@ -705,7 +964,7 @@ mod tests {
         let data = snapshot.respond(&mut state, &request("workspace.get"));
         let items = &data.data.as_ref().unwrap()["items"];
         let plan:Plan=serde_json::from_value(json!({"protocol_version":1,"base":data.context,"operations":[{"op":"pane.create","ref":"new","title":"new"},{"op":"item.assign","pane_ref":"new","item_ids":[items[0]["id"]]}]})).unwrap();
-        let prepared = prepare(&state.workspace, &plan, &snapshot.item_ids).unwrap();
+        let prepared = prepare(&state.workspace, &state.store, &plan, &snapshot.item_ids, &luciddesk_window::enumerate_monitors()).unwrap();
         assert_eq!(
             prepared.next.desktop_items()[2],
             original.desktop_items()[2]

@@ -1,6 +1,7 @@
 //! Compact search pane using the same composition backdrop as icon panes.
 #![allow(clippy::wildcard_imports, clippy::too_many_lines)]
 mod drawing;
+pub(super) mod control;
 mod tooltip;
 use drawing::Drawing;
 mod everything;
@@ -839,6 +840,8 @@ pub(super) fn create(
     let mut drawing: Option<Drawing> = None;
     let mut visibility = super::visibility::Transition::default();
     let mut state = Search::new();
+    let mailbox = Rc::new(RefCell::new(control::Mailbox::default()));
+    let control_mailbox = Rc::clone(&mailbox);
     let wake = state.wake.clone();
     let mut last_click: Option<(std::path::PathBuf, Instant)> = None;
     let mut move_origin: Option<super::snap::DragOrigin> = None;
@@ -868,9 +871,11 @@ pub(super) fn create(
             if visibility.message(hwnd, msg, wp, lp, drawing.as_ref().map(|d| &d.surface), |opacity| {
                 if let Some(editor) = input.borrow_mut().as_mut() { editor.opacity(opacity); }
             }) { return Some(0); }
+            if msg == control::MESSAGE {control::receive(hwnd,&mut state,&control_mailbox);return Some(0);}
             match msg {
                 WM_NCCALCSIZE | WM_ERASEBKGND => return Some(0),
                 WM_DESTROY => {
+                    control::remove(hwnd);
                     tooltip = None;
                     state.wake.unbind();
                     unsafe {
@@ -1453,6 +1458,7 @@ pub(super) fn create(
         ShowWindow(hwnd, SW_SHOWNOACTIVATE);
         ShowWindow(edit(hwnd), SW_SHOWNOACTIVATE);
     }
+    control::register(window.hwnd().cast(),&mailbox);
     wake.bind(hwnd as isize);
     Ok(window)
 }

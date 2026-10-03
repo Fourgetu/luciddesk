@@ -299,6 +299,8 @@ pub(super) fn reload(state: &Rc<RefCell<PaneApp>>) -> Result<(), String> {
     Ok(())
 }
 
+pub(super) const REFRESH_HOTKEYS: u32 = WM_APP + 0x4c4;
+
 pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window::Window, String> {
     let weak = Rc::downgrade(state);
     let wake = state.borrow().wake.clone();
@@ -322,6 +324,16 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
         .on_message(move |raw, msg, wp, lp| {
             if unsafe { crate::window_visibility::defer_show(msg, lp, false) } {
                 return Some(0);
+            }
+            if msg == REFRESH_HOTKEYS {
+                let Some(state) = weak.upgrade() else { return Some(0); };
+                let s = state.borrow();
+                let present = s.views.iter().any(|v| s.workspace.panel(v.id).is_some_and(Panel::is_search));
+                let enabled = present && everything_settings::enabled(&s.store).unwrap_or(false);
+                hotkey.update(raw as isize, enabled.then(search_hotkey::settings));
+                reveal_hotkey.update(raw as isize, show_hotkey::enabled(&s.store).then(|| show_hotkey::settings(&s.store)));
+                show_hotkey::update_status(reveal_hotkey.message());
+                return Some(isize::from(hotkey.ready() && reveal_hotkey.ready()));
             }
             if msg == WM_DESTROY {
                 received.unbind();

@@ -1,6 +1,6 @@
 use luciddesk_api::{Request, Response, VERSION};
 use std::{ffi::OsString, time::Duration};
-const HELP: &str = "LucidDesk CLI\nUsage: luciddesk-cli <command> [options]\nCommands: schema (offline), status, capabilities, workspace get, pane list, pane get --id ID, item list, plan preview --input FILE|-, plan apply --token TOKEN --request-id ID, request get --id ID\nOptions: --json, --data-dir PATH, --timeout-ms 1..60000, --protocol-version N\nItem filters: --pane ID | --unassigned\nThe GUI must already be running. This CLI never opens the database.";
+const HELP: &str = "LucidDesk CLI\nUsage: luciddesk-cli <command> [options]\nCommands: schema (offline), status, capabilities, workspace get, settings get, monitor list, folder get --id ID, search get --id ID, pane list, pane get --id ID, item list, plan preview --input FILE|-, plan apply --token TOKEN --request-id ID, request get --id ID\nOptions: --json, --data-dir PATH, --timeout-ms 1..60000, --protocol-version N\nItem filters: --pane ID | --unassigned\nThe GUI must already be running. This CLI never opens the database.";
 struct Options {
     request: Request,
     json: bool,
@@ -164,6 +164,9 @@ mod tests {
         assert!(parse(args("--json pane get --id 9007199254740993")).is_ok());
         assert!(parse(args("plan apply --token token --request-id retry-1 --json")).is_ok());
         assert!(parse(args("request get --id retry-1 --json")).is_ok());
+        assert!(parse(args("settings get --json")).is_ok());
+        assert!(parse(args("folder get --id 1 --json")).is_ok());
+        assert!(parse(args("search get --id 1 --json")).is_ok());
         for s in [
             "pane get",
             "status --id 1",

@@ -102,6 +102,7 @@ impl Registration {
     pub fn with_id(id: i32) -> Self {
         Self { id, hwnd: 0, desired: None, registered: false, attempted: None }
     }
+    pub fn ready(&self) -> bool { self.desired.is_none() || self.registered }
     pub fn message(&self) -> String {
         if self.desired.is_none() {
             crate::i18n::text(if self.id == ID { "ui-search-is-disabled-global-shortcut-is-not-registered" } else { "show-panels-disabled" }).into()

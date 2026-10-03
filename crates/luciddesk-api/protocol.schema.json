@@ -33,12 +33,16 @@
             "status",
             "capabilities",
             "workspace.get",
+            "settings.get",
             "pane.list",
             "pane.get",
             "item.list",
             "plan.preview",
             "plan.apply",
-            "request.get"
+            "request.get",
+            "monitor.list",
+            "folder.get",
+            "search.get"
           ]
         },
         "id": {
@@ -145,7 +149,9 @@
               "command": {
                 "enum": [
                   "pane.get",
-                  "request.get"
+                  "request.get",
+                  "folder.get",
+                  "search.get"
                 ]
               }
             }
@@ -174,7 +180,11 @@
           "if": {
             "properties": {
               "command": {
-                "const": "pane.get"
+                "enum": [
+                  "pane.get",
+                  "folder.get",
+                  "search.get"
+                ]
               }
             }
           },
@@ -522,6 +532,356 @@
                       "type": "string",
                       "minLength": 1
                     }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "op",
+                  "values"
+                ],
+                "properties": {
+                  "op": {
+                    "const": "settings.update"
+                  },
+                  "values": {
+                    "type": "object",
+                    "minProperties": 1,
+                    "additionalProperties": {
+                      "type": [
+                        "string",
+                        "number",
+                        "boolean"
+                      ]
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "op",
+                  "pane_id",
+                  "monitor_id",
+                  "x",
+                  "y",
+                  "width",
+                  "height"
+                ],
+                "properties": {
+                  "op": {
+                    "const": "pane.geometry"
+                  },
+                  "pane_id": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]*$"
+                  },
+                  "monitor_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "x": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "y": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "width": {
+                    "type": "number",
+                    "minimum": 260
+                  },
+                  "height": {
+                    "type": "number",
+                    "minimum": 160
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "op",
+                  "pane_id",
+                  "into_pane_id"
+                ],
+                "properties": {
+                  "op": {
+                    "const": "tab.merge"
+                  },
+                  "pane_id": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]*$"
+                  },
+                  "into_pane_id": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]*$"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "op",
+                  "pane_id"
+                ],
+                "properties": {
+                  "op": {
+                    "const": "tab.select"
+                  },
+                  "pane_id": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]*$"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "op",
+                  "pane_id",
+                  "pane_ids"
+                ],
+                "properties": {
+                  "op": {
+                    "const": "tab.reorder"
+                  },
+                  "pane_id": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]*$"
+                  },
+                  "pane_ids": {
+                    "type": "array",
+                    "minItems": 2,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[1-9][0-9]*$"
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "op",
+                  "pane_id"
+                ],
+                "properties": {
+                  "op": {
+                    "const": "tab.detach"
+                  },
+                  "pane_id": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]*$"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "op",
+                  "ref",
+                  "title",
+                  "path"
+                ],
+                "properties": {
+                  "op": {
+                    "const": "folder.create"
+                  },
+                  "ref": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "op",
+                  "pane_id"
+                ],
+                "minProperties": 3,
+                "properties": {
+                  "op": {
+                    "const": "folder.update"
+                  },
+                  "pane_id": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]*$"
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "list_view": {
+                    "type": "boolean"
+                  },
+                  "sort_column": {
+                    "enum": [
+                      "name",
+                      "modified",
+                      "type",
+                      "size"
+                    ]
+                  },
+                  "descending": {
+                    "type": "boolean"
+                  },
+                  "column_widths": {
+                    "type": "array",
+                    "minItems": 4,
+                    "maxItems": 4,
+                    "items": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "exclusiveMaximum": 1
+                    }
+                  },
+                  "visible_columns": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 4,
+                    "uniqueItems": true,
+                    "items": {
+                      "enum": [
+                        "name",
+                        "modified",
+                        "type",
+                        "size"
+                      ]
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "op",
+                  "pane_id",
+                  "path"
+                ],
+                "properties": {
+                  "op": {
+                    "const": "folder.navigate"
+                  },
+                  "pane_id": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]*$"
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "op",
+                  "pane_id"
+                ],
+                "properties": {
+                  "op": {
+                    "const": "folder.back"
+                  },
+                  "pane_id": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]*$"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "op",
+                  "pane_id"
+                ],
+                "properties": {
+                  "op": {
+                    "const": "folder.home"
+                  },
+                  "pane_id": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]*$"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "op",
+                  "pane_id",
+                  "query"
+                ],
+                "properties": {
+                  "op": {
+                    "const": "search.query"
+                  },
+                  "pane_id": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]*$"
+                  },
+                  "query": {
+                    "type": "string",
+                    "maxLength": 32767
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "op",
+                  "pane_id"
+                ],
+                "properties": {
+                  "op": {
+                    "const": "search.refresh"
+                  },
+                  "pane_id": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]*$"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "op",
+                  "pane_id"
+                ],
+                "properties": {
+                  "op": {
+                    "const": "search.more"
+                  },
+                  "pane_id": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]*$"
                   }
                 }
               }

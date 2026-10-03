@@ -148,6 +148,7 @@ impl Source {
         self.request.active.store(active, std::sync::atomic::Ordering::Release);
         self.request.signal();
     }
+    pub(super) fn navigation_context(&self) -> String {format!("{:?}:{:?}:{:?}",self.root,self.path,self.history)}
     pub(super) fn navigation(&self) -> [bool; 2] {
         [!self.history.is_empty(), self.path != self.root]
     }
@@ -488,6 +489,27 @@ fn sort_items(items: &mut Vec<Item>, sort: (u8, bool)) {
         }
     });
     *items = sorted.into_iter().map(|(_, _, _, _, item)| item).collect();
+}
+
+/// Refresh persisted view preferences without saving or restarting an unchanged folder source.
+pub(super) fn apply_saved_preferences(state: &mut PaneApp, id: PanelId) -> Result<(), String> {
+    ensure(state,id)?;
+    let preferences=state.store.folder_preferences(id).map_err(|e|e.to_string())?;
+    let order=(preferences.sort_column,preferences.descending);
+    let source=state.folders.get_mut(&id).ok_or("folder source unavailable")?;
+    let changed=source.sort!=order;
+    if changed {source.sort=order;sort_items(&mut source.items,order);}
+    if let Some(view)=state.views.iter().find(|v|v.id==id) {
+        let mut model=view.model.borrow_mut();
+        let path_changed=model.folder.as_ref()!=Some(&source.path);
+        model.folder=Some(source.path.clone());
+        model.list_view=state.workspace.panel(id).unwrap().list_view();
+        model.folder_sort=order;
+        model.folder_columns=preferences.column_widths;
+        model.folder_visible_columns=preferences.visible_columns;
+        if changed || path_changed {model.scroll=0;model.clear_selection();}
+    }
+    Ok(())
 }
 
 pub(super) fn sort(state: &mut PaneApp, id: PanelId, column: u8) -> Result<(), String> {
