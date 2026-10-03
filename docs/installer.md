@@ -1,6 +1,6 @@
 # 安装版
 
-提供 EXE（默认）和 MSI 两种安装包。日常使用推荐 EXE，可在向导中选择当前用户或所有用户；MSI 适合使用 Windows Installer 部署的场景。
+默认发布 EXE 安装包，另支持从源码构建 MSI。日常使用推荐 EXE，可在向导中选择当前用户或所有用户；MSI 适合使用 Windows Installer 部署的场景。
 
 ## EXE 安装包
 

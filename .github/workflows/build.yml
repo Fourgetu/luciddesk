@@ -71,19 +71,12 @@ jobs:
         with:
           path: target/tooling/inno-*
           key: inno-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/ensure-inno.ps1') }}
-      - name: Prepare installer compilers
+      - name: Prepare Inno Setup compiler
         shell: pwsh
-        run: |
-          ./tools/ensure-inno.ps1
-          ./tools/ensure-wix.ps1
+        run: ./tools/ensure-inno.ps1
       - name: Package installer and ZIPs
         shell: pwsh
-        run: ./tools/package.ps1 -All -InstallerFormat Both
-      - name: Verify MSI install and upgrade lifecycle
-        shell: pwsh
-        run: |
-          $stage = Get-ChildItem -LiteralPath target/packages -Directory | Select-Object -First 1
-          ./tools/test-installer.ps1 -SourcePath $stage.FullName
+        run: ./tools/package.ps1 -All
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: LucidDesk-windows-x64
@@ -94,8 +87,7 @@ jobs:
             target/portable/**/*.zip
             target/portable/**/*.sha256
             target/installers/**/*-setup.exe
-            target/installers/**/*.msi
-            target/installers/**/*.sha256
+            target/installers/**/*-setup.exe.sha256
           if-no-files-found: error
   release:
     needs: [metadata, build]
@@ -121,9 +113,9 @@ jobs:
         run: |
           set -euo pipefail
           python3 tools/release-notes.py --tag "$RELEASE_TAG" --repository "$GH_REPO" --changelog CHANGELOG.md --changelog-en CHANGELOG.en.md --output release-notes.md
-          mapfile -d '' archives < <(find artifacts -type f \( -name '*.zip' -o -name '*.msi' -o -name '*-setup.exe' \) -print0)
+          mapfile -d '' archives < <(find artifacts -type f \( -name '*.zip' -o -name '*-setup.exe' \) -print0)
           mapfile -d '' checksums < <(find artifacts -type f -name '*.sha256' -print0)
-          [[ ${#archives[@]} -eq 4 && ${#checksums[@]} -eq 4 ]]
+          [[ ${#archives[@]} -eq 3 && ${#checksums[@]} -eq 3 ]]
           for checksum in "${checksums[@]}"; do
             (cd "$(dirname "$checksum")" && sha256sum -c "$(basename "$checksum")")
           done

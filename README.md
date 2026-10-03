@@ -68,7 +68,7 @@
 
 | 版本 | 如何识别发布包 | 默认配置位置 | 适合场景 |
 | --- | --- | --- | --- |
-| 安装版 | `windows-x64-setup.exe` / `windows-x64.msi` | `%LOCALAPPDATA%\LucidDesk` | 安装向导、开始菜单与卸载入口 |
+| 安装版 | `windows-x64-setup.exe` | `%LOCALAPPDATA%\LucidDesk` | 安装向导、开始菜单与卸载入口 |
 | 普通 ZIP（非便携版） | `.zip`，不含 `portable` | `%LOCALAPPDATA%\LucidDesk` | 免安装，程序与配置分开保存 |
 | 便携版 | 名称含 `windows-x64-portable` | 程序目录中的 `data` 文件夹 | 希望配置随程序目录一起携带 |
 
@@ -76,7 +76,7 @@
 
 ### 启动与整理
 
-**安装版**：优先选择 `windows-x64-setup.exe`，可在向导中选择当前用户或所有用户安装。也提供 MSI，详见[安装版说明](docs/installer.md)。
+**安装版**：优先选择 `windows-x64-setup.exe`，可在向导中选择当前用户或所有用户安装。MSI 可从源码自行构建，详见[安装版说明](docs/installer.md)。
 
 **ZIP 版**：
 

@@ -15,12 +15,11 @@ def gh(*args):
 def verify_packages(root, tag, sha):
     version = tag.removeprefix("v")
     files = sorted(path for path in root.rglob("*") if path.is_file())
-    archives = [path for path in files if path.name.endswith((".zip", ".msi", "-setup.exe"))]
-    assert len(files) == 8 and len(archives) == 4, "Expected four packages and checksums"
+    archives = [path for path in files if path.name.endswith((".zip", "-setup.exe"))]
+    assert len(files) == 6 and len(archives) == 3, "Expected three packages and checksums"
     expected_names = [
         rf"LucidDesk-{re.escape(version)}-[0-9a-f]{{7,40}}-windows-x64-[0-9-]+\.zip",
         rf"LucidDesk-{re.escape(version)}-windows-x64-portable\.zip",
-        rf"LucidDesk-{re.escape(version)}-windows-x64\.msi",
         rf"LucidDesk-{re.escape(version)}-windows-x64-setup\.exe",
     ]
     for pattern in expected_names:
@@ -76,7 +75,7 @@ def main():
     for asset in release["assets"]:
         if asset["name"] not in {path.name for path in files} and re.fullmatch(old_pattern, asset["name"]):
             gh("release", "delete-asset", tag, asset["name"], "--yes")
-    print(f"Updated {tag} with eight verified assets from {sha}. Tag unchanged.")
+    print(f"Updated {tag} with six verified assets from {sha}. Tag unchanged.")
 
 
 if __name__ == "__main__":

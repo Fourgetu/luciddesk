@@ -76,11 +76,7 @@ cargo build -p luciddesk -p desktop-hook --locked --offline --target-dir target\
 .\tools\package.ps1 -Offline
 ```
 
-EXE 默认采用 `lzma2/fast` 固实压缩，以较小的体积增量缩短打包时间。需要更小的安装包时使用 `-ExeCompression Max`，也可选择 `Normal`。 CI 按准备脚本版本缓存 Inno 编译器。
-
-MSI 构建在 `target/msi-cache` 中复用 WiX CAB 压缩缓存和安装检查 DLL；DLL 按源码、构建脚本、工具链及测试模式隔离，并校验文件哈希。MSI 仍执行默认校验，不生成未发布的 `.wixpdb`。
-
-产物位于 `target\packages`。包内配置仍默认保存在 LocalAppData；未提交代码会在包名和 `build.json` 中标记为 dirty。GitHub Actions 的 Build CI 工作流执行全目标编译、核心与存储、多语言、更新检查、框选规则、拖动图像透明度、WARP 彩色 emoji 与 Canvas 兼容测试，以及工作区文档示例。完成安装与升级验证后，同时上传安装包、普通 ZIP、便携 ZIP 及 SHA256 校验文件；需要窗口、焦点或 Explorer 的桌面 UI 测试仍在交互会话运行。
+产物位于 `target\packages`。包内配置仍默认保存在 LocalAppData；未提交代码会在包名和 `build.json` 中标记为 dirty。GitHub Actions 的 Build CI 工作流执行全目标编译、核心与存储、多语言、更新检查、框选规则、拖动图像透明度、WARP 彩色 emoji 与 Canvas 兼容测试，以及工作区文档示例。完成检查和打包后，同时上传 EXE 安装包、普通 ZIP、便携 ZIP 及 SHA256 校验文件；需要窗口、焦点或 Explorer 的桌面 UI 测试仍在交互会话运行。
 
 ### EXE 与 MSI 安装包
 
@@ -97,9 +93,16 @@ MSI 构建在 `target/msi-cache` 中复用 WiX CAB 压缩缓存和安装检查 D
 
 # 使用同一份程序文件生成 EXE 和 MSI
 .\tools\package.ps1 -Installer -InstallerFormat Both -Offline
+
+# 一次构建生成默认发布包：普通 ZIP、便携 ZIP 和 EXE
+.\tools\package.ps1 -All -Offline
 ```
 
-`-InnoCompiler <ISCC.exe>` 可指定已有的 Inno 编译器。未传 `-Installer` 时仍只生成 ZIP。`-All` 在一次构建后生成普通 ZIP、便携 ZIP 和所选格式的安装包。CI 使用 `-All -InstallerFormat Both`，发布 EXE、MSI、普通 ZIP、便携 ZIP 及各自 SHA256。
+`-InnoCompiler <ISCC.exe>` 可指定已有的 Inno 编译器。未传 `-Installer` 或 `-All` 时仍只生成 ZIP。`-All` 在一次构建后生成普通 ZIP、便携 ZIP、EXE 及各自 SHA256，CI 使用此模式。需要同时生成 MSI 时使用 `-All -InstallerFormat Both`。
+
+EXE 默认采用 `lzma2/fast` 固实压缩，以较小的体积增量缩短打包时间。需要更小的安装包时使用 `-ExeCompression Max`，也可选择 `Normal`。CI 按准备脚本版本缓存 Inno 编译器。
+
+默认 CI 不准备 WiX、不构建或测试 MSI；需要验证 MSI 时手动运行下方安装器测试命令。MSI 构建在 `target/msi-cache` 中复用 WiX CAB 压缩缓存和安装检查 DLL；DLL 按源码、构建脚本、工具链及测试模式隔离，并校验文件哈希。MSI 仍执行默认校验，不生成未发布的 `.wixpdb`。
 
 产物位于 `target/installers/版本-修订-时间戳`。`installer/LucidDesk.iss` 定义 EXE 安装流程；`installer/LucidDesk.wxs` 定义 MSI 文件、快捷方式和升级规则，`msi-actions.cpp` 检查进程退出及组件占用。安装范围、静默参数和旧版迁移见[安装版说明](../installer.md)。应用与快捷方式使用固定 AppUserModelID `Yuchen95.LucidDesk`；MSI 升级身份由固定 UpgradeCode 管理。
 
@@ -107,7 +110,7 @@ MSI 构建在 `target/msi-cache` 中复用 WiX CAB 压缩缓存和安装检查 D
 
 关于页仅支持手动检查新版本与打开 Release 页面。检查使用后台 WinHTTP 请求 GitHub Releases API，支持 Windows 代理和显式 `HTTPS_PROXY` HTTP 代理，并比较稳定版本号（标签可有 `v` 前缀）。更新包由用户在浏览器中自行下载。
 
-验证命令（安装器测试使用随机测试产品名称和 UpgradeCode、快捷方式名称和工作区临时目录，安装与卸载自己的测试注册项）：
+验证命令（MSI 安装器测试使用随机测试产品名称和 UpgradeCode、快捷方式名称和工作区临时目录，安装与卸载自己的测试注册项）：
 
 ```powershell
 cargo test -p luciddesk --bin luciddesk updates::tests --locked --offline
@@ -197,7 +200,7 @@ cargo build -p desktop-shell --example filter_backend_probe --locked
 
 Build CI 在推送标签或 `codex/ci-compare-*` 比较分支时运行，不限定 `v` 前缀；普通分支推送和 PR 不触发，手动启动用于比较构建产物，仅上传 Actions 附件，不发布 Release。发布标签支持 `<版本>` 和 `v<版本>`（例如 `0.14.0` 或 `v0.14.0`）。公开仓库 `Yuch3nE/luciddesk` 核对标签与应用 Cargo 版本，完成检查与普通包、便携包及安装包打包，再发布对应 GitHub Release；其他标签会在版本校验阶段报错。同步本地仓库时需要一并同步标签；已触发的运行可在 Actions 页面重新运行。
 
-Release 包含 EXE 和 MSI 安装包、两个 ZIP 及各自的 SHA256 文件，均附带中英文更新记录。发布任务先验证校验值；正文从标签对应源码中的 `CHANGELOG.md` 和 `CHANGELOG.en.md` 分别提取匹配版本章节，按中文、英文顺序合并，中间使用分隔线，不添加语言大标题，只显示一次版本标题与日期。新增功能和问题修复分别放在 `feat`、`fix` 分类下，更新说明聚焦应用行为；保留完整内容，并将相对链接转换为该标签下的 GitHub 链接。任一语言的章节缺失、重复或为空时中止发布；构建阶段会运行双语提取测试。重跑时同步更新正文与同名附件。发布权限仅授予独立的 Release 任务。
+Release 包含 EXE 安装包、普通 ZIP、便携 ZIP 及各自的 SHA256 文件，均附带中英文更新记录。发布任务先验证校验值；正文从标签对应源码中的 `CHANGELOG.md` 和 `CHANGELOG.en.md` 分别提取匹配版本章节，按中文、英文顺序合并，中间使用分隔线，不添加语言大标题，只显示一次版本标题与日期。新增功能和问题修复分别放在 `feat`、`fix` 分类下，更新说明聚焦应用行为；保留完整内容，并将相对链接转换为该标签下的 GitHub 链接。任一语言的章节缺失、重复或为空时中止发布；构建阶段会运行双语提取测试。重跑时同步更新正文与同名附件。发布权限仅授予独立的 Release 任务。
 
 推送到 `main` 的更新记录或生成器改动会触发 `Sync release notes`，只同步当前应用版本已存在的 Release 正文，支持带或不带 `v` 的标签。这个任务不编译程序，不创建或移动标签，也不替换附件；修改旧版本说明时需同步对应版本的 Release 正文。
 
@@ -214,7 +217,7 @@ Release 包含 EXE 和 MSI 安装包、两个 ZIP 及各自的 SHA256 文件，�
 
 已有版本记录和 Git 标签不追溯重编号。尚未发布的变更先记录在双语 Changelog 的“未发布 / Unreleased”章节，确定版本后移入对应版本章节。发布时同步 `Cargo.lock`、双语 README 徽章和双语 Changelog；CI 验证版本一致性，发布标签必须为 `<应用版本>` 或 `v<应用版本>`。
 
-CI 的语言资源和发布说明检查在 Linux 上与 Windows 构建并行。Cargo 依赖缓存覆盖 `target/ci-tests` 和 `target/production`，缓存按 Rust、Cargo 配置和 Windows 工具链隔离；不缓存发布包或测试临时目录。同一分支的新运行会取消旧构建，标签构建不自动取消。产物上传使用零级压缩，避免再次压缩 ZIP、EXE 和 MSI。
+CI 的语言资源和发布说明检查在 Linux 上与 Windows 构建并行。Cargo 依赖缓存覆盖 `target/ci-tests` 和 `target/production`，缓存按 Rust、Cargo 配置和 Windows 工具链隔离；不缓存发布包或测试临时目录。同一分支的新运行会取消旧构建，标签构建不自动取消。产物上传使用零级压缩，避免再次压缩 ZIP 和 EXE。
 
 ## Windows 工具链选择
 

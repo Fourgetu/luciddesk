@@ -68,7 +68,7 @@ Download from [GitHub Releases](https://github.com/Yuch3nE/luciddesk/releases). 
 
 | Package | File name | Default settings location | Best suited for |
 | --- | --- | --- | --- |
-| Installer | `windows-x64-setup.exe` / `windows-x64.msi` | `%LOCALAPPDATA%\LucidDesk` | Setup wizard, Start menu and uninstall entry |
+| Installer | `windows-x64-setup.exe` | `%LOCALAPPDATA%\LucidDesk` | Setup wizard, Start menu and uninstall entry |
 | Standard ZIP (non-portable) | `.zip`, without `portable` | `%LOCALAPPDATA%\LucidDesk` | Running without installation, with separate settings |
 | Portable | Contains `windows-x64-portable` | The `data` folder beside the executable | Carrying settings with the app folder |
 
@@ -76,7 +76,7 @@ See the [installer](docs/installer.md), [standard ZIP](docs/package.md) or [port
 
 ### Launch and organize
 
-**Installer:** choose `windows-x64-setup.exe` for a wizard with current-user or all-users installation. MSI is also available; see the [installer guide](docs/installer.md).
+**Installer:** choose `windows-x64-setup.exe` for a wizard with current-user or all-users installation. MSI can also be built from source; see the [installer guide](docs/installer.md).
 
 **ZIP packages:**
 
