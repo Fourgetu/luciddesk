@@ -51,3 +51,7 @@ msiexec.exe /i "LucidDesk-<版本>-windows-x64.msi" INSTALLFOLDER="D:\Apps\Lucid
 包内包含同版本的 `luciddesk-cli.exe`、`cli.md`、`protocol.schema.json` 和 `skills/luciddesk-control/SKILL.md`。主程序运行后，在程序目录执行 `./luciddesk-cli.exe status --json` 验证连接。`./luciddesk-cli.exe skill show` 离线显示配套 Skill，Agent 可使用 `skill show --json` 获取结构化结果。
 
 需要让 Agent 自动发现 Skill 时，将完整 `skills/luciddesk-control` 文件夹复制到该 Agent 配置的技能目录；若已有同名技能，先比较内容，保留本地定制。安装程序不会修改 Agent 的配置、技能目录或系统 PATH。程序移动或升级后，使用新目录中的 CLI 与 Skill。操作命令和恢复规则见 `cli.md`。
+
+## EXE 安装内容
+
+EXE 安装包采用明确的文件清单，包含主程序、桌面 DLL、CLI、Agent Skill、CLI 指南、协议、许可证、构建信息和安装标记。品牌说明、便携版指南、更新日志及图标刷新脚本保留在源码或 ZIP 包中，不再安装到程序目录。升级旧安装时不主动删除用户目录内已有的同名文档。

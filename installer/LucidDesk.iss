@@ -73,11 +73,15 @@ Name: "chinesesimplified"; MessagesFile: "ChineseSimplified.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "{#SourcePath}\skills\*"; DestDir: "{app}\skills"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "{#SourcePath}\*"; DestDir: "{app}"; Flags: ignoreversion; Excludes: "portable,msix,README.md,luciddesk_explorer.dll,luciddesk.exe"
+; Explicit payload: ZIP-only guides and maintenance scripts do not belong in the installer.
 Source: "{#SourcePath}\luciddesk.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourcePath}\luciddesk_explorer.dll"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\docs\installer.md"; DestDir: "{app}"; DestName: "README.md"; Flags: ignoreversion
+Source: "{#SourcePath}\luciddesk-cli.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourcePath}\skills\luciddesk-control\SKILL.md"; DestDir: "{app}\skills\luciddesk-control"; Flags: ignoreversion
+Source: "{#SourcePath}\cli.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourcePath}\protocol.schema.json"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourcePath}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourcePath}\build.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "installed"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]

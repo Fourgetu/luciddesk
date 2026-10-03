@@ -25,6 +25,7 @@ Exit the app before upgrading a portable installation and preserve its `data` fo
 
 ### changed
 
+- Use an explicit EXE installer payload, omitting general guides, changelogs and maintenance scripts while retaining runtime components, CLI/Agent files, the license and build metadata.
 - Separate settings windows, panel events, native menus, input handling and task scheduling by responsibility.
 - Separate content measurement, fitting, snapping and arrangement algorithms behind a read-only layout context, preserving persistence and rollback in the control layer.
 - Expand CLI/Agent documentation, module boundaries and native window test isolation notes. Real-machine acceptance for multiple monitors, another Windows login session and an installed MSIX remains pending.
