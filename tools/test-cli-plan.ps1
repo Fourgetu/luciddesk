@@ -1,4 +1,4 @@
-param([string]$BuildDirectory = "$PSScriptRoot/../target/cli-plan-build/debug")
+﻿param([string]$BuildDirectory = "$PSScriptRoot/../target/cli-plan-build/debug", [switch]$LiveDesktopItems, [switch]$RestartRecovery, [ValidateRange(0,120)][int]$IdleSeconds = 0)
 $ErrorActionPreference = 'Stop'
 $build = (Resolve-Path -LiteralPath $BuildDirectory).Path
 if ((Split-Path $build -Leaf) -ne 'debug') { throw 'Only Debug builds are allowed' }
@@ -25,8 +25,16 @@ function Invoke-Plan([object[]]$Operations) {
     $requestId = [guid]::NewGuid().ToString()
     $command = @('plan','apply','--token',$preview.data.plan_token,'--request-id',$requestId)
     $applied = Invoke-Cli $command
+    if ($applied.data.presentation_status -eq 'pending') {
+        $deadline = [DateTime]::UtcNow.AddSeconds(15)
+        while ($applied.data.presentation_status -eq 'pending') {
+            if ([DateTime]::UtcNow -gt $deadline) { throw 'Presentation timed out; inspect retained receipt' }
+            Start-Sleep -Milliseconds 100
+            $applied = (Invoke-Cli @('request','get','--id',$requestId)).data.result
+        }
+    }
     $retry = Invoke-Cli $command
-    if (($applied | ConvertTo-Json -Depth 30 -Compress) -ne ($retry | ConvertTo-Json -Depth 30 -Compress)) { throw 'Retry changed the receipt' }
+    if (-not [System.Text.Json.Nodes.JsonNode]::DeepEquals([System.Text.Json.Nodes.JsonNode]::Parse(($applied | ConvertTo-Json -Depth 30 -Compress)), [System.Text.Json.Nodes.JsonNode]::Parse(($retry | ConvertTo-Json -Depth 30 -Compress)))) { throw ('Retry changed the receipt: ' + ($applied | ConvertTo-Json -Depth 30 -Compress) + ' vs ' + ($retry | ConvertTo-Json -Depth 30 -Compress)) }
     $receipt = Invoke-Cli @('request','get','--id',$requestId)
     if ($receipt.data.result.request_id -ne $requestId) { throw 'Receipt mismatch' }
     return $applied
@@ -43,11 +51,67 @@ try {
             Start-Sleep -Milliseconds 250
         }
     } while ($true)
+    $wrongDirectory = Join-Path $root 'wrong-workspace'
+    [IO.Directory]::CreateDirectory($wrongDirectory) | Out-Null
+    $mismatch = & $cli status --data-dir $wrongDirectory --json
+    if ($LASTEXITCODE -ne 5 -or ($mismatch | ConvertFrom-Json).error.code -ne 'DATA_DIR_MISMATCH') { throw 'CLI did not reject a mismatched data directory' }
+    if (Get-ChildItem -LiteralPath $wrongDirectory -Force) { throw 'Directory assertion initialized another workspace' }
+    $protocolMismatch = & $cli status --protocol-version 2 --json
+    if ($LASTEXITCODE -ne 10 -or ($protocolMismatch | ConvertFrom-Json).error.code -ne 'PROTOCOL_MISMATCH') { throw 'CLI did not reject an incompatible protocol' }
     $capabilities = Invoke-Cli @('capabilities')
     if ('pane.remove' -notin $capabilities.data.plan_operations) { throw 'Wrong CLI/App version' }
+    $beforeShortcut = Invoke-Cli @('pane','list')
+    $dryShortcut = Invoke-Cli @('pane','create','--title','CLI shortcut dry run','--dry-run')
+    $afterDry = Invoke-Cli @('pane','list')
+    if (($afterDry.data | ConvertTo-Json -Depth 30 -Compress) -ne ($beforeShortcut.data | ConvertTo-Json -Depth 30 -Compress)) { throw 'Shortcut dry-run created a pane' }
+    if (-not $dryShortcut.data.plan_token) { throw 'Shortcut preview omitted token' }
+    $shortcutId = [guid]::NewGuid().ToString()
+    $shortcutCreated = Invoke-Cli @('pane','create','--title','CLI shortcut 中文','--request-id',$shortcutId)
+    if ($shortcutCreated.data.presentation_status -ne 'applied') { throw 'Shortcut create did not apply' }
+    $shortcutPane = [string]$shortcutCreated.data.refs.created
+    $shortcutReplay = Invoke-Cli @('plan','apply','--token',$shortcutCreated.data.recovery.plan_token,'--request-id',$shortcutId)
+    if ($shortcutReplay.data.refs.created -ne $shortcutPane) { throw 'Shortcut recovery did not reuse receipt' }
+    $shortcutUpdated = Invoke-Cli @('pane','update','--id',$shortcutPane,'--title','CLI renamed','--auto-hide','true')
+    $shortcutRead = Invoke-Cli @('pane','get','--id',$shortcutPane)
+    if ($shortcutUpdated.data.presentation_status -ne 'applied' -or $shortcutRead.data.title -ne 'CLI renamed' -or -not $shortcutRead.data.auto_hide) { throw 'Shortcut update did not apply' }
+    $null = Invoke-Cli @('pane','remove','--id',$shortcutPane)
     $settings = Invoke-Cli @('settings','get')
     if ($settings.data.scope -ne 'application_config' -or $settings.data.values.'diagnostics.level' -ne 'error') { throw 'Settings query returned unexpected defaults' }
     if ($settings.data.values.'search.enabled' -isnot [bool]) { throw 'Settings query lost boolean types' }
+    $startupDbBefore = Get-SharedHash (Join-Path $root 'workspace.db')
+    $startupConfigBefore = Get-SharedHash (Join-Path $root 'config.toml')
+    $deadline = [DateTime]::UtcNow.AddSeconds(15)
+    do {
+        $startup = Invoke-Cli @('startup','get')
+        if (-not $startup.data.busy) { break }
+        if ([DateTime]::UtcNow -gt $deadline) { throw 'Startup query timed out' }
+        Start-Sleep -Milliseconds 100
+    } while ($true)
+    if ($startup.data.error) { throw $startup.data.error }
+    # Real OS testing never creates or removes a login entry: only request the existing state.
+    if ($startup.data.status -in @('off','enabled')) {
+        $startupNoop = Invoke-Plan @(@{op='startup.set';enabled=($startup.data.status -eq 'enabled');expected_status=$startup.data.status})
+        if ($startupNoop.data.commit_status -ne 'unchanged' -or $startupNoop.data.operation_status -ne 'completed' -or $startupNoop.data.changed) { throw 'Startup no-op was not completed idempotently' }
+    }
+    if ((Get-SharedHash (Join-Path $root 'workspace.db')) -ne $startupDbBefore -or (Get-SharedHash (Join-Path $root 'config.toml')) -ne $startupConfigBefore) { throw 'Startup control wrote workspace configuration' }
+    $fontDbBefore = Get-SharedHash (Join-Path $root 'workspace.db')
+    $fontConfigBefore = Get-SharedHash (Join-Path $root 'config.toml')
+    $deadline = [DateTime]::UtcNow.AddSeconds(30)
+    do {
+        $catalog = Invoke-Cli @('font','list')
+        if (-not $catalog.data.busy) { break }
+        if ([DateTime]::UtcNow -gt $deadline) { throw 'Font discovery timed out' }
+        Start-Sleep -Milliseconds 100
+    } while ($true)
+    if ($catalog.data.error -or $catalog.data.families.Count -eq 0) { throw 'Font candidates unavailable' }
+    $cachedFonts = Invoke-Cli @('font','list')
+    if ($cachedFonts.data.generation -ne $catalog.data.generation) { throw 'Font query restarted cached discovery' }
+    if ((Get-SharedHash (Join-Path $root 'workspace.db')) -ne $fontDbBefore -or (Get-SharedHash (Join-Path $root 'config.toml')) -ne $fontConfigBefore) { throw 'Font discovery wrote settings' }
+    $candidate = [string]$catalog.data.families[0]
+    $fontSet = Invoke-Plan @(@{op='settings.update';values=@{'font.family'=$candidate}})
+    $fontRuntime = Invoke-Cli @('settings','get')
+    if ($fontSet.data.presentation_status -ne 'applied' -or $fontRuntime.data.runtime.font_family -ne $candidate) { throw 'Advertised font did not apply' }
+    $null = Invoke-Plan @(@{op='settings.update';values=@{'font.family'=''}})
     $changedSettings = Invoke-Plan @(@{op='settings.update';values=@{'diagnostics.level'='debug';'panel_defaults.grid_scale'=125}})
     if ($changedSettings.data.presentation_status -ne 'applied') { throw ($changedSettings | ConvertTo-Json -Depth 20) }
     $active = Invoke-Cli @('settings','get')
@@ -78,6 +142,14 @@ try {
     } while ($true)
     $child = Join-Path $fixture 'nested'
     [IO.Directory]::CreateDirectory($child) | Out-Null
+    $metadataSettings = @{'interface.title_emoji_color'=$false;'interface.compact_menu'=$false;'interface.header_divider'=$false;'folder_defaults.list_view'=$false;'folder_defaults.show_type'=$false;'folder_defaults.entry_mode'='explorer';'backup.interval_minutes'=30;'backup.keep'=20;'font.family'=''}
+    $metadataResult = Invoke-Plan @(@{op='settings.update';values=$metadataSettings})
+    if ($metadataResult.data.presentation_status -ne 'applied') { throw 'Workspace settings did not apply' }
+    $settingsRead = Invoke-Cli @('settings','get')
+    if ($settingsRead.data.runtime.title_emoji_color -or $settingsRead.data.runtime.compact_menu -or $settingsRead.data.runtime.header_divider -or $settingsRead.data.workspace_values.'backup.keep' -ne 20 -or $settingsRead.data.workspace_values.'folder_defaults.entry_mode' -ne 'explorer') { throw 'Workspace settings runtime mismatch' }
+    $metadataBefore = Get-SharedHash (Join-Path $root 'workspace.db')
+    $metadataNoop = Invoke-Plan @(@{op='settings.update';values=$metadataSettings})
+    if ($metadataNoop.data.changed -or (Get-SharedHash (Join-Path $root 'workspace.db')) -ne $metadataBefore) { throw 'Same-value workspace settings wrote database' }
     $dbPath = Join-Path $root 'workspace.db'
     $savedBefore = (Get-SharedHash $dbPath)
     $configBefore = (Get-SharedHash (Join-Path $root 'config.toml'))
@@ -185,8 +257,40 @@ try {
     $panel=Invoke-Cli @('pane','get','--id',$id)
     if (-not ($panel.data.locked -and $panel.data.auto_hide -and $panel.data.always_on_top)) { throw 'Options did not apply' }
     $null=Invoke-Plan @(@{op='pane.update';pane_id=$id;locked=$false},@{op='pane.remove';pane_id=$id})
+    if ($LiveDesktopItems) { & (Join-Path $PSScriptRoot 'test-cli-desktop-items.ps1') }
     $workspace=Invoke-Cli @('workspace','get')
     if ($id -in $workspace.data.panes.id) { throw 'Removed panel remains' }
+    if ($RestartRecovery) {
+        $restartCreated = Invoke-Plan @(@{op='pane.create';ref='restart';title='CLI restart recovery'})
+        $restartPane = [string]$restartCreated.data.refs.restart
+        $oldContext = (Invoke-Cli @('workspace','get')).context
+        $oldPreview = Invoke-Cli @('pane','update','--id',$restartPane,'--title','must not apply','--dry-run')
+        $app.Refresh()
+        $thread = [CliTestShutdown]::GetWindowThreadProcessId($app.MainWindowHandle,[IntPtr]::Zero)
+        if ($thread -eq 0) { $thread=($app.Threads | Sort-Object StartTime | Select-Object -First 1).Id }
+        $null=[CliTestShutdown]::PostThreadMessage($thread,0x12,[UIntPtr]::Zero,[IntPtr]::Zero)
+        if (-not $app.WaitForExit(10000)) { throw 'Debug instance did not stop gracefully for recovery test' }
+        $offlineRaw = & $cli status --data-dir $root --json
+        if ($LASTEXITCODE -ne 3 -or ($offlineRaw | ConvertFrom-Json).error.code -ne 'APP_NOT_RUNNING') { throw 'Disconnected CLI did not report APP_NOT_RUNNING' }
+        $app = Start-Process -FilePath (Join-Path $build 'luciddesk.exe') -Environment @{ LUCIDDESK_DATA_DIR=$root } -WindowStyle Hidden -PassThru -RedirectStandardError (Join-Path $root 'restart-stderr.log') -RedirectStandardOutput (Join-Path $root 'restart-stdout.log')
+        $deadline = [DateTime]::UtcNow.AddSeconds(25)
+        do {
+            try { $restarted=Invoke-Cli @('status'); break } catch {
+                if ($app.HasExited -or [DateTime]::UtcNow -gt $deadline) { throw }
+                Start-Sleep -Milliseconds 150
+            }
+        } while ($true)
+        if ($restarted.context.instance_id -eq $oldContext.instance_id) { throw 'Restart reused instance ID' }
+        $oldReceiptRaw = & $cli request get --id $restartCreated.request_id --data-dir $root --json
+        if (($oldReceiptRaw | ConvertFrom-Json).error.code -ne 'RESULT_UNKNOWN') { throw 'Restart retained a process-local receipt' }
+        $oldTokenRaw = & $cli plan apply --token $oldPreview.data.plan_token --request-id ([guid]::NewGuid().ToString()) --data-dir $root --json
+        if (($oldTokenRaw | ConvertFrom-Json).error.code -ne 'PLAN_EXPIRED') { throw 'Restart accepted an old plan token' }
+        $persisted = Invoke-Cli @('pane','get','--id',$restartPane)
+        if ($persisted.data.title -ne 'CLI restart recovery') { throw 'Durable pane state was lost or old plan applied' }
+        $null = Invoke-Plan @(@{op='pane.remove';pane_id=$restartPane})
+        @{result='passed';old_instance=$oldContext.instance_id;new_instance=$restarted.context.instance_id;receipt_unknown=$true;token_expired=$true} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $root 'restart-result.json')
+    }
+    if ($IdleSeconds -gt 0) { & (Join-Path $PSScriptRoot 'test-cli-idle.ps1') }
     @{result='passed';data_dir=$root;instance=$status.context.instance_id;created_and_removed_id=$id;desktop_connected=$status.data.desktop_connected} | ConvertTo-Json
 } finally {
     if ($app -and -not $app.HasExited) {
