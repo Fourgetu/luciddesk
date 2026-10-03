@@ -227,7 +227,7 @@ CI 运行 `cargo test -p luciddesk-cli -p luciddesk-api --locked -- --test-threa
 
 布局计划、内容适配、显示器几何和任务调度测试通过 `python tools/test-control-ci.py` 执行。脚本先构建测试程序，再为每项测试启动独立进程，隔离原生窗口状态；单项超时 60 秒，崩溃、失败、零项匹配或未实际执行测试均使检查失败。本地可加 `--offline --target-dir target/cli-layout-build`，CI 沿用 `CARGO_TARGET_DIR` 缓存目录。该检查不启动真实用户的主程序，不替代多显示器和 MSIX 实机验收。
 
-发布包中的 CLI、协议与 Skill 一致性继续由打包脚本调用 `test-agent-package.ps1` 校验。
+发布包中的 CLI、协议与 Skill 一致性继续由打包脚本调用 `test-agent-package.ps1` 校验。元数据任务运行 `test_installer_payload.py`，检查 EXE 安装清单的必需文件、源路径和安装位置，拒绝通配符、递归收录及额外文档；这是脚本清单检查，不替代实际安装验收。
 
 ## Windows 工具链选择
 
