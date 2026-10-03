@@ -27,7 +27,7 @@ cargo build -p luciddesk -p luciddesk-cli --locked --offline
 
 `workspace get` 返回当前应用的面板、桌面项目、标签组快照，不强制重新扫描磁盘。面板明确区分 `manual_collapsed` 与 `effective_collapsed`；没有对应窗口时后者为 null。项目 ID 是当前应用实例内的不透明 token，不要解析或跨重启复用。项目清单不包含文件夹面板内文件或搜索结果。
 
-当前支持计划式写入，`capabilities` 返回 `writes:true`、`plans:true`、`concurrency_tokens:true`。单项写入快捷命令尚未开放；仓库提供配套 Skill，安装与随包分发仍待完善。
+当前支持计划式写入，`capabilities` 返回 `writes:true`、`plans:true`、`concurrency_tokens:true`。单项写入快捷命令已开放；发行包附带配套 Skill，`skill show --json` 可离线读取。
 
 本地管道限制当前用户，核验对端用户与会话，并拒绝远程连接。独立 CLI 不链接桌面存储模块。查询队列只读访问 UI 状态，不调用保存、桌面刷新或备份维护；应用自己的既有后台任务仍可能独立运行。
 
@@ -87,13 +87,13 @@ $requestId = [guid]::NewGuid().ToString()
 
 应用时建议显式提供唯一 `--request-id` 并保留 token。相同请求 ID 和相同内容重试，返回原结果，不重复写入；同 ID 不同内容返回 `REQUEST_ID_REUSED`。同一 token 使用另一请求 ID 再应用返回 `PLAN_ALREADY_APPLIED`。
 
-成功结果只在当前主程序内存保留最多 10 分钟、1024 条；不为请求回执增加数据库 I/O。超时先 `request get --id ...`，或在保留期限内使用完全相同的应用请求重试。`RESULT_UNKNOWN` 不代表未执行：主程序重启或结果被淘汰后，应检查工作区再决定下一步，不自动生成新 ID 重做。
+完成结果只在当前主程序内存保留最多 10 分钟，回执总量最多 1024 条；未完成异步回执不会被淘汰，全部槽位占用时新提交在写入前返回 BUSY；不为请求回执增加数据库 I/O。超时先 `request get --id ...`，或在保留期限内使用完全相同的应用请求重试。`RESULT_UNKNOWN` 不代表未执行：主程序重启或结果被淘汰后，应检查工作区再决定下一步，不自动生成新 ID 重做。
 
 ## 设置查询
 
 `luciddesk-cli settings get --json` 返回 `scope: "application_config"` 与 `values`。
 `values` 使用稳定的命名字段（如 `diagnostics.level`、`search.enabled`、`panel_defaults.grid_scale`），保留字符串、布尔和数值类型。返回应用已加载的有效配置，包含缺省值；不读取外部尚未重新加载的编辑，不写入文件。
-此范围为 config.toml 中的全局设置，尚不包含开机启动注册、字体及数据库内其他设置。支持通过 `settings.update` 计划修改上述字段。
+`values` 为 TOML 全局设置；`workspace_values` 为数据库设置，两组均支持 `settings.update`，同一计划不能混合两组字段。开机启动通过独立的 `startup.get` / `startup.set` 控制。
 
 ## 设置修改
 
@@ -149,3 +149,89 @@ $requestId = [guid]::NewGuid().ToString()
 `search get --id ID --json` 返回 `query`、`generation`、`busy`、`failed`、`replacing`、`total`、`loaded_count`、`has_more` 和已加载 `entries`。执行成功只说明输入/分页请求已经处理，不能据此认定异步查询完成。以返回的代次查询，等待 `busy:false`，再检查 `failed`；加载替换期间旧结果仍可能存在。Everything 必须可用，关闭的搜索面板需先通过设置启用。查询最长 32767 UTF-16 单元，不接受 NUL。
 
 应用的并发上下文包含当前文件夹导航历史与搜索代次/加载状态；GUI 的并发操作可能使旧计划冲突，此时重新查询和预览。重试必须沿用原 request ID，避免返回/刷新/分页重复执行。`runtime_result` 是操作处理后的即时状态，最新结果仍通过查询取得。
+
+
+### 数据库设置
+
+`workspace_values` 提供下列字段，使用 `settings.update.values` 提交。多个数据库字段在单个 SQLite 事务内保存；预览和同值更新不写入。禁止混合 TOML 字段，以免跨文件保存仅部分成功。
+
+| 字段 | 类型与取值 |
+| --- | --- |
+| `font.family` | 字符串；空字符串跟随语言默认字体，否则须为支持当前语言的已安装字体 |
+| `interface.title_emoji_color` | 布尔，标题彩色表情 |
+| `interface.compact_menu` | 布尔，紧凑菜单 |
+| `interface.header_divider` | 布尔，标题分隔线 |
+| `folder_defaults.list_view` | 布尔，新文件夹面板的列表视图 |
+| `folder_defaults.show_modified`、`folder_defaults.show_type`、`folder_defaults.show_size` | 独立布尔字段，名称列始终显示 |
+| `folder_defaults.entry_mode` | `inline` 或 `explorer` |
+| `backup.enabled` | 布尔 |
+| `backup.interval_minutes` | 5、15、30、60 |
+| `backup.keep` | 10、20、50 |
+
+文件夹视图默认值只作用于以后新建的面板。字体和界面开关刷新现有窗口，`runtime.font_family` 及界面运行时字段可用于核对。备份策略由现有调度读取，修改策略不代表已经生成备份。
+
+
+### 字体候选查询
+
+`luciddesk-cli font list --json` 按需在后台枚举支持当前语言的字体。首次返回可能为 `busy:true`，此时不要使用空候选判断没有可用字体；适度轮询并设置超时，直到 `busy:false`，检查 `error` 后读取 `families`。返回 `default_family`、`effective_family`、语言样本文本 `sample` 和查询代次 `generation`。
+
+结果缓存 60 秒，在后续查询发现缓存过期或语言样本改变时重新加载，旧任务会被取消；没有周期性扫描，不保存结果。系统中新安装的字体最长在缓存到期后的下一次查询可见。选择候选后用 `settings.update` 设置 `font.family`，仍须检查保存/生效回执：字体可能在查询之后被卸载。空字符串恢复随语言变化的默认字体。
+
+
+### 开机启动
+
+`startup get --json` 异步查询 Windows/MSIX 的开机启动状态，等待 `busy:false` 并检查 `error`。结果按需缓存 5 秒。`status` 是稳定值：`off`、`enabled`、`disabled_by_windows`、`unknown`、`other_location`、`disabled_by_user`、`disabled_by_policy`、`enabled_by_policy`。同时返回 `registered`、`effective_enabled` 和 `editable`，不要把已注册误认为系统允许启动。
+
+修改示例：`{"op":"startup.set","enabled":true,"expected_status":"off"}`。必须作为唯一操作预览和提交，并使用刚查询到的 `status`；只允许 off/enabled/disabled_by_windows，系统限制和其他安装位置不能通过此接口绕过。写入前再次核对 OS 状态并串行化 GUI/CLI 操作，同值跳过写入。不读写工作区配置。
+
+应用返回 `scope:system`、`operation_id`（原 request ID）及 `operation_status:pending`，这仅表示后台任务受理。使用 `request get --id ORIGINAL_ID` 有界轮询其 `data.result.data`，直到 completed/failed，再检查 `commit_status`（committed/unchanged/not_committed/unknown）、`startup_status` 和 `error`。Windows 拒绝期望状态时会报告 failed；unknown 表示无法确认最终保存结果，先重新查询系统状态再决定下一步。相同请求重试返回当前回执，不重复执行；异步回执允许从 pending 推进到最终状态。回执仍受进程寿命及 10 分钟保留期约束。主程序退出后应查询实际系统状态，不自动重新提交。
+
+
+## 单项命令
+
+单项修改命令默认在内存中获取当前上下文、预览，然后只提交一次；加 `--dry-run` 只返回预览 token。不会自动重试冲突或重新规划。预览后可使用原有 `plan apply` 提交。复杂、多操作整理继续使用显式计划。
+
+| 命令 | 常用参数 |
+| --- | --- |
+| `pane create` | `--title TEXT`，结果 ID 在 `data.refs.created` |
+| `pane update` | `--id ID`，任选 `--title TEXT`、`--locked true/false`、`--auto-hide true/false`、`--collapsed true/false`、`--always-on-top true/false` |
+| `pane remove` | `--id ID`，非空面板需要 `--release-items` |
+| `pane geometry` | `--id ID --monitor ID --x N --y N --width N --height N` |
+| `folder create` | `--title TEXT --path ABSOLUTE_PATH` |
+| `folder update` | `--id ID`，`--path PATH`、`--list-view true/false` 或 `--input FILE` 提供其他更新字段 |
+| `folder navigate` | `--id ID --path ABSOLUTE_PATH` |
+| `folder back/home` | `--id ID` |
+| `search query` | `--id ID --query TEXT` |
+| `search refresh/more` | `--id ID` |
+| `tab merge` | `--id ID --into ID` |
+| `tab select/detach` | `--id ID` |
+| `tab reorder` | `--id ID --input FILE`，文件内容为 `{"pane_ids":["1","2"]}` |
+| `item assign` | `--ids ID,ID --pane ID` |
+| `item release` | `--ids ID,ID` |
+| `item reorder` | `--pane ID --input FILE`，文件内容为完整 ID 数组 |
+| `settings update` | `--input FILE`，文件内容直接为字段映射，例如 `{"diagnostics.level":"error"}` |
+| `startup set` | `--enabled true/false --expected-status STATUS` |
+
+所有单项命令支持 `--input FILE|-` 提供操作字段对象，不含 `op`（settings/reorder 的特殊形式见表）。命令行字段与输入对象中重复的字段、重复 JSON 键、未知字段均会拒绝。输入文件为 UTF-8、无 BOM、最大 4 MiB。ID 保持字符串，不使用标题替代。
+
+Agent 可以先使用 `--dry-run --json` 查看差异，再按既有用户授权提交，无需额外人为确认。默认直接执行仅适用于用户已明确授权的操作。开机启动和搜索等异步操作仍需要核对最终状态。
+
+单项命令在提交响应的 `data.recovery` 中提供原 `plan_token` 和 `request_id`；发生提交传输错误时该字段仍返回，因此此时错误信封的 data 不为 null。超时先查 `request get --id`，必要时使用原 token/request ID 调用 `plan apply`。不要通过重新运行单项命令来恢复超时：它会产生新预览；回执过期或应用重启后须核对实际状态。CLI 不写临时计划文件或回执日志。
+
+
+## 获取配套 Skill
+
+`luciddesk-cli skill show --json` 离线返回 `data.content`，与当前 CLI 构建使用同一份技能源文件。包内还提供 `skills/luciddesk-control/SKILL.md`，可复制到 Agent 配置的技能目录，已有同名文件时请先比较内容。CLI、Skill 和协议 schema 随普通 ZIP、便携包及安装包分发；不自动更改 PATH 或 Agent 设置。
+
+
+### 桌面呈现确认与重启恢复
+
+桌面收纳和释放通过 Explorer 异步完成。`commit_status:committed` 只确认持久状态；`presentation_status:pending` 表示还在等待图标资源或 Explorer 确认。使用原请求 ID 查询 `request get`，直到 `applied`、`failed` 或 `superseded`，不要重复提交。`status.data.desktop_sync_status` 同时提供当前同步状态 applied/pending/deferred/disconnected。菜单打开可能推迟同步；查询本身不触发写入。
+
+若提交后 GUI 或其他操作改变了目标归属，旧回执会标记 `superseded`；断连则标记 `failed`，数据库提交不会回滚。核对当前工作区后再决定后续操作。项目查询数组不承诺视觉顺序；面板内顺序按 `placement.row`、`placement.column` 排序核对。
+
+程序退出时 CLI 返回 APP_NOT_RUNNING。重启后实例 ID 改变，旧计划 token 返回 PLAN_EXPIRED、旧请求回执返回 RESULT_UNKNOWN；持久化面板仍可查询。收到这些错误应获取新快照并核对实际结果，而不是盲目重做。
+
+开发验收命令：先构建 `cargo build -p luciddesk-shell --example desktop_snapshot --locked --offline --target-dir target/cli-plan-build`，再运行 `tools/test-cli-plan.ps1 -LiveDesktopItems -RestartRecovery`。它要求没有其他主程序运行，使用独立数据目录，并只创建/整理/清理唯一命名的桌面测试文件；测试包含独立 Explorer 可见性及位置探针。
+
+持续查询验证可使用 `tools/test-cli-plan.ps1 -IdleSeconds 30`：先等待之前修改触发的自动备份完成，再比较整个测试数据目录的文件哈希、大小及写入时间，并记录 GUI CPU/内存。保持默认 error 日志，不禁用自动备份。正常自动备份是预期写入，不应误归因于只读查询。
