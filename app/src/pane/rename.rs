@@ -415,7 +415,7 @@ unsafe fn resize(edit: HWND, pointer: *mut Editor) {
             let padding = (6.0 * scale).round() as i32;
             let format = RECT { left: padding, top: ((height - metrics.tmHeight) / 2).max(1),
                 right: (width - padding).max(padding + 1), bottom: height - 1 };
-            SendMessageW(edit, EM_SETRECTNP, 0, (&format as *const RECT) as isize);
+            SendMessageW(edit, EM_SETRECTNP, 0, (&raw const format) as isize);
         }
     }
 }

@@ -27,7 +27,7 @@ mod tests {
             flags: SWP_SHOWWINDOW | SWP_FRAMECHANGED | SWP_NOZORDER,
             ..Default::default()
         };
-        let pointer = &mut position as *mut WINDOWPOS as isize;
+        let pointer = &raw mut position as isize;
         assert!(!unsafe { defer_show(WM_NULL, 0, false) });
         assert!(!unsafe { defer_show(WM_WINDOWPOSCHANGING, pointer, true) });
         assert_ne!(position.flags & SWP_SHOWWINDOW, 0);

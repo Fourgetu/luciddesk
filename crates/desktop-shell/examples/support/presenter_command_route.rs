@@ -31,7 +31,7 @@ impl CommandRoute {
                 hwnd,
                 Some(dispatch),
                 SUBCLASS,
-                (&*state as *const State) as usize,
+                (&raw const *state) as usize,
             ) == 0
             {
                 return Err(windows::core::Error::from_thread());

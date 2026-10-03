@@ -98,7 +98,7 @@ pub fn show_folder_menu(owner: HWND, path: &Path, point: POINT) -> Result<Folder
             owner.0,
             Some(menu_messages),
             0x4c50464d,
-            (&*messages as *const MenuMessages) as usize,
+            (&raw const *messages) as usize,
         ) == 0
         {
             return Err(windows::core::Error::from_thread());
@@ -137,7 +137,7 @@ pub fn show_folder_menu(owner: HWND, path: &Path, point: POINT) -> Result<Folder
             ptInvoke: point,
             ..Default::default()
         };
-        context.InvokeCommand((&command as *const CMINVOKECOMMANDINFOEX).cast())?;
+        context.InvokeCommand((&raw const command).cast())?;
         Ok(FolderMenuResult::Invoked {
             created: created.borrow_mut().take(),
         })

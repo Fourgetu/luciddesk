@@ -186,7 +186,7 @@ pub fn show_file_items_menu(
             owner.0,
             Some(menu_messages),
             0x4c50464d,
-            (&*messages as *const MenuMessages) as usize,
+            (&raw const *messages) as usize,
         ) == 0
         {
             return Err(windows::core::Error::from_thread());

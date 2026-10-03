@@ -92,7 +92,7 @@ unsafe extern "system" fn created(code: i32, wp: usize, lp: isize) -> isize {
                     hwnd,
                     Some(frame),
                     SUBCLASS,
-                    (&*popup as *const Popup) as usize,
+                    (&raw const *popup) as usize,
                 ) != 0
                 {
                     *state.popup.borrow_mut() = Some(popup);
@@ -166,7 +166,7 @@ impl Drop for MenuFrame {
             for popup in self.state.popup.get_mut().iter() {
                 let mut data = 0;
                 if GetWindowSubclass(popup.hwnd, Some(frame), SUBCLASS, &raw mut data) != 0
-                    && data == (&**popup as *const Popup) as usize
+                    && data == (&raw const **popup) as usize
                 {
                     RemoveWindowSubclass(popup.hwnd, Some(frame), SUBCLASS);
                 }

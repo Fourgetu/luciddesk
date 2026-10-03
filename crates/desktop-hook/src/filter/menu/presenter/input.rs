@@ -106,9 +106,9 @@ fn allocate(
     cancelled: Rc<dyn Fn() -> bool>,
 ) -> IUnknown {
     let vtable = if owner.is_some() {
-        (&TIP_VTABLE as *const TipVtable).cast()
+        (&raw const TIP_VTABLE).cast()
     } else {
-        (&VTABLE as *const Vtable).cast()
+        (&raw const VTABLE).cast()
     };
     let value = Box::new(Adapter {
         vtable,
@@ -380,9 +380,9 @@ mod tests {
     fn fixture(calls: Rc<Cell<(u32, usize, u128)>>, tip: bool) -> IUnknown {
         let value = Box::new(Fixture {
             vtable: if tip {
-                (&NATIVE_TIP as *const TipVtable).cast()
+                (&raw const NATIVE_TIP).cast()
             } else {
-                (&NATIVE as *const Vtable).cast()
+                (&raw const NATIVE).cast()
             },
             refs: AtomicU32::new(1),
             calls,

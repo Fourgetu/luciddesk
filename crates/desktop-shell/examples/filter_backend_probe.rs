@@ -214,7 +214,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .output()?;
     print!("{}", String::from_utf8_lossy(&child.stdout));
     if !child.status.success() {
-        return Err(String::from_utf8_lossy(&child.stderr).into_owned().into());
+        return Err(String::from_utf8_lossy_owned(child.stderr).into());
     }
     let started = Instant::now();
     loop {

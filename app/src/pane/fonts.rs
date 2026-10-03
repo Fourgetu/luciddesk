@@ -164,7 +164,7 @@ fn enumerate_candidates(sample: &str, default: &str, cancelled: &std::sync::atom
             dc,
             &lf,
             Some(collect),
-            (&mut names as *mut Vec<String>) as isize,
+            (&raw mut names) as isize,
             0,
         );
         DeleteDC(dc);
@@ -191,7 +191,7 @@ fn available(name: &str) -> bool {
     let mut lf = LOGFONTW { lfCharSet: DEFAULT_CHARSET, ..Default::default() };
     for (out, unit) in lf.lfFaceName.iter_mut().zip(name.encode_utf16()) { *out = unit; }
     let mut names = Vec::<String>::new();
-    unsafe { EnumFontFamiliesExW(probe.dc, &lf, Some(collect), (&mut names as *mut Vec<String>) as isize, 0); }
+    unsafe { EnumFontFamiliesExW(probe.dc, &lf, Some(collect), (&raw mut names) as isize, 0); }
     names.iter().any(|candidate| candidate == name) && probe.supports(name)
 }
 pub(super) fn load(store: &desktop_storage::WorkspaceStore) -> Result<(), String> {

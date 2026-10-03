@@ -8,6 +8,10 @@ Exit the app before upgrading a portable installation and preserve its `data` fo
 
 ## Unreleased
 
+### changed
+
+- Raise the minimum Rust version to 1.99 and enable raw-pointer borrow checks for FFI. Simplify native interface arguments and string conversion in diagnostic tools.
+
 ## 0.18.0 · 2026-10-03
 
 ### feat

@@ -224,7 +224,7 @@ impl MenuHost {
                 view_hwnd,
                 Some(menu_messages),
                 SUBCLASS,
-                (&*callbacks as *const MenuCallbacks) as usize,
+                (&raw const *callbacks) as usize,
             ) == 0
             {
                 return Err(windows::core::Error::from_thread());
