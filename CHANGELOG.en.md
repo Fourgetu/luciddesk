@@ -12,6 +12,10 @@ Exit the app before upgrading a portable installation and preserve its `data` fo
 
 - Raise the minimum Rust version to 1.99 and enable raw-pointer borrow checks for FFI. Simplify native interface arguments and string conversion in diagnostic tools.
 
+### perf
+
+- Generate only line-table debug information for CI builds and tests to reduce build artifact size. Include build-configuration environment variables in cache keys.
+
 ## 0.18.0 · 2026-10-03
 
 ### feat

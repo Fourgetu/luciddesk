@@ -22,6 +22,8 @@ jobs:
       cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
     env:
       CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
       CARGO_TARGET_DIR: target/ci-tests
     steps:
       - uses: actions/checkout@v7.0.1
@@ -52,7 +54,7 @@ jobs:
           workspaces: |
             . -> target/ci-tests
             . -> target/production
-          env-vars: LUCIDDESK_WINDOWS_BUILD_ENVIRONMENT
+          env-vars: CARGO CC CFLAGS CXX CMAKE RUST LUCIDDESK_WINDOWS_BUILD_ENVIRONMENT
           cache-bin: false
       - name: Test app rules and WARP emoji rendering
         run: cargo test -p luciddesk --bin luciddesk --locked -- i18n::tests pane::marquee::tests pane::title_emoji::tests updates::tests --test-threads=1 --skip marquee_window_messages_commit_cancel_and_ignore_mapped_folders

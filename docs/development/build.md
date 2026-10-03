@@ -217,7 +217,7 @@ Release 包含 EXE 安装包、普通 ZIP、便携 ZIP 及各自的 SHA256 文�
 
 已有版本记录和 Git 标签不追溯重编号。尚未发布的变更先记录在双语 Changelog 的“未发布 / Unreleased”章节，确定版本后移入对应版本章节。发布时同步 `Cargo.lock`、双语 README 徽章和双语 Changelog；CI 验证版本一致性，发布标签必须为 `<应用版本>` 或 `v<应用版本>`。
 
-CI 的语言资源和发布说明检查在 Linux 上与 Windows 构建并行。Cargo 依赖缓存覆盖 `target/ci-tests` 和 `target/production`，缓存按 Rust、Cargo 配置和 Windows 工具链隔离；不缓存发布包或测试临时目录。同一分支的新运行会取消旧构建，标签构建不自动取消。产物上传使用零级压缩，避免再次压缩 ZIP 和 EXE。
+CI 的语言资源和发布说明检查在 Linux 上与 Windows 构建并行。Cargo 依赖缓存覆盖 `target/ci-tests` 和 `target/production`，缓存按 Rust、Cargo 配置、编译环境变量和 Windows 工具链隔离；不缓存发布包或测试临时目录。CI 的 dev/test 构建使用 `line-tables-only` 调试信息，保留回溯文件名和行号，省去类型和变量信息；本地仍使用完整调试信息，release 配置不变。同一分支的新运行会取消旧构建，标签构建不自动取消。产物上传使用零级压缩，避免再次压缩 ZIP 和 EXE。
 
 ## Windows 工具链选择
 
