@@ -2,6 +2,23 @@
 
 `luciddesk-cli.exe` 查询并整理正在运行的 LucidDesk。先启动同一版本主程序；不自动启动应用，不创建或直接打开数据库。
 
+## 帮助与命令发现
+
+帮助可离线使用，不需要启动主程序：
+
+```powershell
+luciddesk-cli help
+luciddesk-cli help pane
+luciddesk-cli help pane snap
+luciddesk-cli pane snap --help
+luciddesk-cli folder fit -h
+luciddesk-cli help pane snap --json
+```
+
+总览列出命令，资源组列出子命令，具体修改命令显示可用参数、必需字段及 JSON 约束。字段说明来自内置协议；复杂字段用 `--input` 提供。`help ... --json` 返回标准响应信封，`data` 含 `usage`、`commands`，修改命令还包含 `field_flags` 和 `operation_schema`，适合 Agent 读取。在线实际支持范围仍以 `capabilities --json` 为准。
+
+帮助只接受命令主题和可选的 `--json`，不要同时传入 `--input` 或修改参数。无参数、`--help` 和 `-h` 均显示总览。参数错误保留 `INVALID_REQUEST` 和原退出码，并提示帮助入口；普通文本模式下，连接失败、状态冲突和超时另附下一步操作建议。
+
 ## 构建与运行
 
 ```powershell

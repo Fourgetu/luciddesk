@@ -1,8 +1,7 @@
+mod help;
 mod shortcuts;
 use luciddesk_api::{Request, Response, VERSION};
 use std::{ffi::OsString, time::Duration};
-const HELP: &str = "LucidDesk CLI\nUsage: luciddesk-cli <command> [options]\nCommands: schema (offline), skill show (offline), status, capabilities, workspace get, settings get, font list, startup get, monitor list, folder get --id ID, search get --id ID, pane list, pane get --id ID, item list, plan preview --input FILE|-, plan apply --token TOKEN --request-id ID, request get --id ID\nOptions: --json, --data-dir PATH, --timeout-ms 1..60000, --protocol-version N\nItem filters: --pane ID | --unassigned\nShortcut mutations: pane create/update/remove/geometry/fit/arrange/snap/sort, folder create/update/navigate/back/home/refresh/fit, search query/refresh/more, tab merge/select/reorder/detach, item assign/release/reorder, settings update, startup set. Add --dry-run to preview only; otherwise the CLI previews then applies once. Use --input FILE|- for operation fields or documented flags. Sort: pane sort --id ID [--descending true|false]. Snap: pane snap --id ID --target ID --side left|right|top|bottom [--align start|center|end] [--icon-columns N]. Folder fit: folder fit --id ID [--icon-columns N] [--max-rows N]. Fit: pane fit --id ID --icon-columns N. Arrange: pane arrange --input FILE|- with monitor_id, columns (pane IDs grouped left-to-right/top-to-bottom), icon_columns.
-The GUI must already be running. This CLI never opens the database.";
 struct Options {
     request: Request,
     json: bool,
@@ -181,8 +180,19 @@ fn offline_output(args: &[OsString]) -> Option<String> {
 }
 fn main() {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
-    if args == [OsString::from("--help")] || args.is_empty() {
-        println!("{HELP}");
+    if let Some(output) = help::output(&args) {
+        match output {
+            Ok(text) => println!("{text}"),
+            Err(message) => {
+                let response = Response::failure("", "INVALID_REQUEST", message);
+                if args.iter().any(|a| a == "--json") {
+                    println!("{}", serde_json::to_string(&response).unwrap());
+                } else {
+                    eprintln!("{}", response.error.as_ref().unwrap().message);
+                }
+                std::process::exit(response.exit_code());
+            }
+        }
         return;
     }
     if args == [OsString::from("--version")] {
@@ -198,7 +208,7 @@ fn main() {
     }
     let wants_json = args.iter().any(|a| a == "--json");
     let (response, json) = match parse(args) {
-        Err(error) => (Response::failure("", "INVALID_REQUEST", error), wants_json),
+        Err(error) => (Response::failure("", "INVALID_REQUEST", format!("{error}. Run 'luciddesk-cli help' or 'luciddesk-cli help RESOURCE COMMAND' for usage.")), wants_json),
         Ok(options) => {
             let response = shortcuts::run(&options, call);
             (response, options.json)
@@ -212,6 +222,12 @@ fn main() {
         );
     } else if let Some(error) = &response.error {
         eprintln!("{}: {}", error.code, error.message);
+        match error.code.as_str() {
+            "APP_NOT_RUNNING" => eprintln!("Start the matching LucidDesk GUI in this Windows session, then run status --json."),
+            "CONFLICT" => eprintln!("Query workspace get again, then preview a new plan."),
+            "TIMEOUT" | "RESULT_UNKNOWN" => eprintln!("Check request get --id ORIGINAL_ID and current state before retrying a change."),
+            _ => {}
+        }
         if let Some(recovery) = response.data.as_ref().and_then(|data| data.get("recovery")) {
             eprintln!(
                 "Recovery: {}",
