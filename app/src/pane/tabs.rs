@@ -71,8 +71,7 @@ pub(super) fn select(
         s.workspace
             .set_tab_groups(groups)
             .map_err(|e| e.to_string())?;
-        let workspace = s.workspace.clone();
-        if let Err(error) = s.store.save_workspace(&workspace) {
+        if let Err(error) = s.store.save_active_tab(from, to) {
             s.workspace = previous;
             return Err(error.to_string());
         }
@@ -83,11 +82,14 @@ pub(super) fn select(
         next.theme = panel.theme();
         next.dark = theme::is_dark(panel.theme());
         next.backdrop = panel.backdrop();
-        next.collapsed = panel.collapsed();
+        // A tab switch reuses the same window and its transient hover state.
+        let live = s.views.iter().find(|v| v.id == from).unwrap().model.borrow();
+        next.collapsed = live.collapsed;
+        next.reveal = live.reveal;
+        drop(live);
         next.locked = panel.locked();
         next.auto_hide = panel.auto_hide();
         next.list_view = panel.list_view();
-        next.reveal = if next.collapsed { 0.0 } else { 1.0 };
         next.merge_preview.clear();
         next.merge_occluded = false;
         next.hovered_item = None;

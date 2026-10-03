@@ -4,25 +4,19 @@ use desktop_window::MonitorDescriptor;
 use std::time::{Duration, Instant};
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
-/// Initial bounds in DIP, using the same grid metrics as desktop rendering.
-pub(super) fn first_pane(monitors: &[MonitorDescriptor], grid_scale: f32) -> RectDip {
-    let grid = layout::desktop_grid(0.0, 0.0, 48.0, grid_scale);
-    let width = (layout::PADDING * 2.0 + 3.0 * grid.cell_width).max(RectDip::MIN_WIDTH);
-    let height = (layout::HEADER + layout::PADDING * 2.0 + 4.0 * grid.cell_height).max(RectDip::MIN_HEIGHT);
-    let Some(monitor) = monitors.iter().find(|m| m.primary).or_else(|| monitors.first()) else {
-        return RectDip::new(24.0, 24.0, width, height);
-    };
-    let scale = monitor.dpi as f32 / 96.0;
-    let work = monitor.work_area;
-    let width = (width * scale).ceil().min(work.width as f32);
-    let height = (height * scale).ceil().min(work.height as f32);
-    let margin = (24.0 * scale).ceil();
-    RectDip {
-        x: (work.x as f32 + (work.width as f32 - width - margin).max(0.0)) / scale,
-        y: (work.y as f32 + margin.min((work.height as f32 - height).max(0.0))) / scale,
-        width: width / scale,
-        height: height / scale,
+/// Shared initial bounds for startup and user-created panels, in DIP.
+pub(super) fn new_pane(workspace: &Workspace, search: bool) -> RectDip {
+    let (width, height) = if search { (360.0, 200.0) } else { (480.0, 360.0) };
+    let mut rect = RectDip::new(240.0, 240.0, width, height);
+    // Compare origins rather than intersections: a small cascade intentionally overlaps.
+    while workspace.panels().iter().any(|panel| {
+        let existing = panel.rect();
+        (existing.x - rect.x).abs() < 1.0 && (existing.y - rect.y).abs() < 1.0
+    }) {
+        rect.x -= 24.0;
+        rect.y -= 24.0;
     }
+    rect
 }
 
 pub(super) struct Layouts {
@@ -160,7 +154,7 @@ pub(super) fn place(s: &PaneApp, id: PanelId) {
     let panel = s.workspace.panel(id).unwrap();
     let height = if panel.is_search() {
         56.0 * scale
-    } else if panel.collapsed() {
+    } else if v.model.borrow().collapsed {
         layout::HEADER * scale
     } else {
         r.height
@@ -181,13 +175,13 @@ pub(super) fn place(s: &PaneApp, id: PanelId) {
     }
 }
 
-pub(super) fn record(s: &mut PaneApp) -> Result<(), String> {
+pub(super) fn capture(s: &mut PaneApp) -> Option<(String, Vec<(PanelId, RectDip)>)> {
     let Some(runtime) = &mut s.runtime else {
-        return Ok(());
+        return None;
     };
     let current = desktop_window::enumerate_monitors();
     if runtime.layouts.monitors != current || runtime.layouts.pending.is_some() {
-        return Ok(());
+        return None;
     }
     for view in &s.views {
         let mut r = RECT::default();
@@ -202,7 +196,7 @@ pub(super) fn record(s: &mut PaneApp) -> Result<(), String> {
                 r.left as f32,
                 r.top as f32,
                 (r.right - r.left) as f32,
-                if panel.collapsed() || panel.is_search() {
+                if view.model.borrow().collapsed || panel.is_search() {
                     panel.rect().height * scale
                 } else {
                     (r.bottom - r.top) as f32
@@ -225,9 +219,14 @@ pub(super) fn record(s: &mut PaneApp) -> Result<(), String> {
         .iter()
         .map(|(id, r)| (*id, *r))
         .collect();
-    s.store
-        .save_monitor_layout(&key(&current), &layout)
-        .map_err(|e| e.to_string())
+    Some((key(&current), layout))
+}
+
+pub(super) fn record(s: &mut PaneApp) -> Result<(), String> {
+    if let Some((topology, layout)) = capture(s) {
+        s.store.save_monitor_layout(&topology, &layout).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 pub(super) fn tick(state: &Rc<RefCell<PaneApp>>) -> Result<(), String> {
@@ -275,49 +274,25 @@ pub(super) fn tick(state: &Rc<RefCell<PaneApp>>) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn monitor(dpi: u32, width: i32, height: i32) -> MonitorDescriptor {
-        let work_area = desktop_window::PixelRect { x: 80, y: 40, width, height };
-        MonitorDescriptor {
-            id: desktop_core::MonitorId::new("primary"),
-            bounds: work_area,
-            work_area,
-            dpi,
-            primary: true,
-        }
-    }
-
     #[test]
-    fn first_pane_fits_three_columns_and_four_rows_at_fractional_dpi() {
-        for dpi in [96, 120, 144, 168, 192] {
-            for grid_scale in [100.0, 125.0, 150.0] {
-                let m = monitor(dpi, 2400, 1800);
-                let r = first_pane(std::slice::from_ref(&m), grid_scale);
-                let scale = dpi as f32 / 96.0;
-                let grid = layout::desktop_grid(r.width, r.height, 48.0, grid_scale);
-                assert_eq!((grid.columns, grid.visible_rows), (3, 4));
-                assert_eq!(grid.max_scroll(12), 0);
-                assert!((r.x * scale + r.width * scale + (24.0 * scale).ceil() - 2480.0).abs() < 0.01);
-                assert!((r.y * scale - 40.0 - (24.0 * scale).ceil()).abs() < 0.01);
-            }
-        }
-        let r = first_pane(&[monitor(96, 1920, 1040)], 100.0);
-        assert_eq!((r.width, r.height), (288.0, 448.0));
-    }
-
-    #[test]
-    fn first_pane_uses_primary_and_stays_inside_small_work_area() {
-        let primary = monitor(144, 240, 300);
-        let mut secondary = monitor(96, 1920, 1080);
-        secondary.primary = false;
-        let r = first_pane(&[secondary, primary], 100.0);
-        assert_eq!(r, RectDip { x: 80.0 / 1.5, y: 40.0 / 1.5, width: 160.0, height: 200.0 });
-        assert_eq!(first_pane(&[], 100.0), RectDip::new(24.0, 24.0, 288.0, 448.0));
+    fn new_panels_share_default_bounds_and_cascade_only_at_occupied_origins() {
+        let mut workspace = Workspace::new();
+        let first = new_pane(&workspace, false);
+        assert_eq!(first, RectDip::new(240.0, 240.0, 480.0, 360.0));
+        workspace.add_panel(Panel::new(PanelId::new(1), "First", first)).unwrap();
+        let second = new_pane(&workspace, false);
+        assert_eq!(second, RectDip::new(216.0, 216.0, 480.0, 360.0));
+        workspace.add_panel(Panel::new(PanelId::new(2), "Second", second)).unwrap();
+        assert_eq!(new_pane(&workspace, false), RectDip::new(192.0, 192.0, 480.0, 360.0));
+        assert_eq!(new_pane(&workspace, true), RectDip::new(192.0, 192.0, 360.0, 200.0));
+        workspace.panel_mut(PanelId::new(1)).unwrap().set_rect(RectDip::new(300.0, 300.0, 480.0, 360.0));
+        assert_eq!(new_pane(&workspace, false), first);
     }
 
     #[test]
     fn settled_layout_is_not_enumerated_until_invalidated() {
         let mut app = super::super::tests::test_state();
-        app.runtime = Some(runtime::State::new(std::path::PathBuf::from("unused.db")));
+        app.runtime = Some(runtime::State::new(std::path::PathBuf::from("unused.json")));
         app.runtime.as_mut().unwrap().layouts.next_check = None;
         let state = Rc::new(RefCell::new(app));
         tick(&state).unwrap();

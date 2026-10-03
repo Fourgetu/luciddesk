@@ -106,7 +106,7 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
         let mut pane = Panel::new(
             PanelId::new(1),
             title.clone().unwrap_or_else(|| crate::i18n::text("ui-new-group").into()),
-            display_layout::first_pane(&monitors, workspace.pane_options().grid_scale),
+            display_layout::new_pane(&workspace, false),
         );
         pane.set_backdrop(desktop_core::Backdrop::Acrylic);
         workspace.add_panel(pane).map_err(|e| e.to_string())?;

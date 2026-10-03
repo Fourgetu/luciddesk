@@ -106,20 +106,32 @@ pub(super) fn handle(
     id: PanelId,
     event: Event,
 ) -> Result<bool, String> {
-    if matches!(event, Event::SetTitleEmojiColor(_) | Event::ResetPaneOptions) {
+    if matches!(event, Event::ResetPaneOptions) {
+        let s = state.borrow();
+        s.store.save_metadata_preferences(&[
+            ("pane_title_emoji_color", "true"),
+            ("pane_compact_menu", "true"),
+            ("pane_header_divider", "true"),
+        ]).map_err(|e| e.to_string())?;
+        title_emoji::load(&s.store)?;
+        compact_menu::load(&s.store)?;
+        header_divider::load(&s.store)?;
+        for view in &s.views { unsafe { InvalidateRect(view.window.hwnd().cast(), std::ptr::null(), 0); } }
+    }
+    if matches!(event, Event::SetTitleEmojiColor(_)) {
         let color = if let Event::SetTitleEmojiColor(color) = event { color } else { true };
         let s = state.borrow();
         title_emoji::save(&s.store, color)?;
         for view in &s.views { unsafe { InvalidateRect(view.window.hwnd().cast(), std::ptr::null(), 0); } }
         if matches!(event, Event::SetTitleEmojiColor(_)) { return Ok(false); }
     }
-    if matches!(event, Event::ToggleCompactMenu | Event::ResetPaneOptions) {
-        compact_menu::save(&state.borrow().store, matches!(event, Event::ResetPaneOptions) || !compact_menu::enabled())?;
+    if matches!(event, Event::ToggleCompactMenu) {
+        compact_menu::save(&state.borrow().store, !compact_menu::enabled())?;
         if matches!(event, Event::ToggleCompactMenu) { return Ok(false); }
     }
-    if matches!(event, Event::ToggleHeaderDivider | Event::ResetPaneOptions) {
+    if matches!(event, Event::ToggleHeaderDivider) {
         let s = state.borrow();
-        header_divider::save(&s.store, matches!(event, Event::ResetPaneOptions) || !header_divider::enabled())?;
+        header_divider::save(&s.store, !header_divider::enabled())?;
         for view in &s.views { unsafe { InvalidateRect(view.window.hwnd().cast(), std::ptr::null(), 0); } }
         if matches!(event, Event::ToggleHeaderDivider) { return Ok(false); }
     }
@@ -711,7 +723,7 @@ pub(super) fn handle(
                             .into_owned()
                     })
                     .unwrap_or_else(|| crate::i18n::text("ui-new-group").into()),
-                RectDip::new(240.0, 240.0, 480.0, 360.0),
+                display_layout::new_pane(&s.workspace, search),
             );
             panel.set_folder(path.clone());
             if path.is_some() {
@@ -720,7 +732,6 @@ pub(super) fn handle(
             if search {
                 panel.set_search(true);
                 panel.set_title(crate::i18n::text("ui-everything-search").to_string());
-                panel.set_rect(RectDip::new(240.0, 240.0, 360.0, 200.0));
             }
             s.workspace.add_panel(panel).map_err(|e| e.to_string())?;
             if s.workspace.appearance().is_none() {
@@ -922,6 +933,9 @@ pub(super) fn handle(
                 view.model.borrow_mut().auto_hide = enabled;
                 window::update_auto_hide(view.window.hwnd().cast(), enabled);
             }
+            if !enabled {
+                show_collapsed(&s, id, s.workspace.panel(id).unwrap().collapsed());
+            }
         }
         Event::Activate(_) | Event::ActivateSelection | Event::Peek | Event::FileCommand(_) => {
             unreachable!("Handled before borrowing PaneApp")
@@ -930,8 +944,10 @@ pub(super) fn handle(
             if s.workspace.panel(id).is_none() {
                 return Ok(false);
             }
+            let collapsed = s.views.iter().find(|v| v.id == id)
+                .map_or_else(|| s.workspace.panel(id).unwrap().collapsed(), |v| v.model.borrow().collapsed);
             if let Some(panel) = s.workspace.panel_mut(id) {
-                panel.set_rect(if panel.collapsed() {
+                panel.set_rect(if collapsed {
                     RectDip {
                         height: panel.rect().height,
                         ..rect
@@ -940,42 +956,25 @@ pub(super) fn handle(
                     rect
                 });
             }
-            save(&mut s)?;
-            display_layout::record(&mut s)?;
+            save_state(&mut s, true)?;
         }
-        Event::Collapse | Event::SetCollapsed(_) => {
-            if s.workspace.panel(id).is_none() {
-                return Ok(false);
+        Event::AutoHideCollapsed(collapsed) => {
+            // Hover state belongs to the live window, never to the persisted panel.
+            if s.workspace.panel(id).is_some_and(Panel::auto_hide) {
+                show_collapsed(&s, id, collapsed);
             }
-            let panel = s.workspace.panel_mut(id).unwrap();
-            let collapsed = if let Event::SetCollapsed(value) = event {
-                value
-            } else {
-                !panel.collapsed()
-            };
-            if panel.collapsed() == collapsed {
-                return Ok(false);
+        }
+        Event::Collapse => {
+            let Some(panel) = s.workspace.panel(id) else { return Ok(false); };
+            let collapsed = !s.views.iter().find(|v| v.id == id)
+                .map_or(panel.collapsed(), |v| v.model.borrow().collapsed);
+            let previous = s.workspace.clone();
+            s.workspace.panel_mut(id).unwrap().set_collapsed(collapsed);
+            if let Err(error) = save(&mut s) {
+                s.workspace = previous;
+                return Err(error);
             }
-            panel.set_collapsed(collapsed);
-            let bounds = panel.rect();
-            if let Some(view) = s.views.iter().find(|v| v.id == id) {
-                view.model.borrow_mut().collapsed = collapsed;
-                let hwnd = view.window.hwnd().cast();
-                unsafe {
-                    PostMessageW(
-                        hwnd,
-                        window::ANIMATE_FOLD,
-                        0,
-                        (if collapsed {
-                            layout::HEADER
-                        } else {
-                            bounds.height
-                        })
-                        .round() as isize,
-                    );
-                }
-            }
-            save(&mut s)?;
+            show_collapsed(&s, id, collapsed);
         }
         Event::Drop { index, point } => {
             let source = items_for(&s, id);
@@ -1190,4 +1189,16 @@ pub(super) fn commit_material(
         return Err(error);
     }
     Ok(())
+}
+
+/// Animate effective visibility without changing saved window preferences.
+fn show_collapsed(state: &PaneApp, id: PanelId, collapsed: bool) {
+    let Some(panel) = state.workspace.panel(id) else { return; };
+    let Some(view) = state.views.iter().find(|v| v.id == id) else { return; };
+    if view.model.borrow().collapsed == collapsed { return; }
+    view.model.borrow_mut().collapsed = collapsed;
+    let height = if collapsed { layout::HEADER } else { panel.rect().height };
+    unsafe {
+        PostMessageW(view.window.hwnd().cast(), window::ANIMATE_FOLD, 0, height.round() as isize);
+    }
 }

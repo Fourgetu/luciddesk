@@ -183,7 +183,8 @@ enum Event {
     ToggleSnap,
     ResetPaneOptions,
     Theme(desktop_core::PanelTheme),
-    SetCollapsed(bool),
+    // Hover-driven window visibility; never persisted as the manual fold preference.
+    AutoHideCollapsed(bool),
     Moving(*mut RECT),
     Sizing(*mut RECT, RECT, u32),
     Material(desktop_core::Backdrop),
@@ -433,11 +434,19 @@ fn refresh_changed_views(state: &mut PaneApp, force: bool) {
 }
 
 fn save(state: &mut PaneApp) -> Result<(), String> {
+    save_state(state, false)
+}
+
+fn save_state(state: &mut PaneApp, record_layout: bool) -> Result<(), String> {
     state.workspace.sync_tab_windows();
     hybrid::sync(state)?;
+    let layout = record_layout.then(|| display_layout::capture(state)).flatten();
     state
         .store
-        .save_workspace(&state.workspace)
+        .save_workspace_with_layout(
+            &state.workspace,
+            layout.as_ref().map(|(topology, bounds)| (topology.as_str(), bounds.as_slice())),
+        )
         .map_err(|e| crate::i18n::format("ui-could-not-save-group", &[("e", format!("{}", e))]))
 }
 

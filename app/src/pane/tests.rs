@@ -1860,3 +1860,63 @@ fn multiselection_preserves_anchor_toggle_and_file_identity_on_refresh() {
     assert_eq!(model.selection_anchor, None);
     assert_eq!(model.items.last().unwrap().label, "0");
 }
+
+#[test]
+fn auto_hide_is_transient_across_saves_tabs_and_manual_fold() {
+    let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("workspace.db");
+    let mut initial = test_state();
+    initial.workspace.set_tab_groups(vec![desktop_core::PaneTabs {
+        members: vec![PanelId::new(1), PanelId::new(2)], active: PanelId::new(1),
+    }]).unwrap();
+    initial.store = WorkspaceStore::open(&path).unwrap();
+    initial.store.save_workspace(&initial.workspace).unwrap();
+    initial.workspace = initial.store.load_workspace().unwrap();
+    let state = Rc::new(RefCell::new(initial));
+    let first = PanelId::new(1);
+    let second = PanelId::new(2);
+    create_view(&state, first).unwrap();
+    handle(&state, first, Event::ToggleAutoHide).unwrap();
+    let revision = state.borrow().store.change_count();
+    let bytes = std::fs::read(&path).unwrap();
+    let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+    for _ in 0..10 {
+        for collapsed in [true, false] {
+            handle(&state, first, Event::AutoHideCollapsed(collapsed)).unwrap();
+            assert_eq!(state.borrow().views[0].model.borrow().collapsed, collapsed);
+            assert!(!state.borrow().workspace.panel(first).unwrap().collapsed());
+        }
+    }
+    handle(&state, first, Event::AutoHideCollapsed(true)).unwrap();
+    save(&mut state.borrow_mut()).unwrap();
+    assert_eq!(state.borrow().store.change_count(), revision);
+    assert_eq!(std::fs::read(&path).unwrap(), bytes);
+    assert_eq!(std::fs::metadata(&path).unwrap().modified().unwrap(), modified);
+
+    // The same native window retains its hover state while its active tab changes.
+    tabs::select(&state, first, second).unwrap();
+    assert!(state.borrow().views[0].model.borrow().collapsed);
+    assert!(!state.borrow().store.load_workspace().unwrap().panel(second).unwrap().collapsed());
+    let height = state.borrow().workspace.panel(second).unwrap().rect().height;
+    handle(&state, second, Event::Geometry(RectDip {
+        x: 300.0, y: 320.0, width: 480.0, height: layout::HEADER,
+    })).unwrap();
+    assert_eq!(state.borrow().store.load_workspace().unwrap().panel(second).unwrap().rect().height, height);
+
+    // Disabling hover restores the saved manual state, not the last mouse position.
+    handle(&state, second, Event::ToggleAutoHide).unwrap();
+    assert!(!state.borrow().views[0].model.borrow().collapsed);
+    handle(&state, second, Event::AutoHideCollapsed(true)).unwrap();
+    assert!(!state.borrow().views[0].model.borrow().collapsed);
+    handle(&state, second, Event::Collapse).unwrap();
+    assert!(state.borrow().store.load_workspace().unwrap().panel(second).unwrap().collapsed());
+    handle(&state, second, Event::ToggleAutoHide).unwrap();
+    let revision = state.borrow().store.change_count();
+    handle(&state, second, Event::AutoHideCollapsed(false)).unwrap();
+    assert!(!state.borrow().views[0].model.borrow().collapsed);
+    assert_eq!(state.borrow().store.change_count(), revision);
+    assert!(WorkspaceStore::open(&path).unwrap().load_workspace().unwrap().panel(second).unwrap().collapsed());
+    handle(&state, second, Event::ToggleAutoHide).unwrap();
+    assert!(state.borrow().views[0].model.borrow().collapsed);
+}

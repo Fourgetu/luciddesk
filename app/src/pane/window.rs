@@ -895,7 +895,7 @@ where
                 }
                 if let Some(collapse) = collapse {
                     if message == WM_TIMER {
-                        event(Event::SetCollapsed(collapse));
+                        event(Event::AutoHideCollapsed(collapse));
                     } else {
                         // Position/activation messages can arrive synchronously
                         // while the owner holds PaneApp. Commit on a later tick.
@@ -922,9 +922,8 @@ where
                     drag_image = None;
                     column_drag = None;
                     scrollbar_drag = None;
-                    fold = None;
+                    // The native window and its transient fold are shared by all tabs.
                     unsafe {
-                        KillTimer(hwnd, 2);
                         if windows_sys::Win32::UI::Input::KeyboardAndMouse::GetCapture() == hwnd { ReleaseCapture(); }
                         PostMessageW(hwnd, SYNC_POINTER, 0, 0);
                     }
