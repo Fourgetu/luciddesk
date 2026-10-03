@@ -78,26 +78,32 @@ cargo build -p luciddesk -p desktop-hook --locked --offline --target-dir target\
 
 产物位于 `target\packages`。包内配置仍默认保存在 LocalAppData；未提交代码会在包名和 `build.json` 中标记为 dirty。GitHub Actions 的 Build CI 工作流执行全目标编译、核心与存储、多语言、更新检查、框选规则、拖动图像透明度、WARP 彩色 emoji 与 Canvas 兼容测试，以及工作区文档示例。完成安装与升级验证后，同时上传安装包、普通 ZIP、便携 ZIP 及 SHA256 校验文件；需要窗口、焦点或 Explorer 的桌面 UI 测试仍在交互会话运行。
 
-### Inno Setup 安装包
+### EXE 与 MSI 安装包
 
-安装包使用固定版本的 Inno Setup 编译器。以下命令安装经 SHA256 校验的官方编译器到 `target\tooling`，生成普通 ZIP 和安装包；已安装其他版本的编译器时可传 `-InnoCompiler <ISCC.exe>`：
+默认使用 Inno Setup 7.1.0（x64 编译器） 生成 EXE。MSI 使用 WiX 5.0.2，构建机需要 .NET SDK 8 或更新版本。准备脚本将工具放到项目的 `target/tooling`。
 
 ```powershell
+# 默认：EXE
 .\tools\ensure-inno.ps1
 .\tools\package.ps1 -Installer -Offline
+
+# MSI
+.\tools\ensure-wix.ps1
+.\tools\package.ps1 -Installer -InstallerFormat Msi -Offline
+
+# 使用同一份程序文件生成 EXE 和 MSI
+.\tools\package.ps1 -Installer -InstallerFormat Both -Offline
 ```
 
-安装包位于 `target\installers\版本-修订-时间戳`。安装器支持当前用户或所有用户安装，后者申请管理员权限并默认安装到 Program Files；快捷方式与卸载注册分别使用对应范围。固定 AppId，升级沿用原安装范围和目录，确认后请求应用正常退出并等待进程结束，阻止降级并保留用户数据。无响应时停止安装；`/NOCLOSEAPPLICATIONS` 禁用自动关闭。中文语言文件来自 Inno Setup 官方仓库 `is-6_7_3/Files/Languages/Unofficial/ChineseSimplified.isl`，保留文件中的译者署名。
+`-InnoCompiler <ISCC.exe>` 可指定已有的 Inno 编译器。未传 `-Installer` 时仍只生成 ZIP。CI 使用 `Both`，发布 EXE、MSI、普通 ZIP、便携 ZIP 及各自 SHA256。
 
-`installer/LucidDesk.iss` 的两项 `[Icons]` 与 `app/src/main.rs` 在创建 UI 前设置的 AppUserModelID 统一为 `Yuchen95.LucidDesk`，不加入版本号或安装路径。修改应用身份时必须同步这两处；Inno Setup AppId 继续用于安装升级识别。开始菜单快捷方式交给 `[Icons]` 和 Inno 原生卸载记录管理，不扫描删除用户另建的开始菜单链接。`shortcut-cleanup.iss` 只补充清理桌面上指向当前安装的复制链接，并通知 Shell 刷新，不修改 Windows AppListBackup。
-
-安装器回归测试读取开始菜单和桌面 `.lnk` 的 `System.AppUserModel.ID` 属性，验证固定应用身份，并检查额外快捷方式清理及目录联接保护。
+产物位于 `target/installers/版本-修订-时间戳`。`installer/LucidDesk.iss` 定义 EXE 安装流程；`installer/LucidDesk.wxs` 定义 MSI 文件、快捷方式和升级规则，`msi-actions.cpp` 检查进程退出及组件占用。安装范围、静默参数和旧版迁移见[安装版说明](../installer.md)。应用与快捷方式使用固定 AppUserModelID `Yuchen95.LucidDesk`；MSI 升级身份由固定 UpgradeCode 管理。
 
 ### 应用更新检查
 
 关于页仅支持手动检查新版本与打开 Release 页面。检查使用后台 WinHTTP 请求 GitHub Releases API，支持 Windows 代理和显式 `HTTPS_PROXY` HTTP 代理，并比较稳定版本号（标签可有 `v` 前缀）。更新包由用户在浏览器中自行下载。
 
-验证命令（安装器测试使用随机测试 AppId、快捷方式名称和工作区临时目录，安装与卸载自己的测试注册项）：
+验证命令（安装器测试使用随机测试产品名称和 UpgradeCode、快捷方式名称和工作区临时目录，安装与卸载自己的测试注册项）：
 
 ```powershell
 cargo test -p luciddesk --bin luciddesk updates::tests --locked --offline
@@ -187,7 +193,7 @@ cargo build -p desktop-shell --example filter_backend_probe --locked
 
 Build CI 在推送标签或 `codex/ci-compare-*` 比较分支时运行，不限定 `v` 前缀；普通分支推送和 PR 不触发，手动启动用于比较构建产物，仅上传 Actions 附件，不发布 Release。发布标签支持 `<版本>` 和 `v<版本>`（例如 `0.14.0` 或 `v0.14.0`）。公开仓库 `Yuch3nE/luciddesk` 核对标签与应用 Cargo 版本，完成检查与普通包、便携包及安装包打包，再发布对应 GitHub Release；其他标签会在版本校验阶段报错。同步本地仓库时需要一并同步标签；已触发的运行可在 Actions 页面重新运行。
 
-Release 包含一个安装包、两个 ZIP 及各自的 SHA256 文件，均附带中英文更新记录。发布任务先验证校验值；正文从标签对应源码中的 `CHANGELOG.md` 和 `CHANGELOG.en.md` 分别提取匹配版本章节，按中文、英文顺序合并，中间使用分隔线，不添加语言大标题，只显示一次版本标题与日期。新增功能和问题修复分别放在 `feat`、`fix` 分类下，更新说明聚焦应用行为；保留完整内容，并将相对链接转换为该标签下的 GitHub 链接。任一语言的章节缺失、重复或为空时中止发布；构建阶段会运行双语提取测试。重跑时同步更新正文与同名附件。发布权限仅授予独立的 Release 任务。
+Release 包含 EXE 和 MSI 安装包、两个 ZIP 及各自的 SHA256 文件，均附带中英文更新记录。发布任务先验证校验值；正文从标签对应源码中的 `CHANGELOG.md` 和 `CHANGELOG.en.md` 分别提取匹配版本章节，按中文、英文顺序合并，中间使用分隔线，不添加语言大标题，只显示一次版本标题与日期。新增功能和问题修复分别放在 `feat`、`fix` 分类下，更新说明聚焦应用行为；保留完整内容，并将相对链接转换为该标签下的 GitHub 链接。任一语言的章节缺失、重复或为空时中止发布；构建阶段会运行双语提取测试。重跑时同步更新正文与同名附件。发布权限仅授予独立的 Release 任务。
 
 推送到 `main` 的更新记录或生成器改动会触发 `Sync release notes`，只同步当前应用版本已存在的 Release 正文，支持带或不带 `v` 的标签。这个任务不编译程序，不创建或移动标签，也不替换附件；修改旧版本说明时需同步对应版本的 Release 正文。
 
@@ -206,6 +212,6 @@ Release 包含一个安装包、两个 ZIP 及各自的 SHA256 文件，均附�
 
 ## Windows 工具链选择
 
-CI 使用滚动更新的 `windows-2025-vs2026` 镜像，MSVC 和 Windows SDK 跟随镜像安装的工具链；本地选择本机可用工具链。Rust 1.99.0、Inno Setup 7.1.0（x64 编译器） 仍固定版本。`tools/windows-toolchain.json` 仅规定最低 MSVC 14.51.36231 和 SDK 10.0.26100.0；`tools/use-windows-toolchain.ps1` 按数值版本选择最新可用的 x64 MSVC，由 vcvarsall 选择最新 SDK，并显式指定 Cargo 链接器和 C/C++ 工具。缺少工具或版本低于要求时停止，cl/link/lib/rc 的 SHA256 仅用于记录实际构建环境。`build.json` 记录实际 Rust、Cargo、MSVC、SDK、工具版本及 SHA256、CI runner 版本，供定位构建差异；不保证本地与 CI 或不同日期构建的二进制一致。
+CI 使用滚动更新的 `windows-2025-vs2026` 镜像，MSVC 和 Windows SDK 跟随镜像安装的工具链；本地选择本机可用工具链。Rust 1.99.0、Inno Setup 7.1.0（x64 编译器）、WiX 5.0.2 仍固定版本。`tools/windows-toolchain.json` 仅规定最低 MSVC 14.51.36231 和 SDK 10.0.26100.0；`tools/use-windows-toolchain.ps1` 按数值版本选择最新可用的 x64 MSVC，由 vcvarsall 选择最新 SDK，并显式指定 Cargo 链接器和 C/C++ 工具。缺少工具或版本低于要求时停止，cl/link/lib/rc 的 SHA256 仅用于记录实际构建环境。`build.json` 记录实际 Rust、Cargo、MSVC、SDK、工具版本及 SHA256、CI runner 版本，供定位构建差异；不保证本地与 CI 或不同日期构建的二进制一致。
 
 直接执行 Cargo 构建前，在同一 PowerShell 会话执行 `.\tools\use-windows-toolchain.ps1`；发布打包脚本自动执行该步骤。常规 Visual Studio、SDK 和 runner 镜像更新无需重写哈希配置；若新工具链出现兼容问题，依据日志及 `build.json` 中的实际版本排查。

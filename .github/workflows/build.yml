@@ -52,17 +52,19 @@ jobs:
         run: cargo test -p luciddesk --test canvas_compat --locked -- --test-threads=1
       - name: Test workspace documentation examples
         run: cargo test --workspace --doc --locked
-      - name: Install pinned Inno Setup compiler
+      - name: Prepare installer compilers
         shell: pwsh
-        run: ./tools/ensure-inno.ps1
+        run: |
+          ./tools/ensure-inno.ps1
+          ./tools/ensure-wix.ps1
       - name: Test release checks
         run: cargo test -p luciddesk --bin luciddesk updates::tests --locked
       - name: Package installer and ZIPs
         shell: pwsh
         run: |
-          ./tools/package.ps1 -Installer
+          ./tools/package.ps1 -Installer -InstallerFormat Both
           ./tools/package.ps1 -Portable
-      - name: Verify install and upgrade lifecycle
+      - name: Verify MSI install and upgrade lifecycle
         shell: pwsh
         run: |
           $stage = Get-ChildItem -LiteralPath target/packages -Directory | Select-Object -First 1
@@ -75,7 +77,8 @@ jobs:
             target/packages/*.sha256
             target/portable/**/*.zip
             target/portable/**/*.sha256
-            target/installers/**/*.exe
+            target/installers/**/*-setup.exe
+            target/installers/**/*.msi
             target/installers/**/*.sha256
           if-no-files-found: error
   release:
@@ -102,9 +105,9 @@ jobs:
         run: |
           set -euo pipefail
           python3 tools/release-notes.py --tag "$RELEASE_TAG" --repository "$GH_REPO" --changelog CHANGELOG.md --changelog-en CHANGELOG.en.md --output release-notes.md
-          mapfile -d '' archives < <(find artifacts -type f \( -name '*.zip' -o -name '*-setup.exe' \) -print0)
+          mapfile -d '' archives < <(find artifacts -type f \( -name '*.zip' -o -name '*.msi' -o -name '*-setup.exe' \) -print0)
           mapfile -d '' checksums < <(find artifacts -type f -name '*.sha256' -print0)
-          [[ ${#archives[@]} -eq 3 && ${#checksums[@]} -eq 3 ]]
+          [[ ${#archives[@]} -eq 4 && ${#checksums[@]} -eq 4 ]]
           for checksum in "${checksums[@]}"; do
             (cd "$(dirname "$checksum")" && sha256sum -c "$(basename "$checksum")")
           done

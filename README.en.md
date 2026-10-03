@@ -68,7 +68,7 @@ Download from [GitHub Releases](https://github.com/Yuch3nE/luciddesk/releases). 
 
 | Package | File name | Default settings location | Best suited for |
 | --- | --- | --- | --- |
-| Installer | `windows-x64-setup.exe` | `%LOCALAPPDATA%\LucidDesk` | Setup wizard, Start menu and uninstall entry |
+| Installer | `windows-x64-setup.exe` / `windows-x64.msi` | `%LOCALAPPDATA%\LucidDesk` | Setup wizard, Start menu and uninstall entry |
 | Standard ZIP (non-portable) | `.zip`, without `portable` | `%LOCALAPPDATA%\LucidDesk` | Running without installation, with separate settings |
 | Portable | Contains `windows-x64-portable` | The `data` folder beside the executable | Carrying settings with the app folder |
 
@@ -76,7 +76,7 @@ See the [installer](docs/installer.md), [standard ZIP](docs/package.md) or [port
 
 ### Launch and organize
 
-**Installer:** run `windows-x64-setup.exe`, follow the wizard, then launch from the Start menu. Install for the current user or choose all users to install in Program Files.
+**Installer:** choose `windows-x64-setup.exe` for a wizard with current-user or all-users installation. MSI is also available; see the [installer guide](docs/installer.md).
 
 **ZIP packages:**
 
@@ -161,13 +161,15 @@ cargo build -p luciddesk -p desktop-hook --locked
 .\target\debug\luciddesk.exe
 ```
 
-Build packages from the repository root:
+EXE is the default installer format. Run from the repository root:
 
 ```powershell
 .\tools\ensure-inno.ps1
 .\tools\package.ps1 -Installer
 .\tools\package.ps1 -Portable
 ```
+
+For MSI, run `ensure-wix.ps1` and add `-InstallerFormat Msi`; `Both` builds both formats. MSI builds require .NET SDK 8 or newer.
 
 Installers are written to `target/installers/`, standard ZIPs to `target/packages/`, and portable ZIPs to `target/portable/<timestamp>/`. Each package includes a SHA256 checksum file. Keep `luciddesk.exe` and `luciddesk_desktop.dll` from the same build together. See the [build guide](docs/development/build.md) for checks and diagnostic builds.
 

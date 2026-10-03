@@ -44,7 +44,7 @@ Diagnostics and debugging information are handled locally. Diagnostic builds or 
 
 You control local settings and workspace data. Automatic backups retain the latest 10 snapshots; manually exported copies remain under your control. After closing LucidDesk, you may delete its data directory to remove local settings. Back up anything you want to keep first.
 
-Inno Setup uninstall keeps user settings by default. Unchecking **Keep user settings** removes the current account's default data directory. Custom directories, portable data, other accounts' data and manually exported backups require separate removal. Windows application history, caches and backup records, and data held by third-party services, are not collectively removed by the LucidDesk uninstaller.
+EXE uninstall keeps settings by default; unchecking **Keep user settings** removes the current account's default data directory. MSI uninstall always preserves user settings. To remove them, delete `%LOCALAPPDATA%\LucidDesk` manually. Custom directories, portable data, other accounts' data and manually exported backups require separate removal. Windows application history, caches and backup records, and data held by third-party services, are not collectively removed by the LucidDesk uninstaller.
 
 ## Contact and changes
 

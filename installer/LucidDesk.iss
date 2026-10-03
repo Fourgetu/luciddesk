@@ -84,6 +84,8 @@ Name: "{autodesktop}\{#ProductName}"; Filename: "{app}\luciddesk.exe"; WorkingDi
 Filename: "{app}\luciddesk.exe"; Description: "{cm:LaunchProgram,LucidDesk}"; Flags: nowait postinstall skipifsilent runasoriginaluser
 
 [CustomMessages]
+english.MsiInstalled=The MSI edition is installed. Uninstall it first and keep your settings before switching to EXE.
+chinesesimplified.MsiInstalled=已安装 MSI 版。请先卸载并保留配置，再切换到 EXE 版。
 english.NewerInstalled=A newer version of LucidDesk is already installed. Installation canceled.
 chinesesimplified.NewerInstalled=已安装更新版本的 LucidDesk，安装已取消。
 english.PortableDirectory=This folder contains a portable LucidDesk installation. Choose a different folder to preserve portable mode.
@@ -380,7 +382,12 @@ var
   Declined: Boolean;
 begin
   Result := '';
-  if FileExists(ExpandConstant('{app}\portable')) then begin
+  if RegValueExists(HKCU64, 'Software\Yuchen95\{#ProductName}', 'InstallFolder') or
+     RegValueExists(HKLM64, 'Software\Yuchen95\{#ProductName}', 'InstallFolder') then begin
+    Result := CustomMessage('MsiInstalled');
+    Exit;
+  end;
+  if FileExists(ExpandConstant('{app}\portable')) or FileExists(ExpandConstant('{app}\portable.marker')) then begin
     Result := CustomMessage('PortableDirectory');
     Exit;
   end;

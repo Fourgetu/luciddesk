@@ -10,7 +10,7 @@
 | `rust-toolchain.toml`、`.cargo/` | Rust 工具链与 Cargo 构建配置 |
 | `app/` | 主程序、窗口交互、内嵌资源及应用测试 |
 | `crates/` | 领域模型、存储与 Windows 平台能力 |
-| `installer/` | Inno Setup 脚本、安装标记、快捷方式清理与安装器语言资源 |
+| `installer/` | Inno EXE 脚本、MSI 定义、安装检查、安装标记与许可文本 |
 | `tools/` | 打包、验证、资源生成、诊断及发布维护工具 |
 | `docs/` | 使用说明、开发指南、品牌说明与设计素材 |
 | `screenshot/` | README 等文档使用的截图 |
@@ -108,10 +108,10 @@ rg -n 'mod |pub.*use ' app/src/pane/mod.rs
 
 | 入口 | 用途 |
 | --- | --- |
-| `tools/package.ps1` | 普通包、便携包及 Inno Setup 安装包 |
+| `tools/package.ps1` | 普通包、便携包及 EXE / MSI 安装包 |
 | `tools/package-msix.ps1` | 从普通生产包生成 MSIX |
 | `installer/LucidDesk.iss`、`shortcut-cleanup.iss`、`installed` | 安装逻辑、快捷方式清理及安装标记 |
-| `tools/ensure-inno.ps1`、`use-windows-toolchain.ps1` | 安装器编译器和 Windows 构建工具链准备 |
+| `tools/ensure-inno.ps1`、`ensure-wix.ps1`、`build-msi.ps1`、`use-windows-toolchain.ps1` | 安装器编译器和 Windows 构建工具链准备 |
 | `tools/check-locales.py` | 翻译资源与调用检查 |
 | `tools/test-installer.ps1`、`test-package-lifecycle.py` | 安装器及真实应用生命周期回归 |
 | `tools/render-diagnostics/` | 渲染比较、崩溃转储配置和收集 |

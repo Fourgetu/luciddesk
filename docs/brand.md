@@ -34,7 +34,7 @@ EXE、窗口、托盘和关于页共用程序内嵌图标资源；安装器使�
 | 桌面组件 | `luciddesk_desktop.dll` |
 | 普通 ZIP | `LucidDesk-<版本>-<构建标识>-windows-x64-<时间戳>.zip` |
 | 便携 ZIP | `LucidDesk-<版本>-windows-x64-portable.zip` |
-| 安装程序 | `LucidDesk-<版本>-windows-x64-setup.exe` |
+| 安装程序 | `LucidDesk-<版本>-windows-x64-setup.exe` / `LucidDesk-<版本>-windows-x64.msi` |
 | 应用及安装快捷方式的 AppUserModelID | `Yuchen95.LucidDesk` |
 
 应用版本以 `app/Cargo.toml` 为构建来源，自动进入程序版本信息；不要单独修改 EXE 文件属性制造不同版本。MSIX 的包名、发布者和四段版本由包身份规则决定，不能仅按展示名称推导，详见 [MSIX 打包与运行](msix.md)。

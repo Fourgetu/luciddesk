@@ -1,7 +1,7 @@
-"""Real Windows package lifecycle tests. Requires explicit install/process-exit permission.
+"""Real Windows portable upgrade and desktop component unload tests.
 
-Run installer first, then portable. Test app data is isolated; existing user data is hashed
-before/after. Production AppId and shortcuts are exercised and then uninstalled.
+Test app data is isolated; existing user data is hashed before/after.
+MSI lifecycle coverage lives in test-installer.ps1.
 """
 import argparse
 import ctypes
@@ -15,11 +15,9 @@ import sqlite3
 import subprocess
 import time
 import uuid
-import winreg
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\{A059751B-F1E3-4C4A-AB35-A03FB70C3CF4}_is1"
 user = ctypes.WinDLL("user32", use_last_error=True)
 user.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
 user.FindWindowW.restype = wintypes.HWND
@@ -133,14 +131,6 @@ def verify_payload(directory):
     return build
 
 
-def installed_version():
-    try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, KEY) as key:
-            return winreg.QueryValueEx(key, "DisplayVersion")[0]
-    except FileNotFoundError:
-        return None
-
-
 def tray(process):
     window = user.FindWindowW("windows-window.Window", "LucidDesk Tray")
     pid = wintypes.DWORD()
@@ -192,79 +182,6 @@ def seed(data):
     return digest(data / "config.toml")
 
 
-def run_setup(package, root, label, extra=()):
-    result = subprocess.run([str(package), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
-                             "/LANG=english", f"/LOG={root / (label + '.log')}", *extra], timeout=90)
-    return result.returncode
-
-
-def installer(args, root, checks):
-    directory = root / "installed-app" if args.isolated_install else Path(os.environ["LOCALAPPDATA"]) / "Programs" / "LucidDesk"
-    assert installed_version() is None and not directory.exists(), "Existing installation must be preserved"
-    shortcuts = [Path(os.environ["APPDATA"]) / "Microsoft/Windows/Start Menu/Programs/LucidDesk.lnk",
-                 Path(os.environ["USERPROFILE"]) / "Desktop/LucidDesk.lnk"]
-    assert all(not p.exists() for p in shortcuts), "Existing shortcuts must be preserved"
-    old = root / "old-stage"
-    extract(args.old_zip, old)
-    assert verify_payload(old)["version"] == "0.13.0"
-    (old / "portable.marker").unlink()  # Historical 0.13.0 archive.
-    output = root / "old-installer"
-    subprocess.run([str(ROOT / "target/tooling/inno-7.1.0/ISCC.exe"), "/Q", "/DAppVersion=0.13.0",
-                    f"/DSourcePath={old}", f"/DOutputPath={output}", str(ROOT / "installer/LucidDesk.iss")], check=True)
-    uninstaller = directory / "unins000.exe"
-    process = None
-    data = root / "data"
-    title = "Installed upgrade preserved " + root.name
-    try:
-        assert run_setup(output / "LucidDesk-0.13.0-windows-x64-setup.exe", root, "install-old",
-                         ("/TASKS=desktopicon", f"/DIR={directory}")) == 0
-        assert installed_version() == "0.13.0"
-        assert all(p.exists() for p in shortcuts)
-        assert (directory / "installed").exists() and not (directory / "portable").exists()
-        checks.append("Actual per-user installation, registry, Start Menu and desktop shortcuts")
-        process = launch(directory, data, title)
-        explorer_pid, modules = explorer_modules()
-        assert str((directory / "luciddesk_desktop.dll").resolve()).lower() in modules
-        close(process)
-        verify_unloaded(directory, explorer_pid)
-        config_hash = seed(data)
-        process = launch(directory, data)
-        assert run_setup(args.setup, root, "upgrade-running") == 0
-        assert process.wait(timeout=5) == 0, "Installer did not close the old real process normally"
-        assert installed_version() == "0.14.0"
-        assert verify_payload(directory)["version"] == "0.14.0"
-        verify_data(data, title, config_hash)
-        checks.append("Running real 0.13.0 app automatically exits before 0.14.0 replaces EXE/DLL")
-        assert run_setup(output / "LucidDesk-0.13.0-windows-x64-setup.exe", root, "reject-downgrade") != 0
-        assert installed_version() == "0.14.0"
-        checks.append("Downgrade rejected without replacing current files")
-        process = launch(directory, data)
-        explorer_pid, modules = explorer_modules()
-        assert str((directory / "luciddesk_desktop.dll").resolve()).lower() in modules
-        verify_data(data, title, config_hash)
-        assert run_setup(uninstaller, root, "reject-running-uninstall") != 0
-        assert process.poll() is None and (directory / "luciddesk.exe").exists()
-        checks.append("Updated app starts with preserved pane/config/backup; running uninstall is blocked")
-        assert run_setup(args.setup, root, "repair-running") == 0
-        assert process.wait(timeout=5) == 0
-        verify_unloaded(directory, explorer_pid)
-        verify_payload(directory)
-        checks.append("Same-version reinstall also closes current real app normally")
-        assert run_setup(uninstaller, root, "uninstall") == 0
-        deadline = time.monotonic() + 5
-        while directory.exists() and time.monotonic() < deadline:
-            time.sleep(.1)
-        assert installed_version() is None and not (directory / "luciddesk.exe").exists()
-        assert not directory.exists(), "Uninstall left package files behind"
-        assert all(not p.exists() for p in shortcuts)
-        verify_data(data, title, config_hash)
-        checks.append("Uninstall removes binaries, registry and shortcuts while preserving config/layout/backups")
-    finally:
-        close(process)
-        if installed_version() is not None and uninstaller.exists():
-            assert run_setup(uninstaller, root, "cleanup-uninstall") == 0
-
-
 def portable(args, root, checks):
     directory = root / "portable-app"
     extract(args.old_zip, directory)
@@ -291,7 +208,6 @@ def portable(args, root, checks):
         extract(package, directory)
         assert verify_payload(directory)["version"] == "0.14.0"
         assert (directory / "portable").exists() and not (directory / "installed").exists()
-        assert installed_version() is None
         verify_data(data, title, config_hash)
         process = launch(directory)
         verify_data(data, title, config_hash)
@@ -303,12 +219,10 @@ def portable(args, root, checks):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=["installer", "portable", "unload"])
+    parser.add_argument("mode", choices=["portable", "unload"])
     parser.add_argument("--old-zip", type=Path)
     parser.add_argument("--source", type=Path)
     parser.add_argument("--probe", type=Path)
-    parser.add_argument("--isolated-install", action="store_true", help="Install to a fresh test directory rather than the default directory")
-    parser.add_argument("--setup", type=Path)
     parser.add_argument("--portable-zip", type=Path)
     args = parser.parse_args()
     assert not user.FindWindowW("windows-window.Window", "LucidDesk Tray"), "Exit existing LucidDesk before testing"
@@ -318,11 +232,11 @@ def main():
     before = [snapshot(p) for p in protected]
     checks = []
     try:
-        {"installer": installer, "portable": portable, "unload": unload_test}[args.mode](args, root, checks)
+        {"portable": portable, "unload": unload_test}[args.mode](args, root, checks)
         assert before == [snapshot(p) for p in protected], "Original user data changed"
         checks.append("Original LocalAppData user data remains byte-for-byte unchanged")
         report = {"mode": args.mode, "passed": True, "checks": checks,
-                  "artifacts": {name: str(getattr(args, name)) for name in ["old_zip", "setup", "portable_zip", "source"] if getattr(args, name)}}
+                  "artifacts": {name: str(getattr(args, name)) for name in ["old_zip", "portable_zip", "source"] if getattr(args, name)}}
         (root / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
         print(json.dumps(report, indent=2))
         print(f"Report: {root / 'report.json'}")

@@ -1,0 +1,62 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package Name="$(var.ProductName)" Manufacturer="Yuchen95" Version="$(var.AppVersion)"
+           UpgradeCode="$(var.UpgradeCode)" Scope="perUserOrMachine" Language="2052" Codepage="65001">
+    <SummaryInformation Description="LucidDesk Windows Installer" />
+    <MajorUpgrade AllowSameVersionUpgrades="yes" Schedule="afterInstallInitialize"
+                  DowngradeErrorMessage="已安装更新版本的 LucidDesk。A newer version is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+    <Icon Id="AppIcon" SourceFile="$(var.RepoRoot)\app\assets\luciddesk.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/Yuch3nE/luciddesk" />
+    <Property Id="CLOSEAPP" Value="1" Secure="yes" />
+    <Property Id="MSIRESTARTMANAGERCONTROL" Value="DisableShutdown" />
+    <Property Id="REBOOT" Value="ReallySuppress" />
+    <Property Id="INSTALLFOLDER" Secure="yes" />
+    <Property Id="PREVIOUSUSERFOLDER">
+      <RegistrySearch Id="PreviousUserFolder" Root="HKCU" Key="Software\Yuchen95\$(var.ProductName)" Name="InstallFolder" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="PREVIOUSMACHINEFOLDER">
+      <RegistrySearch Id="PreviousMachineFolder" Root="HKLM" Key="Software\Yuchen95\$(var.ProductName)" Name="InstallFolder" Type="raw" Bitness="always64" />
+    </Property>
+    <CustomAction Id="RestoreUserFolder" Property="INSTALLFOLDER" Value="[PREVIOUSUSERFOLDER]" />
+    <CustomAction Id="RestoreMachineFolder" Property="INSTALLFOLDER" Value="[PREVIOUSMACHINEFOLDER]" />
+    <CustomAction Id="DefaultUserFolder" Property="INSTALLFOLDER" Value="[LocalAppDataFolder]Programs\$(var.ProductName)" />
+    <Launch Condition="VersionNT64 &gt;= 603" Message="需要 64 位 Windows。Requires 64-bit Windows." />
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="$(var.ProductName)" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+    <StandardDirectory Id="DesktopFolder" />
+    <ComponentGroup Id="Registration" Directory="INSTALLFOLDER">
+      <Component Id="InstallRegistration" Guid="*">
+        <RegistryValue Root="HKMU" Key="Software\Yuchen95\$(var.ProductName)" Name="InstallFolder" Type="string" Value="[INSTALLFOLDER]" KeyPath="yes" />
+        <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="$(var.ProductName)" Target="[#AppExe]" WorkingDirectory="INSTALLFOLDER" Icon="AppIcon">
+          <ShortcutProperty Key="System.AppUserModel.ID" Value="Yuchen95.LucidDesk" />
+        </Shortcut>
+      </Component>
+    </ComponentGroup>
+    <Feature Id="Main" Title="LucidDesk" Level="1" AllowAbsent="no">
+      <ComponentGroupRef Id="Payload" />
+      <ComponentGroupRef Id="Registration" />
+    </Feature>
+    <Binary Id="InstallerActions" SourceFile="$(var.ActionsDll)" />
+    <CustomAction Id="Preflight" BinaryRef="InstallerActions" DllEntry="Preflight" Return="check" />
+    <CustomAction Id="CleanupStartup" BinaryRef="InstallerActions" DllEntry="CleanupStartup" Execute="commit" Impersonate="yes" Return="ignore" />
+    <SetProperty Id="CleanupStartup" Value="[INSTALLFOLDER]" Before="CleanupStartup" Sequence="execute" />
+    <InstallUISequence>
+      <Custom Action="RestoreUserFolder" Before="CostFinalize" Condition="NOT INSTALLFOLDER AND PREVIOUSUSERFOLDER AND (NOT ALLUSERS OR (ALLUSERS=2 AND MSIINSTALLPERUSER=1))" />
+      <Custom Action="RestoreMachineFolder" After="RestoreUserFolder" Condition="NOT INSTALLFOLDER AND PREVIOUSMACHINEFOLDER AND (ALLUSERS=1 OR (ALLUSERS=2 AND NOT MSIINSTALLPERUSER))" />
+      <Custom Action="DefaultUserFolder" After="RestoreMachineFolder" Condition="NOT INSTALLFOLDER AND (NOT ALLUSERS OR (ALLUSERS=2 AND MSIINSTALLPERUSER=1))" />
+    </InstallUISequence>
+    <InstallExecuteSequence>
+      <Custom Action="RestoreUserFolder" Before="CostFinalize" Condition="NOT INSTALLFOLDER AND PREVIOUSUSERFOLDER AND (NOT ALLUSERS OR (ALLUSERS=2 AND MSIINSTALLPERUSER=1))" />
+      <Custom Action="RestoreMachineFolder" After="RestoreUserFolder" Condition="NOT INSTALLFOLDER AND PREVIOUSMACHINEFOLDER AND (ALLUSERS=1 OR (ALLUSERS=2 AND NOT MSIINSTALLPERUSER))" />
+      <Custom Action="DefaultUserFolder" After="RestoreMachineFolder" Condition="NOT INSTALLFOLDER AND (NOT ALLUSERS OR (ALLUSERS=2 AND MSIINSTALLPERUSER=1))" />
+
+      <Custom Action="Preflight" Before="InstallValidate" Condition="NOT UPGRADINGPRODUCTCODE" />
+      <Custom Action="CleanupStartup" Before="InstallFinalize" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.RepoRoot)\installer\license.rtf" />
+  </Package>
+</Wix>

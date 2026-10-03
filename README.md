@@ -68,7 +68,7 @@
 
 | 版本 | 如何识别发布包 | 默认配置位置 | 适合场景 |
 | --- | --- | --- | --- |
-| 安装版 | `windows-x64-setup.exe` | `%LOCALAPPDATA%\LucidDesk` | 安装向导、开始菜单与卸载入口 |
+| 安装版 | `windows-x64-setup.exe` / `windows-x64.msi` | `%LOCALAPPDATA%\LucidDesk` | 安装向导、开始菜单与卸载入口 |
 | 普通 ZIP（非便携版） | `.zip`，不含 `portable` | `%LOCALAPPDATA%\LucidDesk` | 免安装，程序与配置分开保存 |
 | 便携版 | 名称含 `windows-x64-portable` | 程序目录中的 `data` 文件夹 | 希望配置随程序目录一起携带 |
 
@@ -76,7 +76,7 @@
 
 ### 启动与整理
 
-**安装版**：运行 `windows-x64-setup.exe`，按向导安装后从开始菜单启动。支持当前用户安装，也可选择所有用户安装到 Program Files。
+**安装版**：优先选择 `windows-x64-setup.exe`，可在向导中选择当前用户或所有用户安装。也提供 MSI，详见[安装版说明](docs/installer.md)。
 
 **ZIP 版**：
 
@@ -169,13 +169,15 @@ cargo build -p luciddesk -p desktop-hook --locked
 .\target\debug\luciddesk.exe
 ```
 
-主程序和 `luciddesk_desktop.dll` 必须来自同次构建并放在同一目录。生成安装包与 ZIP：
+主程序和 `luciddesk_desktop.dll` 必须来自同次构建并放在同一目录。默认生成 EXE。生成安装包与 ZIP：
 
 ```powershell
 .\tools\ensure-inno.ps1
 .\tools\package.ps1 -Installer
 .\tools\package.ps1 -Portable
 ```
+
+MSI 使用 `ensure-wix.ps1` 准备工具后，加 `-InstallerFormat Msi`；`Both` 同时生成两种安装包。MSI 构建需要 .NET SDK 8 或更新版本。
 
 安装包位于 `target/installers/`，普通 ZIP 位于 `target/packages/`，便携 ZIP 位于 `target/portable/时间戳/`。各发布包附带 SHA256 校验文件。测试命令、诊断构建和绑定生成见[构建指南](docs/development/build.md)。
 

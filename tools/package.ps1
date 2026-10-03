@@ -1,8 +1,13 @@
 [CmdletBinding()]
-param([switch]$Offline, [switch]$Portable, [switch]$RenderDiagnostics, [switch]$Installer, [string]$InnoCompiler)
+param(
+    [switch]$Offline, [switch]$Portable, [switch]$RenderDiagnostics, [switch]$Installer,
+    [ValidateSet('Exe', 'Msi', 'Both')][string]$InstallerFormat = 'Exe',
+    [string]$InnoCompiler
+)
 $ErrorActionPreference = 'Stop'
 if ($RenderDiagnostics -and -not $Portable) { throw 'Rendering comparison launchers require -Portable.' }
 if ($Installer -and $Portable) { throw 'Installer and portable packages are separate channels.' }
+if ($PSBoundParameters.ContainsKey('InstallerFormat') -and -not $Installer) { throw 'Use -Installer with -InstallerFormat.' }
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $previousRevision = $env:LUCIDDESK_BUILD_REVISION
 Push-Location -LiteralPath $repoRoot
@@ -89,19 +94,23 @@ try {
     "$hash  $name.zip" | Set-Content -LiteralPath "$archive.sha256" -Encoding ASCII
     Write-Output $archive
     if ($Installer) {
-        if (-not $InnoCompiler) {
-            $InnoCompiler = Join-Path $repoRoot 'target\tooling\inno-7.1.0\ISCC.exe'
-            if (-not (Test-Path -LiteralPath $InnoCompiler)) {
-                throw 'Install the compiler with ./tools/ensure-inno.ps1, or pass -InnoCompiler <ISCC.exe>.'
-            }
-        }
         $setupRoot = Join-Path $repoRoot "target\installers\$version-$revisionLabel-$stamp"
-        & $InnoCompiler /Q "/DAppVersion=$version" "/DSourcePath=$stage" "/DOutputPath=$setupRoot" (Join-Path $repoRoot 'installer\LucidDesk.iss')
-        if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed.' }
-        $setup = Join-Path $setupRoot "LucidDesk-$version-windows-x64-setup.exe"
-        $setupHash = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
-        "$setupHash  $(Split-Path -Leaf $setup)" | Set-Content -LiteralPath "$setup.sha256" -Encoding ASCII
-        Write-Output $setup
+        $setups = @()
+        if ($InstallerFormat -in @('Exe', 'Both')) {
+            if (-not $InnoCompiler) { $InnoCompiler = Join-Path $repoRoot 'target/tooling/inno-7.1.0/ISCC.exe' }
+            if (-not (Test-Path -LiteralPath $InnoCompiler)) { throw 'Run ./tools/ensure-inno.ps1 first, or pass -InnoCompiler <ISCC.exe>.' }
+            & $InnoCompiler /Q "/DAppVersion=$version" "/DSourcePath=$stage" "/DOutputPath=$setupRoot" (Join-Path $repoRoot 'installer/LucidDesk.iss')
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed.' }
+            $setups += Join-Path $setupRoot "LucidDesk-$version-windows-x64-setup.exe"
+        }
+        if ($InstallerFormat -in @('Msi', 'Both')) {
+            $setups += & (Join-Path $PSScriptRoot 'build-msi.ps1') -SourcePath $stage -OutputPath $setupRoot -Version $version
+        }
+        foreach ($setup in $setups) {
+            $setupHash = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$setupHash  $(Split-Path -Leaf $setup)" | Set-Content -LiteralPath "$setup.sha256" -Encoding ASCII
+            Write-Output $setup
+        }
     }
 } finally {
     $env:LUCIDDESK_BUILD_REVISION = $previousRevision
