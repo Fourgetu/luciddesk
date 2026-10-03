@@ -334,7 +334,7 @@ fn create_view(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> 
                         unsafe { windows_sys::Win32::UI::WindowsAndMessaging::SendMessageW(hwnd, visibility::RESTORE, 0, 0); }
                     }
                 }
-                eprintln!("{error}");
+                crate::diagnostics::log(crate::diagnostics::Level::Error, "pane.mod", &format!("{error}"));
                 window::error(&error);
                 false
             }
@@ -555,3 +555,10 @@ fn transfer_many(
 
 #[cfg(test)]
 mod tests;
+
+
+fn load_log_level(store: &WorkspaceStore) -> Result<(), String> {
+    let value = store.preference("log_level").map_err(|e| e.to_string())?.unwrap_or_else(|| "error".into());
+    crate::diagnostics::set_level(crate::diagnostics::Level::parse(&value));
+    Ok(())
+}

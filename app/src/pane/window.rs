@@ -1309,7 +1309,7 @@ where
                         })();
                         if let Err(error) = result {
                             if !paint_error {
-                                eprintln!("面板渲染失败：{error}");
+                                crate::diagnostics::log(crate::diagnostics::Level::Error, "pane.window", &format!("面板渲染失败：{error}"));
                             }
                             paint_error = true;
                             {

@@ -1920,3 +1920,55 @@ fn auto_hide_is_transient_across_saves_tabs_and_manual_fold() {
     handle(&state, second, Event::ToggleAutoHide).unwrap();
     assert!(state.borrow().views[0].model.borrow().collapsed);
 }
+
+
+#[test]
+#[ignore = "35-second isolated UI/log I/O measurement; run alone"]
+fn normal_interactions_do_not_write_diagnostic_log() {
+    use std::time::{Duration,Instant};
+    use windows_sys::Win32::UI::WindowsAndMessaging::*;
+    let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("workspace.db");
+    crate::diagnostics::init_logging(&path);
+    crate::diagnostics::set_level(crate::diagnostics::Level::Error);
+    let mut app = test_state();
+    app.store = WorkspaceStore::open(&path).unwrap();
+    app.store.save_workspace(&app.workspace).unwrap();
+    let state = Rc::new(RefCell::new(app));
+    let id = PanelId::new(1);
+    create_view(&state,id).unwrap();
+    handle(&state,id,Event::ToggleAutoHide).unwrap();
+    settings::show(&state,id).unwrap();
+    crate::diagnostics::log(crate::diagnostics::Level::Error,"measurement","baseline marker before measurement");
+    let log = dir.path().join("logs/diagnostic.log");
+    let bytes = std::fs::read(&log).unwrap();
+    let modified = std::fs::metadata(&log).unwrap().modified().unwrap();
+    let start = Instant::now();
+    let mut samples = 0;
+    let mut transitions = 0;
+    let mut next_transition = Instant::now();
+    while start.elapsed() < Duration::from_secs(35) {
+        if Instant::now() >= next_transition {
+            transitions += 1;
+            handle(&state,id,Event::AutoHideCollapsed(transitions % 2 == 1)).unwrap();
+            let hwnd = state.borrow().views[0].window.hwnd();
+            unsafe {
+                SendMessageW(hwnd.cast(),WM_MOUSEMOVE,0,100 | (100 << 16));
+                SendMessageW(hwnd.cast(),WM_MOUSEWHEEL,(120u32 << 16) as usize,0);
+            }
+            next_transition = Instant::now()+Duration::from_millis(500);
+        }
+        unsafe {
+            let mut msg = std::mem::zeroed();
+            while PeekMessageW(&mut msg,std::ptr::null_mut(),0,0,PM_REMOVE) != 0 {
+                TranslateMessage(&msg); DispatchMessageW(&msg);
+            }
+        }
+        assert_eq!(std::fs::read(&log).unwrap(),bytes,"unexpected log write during normal interaction");
+        assert_eq!(std::fs::metadata(&log).unwrap().modified().unwrap(),modified);
+        samples += 1;
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    println!("measurement: duration_ms={} samples={} auto_hide_transitions={} log_bytes_before={} log_bytes_after={} modification_time_unchanged=true",start.elapsed().as_millis(),samples,transitions,bytes.len(),std::fs::metadata(&log).unwrap().len());
+}

@@ -76,6 +76,7 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
     let _graphics = super::native_graphics::GraphicsLifetime;
     let first_run = !path.exists();
     let mut store = WorkspaceStore::open(path).map_err(|e| e.to_string())?;
+    load_log_level(&store)?;
     crate::i18n::initialize(&store)?;
     super::peek::load(&store)?;
     fonts::load(&store)?;
@@ -269,7 +270,7 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), S
                 notify.set(true);
                 work_ready.notify();
                 if std::env::var_os("LUCIDDESK_ICON_TRACE").is_some() {
-                    eprintln!("icon-notify event={:x}", lparam);
+                    crate::diagnostics::log(crate::diagnostics::Level::Debug, "pane.hybrid", &format!("icon-notify event={:x}", lparam));
                 }
                 icon_notify
                     .borrow_mut()
@@ -278,7 +279,7 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), S
             } else if message == RECYCLE_CHANGE_MESSAGE {
                 work_ready.notify();
                 if std::env::var_os("LUCIDDESK_ICON_TRACE").is_some() {
-                    eprintln!("recycle-notify event={:x}", lparam);
+                    crate::diagnostics::log(crate::diagnostics::Level::Debug, "pane.hybrid", &format!("recycle-notify event={:x}", lparam));
                 }
                 icon_notify
                     .borrow_mut()
@@ -482,7 +483,7 @@ pub(super) fn register_drop(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result
                     crate::diagnostics::render_trace(format_args!(
                         "collection rollback: save={error}; restored={}", restored.is_ok()
                     ));
-                    eprintln!("Desktop collection rejected: {error}");
+                    crate::diagnostics::log(crate::diagnostics::Level::Error, "pane.hybrid", &format!("Desktop collection rejected: {error}"));
                 }
                 refresh_views(&mut s);
             })
@@ -751,7 +752,7 @@ pub(super) fn tick(s: &mut PaneApp) -> Result<(), String> {
             let h = s.session.as_mut().unwrap();
             if h.last_failure.as_ref() != Some(&error) {
                 use std::io::Write;
-                eprintln!("Hybrid synchronization deferred: {error}");
+                crate::diagnostics::log(crate::diagnostics::Level::Warn, "pane.hybrid", &format!("Hybrid synchronization deferred: {error}"));
                 if let Ok(mut log) = std::fs::OpenOptions::new()
                     .create(true)
                     .append(true)

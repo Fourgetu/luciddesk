@@ -67,6 +67,7 @@ use windows_sys::Win32::UI::Controls::WM_MOUSELEAVE;
 #[derive(Clone)]
 enum Action {
     Startup(bool),
+    LogLevel(crate::diagnostics::Level),
     Font(String),
     FontSearch,
     FolderDefaults(folder::Defaults),
@@ -1106,7 +1107,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         })();
                         if let Err(e) = result {
                             surface = None;
-                            eprintln!("Settings paint: {e}");
+                            crate::diagnostics::log(crate::diagnostics::Level::Error, "pane.settings", &format!("Settings paint: {e}"));
                         }
                     }
                 }
@@ -1492,6 +1493,14 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                     Action::Change(Event::Material(Backdrop::Solid { .. })) => {
                         let value = solid_style(&state.borrow().store, dark);
                         if let Err(error) = handle(&state, selected, Event::Material(value)) { window::error(&error); }
+                    }
+                    Action::LogLevel(level) => {
+                        let result = state.borrow().store.save_preference("log_level", &level.label().to_ascii_lowercase());
+                        match result {
+                            Ok(()) => crate::diagnostics::set_level(*level),
+                            Err(error) => window::error(&error.to_string()),
+                        }
+                        scene_key = None;
                     }
                     Action::Language(code) => {
                         let result = state.borrow().store.save_preference("language", code);

@@ -1226,3 +1226,11 @@ startup-package-invalid = MSIX 套件身分或標記無效，未修改啟動設�
 
 title-emoji-rendering = 彩色圖示呈現
 title-emoji-rendering-description = 套用於所有面板和分頁標題，切換後立即生效。
+
+ui-desktop-connection-warning = The desktop component is unavailable. Desktop panels are temporarily unavailable; folder panels and search still work. LucidDesk will retry automatically. { "\u000A" }Reason: { $error }{ "\u000A" }{ $log }
+ui-desktop-log-saved = Diagnostic log: { $path }
+ui-desktop-log-failed = Could not write diagnostic log: { $error }
+
+diagnostics-section = Diagnostic logging
+diagnostics-level = Log level
+diagnostics-level-description = Default: ERROR, errors only. Higher levels help troubleshooting and increase log writes. Changes apply immediately.

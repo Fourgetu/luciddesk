@@ -9,6 +9,7 @@ use toml_edit::{DocumentMut, Item, value};
 
 pub(super) const KEYS: &[&str] = &[
     "language",
+    "log_level",
     "appearance",
     "pane_options",
     "solid_style",
@@ -24,6 +25,9 @@ pub(super) const KEYS: &[&str] = &[
 const DEFAULTS: &str = r##"# LucidDesk global settings. Reload from Settings after editing.
 config_version = 1
 language = "system"
+
+[diagnostics]
+level = "error"
 
 [appearance]
 theme = "system"
@@ -185,7 +189,8 @@ pub(super) fn decode(doc: &DocumentMut) -> Result<BTreeMap<String, String>, Stor
     }
     // A scalar in place of a table is an error, not a missing configuration section.
     for path in [
-        &["appearance"][..],
+        &["diagnostics"][..],
+        &["appearance"],
         &["panel_defaults"],
         &["search"],
         &["preview"],
@@ -225,6 +230,9 @@ pub(super) fn decode(doc: &DocumentMut) -> Result<BTreeMap<String, String>, Stor
     let language = s(&["language"])?;
     validate_language(&language)?;
     map.insert("language".into(), language);
+    let log_level = s(&["diagnostics", "level"])?;
+    validate_log_level(&log_level)?;
+    map.insert("log_level".into(), log_level);
     for material in ["acrylic", "mica"] {
         let strength = n(&["appearance", material, "strength"], 100.0)?;
         if strength.fract() != 0.0 {
@@ -307,6 +315,11 @@ fn grid_dimension(doc: &DocumentMut, defaults: &DocumentMut, name: &str, range: 
     Ok(value)
 }
 
+fn validate_log_level(value: &str) -> Result<(), StoreError> {
+    if ["error", "warn", "info", "debug", "trace"].contains(&value) { Ok(()) }
+    else { Err(error("unsupported diagnostics.level")) }
+}
+
 fn validate_language(value: &str) -> Result<(), StoreError> {
     if ["system", "zh-CN", "zh-TW", "en-US", "ja-JP", "ko-KR", "de-DE", "ru-RU"].contains(&value) { Ok(()) }
     else { Err(error("unsupported language")) }
@@ -317,6 +330,7 @@ fn update(doc: &mut DocumentMut, key: &str, raw: &str) -> Result<(), StoreError>
     let f = |s: &str| s.parse::<f64>().map_err(io);
     let flag = |s: &str| s.parse::<bool>().map_err(io);
     match key {
+        "log_level" => { validate_log_level(raw)?; set(doc, &["diagnostics", "level"], value(raw)); }
         "language" => { validate_language(raw)?; set(doc, &["language"], value(raw)); }
         "pane_options" if (3..=5).contains(&parts.len()) || parts.len() == 6 => {
             let radius = match parts[0] {

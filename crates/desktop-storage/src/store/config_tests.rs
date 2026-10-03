@@ -334,3 +334,22 @@ fn show_panels_hotkey_defaults_disabled_and_persists_independently() {
     let legacy = WorkspaceStore::open(&dir.path().join("workspace.db")).unwrap();
     assert_eq!(legacy.preference("show_panels_enabled").unwrap().as_deref(), Some("0"));
 }
+
+#[test]
+fn log_level_defaults_persists_and_rejects_unknown_values() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("workspace.db");
+    let store = super::WorkspaceStore::open(&path).unwrap();
+    assert_eq!(store.preference("log_level").unwrap().as_deref(),Some("error"));
+    for level in ["warn","info","debug","trace","error"] {
+        store.save_preference("log_level",level).unwrap();
+        assert_eq!(super::WorkspaceStore::open(&path).unwrap().preference("log_level").unwrap().as_deref(),Some(level));
+    }
+    let config = std::fs::read(dir.path().join("config.toml")).unwrap();
+    let count = store.change_count();
+    store.save_preference("log_level","error").unwrap();
+    assert_eq!(store.change_count(),count);
+    assert_eq!(std::fs::read(dir.path().join("config.toml")).unwrap(),config);
+    assert!(store.save_preference("log_level","verbose").is_err());
+    assert_eq!(store.preference("log_level").unwrap().as_deref(),Some("error"));
+}

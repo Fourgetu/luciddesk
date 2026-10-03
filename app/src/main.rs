@@ -45,10 +45,14 @@ fn main() -> Result<(), String> {
     let _ = diagnostics::system();
     diagnostics::render_trace(format_args!("startup"));
     let path = database_path()?;
+    diagnostics::init_logging(&path);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    pane::run(&path, title).inspect_err(|error| desktop_window::show_error(error))
+    pane::run(&path, title).inspect_err(|error| {
+        diagnostics::log(diagnostics::Level::Error, "app.startup", error);
+        desktop_window::show_error(error);
+    })
 }
 
 struct Instance(windows_sys::Win32::Foundation::HANDLE);

@@ -8,6 +8,11 @@ pub(super) fn general(s: &mut Scene, width: f32, status: crate::startup::Status,
         Action::Startup(!status.registered()));
     form.button(crate::i18n::text("startup-manage"), crate::i18n::text("startup-manage-description"),
         crate::i18n::text("startup-open-settings"), Action::ProjectLink("ms-settings:startupapps"));
+    use crate::diagnostics::{Level, level};
+    form.section(crate::i18n::text("diagnostics-section"));
+    form.choices(crate::i18n::text("diagnostics-level"), crate::i18n::text("diagnostics-level-description"),
+        [Level::Error, Level::Warn, Level::Info, Level::Debug, Level::Trace].into_iter()
+            .map(|value| (value.label(), Action::LogLevel(value), value == level())).collect());
 }
 
 #[cfg(test)]

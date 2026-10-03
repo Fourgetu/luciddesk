@@ -1226,3 +1226,11 @@ startup-package-invalid = MSIX 包身份或标记无效，未修改自启设置�
 
 title-emoji-rendering = 彩色图标渲染
 title-emoji-rendering-description = 用于所有面板和标签页标题，切换后立即生效。
+
+ui-desktop-connection-warning = 桌面组件暂未连接，桌面面板暂不可用。程序将自动重试，文件夹面板和搜索仍可使用。 { "\u000A" }原因：{ $error }{ "\u000A" }{ $log }
+ui-desktop-log-saved = 诊断日志：{ $path }
+ui-desktop-log-failed = 诊断日志写入失败：{ $error }
+
+diagnostics-section = 诊断日志
+diagnostics-level = 日志级别
+diagnostics-level-description = 默认 ERROR，仅记录错误。提高级别可帮助排查问题，并增加日志写入；立即生效。

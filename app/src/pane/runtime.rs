@@ -10,6 +10,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::*;
 pub(super) struct State {
     pub path: PathBuf,
     pub desktop_error: Option<String>,
+    notice: ConnectionNotice,
     last_attempt: Instant,
     reconnect_failures: u8,
     reconnecting: bool,
@@ -23,6 +24,7 @@ impl State {
         Self {
             path,
             desktop_error: None,
+            notice: ConnectionNotice::default(),
             last_attempt: Instant::now(),
             reconnect_failures: 0,
             reconnecting: false,
@@ -31,6 +33,47 @@ impl State {
             backup: recovery::Manager::default(),
         }
     }
+}
+
+#[derive(Default)]
+struct ConnectionNotice {
+    unavailable: bool,
+    generation: u64,
+}
+impl ConnectionNotice {
+    fn transition(&mut self, unavailable: bool) -> bool {
+        if self.unavailable == unavailable { return false; }
+        self.unavailable = unavailable;
+        self.generation += 1;
+        true
+    }
+}
+
+fn notify_connection(state: &Rc<RefCell<PaneApp>>) {
+    let (path, error, generation) = {
+        let mut s = state.borrow_mut();
+        let Some(runtime) = &mut s.runtime else { return; };
+        if !runtime.notice.transition(runtime.desktop_error.is_some()) { return; }
+        (runtime.path.clone(), runtime.desktop_error.clone(), runtime.notice.generation)
+    };
+    let logged = crate::diagnostics::desktop_connection_log(&path, error.as_deref());
+    let Some(error) = error else {
+        if let Err(error) = logged { eprintln!("Desktop connection log: {error}"); }
+        return;
+    };
+    let log = match logged {
+        Ok(path) => crate::i18n::format("ui-desktop-log-saved", &[("path",path.display().to_string())]),
+        Err(error) => crate::i18n::format("ui-desktop-log-failed", &[("error",error.to_string())]),
+    };
+    let message = crate::i18n::format("ui-desktop-connection-warning", &[("error",error),("log",log)]);
+    let weak = Rc::downgrade(state);
+    // Modal dialogs pump messages; release all app borrows before showing one.
+    window::defer_action(move || {
+        let still_unavailable = weak.upgrade().is_some_and(|state| {
+            state.borrow().runtime.as_ref().is_some_and(|r| r.notice.unavailable && r.notice.generation == generation)
+        });
+        if still_unavailable { window::error(&message); }
+    });
 }
 
 pub(super) fn status(s: &PaneApp) -> String {
@@ -67,11 +110,6 @@ pub(super) fn reconnect(state: &Rc<RefCell<PaneApp>>) {
         runtime.reconnect_failures = if error.is_some() {
             runtime.reconnect_failures.saturating_add(1)
         } else { 0 };
-        if runtime.desktop_error != error {
-            if let Some(error) = &error {
-                eprintln!("Desktop integration unavailable: {error}");
-            }
-        }
         runtime.desktop_error = error;
     }
     if let Some(settings) = &s.settings {
@@ -79,6 +117,8 @@ pub(super) fn reconnect(state: &Rc<RefCell<PaneApp>>) {
             InvalidateRect(settings.hwnd().cast(), std::ptr::null(), 0);
         }
     }
+    drop(s);
+    notify_connection(state);
 }
 
 fn suspend(state: &Rc<RefCell<PaneApp>>) {
@@ -107,6 +147,7 @@ fn suspend(state: &Rc<RefCell<PaneApp>>) {
         removed
     };
     drop(removed);
+    notify_connection(state);
 }
 
 pub(super) fn maintain(state: &Rc<RefCell<PaneApp>>, force: bool) -> Result<(), String> {
@@ -205,6 +246,7 @@ pub(super) fn backup_status(s: &PaneApp) -> String {
 }
 
 pub(super) fn reload(state: &Rc<RefCell<PaneApp>>) -> Result<(), String> {
+    load_log_level(&state.borrow().store)?;
     let views = {
         let mut s = state.borrow_mut();
         let workspace = s.store.load_workspace().map_err(|e| e.to_string())?;
@@ -342,7 +384,7 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
                                     // A font preference read failure must not swallow the
                                     // notification after the active language has changed.
                                     if let Err(error) = fonts::load(&s.store) {
-                                        eprintln!("Language font refresh: {error}");
+                                        crate::diagnostics::log(crate::diagnostics::Level::Error, "pane.runtime", &format!("Language font refresh: {error}"));
                                     }
                                 }
                                 changed
@@ -360,7 +402,7 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
                             }
                             Ok(())
                         })();
-                        if let Err(error) = result { eprintln!("Language refresh: {error}"); }
+                        if let Err(error) = result { crate::diagnostics::log(crate::diagnostics::Level::Error, "pane.runtime", &format!("Language refresh: {error}")); }
                     }
 
                     let folder_renames = {
@@ -377,14 +419,14 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
                         let folder_renames = folder::poll(&mut s);
                         if s.session.is_some() {
                             if let Err(error) = hybrid::tick(&mut s) {
-                                eprintln!("Desktop synchronization: {error}");
+                                crate::diagnostics::log(crate::diagnostics::Level::Error, "pane.runtime", &format!("Desktop synchronization: {error}"));
                             }
                         }
                         folder_renames
                     };
                     for (id, identity) in folder_renames {
                         if let Err(message) = events::handle(&state, id, Event::RenameItem(identity)) {
-                            eprintln!("New folder item rename: {message}");
+                            crate::diagnostics::log(crate::diagnostics::Level::Error, "pane.runtime", &format!("New folder item rename: {message}"));
                         }
                     }
                     let previous = {
@@ -393,7 +435,7 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
                     };
                     let managed = state.borrow().runtime.is_some();
                     if managed && let Err(error) = maintain(&state, false) {
-                        eprintln!("Runtime recovery: {error}");
+                        crate::diagnostics::log(crate::diagnostics::Level::Error, "pane.runtime", &format!("Runtime recovery: {error}"));
                     }
                     let s = state.borrow();
                     let search_present = s.views.iter()
@@ -621,5 +663,21 @@ mod tests {
         for view in &s.views {
             window::prepare_close(view.window.hwnd().cast());
         }
+    }
+}
+
+#[cfg(test)]
+mod connection_notice_tests {
+    #[test]
+    fn retries_do_not_repeat_notice_but_new_outages_do() {
+        let mut notice = super::ConnectionNotice::default();
+        assert!(!notice.transition(false));
+        assert!(notice.transition(true));
+        let first = notice.generation;
+        for _ in 0..50 { assert!(!notice.transition(true)); }
+        assert_eq!(notice.generation,first);
+        assert!(notice.transition(false));
+        assert!(notice.transition(true));
+        assert_ne!(notice.generation,first);
     }
 }

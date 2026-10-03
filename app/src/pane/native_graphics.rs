@@ -46,7 +46,7 @@ pub fn gpu_device() -> Result<windows_canvas::GpuDevice> {
             canvas_result(windows_canvas::GpuDevice::new_warp())?
         } else {
             canvas_result(windows_canvas::GpuDevice::new().or_else(|error| {
-                eprintln!("Hardware rendering unavailable, using WARP: {error}");
+                crate::diagnostics::log(crate::diagnostics::Level::Warn, "pane.native_graphics", &format!("Hardware rendering unavailable, using WARP: {error}"));
                 windows_canvas::GpuDevice::new_warp()
             }))?
         };

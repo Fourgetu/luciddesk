@@ -1226,3 +1226,11 @@ startup-package-invalid = MSIX 패키지 ID 또는 표시 파일이 잘못되었
 
 title-emoji-rendering = 컬러 아이콘 렌더링
 title-emoji-rendering-description = 모든 패널 및 탭 제목에 즉시 적용됩니다.
+
+ui-desktop-connection-warning = The desktop component is unavailable. Desktop panels are temporarily unavailable; folder panels and search still work. LucidDesk will retry automatically. { "\u000A" }Reason: { $error }{ "\u000A" }{ $log }
+ui-desktop-log-saved = Diagnostic log: { $path }
+ui-desktop-log-failed = Could not write diagnostic log: { $error }
+
+diagnostics-section = Diagnostic logging
+diagnostics-level = Log level
+diagnostics-level-description = Default: ERROR, errors only. Higher levels help troubleshooting and increase log writes. Changes apply immediately.

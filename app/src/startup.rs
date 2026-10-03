@@ -257,7 +257,7 @@ impl Controller {
                 if self.report_error {
                     Some(error)
                 } else {
-                    eprintln!("Startup status: {error}");
+                    crate::diagnostics::log(crate::diagnostics::Level::Error, "startup", &format!("Startup status: {error}"));
                     None
                 }
             }
