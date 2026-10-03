@@ -43,7 +43,7 @@ pub struct ShellAttributes {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DesktopShellItem {
+pub struct ShellEntry {
     pub identity: ShellIdentity,
     pub display_name: String,
     pub attributes: ShellAttributes,
@@ -92,7 +92,7 @@ pub fn local_app_data_path() -> Result<PathBuf, ShellError> {
 /// # Errors
 ///
 /// Returns a COM or Shell error when the Desktop Folder cannot be enumerated.
-pub fn enumerate_desktop_namespace(owner: isize) -> Result<Vec<DesktopShellItem>, ShellError> {
+pub fn enumerate_desktop_namespace(owner: isize) -> Result<Vec<ShellEntry>, ShellError> {
     let desktop = unsafe { SHGetDesktopFolder() }?;
     enumerate_shell_folder(&desktop, owner, false)
 }
@@ -101,7 +101,7 @@ pub fn enumerate_desktop_namespace(owner: isize) -> Result<Vec<DesktopShellItem>
 /// items. Callers must restrict this to their existing managed membership.
 /// # Errors
 /// Any unresolved item aborts the capture so it cannot look like a deletion.
-pub fn enumerate_desktop_source() -> Result<Vec<DesktopShellItem>, ShellError> {
+pub fn enumerate_desktop_source() -> Result<Vec<ShellEntry>, ShellError> {
     let desktop = unsafe { SHGetDesktopFolder() }?;
     enumerate_shell_folder(&desktop, 0, true)
 }
@@ -147,7 +147,7 @@ pub fn desktop_source_revision() -> Result<Vec<Vec<u8>>, ShellError> {
 /// Enumerates every direct filesystem child, including hidden and system entries.
 /// # Errors
 /// Returns an I/O error if the folder cannot be opened or enumerated.
-pub fn enumerate_folder(path: &Path) -> Result<Vec<DesktopShellItem>, ShellError> {
+pub fn enumerate_folder(path: &Path) -> Result<Vec<ShellEntry>, ShellError> {
     use std::os::windows::fs::MetadataExt;
     use windows_sys::Win32::Storage::FileSystem::{
         FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_HIDDEN,
@@ -162,7 +162,7 @@ pub fn enumerate_folder(path: &Path) -> Result<Vec<DesktopShellItem>, ShellError
             let path = entry.path();
             let metadata = entry.metadata().ok();
             let attributes = metadata.as_ref().map_or(0, MetadataExt::file_attributes);
-            Ok(DesktopShellItem {
+            Ok(ShellEntry {
                 display_name: entry.file_name().to_string_lossy().into_owned(),
                 attributes: ShellAttributes {
                     folder: attributes & FILE_ATTRIBUTE_DIRECTORY != 0,
@@ -193,7 +193,7 @@ fn enumerate_shell_folder(
     desktop: &IShellFolder,
     owner: isize,
     complete_source: bool,
-) -> Result<Vec<DesktopShellItem>, ShellError> {
+) -> Result<Vec<ShellEntry>, ShellError> {
     let mut enumerator = None;
     let flags = (SHCONTF_FOLDERS.0
         | SHCONTF_NONFOLDERS.0
@@ -227,10 +227,10 @@ fn enumerate_shell_folder(
             break;
         }
         let child = Pidl::new(child[0]);
-        let resolved = (|| -> Result<DesktopShellItem, ShellError> {
+        let resolved = (|| -> Result<ShellEntry, ShellError> {
             let shell_item: IShellItem =
                 unsafe { SHCreateItemWithParent(None, desktop, child.as_ptr()) }?;
-            let mut item = desktop_shell_item(&shell_item)?;
+            let mut item = shell_entry(&shell_item)?;
             let parsing = shell_item_name(&shell_item, SIGDN_DESKTOPABSOLUTEPARSING)?;
             if parsing.starts_with("::{") {
                 item.identity = ShellIdentity::Namespace {
@@ -256,7 +256,7 @@ fn enumerate_shell_folder(
     Ok(items)
 }
 
-pub(crate) fn desktop_shell_item(item: &IShellItem) -> Result<DesktopShellItem, ShellError> {
+pub(crate) fn shell_entry(item: &IShellItem) -> Result<ShellEntry, ShellError> {
     let display_name = shell_item_name(item, SIGDN_NORMALDISPLAY)?;
     let identity = shell_item_name(item, SIGDN_FILESYSPATH)
         .ok()
@@ -309,7 +309,7 @@ pub(crate) fn desktop_shell_item(item: &IShellItem) -> Result<DesktopShellItem, 
         .filter(|value| value.is_file())
         .map(fs::Metadata::len);
     let modified = metadata.and_then(|metadata| metadata.modified().ok());
-    Ok(DesktopShellItem {
+    Ok(ShellEntry {
         identity,
         display_name,
         attributes,

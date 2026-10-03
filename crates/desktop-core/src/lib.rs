@@ -19,7 +19,7 @@ mod item;
 mod panel;
 mod workspace;
 
-pub use appearance::{Backdrop, BackdropKind, MaterialKind, PaneOptions, PanelText, PanelTheme};
+pub use appearance::{Backdrop, BackdropKind, PaneOptions, PanelText, PanelTheme, TunableMaterial};
 pub use geometry::{GridPosition, PointDip, RectDip};
 pub use identity::{MonitorId, PanelId, ShellIdentity};
 pub use item::{DesktopItem, DesktopPlacement};

@@ -1,7 +1,8 @@
 //! Panel materials, themes, and presentation options.
 
+/// Materials that support a strength adjustment in [`Backdrop::Tuned`].
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum MaterialKind {
+pub enum TunableMaterial {
     Acrylic,
     Mica,
 }
@@ -9,7 +10,7 @@ pub enum MaterialKind {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Backdrop {
     Tuned {
-        material: MaterialKind,
+        material: TunableMaterial,
         strength: u8,
     },
     Translucent {
@@ -76,8 +77,8 @@ impl Backdrop {
     pub const fn base(self) -> Self {
         match self {
             Self::Tuned { material, .. } => match material {
-                MaterialKind::Acrylic => Self::Acrylic,
-                MaterialKind::Mica => Self::Mica,
+                TunableMaterial::Acrylic => Self::Acrylic,
+                TunableMaterial::Mica => Self::Mica,
             },
             other => other,
         }
@@ -95,8 +96,8 @@ impl Backdrop {
     #[must_use]
     pub fn with_strength(self, strength: u8) -> Self {
         let material = match self.base() {
-            Self::Acrylic => MaterialKind::Acrylic,
-            Self::Mica => MaterialKind::Mica,
+            Self::Acrylic => TunableMaterial::Acrylic,
+            Self::Mica => TunableMaterial::Mica,
             _ => return self,
         };
         if strength == 50 {

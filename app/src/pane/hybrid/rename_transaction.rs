@@ -88,7 +88,7 @@ pub(in crate::pane) fn commit(
 fn reconcile_committed(
     state: &Rc<RefCell<PaneApp>>,
     old: &ShellIdentity,
-    renamed: desktop_shell::DesktopShellItem,
+    renamed: desktop_shell::ShellEntry,
     replace: impl FnOnce(&str) -> Result<(), String>,
     publish: impl FnOnce(&[String]) -> Result<(), String>,
     release: impl FnOnce() -> Result<(), String>,
@@ -145,7 +145,7 @@ fn reconcile_committed(
     }
 }
 
-fn replace_item(s: &mut PaneApp, old: &ShellIdentity, renamed: desktop_shell::DesktopShellItem) {
+fn replace_item(s: &mut PaneApp, old: &ShellIdentity, renamed: desktop_shell::ShellEntry) {
     for item in s.workspace.desktop_items_mut() {
         if item.identity().equivalent_to(old) {
             let placement = item.placement().clone();
@@ -193,7 +193,7 @@ mod tests {
         let identity = ShellIdentity::Namespace {
             parsing_name: "test:renamed".into(),
         };
-        let renamed = desktop_shell::DesktopShellItem {
+        let renamed = desktop_shell::ShellEntry {
             identity: identity.clone(),
             display_name: "Renamed".into(),
             attributes: Default::default(),

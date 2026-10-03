@@ -60,8 +60,8 @@ pub(super) fn encode_backdrop(backdrop: Backdrop) -> (&'static str, Option<f32>,
     match backdrop {
         Backdrop::Tuned { material, strength } => (
             match material {
-                desktop_core::MaterialKind::Acrylic => "acrylic_tuned",
-                desktop_core::MaterialKind::Mica => "mica_tuned",
+                desktop_core::TunableMaterial::Acrylic => "acrylic_tuned",
+                desktop_core::TunableMaterial::Mica => "mica_tuned",
             },
             Some(f32::from(strength) / 100.0),
             None,

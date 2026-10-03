@@ -1,12 +1,12 @@
 //! Source membership is independent of the reduced Explorer view.
 use desktop_core::ShellIdentity;
-use desktop_shell::DesktopShellItem;
+use desktop_shell::ShellEntry;
 
 pub(super) struct Inventory {
     pub icon_size: i32,
     pub spacing: (i32, i32),
     pub dpi: u32,
-    pub items: Vec<DesktopShellItem>,
+    pub items: Vec<ShellEntry>,
 }
 // Stable file IDs deliberately survive rename. An in-flight audit of the old
 // parsing name must nevertheless not overwrite a newly committed identity.
@@ -51,8 +51,8 @@ pub(super) fn capture(managed: &[ShellIdentity]) -> Result<Inventory, String> {
 }
 
 fn merge_managed(
-    visible: &mut Vec<DesktopShellItem>,
-    source: Vec<DesktopShellItem>,
+    visible: &mut Vec<ShellEntry>,
+    source: Vec<ShellEntry>,
     managed: &[ShellIdentity],
 ) {
     for item in source {
@@ -81,8 +81,8 @@ pub(super) fn same(a: &Inventory, b: &Inventory) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn item(name: &str, file_id: u128) -> DesktopShellItem {
-        DesktopShellItem {
+    fn item(name: &str, file_id: u128) -> ShellEntry {
+        ShellEntry {
             identity: ShellIdentity::FileSystem {
                 path: name.into(),
                 volume_id: Some(1),

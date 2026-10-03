@@ -26,7 +26,7 @@ pub use file_command::{
 };
 pub use folder_menu::{FolderMenuResult, show_folder_menu};
 pub use namespace::{
-    DesktopShellItem, ShellAttributes, desktop_source_revision, enumerate_desktop_namespace,
+    ShellAttributes, ShellEntry, desktop_source_revision, enumerate_desktop_namespace,
     enumerate_desktop_source, enumerate_folder, local_app_data_path,
 };
 pub use native_layout::{

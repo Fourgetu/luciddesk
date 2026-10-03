@@ -72,7 +72,7 @@ pub struct NativeDesktopSnapshot {
     pub icon_size: i32,
     pub spacing: (i32, i32),
     pub dpi: u32,
-    pub items: Vec<(super::DesktopShellItem, i32, i32)>,
+    pub items: Vec<(super::ShellEntry, i32, i32)>,
     /// Original view indices, aligned with items even if an individual Shell item was skipped.
     pub view_indices: Vec<i32>,
 }
@@ -218,7 +218,7 @@ fn capture_desktop_snapshot() -> Result<NativeDesktopSnapshot, String> {
                         &parent,
                         pidl.as_ptr(),
                     )?;
-                if let Ok(mut entry) = crate::namespace::desktop_shell_item(&item) {
+                if let Ok(mut entry) = crate::namespace::shell_entry(&item) {
                     // Known-folder desktop objects can expose a filesystem path but have a
                     // different icon and verbs from the underlying directory (e.g. User Files).
                     if let Ok(parsing_name) = crate::namespace::shell_item_name(

@@ -25,7 +25,7 @@ pub fn rename_shell_item(
     owner: HWND,
     identity: &ShellIdentity,
     name: &str,
-) -> Result<Option<crate::DesktopShellItem>> {
+) -> Result<Option<crate::ShellEntry>> {
     if name.trim().is_empty() || name.contains(['\0', '/', '\\']) {
         return Err(windows::core::Error::new(
             E_INVALIDARG,
@@ -59,7 +59,7 @@ pub fn rename_shell_item(
 }
 
 #[implement(IFileOperationProgressSink)]
-struct RenameResult(Rc<RefCell<Option<Result<crate::DesktopShellItem>>>>);
+struct RenameResult(Rc<RefCell<Option<Result<crate::ShellEntry>>>>);
 impl IFileOperationProgressSink_Impl for RenameResult_Impl {
     fn PostRenameItem(
         &self,
@@ -70,7 +70,7 @@ impl IFileOperationProgressSink_Impl for RenameResult_Impl {
         item: Ref<IShellItem>,
     ) -> Result<()> {
         let outcome = result.ok().and_then(|()| {
-            crate::namespace::desktop_shell_item(
+            crate::namespace::shell_entry(
                 item.as_ref().ok_or(windows::Win32::Foundation::E_POINTER)?,
             )
             .map_err(|error| {

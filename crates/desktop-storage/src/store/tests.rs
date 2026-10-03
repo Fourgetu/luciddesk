@@ -68,7 +68,7 @@ fn material_strength_round_trips_and_remembers_each_material() {
     workspace.set_appearance(
         desktop_core::PanelTheme::Dark,
         Backdrop::Tuned {
-            material: desktop_core::MaterialKind::Mica,
+            material: desktop_core::TunableMaterial::Mica,
             strength: 200,
         },
     );
