@@ -1,6 +1,6 @@
 use super::*;
 use crate::pane::assets::RECYCLE_BIN_PARSING_NAME;
-use desktop_core::{DesktopItem, GridPosition, PanelId};
+use luciddesk_core::{DesktopItem, GridPosition, PanelId};
 
 #[test]
 fn refresh_retries_only_failed_icons_and_preserves_new_notifications() {

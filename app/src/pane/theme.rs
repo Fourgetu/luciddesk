@@ -17,8 +17,8 @@ pub(super) struct MaterialChrome {
     pub card_border: windows_canvas::ColorF,
 }
 
-pub(super) fn material_chrome(backdrop: desktop_core::Backdrop, dark: bool) -> MaterialChrome {
-    use desktop_core::Backdrop;
+pub(super) fn material_chrome(backdrop: luciddesk_core::Backdrop, dark: bool) -> MaterialChrome {
+    use luciddesk_core::Backdrop;
     use windows_canvas::ColorF;
     let strength = f32::from(backdrop.strength().unwrap_or(50)) / 100.0;
     // Retain a modest local surface at minimum strength for text and selection;
@@ -96,8 +96,8 @@ fn stroke_color(argb: u32, opacity: f32) -> windows_canvas::ColorF {
     )
 }
 
-fn stroke_opacity(backdrop: desktop_core::Backdrop) -> f32 {
-    use desktop_core::Backdrop;
+fn stroke_opacity(backdrop: luciddesk_core::Backdrop) -> f32 {
+    use luciddesk_core::Backdrop;
     match backdrop {
         Backdrop::Solid { opacity, .. } | Backdrop::Translucent { opacity } => {
             opacity.clamp(0.0, 1.0)
@@ -106,14 +106,14 @@ fn stroke_opacity(backdrop: desktop_core::Backdrop) -> f32 {
     }
 }
 
-pub fn panel_border(_dark: bool, backdrop: desktop_core::Backdrop) -> windows_canvas::ColorF {
+pub fn panel_border(_dark: bool, backdrop: luciddesk_core::Backdrop) -> windows_canvas::ColorF {
     // SurfaceStrokeColorDefault is identical in Light and Default (dark).
     stroke_color(0x66757575, stroke_opacity(backdrop))
 }
 
 pub(super) fn panel_divider(
     dark: bool,
-    backdrop: desktop_core::Backdrop,
+    backdrop: luciddesk_core::Backdrop,
 ) -> windows_canvas::ColorF {
     stroke_color(
         if dark { 0x15ffffff } else { 0x0f000000 },
@@ -151,12 +151,12 @@ fn luminance(rgb: [f32; 3]) -> f32 {
 }
 
 pub fn panel_contrast(
-    backdrop: desktop_core::Backdrop,
+    backdrop: luciddesk_core::Backdrop,
     dark: bool,
-    mode: desktop_core::PanelText,
+    mode: luciddesk_core::PanelText,
     native: bool,
 ) -> PanelContrast {
-    use desktop_core::{Backdrop, PanelText};
+    use luciddesk_core::{Backdrop, PanelText};
     let forced = match mode {
         PanelText::Auto => None,
         PanelText::Light => Some(true),
@@ -234,11 +234,11 @@ pub fn panel_contrast(
     }
 }
 
-pub fn is_dark(theme: desktop_core::PanelTheme) -> bool {
+pub fn is_dark(theme: luciddesk_core::PanelTheme) -> bool {
     match theme {
-        desktop_core::PanelTheme::Dark => true,
-        desktop_core::PanelTheme::Light => false,
-        desktop_core::PanelTheme::System => {
+        luciddesk_core::PanelTheme::Dark => true,
+        luciddesk_core::PanelTheme::Light => false,
+        luciddesk_core::PanelTheme::System => {
             use windows::UI::ViewManagement::{UIColorType, UISettings};
             UISettings::new()
                 .and_then(|s| s.GetColorValue(UIColorType::Foreground))
@@ -289,7 +289,7 @@ mod tests {
 
     #[test]
     fn chrome_keeps_selection_visible_and_adapts_to_material_strength() {
-        use desktop_core::Backdrop;
+        use luciddesk_core::Backdrop;
         for dark in [false, true] {
             let mica = material_chrome(Backdrop::Mica, dark);
             let alt = material_chrome(Backdrop::MicaAlt, dark);
@@ -319,7 +319,7 @@ mod tests {
 
     #[test]
     fn border_follows_background_opacity_and_material_strength() {
-        use desktop_core::Backdrop;
+        use luciddesk_core::Backdrop;
         for dark in [false, true] {
             let full = panel_border(
                 dark,
@@ -353,7 +353,7 @@ mod tests {
 
     #[test]
     fn solid_text_remains_readable_over_extreme_desktop_colors() {
-        use desktop_core::{Backdrop, PanelText};
+        use luciddesk_core::{Backdrop, PanelText};
         for color in [0, 0xffffff, 0x808080, 0xff0000, 0x00ff00, 0x0000ff] {
             for opacity in [0.0, 0.1, 0.5, 0.9, 1.0] {
                 for mode in [PanelText::Auto, PanelText::Light, PanelText::Dark] {
@@ -396,7 +396,7 @@ mod tests {
 
     #[test]
     fn transparent_materials_and_manual_overrides_are_protected() {
-        use desktop_core::{Backdrop, PanelText};
+        use luciddesk_core::{Backdrop, PanelText};
         for dark in [false, true] {
             let standard = panel_contrast(Backdrop::Acrylic, dark, PanelText::Auto, true);
             assert_eq!(standard.light_text, dark);
@@ -446,10 +446,10 @@ mod tests {
 }
 
 pub(super) fn mica_fallback(
-    backdrop: desktop_core::Backdrop,
+    backdrop: luciddesk_core::Backdrop,
     dark: bool,
 ) -> Option<windows_canvas::ColorF> {
-    use desktop_core::Backdrop;
+    use luciddesk_core::Backdrop;
     if !matches!(backdrop.base(), Backdrop::Mica | Backdrop::MicaAlt) {
         return None;
     }

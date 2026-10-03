@@ -14,8 +14,8 @@
 
 - 最低 Rust 版本更新为 1.99，启用 FFI 裸指针借用检查；简化原生接口传参和诊断工具的字符串转换。
 - 拆分材质运行时、画刷回退和窗口视觉树代码，保持现有配色、强度、系统策略和回退行为。
-- 将共用的原生菜单主题与边框提取为 `desktop-menu`，移除生产代码跨 crate 引用源文件的隐式依赖；显示器布局存储与备份恢复分开维护，明确 Shell 条目与可调材质的类型命名。
-- `desktop-hook` 更名为 `desktop-explorer`，配套 DLL 更名为 `luciddesk_explorer.dll`，同步更新加载与打包逻辑；升级检查仍识别旧 DLL 的占用状态。升级时请完整替换程序包，确保 EXE 与 DLL 来自同一构建。
+- 将共用的原生菜单主题与边框提取为 `luciddesk-menu`，移除生产代码跨 crate 引用源文件的隐式依赖；显示器布局存储与备份恢复分开维护，明确 Shell 条目与可调材质的类型命名。
+- `desktop-hook` 更名为 `luciddesk-explorer`，配套 DLL 更名为 `luciddesk_explorer.dll`，同步更新加载与打包逻辑；升级检查仍识别旧 DLL 的占用状态。升级时请完整替换程序包，确保 EXE 与 DLL 来自同一构建。
 
 ### perf
 

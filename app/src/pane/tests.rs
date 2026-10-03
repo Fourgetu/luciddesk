@@ -4,7 +4,7 @@ use super::*;
 #[test]
 fn changing_language_keeps_all_panel_windows_and_saved_panels() {
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
-    let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
     crate::i18n::with_locale(0, || {
         let state = Rc::new(RefCell::new(test_state()));
         create_view(&state, PanelId::new(1)).unwrap();
@@ -46,7 +46,7 @@ fn changing_language_keeps_all_panel_windows_and_saved_panels() {
 #[ignore = "Native composition window; run alone to isolate STA graphics lifetime"]
 fn language_switch_preserves_panel_items_selection_and_scroll() {
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
-    let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
     crate::i18n::with_locale(0, || {
         let state = Rc::new(RefCell::new(test_state()));
         create_view(&state, PanelId::new(1)).unwrap();
@@ -72,10 +72,10 @@ fn language_switch_preserves_panel_items_selection_and_scroll() {
 #[test]
 fn all_pane_types_fade_and_close_after_the_transition() {
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
-    let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
     let state = Rc::new(RefCell::new(test_state()));
-    state.borrow_mut().workspace.set_appearance(desktop_core::PanelTheme::Dark,
-        desktop_core::Backdrop::Translucent { opacity: 1.0 });
+    state.borrow_mut().workspace.set_appearance(luciddesk_core::PanelTheme::Dark,
+        luciddesk_core::Backdrop::Translucent { opacity: 1.0 });
     create_view(&state, PanelId::new(1)).unwrap();
     let folder = tempfile::tempdir().unwrap();
     handle(&state, PanelId::new(0), Event::MapFolder(folder.path().into())).unwrap();
@@ -185,7 +185,7 @@ pub(super) fn test_model(title: &str) -> GroupModel {
         merge_preview: Vec::new(),
         merge_occluded: false,
         tabs: Vec::new(),
-        active_tab: desktop_core::PanelId::new(0),
+        active_tab: luciddesk_core::PanelId::new(0),
         folder_sort: (0, false),
         folder_columns: None,
         folder_visible_columns: 15,
@@ -193,8 +193,8 @@ pub(super) fn test_model(title: &str) -> GroupModel {
         list_view: false,
         folder: None,
         folder_status: None,
-        options: desktop_core::PaneOptions::default(),
-        theme: desktop_core::PanelTheme::Dark,
+        options: luciddesk_core::PaneOptions::default(),
+        theme: luciddesk_core::PanelTheme::Dark,
         dark: true,
         hovered_item: None,
         scrollbar: Default::default(),
@@ -205,7 +205,7 @@ pub(super) fn test_model(title: &str) -> GroupModel {
         auto_hide: false,
         locked: false,
         reveal: 1.0,
-        backdrop: desktop_core::Backdrop::Mica,
+        backdrop: luciddesk_core::Backdrop::Mica,
         native_material: false,
         title: title.into(),
         items: vec![],
@@ -351,11 +351,11 @@ fn custom_icon_grid_previews_reflows_and_keeps_list_geometry() {
 
 #[test]
 fn search_pane_creation_and_close_preserve_desktop_membership() {
-    let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let _apartment = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
     let state = Rc::new(RefCell::new(test_state()));
     state.borrow_mut().workspace.set_appearance(
-        desktop_core::PanelTheme::Dark,
-        desktop_core::Backdrop::Translucent { opacity: 1.0 },
+        luciddesk_core::PanelTheme::Dark,
+        luciddesk_core::Backdrop::Translucent { opacity: 1.0 },
     );
     let original = state.borrow().workspace.desktop_items().to_vec();
     handle(&state, PanelId::new(0), Event::EnableSearch).unwrap();
@@ -451,7 +451,7 @@ fn search_pane_creation_and_close_preserve_desktop_membership() {
 
 #[test]
 fn folder_pane_creation_switch_and_close_preserve_real_files() {
-    let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let _apartment = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
     let root = std::env::temp_dir().join(format!(
         "luciddesk-folder-ui-{}-{}",
         std::process::id(),
@@ -466,7 +466,7 @@ fn folder_pane_creation_switch_and_close_preserve_real_files() {
     let mut initial = test_state();
     initial
         .workspace
-        .set_appearance(desktop_core::PanelTheme::Dark, desktop_core::Backdrop::Mica);
+        .set_appearance(luciddesk_core::PanelTheme::Dark, luciddesk_core::Backdrop::Mica);
     let state = Rc::new(RefCell::new(initial));
     handle(&state, PanelId::new(0), Event::MapFolder(root.clone())).unwrap();
     let id = PanelId::new(3);
@@ -589,7 +589,7 @@ fn activation_releases_state_and_model_before_shell_reentry() {
         );
         return;
     }
-    let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let _apartment = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
     let state = Rc::new(RefCell::new(test_state()));
     create_view(&state, PanelId::new(1)).unwrap();
     create_view(&state, PanelId::new(2)).unwrap();
@@ -769,7 +769,7 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         SendMessageW, WM_KEYDOWN, WM_KILLFOCUS, WM_SETFOCUS,
     };
-    let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let _apartment = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
     let model = Rc::new(RefCell::new(test_model("Keyboard regression")));
     model.borrow_mut().items = (0..6)
         .map(|index| Item {
@@ -872,7 +872,7 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
             Event::ActivateSelection,
             Event::RenameItem(_),
             Event::Refresh,
-            Event::FileCommand(desktop_shell::FileCommand::Delete)
+            Event::FileCommand(luciddesk_shell::FileCommand::Delete)
         ]
     ));
     unsafe {
@@ -1128,7 +1128,7 @@ fn unrelated_keys_do_not_select_first_icon_or_emit_pane_focus() {
 #[test]
 #[ignore = "Opens a real popup; run alone in an interactive desktop session"]
 fn fold_finishes_while_a_context_menu_is_open() {
-    let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let _apartment = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
     let model = Rc::new(RefCell::new(test_model("Fold menu test")));
     let pane = window::create(RectDip::new(40.0, 40.0, 200.0, 160.0), model.clone(), |_| false).unwrap();
     let hwnd = pane.hwnd().cast();
@@ -1197,7 +1197,7 @@ fn fold_finishes_while_a_context_menu_is_open() {
 #[test]
 fn pane_layer_switch_and_wallpaper_material_initialize() {
     use windows_sys::Win32::UI::WindowsAndMessaging::{GWL_EXSTYLE, GetWindowLongW, WS_EX_TOPMOST};
-    let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let _apartment = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
     let model = Rc::new(RefCell::new(test_model("Layer test")));
     let pane = window::create(
         RectDip::new(40.0, 40.0, 200.0, 160.0),
@@ -1225,9 +1225,9 @@ fn pane_layer_switch_and_wallpaper_material_initialize() {
         "Pane must not use the DWM activation frame"
     );
     for material in [
-        desktop_core::Backdrop::Mica,
-        desktop_core::Backdrop::MicaAlt,
-        desktop_core::Backdrop::Acrylic,
+        luciddesk_core::Backdrop::Mica,
+        luciddesk_core::Backdrop::MicaAlt,
+        luciddesk_core::Backdrop::Acrylic,
     ] {
         for dark in [false, true] {
             {
@@ -1426,13 +1426,13 @@ fn pane_options_apply_globally_and_can_disable_snapping() {
     ] {
         handle(&state, id, event).unwrap();
     }
-    let options = desktop_core::PaneOptions {
+    let options = luciddesk_core::PaneOptions {
         corner_radius: 0.0,
         border: false,
         snap: false,
-        text: desktop_core::PanelText::Auto,
+        text: luciddesk_core::PanelText::Auto,
         text_protection: false,
-        ..desktop_core::PaneOptions::DEFAULT
+        ..luciddesk_core::PaneOptions::DEFAULT
     };
     assert_eq!(state.borrow().workspace.pane_options(), options);
     assert_eq!(
@@ -1473,7 +1473,7 @@ fn pane_options_apply_globally_and_can_disable_snapping() {
     handle(
         &state,
         id,
-        Event::SetPanelText(desktop_core::PanelText::Light),
+        Event::SetPanelText(luciddesk_core::PanelText::Light),
     )
     .unwrap();
     assert_eq!(
@@ -1484,7 +1484,7 @@ fn pane_options_apply_globally_and_can_disable_snapping() {
             .unwrap()
             .pane_options()
             .text,
-        desktop_core::PanelText::Light
+        luciddesk_core::PanelText::Light
     );
     handle(&state, id, Event::ToggleTextProtection).unwrap();
     assert!(
@@ -1499,7 +1499,7 @@ fn pane_options_apply_globally_and_can_disable_snapping() {
     handle(&state, id, Event::ResetPaneOptions).unwrap();
     assert_eq!(
         state.borrow().workspace.pane_options(),
-        desktop_core::PaneOptions::default()
+        luciddesk_core::PaneOptions::default()
     );
     assert_eq!(
         state
@@ -1508,7 +1508,7 @@ fn pane_options_apply_globally_and_can_disable_snapping() {
             .load_workspace()
             .unwrap()
             .pane_options(),
-        desktop_core::PaneOptions::default()
+        luciddesk_core::PaneOptions::default()
     );
 }
 
@@ -1568,8 +1568,8 @@ fn appearance_is_global_while_behavior_remains_per_group() {
         .clone();
     let before = state.borrow().workspace.panel(id).unwrap().clone();
     for event in [
-        Event::Theme(desktop_core::PanelTheme::Dark),
-        Event::Material(desktop_core::Backdrop::Acrylic),
+        Event::Theme(luciddesk_core::PanelTheme::Dark),
+        Event::Material(luciddesk_core::Backdrop::Acrylic),
         Event::ToggleAutoHide,
         Event::ToggleTopmost,
         Event::ToggleLocked,
@@ -1579,22 +1579,22 @@ fn appearance_is_global_while_behavior_remains_per_group() {
     let s = state.borrow();
     let stored = s.store.load_workspace().unwrap();
     let panel = stored.panel(id).unwrap();
-    assert_eq!(panel.theme(), desktop_core::PanelTheme::Dark);
-    assert_eq!(panel.backdrop(), desktop_core::Backdrop::Acrylic);
+    assert_eq!(panel.theme(), luciddesk_core::PanelTheme::Dark);
+    assert_eq!(panel.backdrop(), luciddesk_core::Backdrop::Acrylic);
     assert_eq!(panel.auto_hide(), !before.auto_hide());
     assert_eq!(panel.always_on_top(), !before.always_on_top());
     assert_eq!(panel.locked(), !before.locked());
     let other_stored = stored.panel(PanelId::new(2)).unwrap();
-    assert_eq!(other_stored.theme(), desktop_core::PanelTheme::Dark);
-    assert_eq!(other_stored.backdrop(), desktop_core::Backdrop::Acrylic);
+    assert_eq!(other_stored.theme(), luciddesk_core::PanelTheme::Dark);
+    assert_eq!(other_stored.backdrop(), luciddesk_core::Backdrop::Acrylic);
     assert_eq!(other_stored.auto_hide(), other.auto_hide());
     assert_eq!(other_stored.always_on_top(), other.always_on_top());
     assert_eq!(other_stored.locked(), other.locked());
     assert_eq!(
         stored.appearance(),
         Some((
-            desktop_core::PanelTheme::Dark,
-            desktop_core::Backdrop::Acrylic
+            luciddesk_core::PanelTheme::Dark,
+            luciddesk_core::Backdrop::Acrylic
         ))
     );
 }
@@ -1628,7 +1628,7 @@ fn settings_window_applies_clicks_and_closes_without_exiting() {
     }
 
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
-    let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let _apartment = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
     composition::animation_tests::settings_content_survives_material_changes_and_resize();
     let state = Rc::new(RefCell::new(test_state()));
     settings::show(&state, PanelId::new(1)).unwrap();
@@ -1731,7 +1731,7 @@ fn settings_window_applies_clicks_and_closes_without_exiting() {
                 .panel(PanelId::new(1))
                 .unwrap()
                 .theme(),
-            desktop_core::PanelTheme::Dark
+            luciddesk_core::PanelTheme::Dark
         );
         SendMessageW(hwnd, WM_CLOSE, 0, 0);
         assert_eq!(IsWindow(hwnd), 0);
@@ -1863,11 +1863,11 @@ fn multiselection_preserves_anchor_toggle_and_file_identity_on_refresh() {
 
 #[test]
 fn auto_hide_is_transient_across_saves_tabs_and_manual_fold() {
-    let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("workspace.db");
     let mut initial = test_state();
-    initial.workspace.set_tab_groups(vec![desktop_core::PaneTabs {
+    initial.workspace.set_tab_groups(vec![luciddesk_core::PaneTabs {
         members: vec![PanelId::new(1), PanelId::new(2)], active: PanelId::new(1),
     }]).unwrap();
     initial.store = WorkspaceStore::open(&path).unwrap();
@@ -1927,7 +1927,7 @@ fn auto_hide_is_transient_across_saves_tabs_and_manual_fold() {
 fn normal_interactions_do_not_write_diagnostic_log() {
     use std::time::{Duration,Instant};
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
-    let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("workspace.db");
     crate::diagnostics::init_logging(&path);

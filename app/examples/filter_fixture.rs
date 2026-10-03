@@ -1,10 +1,10 @@
 //! Creates/checks a disposable workspace for production application smoke testing.
-use desktop_core::{
+use luciddesk_core::{
     DesktopItem, DesktopPlacement, GridPosition, Panel, PanelId, RectDip, Workspace,
 };
-use desktop_storage::WorkspaceStore;
+use luciddesk_storage::WorkspaceStore;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let _sta = desktop_shell::ShellApartment::initialize_sta()?;
+    let _sta = luciddesk_shell::ShellApartment::initialize_sta()?;
     let path = std::env::args()
         .nth(1)
         .ok_or("Expected disposable workspace.db path")?;
@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         assert_eq!(count, 2);
         return Ok(());
     }
-    let snapshot = desktop_shell::native_desktop_snapshot()?;
+    let snapshot = luciddesk_shell::native_desktop_snapshot()?;
     let mut workspace = Workspace::new();
     let id = PanelId::new(1);
     workspace.add_panel(Panel::new(

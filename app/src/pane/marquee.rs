@@ -1,6 +1,6 @@
 //! Viewport-local rubber-band selection, preserving identities across refreshes.
 use super::{GroupModel, layout::Grid};
-use desktop_core::{RectDip, ShellIdentity};
+use luciddesk_core::{RectDip, ShellIdentity};
 use std::collections::{BTreeSet, HashSet};
 use windows_sys::Win32::Foundation::POINT;
 
@@ -231,7 +231,7 @@ mod tests {
     fn marquee_window_messages_commit_cancel_and_ignore_mapped_folders() {
         use std::{cell::RefCell, rc::Rc};
         use windows_sys::Win32::UI::WindowsAndMessaging::*;
-        let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _apartment = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let model = Rc::new(RefCell::new(model()));
         let pane = super::super::window::create(
             RectDip {

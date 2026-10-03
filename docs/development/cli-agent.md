@@ -148,7 +148,7 @@ UI 线程接收 apply 时再次校验 base、拓扑、锁定、项目身份及�
 
 | 阶段 | 交付 | 验收 |
 | --- | --- | --- |
-| A：协议与只读 CLI | `desktop-api` DTO/错误/schema；`luciddesk-cli` 控制台；`app/src/control/` 管道与 UI 队列；status/capabilities/workspace | 未运行无副作用；stdout 可解析；目录/版本不匹配拒绝 |
+| A：协议与只读 CLI | `luciddesk-api` DTO/错误/schema；`luciddesk-cli` 控制台；`app/src/control/` 管道与 UI 队列；status/capabilities/workspace | 未运行无副作用；stdout 可解析；目录/版本不匹配拒绝 |
 | B：领域命令与预览 | 从 UI Event 分支抽出可复用 command service；create/update/assign/release/reorder/tab；plan preview | GUI 与 CLI 规则一致；预览不写 DB/TOML，不分配持久化 ID |
 | C：应用计划 | 版本校验、单事务保存、窗口/Shell 协调、回执缓存 | 批量失败零提交；成功一次提交；超时重试不重复执行 |
 | D：Skills 与打包 | 针对能力发现、分类、预览、应用、核验的 SKILL.md；CLI 随 GUI 同版本发布 | Agent 无需理解 DB；隔离数据目录端到端验证；卸载/便携路径一致 |

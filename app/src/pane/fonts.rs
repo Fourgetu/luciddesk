@@ -194,7 +194,7 @@ fn available(name: &str) -> bool {
     unsafe { EnumFontFamiliesExW(probe.dc, &lf, Some(collect), (&raw mut names) as isize, 0); }
     names.iter().any(|candidate| candidate == name) && probe.supports(name)
 }
-pub(super) fn load(store: &desktop_storage::WorkspaceStore) -> Result<(), String> {
+pub(super) fn load(store: &luciddesk_storage::WorkspaceStore) -> Result<(), String> {
     let saved = store
         .preference(KEY)
         .map_err(|e| e.to_string())?
@@ -206,7 +206,7 @@ pub(super) fn load(store: &desktop_storage::WorkspaceStore) -> Result<(), String
     }
     Ok(())
 }
-pub(super) fn save(store: &desktop_storage::WorkspaceStore, name: &str) -> Result<(), String> {
+pub(super) fn save(store: &luciddesk_storage::WorkspaceStore, name: &str) -> Result<(), String> {
     if name != crate::i18n::default_font() && !available(name) {
         return Err(crate::i18n::text("font-unavailable").into());
     }
@@ -278,13 +278,13 @@ mod tests {
                 .iter()
                 .all(|name| !name.starts_with('@') && readable(name))
         );
-        let store = desktop_storage::WorkspaceStore::open_in_memory().unwrap();
+        let store = luciddesk_storage::WorkspaceStore::open_in_memory().unwrap();
         assert!(save(&store, "LucidDesk nonexistent font 82947").is_err());
         assert!(store.preference(KEY).unwrap().is_none());
     }
     #[test]
     fn font_switch_updates_live_layout_persists_and_missing_fonts_fall_back() {
-        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         struct Restore(String);
         impl Drop for Restore {
             fn drop(&mut self) {
@@ -306,11 +306,11 @@ mod tests {
         let mut state = super::super::tests::test_state();
         state
             .workspace
-            .set_appearance(desktop_core::PanelTheme::Dark, desktop_core::Backdrop::Mica);
-        let model = super::super::create_model(&state, desktop_core::PanelId::new(1)).unwrap();
+            .set_appearance(luciddesk_core::PanelTheme::Dark, luciddesk_core::Backdrop::Mica);
+        let model = super::super::create_model(&state, luciddesk_core::PanelId::new(1)).unwrap();
         let mut renderer = super::super::render::Renderer::new().unwrap();
         let before = renderer.pixels(420, 300, 1.0, &model).unwrap();
-        let store = desktop_storage::WorkspaceStore::open_in_memory().unwrap();
+        let store = luciddesk_storage::WorkspaceStore::open_in_memory().unwrap();
         save(&store, alternative).unwrap();
         assert_eq!(family(), *alternative);
         assert_ne!(before, renderer.pixels(420, 300, 1.0, &model).unwrap());

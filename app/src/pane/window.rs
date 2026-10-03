@@ -9,7 +9,7 @@ use super::{
     layout::{Grid, HEADER},
     render::Renderer,
 };
-use desktop_core::RectDip;
+use luciddesk_core::RectDip;
 use std::{cell::RefCell, rc::Rc};
 use windows_sys::Win32::Foundation::{HWND, POINT, RECT};
 use windows_sys::Win32::Graphics::Gdi::{
@@ -841,7 +841,7 @@ where
     let mut drag_clipped = shape::WindowShape::default();
     let mut move_origin: Option<super::snap::DragOrigin> = None;
     let mut auto_hide = super::auto_hide::AutoHide::default();
-    let mut tab_press: Option<(desktop_core::PanelId, POINT)> = None;
+    let mut tab_press: Option<(luciddesk_core::PanelId, POINT)> = None;
     let menu_active = Rc::new(std::cell::Cell::new(false));
     let mut paint_error = false;
     let model_init = Rc::clone(&model);
@@ -1200,7 +1200,7 @@ where
                     let cell = m.resize_cell();
                     let s = scale(hwnd);
                     info.ptMinTrackSize.x =
-                        ((cell.0 + super::layout::PADDING * 2.0).max(if m.tabs.len() > 1 { desktop_core::RectDip::MIN_WIDTH } else { 0.0 }) * s).ceil() as i32;
+                        ((cell.0 + super::layout::PADDING * 2.0).max(if m.tabs.len() > 1 { luciddesk_core::RectDip::MIN_WIDTH } else { 0.0 }) * s).ceil() as i32;
                     info.ptMinTrackSize.y = ((if m.collapsed {
                         HEADER
                     } else {
@@ -1610,7 +1610,7 @@ where
                                 || super::drag_drop::over_explorer(screen)
                             {
                                 let preview = drag_preview(hwnd, &model.borrow(), *index)
-                                    .map(|(pixels, origin)| desktop_shell::FileDragImage {
+                                    .map(|(pixels, origin)| luciddesk_shell::FileDragImage {
                                         width: pixels.width,
                                         height: pixels.height,
                                         pixels: pixels.data,
@@ -2083,7 +2083,7 @@ where
                             }
                             invalidate(hwnd);
                             if model.borrow().folder.is_some() || !super::compact_menu::enabled() {
-                                let result = desktop_shell::show_file_items_menu(
+                                let result = luciddesk_shell::show_file_items_menu(
                                     windows::Win32::Foundation::HWND(hwnd),
                                     &identities,
                                     windows::Win32::Foundation::POINT {
@@ -2314,8 +2314,8 @@ fn menu(
     lparam: isize,
     auto_hide: bool,
     locked: bool,
-    theme: desktop_core::PanelTheme,
-    backdrop: desktop_core::Backdrop,
+    theme: luciddesk_core::PanelTheme,
+    backdrop: luciddesk_core::Backdrop,
     folder: (bool, bool),
     visible_columns: u8,
     collapsed: bool,

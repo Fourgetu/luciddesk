@@ -11,7 +11,7 @@
 | `app/src/pane/hybrid/audit_schedule.rs` | 审计退避与变化通知保留 |
 | `app/src/pane/hybrid/inventory.rs` | 成员修订键、完整快照和独立来源合并 |
 | `app/src/pane/hybrid/icons.rs` | 图标加载、刷新与迟到结果处理 |
-| `crates/desktop-explorer/src/filter/client.rs` | 选择清理、过滤提交与确认轮询 |
+| `crates/luciddesk-explorer/src/filter/client.rs` | 选择清理、过滤提交与确认轮询 |
 
 ## 双向选择互斥
 

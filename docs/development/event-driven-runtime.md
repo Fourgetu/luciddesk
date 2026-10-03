@@ -12,7 +12,7 @@
 | `app/src/pane/hybrid/audit_schedule.rs` | 清单审计退避和通知失效状态 |
 | `app/src/pane/display_layout.rs`、`recovery.rs` | 显示布局稳定窗口、备份期限 |
 | `app/src/pane/auto_hide.rs` | 鼠标状态转换的延迟确认 |
-| `crates/desktop-explorer/src/filter/menu/worker.rs` | Explorer 菜单 STA 的请求、消息等待与退出唤醒 |
+| `crates/luciddesk-explorer/src/filter/menu/worker.rs` | Explorer 菜单 STA 的请求、消息等待与退出唤醒 |
 
 表中的 `recovery.rs` 位于 `app/src/pane/`。主程序的 Runtime、面板窗口和 Explorer 内的工作线程各自处理所属消息；它们不共用一个全局计时器。
 

@@ -13,19 +13,20 @@ path = "src/main.rs"
 
 [features]
 default = []
-menu-diagnostics = ["desktop-explorer/menu-diagnostics", "desktop-shell/menu-diagnostics"]
+menu-diagnostics = ["luciddesk-explorer/menu-diagnostics", "luciddesk-shell/menu-diagnostics"]
 
 [dependencies]
-desktop-api = { path = "../crates/desktop-api" }
-desktop-core.workspace = true
-desktop-shell.workspace = true
-desktop-storage.workspace = true
+luciddesk-diagnostics.workspace = true
+luciddesk-api = { path = "../crates/luciddesk-api" }
+luciddesk-core.workspace = true
+luciddesk-shell.workspace = true
+luciddesk-storage.workspace = true
 tempfile = "3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 semver = "1"
-desktop-window.workspace = true
-desktop-explorer.workspace = true
+luciddesk-window.workspace = true
+luciddesk-explorer.workspace = true
 windows = { workspace = true, features = [
     "Win32_Storage_FileSystem",
     "Foundation",
@@ -97,7 +98,7 @@ canvas-core = { package = "windows-core", version = "=0.100.0", default-features
 windows-animation = "=0.100.0"
 windows-version = "=0.100.0"
 windows-registry = "=0.100.0"
-desktop-graphics = { path = "../crates/desktop-graphics" }
+luciddesk-graphics = { path = "../crates/luciddesk-graphics" }
 fluent-bundle = "0.16"
 unic-langid = "0.9"
 

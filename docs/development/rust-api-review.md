@@ -6,11 +6,11 @@
 
 | 边界 | 当前职责 | 审查重点 |
 | --- | --- | --- |
-| `desktop-core` | 身份、几何、外观、项目、面板与工作区 | 模型约束不依赖 HWND 或窗口消息 |
-| `desktop-storage` | 配置、数据库、事务与备份 | 输入校验、提交范围、恢复失败及错误传播 |
-| `desktop-shell` | Shell 操作和 OLE apartment 守卫 | 线程要求、取消语义、COM 与原生对象所有权 |
+| `luciddesk-core` | 身份、几何、外观、项目、面板与工作区 | 模型约束不依赖 HWND 或窗口消息 |
+| `luciddesk-storage` | 配置、数据库、事务与备份 | 输入校验、提交范围、恢复失败及错误传播 |
+| `luciddesk-shell` | Shell 操作和 OLE apartment 守卫 | 线程要求、取消语义、COM 与原生对象所有权 |
 | `app/src/pane` | UI 状态、窗口与后台结果协调 | 重入、窗口销毁、异步结果是否仍适用 |
-| `native_graphics.rs`、`desktop-graphics` | 绑定互操作与图形资源 | 引用计数、设备身份、释放顺序 |
+| `native_graphics.rs`、`luciddesk-graphics` | 绑定互操作与图形资源 | 引用计数、设备身份、释放顺序 |
 
 模块入口负责声明与重导出，具体实现放在所属模块。身份、模型校验和持久化规则应通过所属模块复用，避免在多个 UI 入口各自实现。
 
@@ -33,7 +33,7 @@
 
 ## 正常退出与异常终止
 
-主 UI 入口 `app/src/pane/hybrid.rs::run` 当前使用内部 `OleApartment` 守卫；Shell 工作者和相关测试使用 `desktop_shell::ShellApartment`。两者都要求依赖 OLE 的资源先释放，但它们不是同一个类型。
+主 UI 入口 `app/src/pane/hybrid.rs::run` 当前使用内部 `OleApartment` 守卫；Shell 工作者和相关测试使用 `luciddesk_shell::ShellApartment`。两者都要求依赖 OLE 的资源先释放，但它们不是同一个类型。
 
 主 UI 作用域按“OLE 守卫 → `GraphicsLifetime` → 应用状态及窗口”的顺序声明，退出时按相反顺序释放。图形缓存通过显式清理入口释放，不留到进程退出时的线程局部析构。清理时先从 `RefCell` 取出对象、结束借用，再执行可能重入的原生释放操作。细节见[绘图与绑定](rendering.md)。
 
@@ -86,13 +86,13 @@ API 应区分“操作失败”“用户取消”和“成功但无变化”，�
 
 ```powershell
 # 领域模型及来源、几何和身份约束
-cargo test -p desktop-core --lib --locked --offline
+cargo test -p luciddesk-core --lib --locked --offline
 
 # ShellApartment 的不可跨线程、不可直接构造约束
-cargo test -p desktop-shell --doc --locked --offline
+cargo test -p luciddesk-shell --doc --locked --offline
 
 # 每次成功 OLE 初始化均有对应释放
-cargo test -p desktop-shell --lib nested_guards_balance_each_successful_initialization --locked --offline
+cargo test -p luciddesk-shell --lib nested_guards_balance_each_successful_initialization --locked --offline
 
 # 图形资源先于 apartment 和进程退出释放
 cargo test -p luciddesk --bin luciddesk graphics_caches_release_before_apartment_and_process_exit --locked --offline -- --test-threads=1

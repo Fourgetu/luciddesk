@@ -1,6 +1,6 @@
 //! Validate on a workspace copy, then commit once. No window or Shell calls here.
 use super::*;
-use desktop_api::{Context, Operation, Plan};
+use luciddesk_api::{Context, Operation, Plan};
 use std::collections::{HashSet, VecDeque};
 const TTL: Duration = Duration::from_secs(300);
 pub(super) struct Prepared {
@@ -233,7 +233,7 @@ fn prepare(
         }
     }
     Ok(Prepared {
-        token: desktop_api::request_id(),
+        token: luciddesk_api::request_id(),
         base: plan.base.clone(),
         expires: Instant::now() + TTL,
         next,
@@ -274,7 +274,7 @@ impl Plans {
                         json!({"plan_token":plan.token,"expires_in_seconds":300,"changed":plan.next!=state.workspace,"diff":plan.diff,"provisional_refs":plan.refs}),
                     );
                     if serde_json::to_vec(&response)
-                        .map_or(true, |bytes| bytes.len() > desktop_api::MAX_FRAME)
+                        .map_or(true, |bytes| bytes.len() > luciddesk_api::MAX_FRAME)
                     {
                         return fail("RESULT_TOO_LARGE", "preview exceeds response limit");
                     }
@@ -348,7 +348,7 @@ mod tests {
     use super::*;
     fn request(command: &str) -> Request {
         serde_json::from_value(
-            json!({"protocol_version":1,"request_id":desktop_api::request_id(),"command":command}),
+            json!({"protocol_version":1,"request_id":luciddesk_api::request_id(),"command":command}),
         )
         .unwrap()
     }

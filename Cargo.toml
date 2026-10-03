@@ -2,14 +2,15 @@
 members = [
     "app",
     "cli",
-    "crates/desktop-api",
-    "crates/desktop-core",
-    "crates/desktop-graphics",
-    "crates/desktop-shell",
-    "crates/desktop-menu",
-    "crates/desktop-storage",
-    "crates/desktop-window",
-    "crates/desktop-explorer",
+    "crates/luciddesk-api",
+    "crates/luciddesk-diagnostics",
+    "crates/luciddesk-core",
+    "crates/luciddesk-graphics",
+    "crates/luciddesk-shell",
+    "crates/luciddesk-menu",
+    "crates/luciddesk-storage",
+    "crates/luciddesk-window",
+    "crates/luciddesk-explorer",
 ]
 resolver = "3"
 
@@ -19,12 +20,13 @@ rust-version = "1.99"
 license = "MIT"
 
 [workspace.dependencies]
-desktop-menu = { path = "crates/desktop-menu" }
-desktop-core = { path = "crates/desktop-core" }
-desktop-shell = { path = "crates/desktop-shell" }
-desktop-storage = { path = "crates/desktop-storage" }
-desktop-window = { path = "crates/desktop-window" }
-desktop-explorer = { path = "crates/desktop-explorer" }
+luciddesk-diagnostics = { path = "crates/luciddesk-diagnostics" }
+luciddesk-menu = { path = "crates/luciddesk-menu" }
+luciddesk-core = { path = "crates/luciddesk-core" }
+luciddesk-shell = { path = "crates/luciddesk-shell" }
+luciddesk-storage = { path = "crates/luciddesk-storage" }
+luciddesk-window = { path = "crates/luciddesk-window" }
+luciddesk-explorer = { path = "crates/luciddesk-explorer" }
 # Panel IDs use u64; preserve checked INTEGER conversions in rusqlite 0.40.
 rusqlite = { version = "0.40.2", features = ["bundled", "backup", "fallible_uint"] }
 windows-window = "0.100.0"

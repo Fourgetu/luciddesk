@@ -165,7 +165,7 @@ cd luciddesk
 
 ```powershell
 .\tools\use-windows-toolchain.ps1
-cargo build -p luciddesk -p desktop-explorer --locked
+cargo build -p luciddesk -p luciddesk-explorer --locked
 .\target\debug\luciddesk.exe
 ```
 

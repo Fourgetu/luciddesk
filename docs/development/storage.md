@@ -7,11 +7,11 @@
 | 入口 | 职责 |
 | --- | --- |
 | `app/src/main.rs` | 数据目录选择 |
-| `crates/desktop-storage/src/store/mod.rs` | 数据库打开、偏好路由和工作区保存 |
-| `crates/desktop-storage/src/store/config.rs` | TOML 解析、外部修改检测、字段更新与原子替换 |
-| `crates/desktop-storage/src/store/schema.rs` | 结构校验与限定升级 |
-| `crates/desktop-storage/src/store/tabs.rs` | 标签组元数据读写 |
-| `crates/desktop-storage/src/store/recovery.rs` | 一致快照、导出和恢复校验 |
+| `crates/luciddesk-storage/src/store/mod.rs` | 数据库打开、偏好路由和工作区保存 |
+| `crates/luciddesk-storage/src/store/config.rs` | TOML 解析、外部修改检测、字段更新与原子替换 |
+| `crates/luciddesk-storage/src/store/schema.rs` | 结构校验与限定升级 |
+| `crates/luciddesk-storage/src/store/tabs.rs` | 标签组元数据读写 |
+| `crates/luciddesk-storage/src/store/recovery.rs` | 一致快照、导出和恢复校验 |
 | `app/src/pane/recovery.rs` | 备份策略、历史记录及后台任务协调 |
 
 路径选择依次检查数据目录环境变量、程序旁的 `portable` 文件、默认用户目录。`config.toml` 与选中的 `workspace.db` 同目录，自动备份存于该数据目录的 `backups` 子目录。开发和测试使用独立目录，避免修改日常工作区。
@@ -93,7 +93,7 @@ SQL 对布尔值、类型、几何、颜色、不透明度和归属字段实施�
 在已准备好的构建环境中运行存储测试：
 
 ```powershell
-cargo test -p desktop-storage --lib --locked --offline -- --test-threads=1
+cargo test -p luciddesk-storage --lib --locked --offline -- --test-threads=1
 ```
 
 重点回归入口：
@@ -173,3 +173,12 @@ cargo test -p luciddesk --bin luciddesk --locked --offline normal_interactions_d
 - 搜索面板继续使用 `panels.kind=search` 保存外观和布局；搜索词、分页结果、选择、滚动均为临时内存状态，不新增历史或结果表。文件夹导航和枚举结果同样不持久化。
 
 统一诊断日志默认 Error，桌面同步和 Debug 菜单诊断统一进入 `logs/diagnostic.log`，不再追加 `workspace.log` / `menu-presenter.log`。相同消息保留 30 秒去重；不同消息合计每 30 秒最多写 64 条，超出计数在下次允许写入时通过 `rate_limited` 报告，无后台定时落盘。日志目录不可写时退避 5 秒，下一个事件触发重试；日志头的系统信息在首次写入时缓存。显式启用的渲染跟踪仍为独立支持工具。
+
+
+### 独立诊断接口
+
+`crates/luciddesk-diagnostics` 为独立、仅依赖标准库的日志核心，无数据库、GUI 或 Shell 依赖。主程序在确定数据目录后调用 `initialize`，注入应用版本、构建标识和惰性报告函数；初始化本身不创建日志文件。`app/src/diagnostics` 保留系统报告、剪贴板、显式渲染实验及桌面连接提示等应用适配。
+
+主程序和静态链接的底层库共用同一个进程级日志实例。底层库不得自行初始化或选择文件路径；通过 `luciddesk_diagnostics::emit!(Level::Trace, "shell.menu", "...", ...)` 发出事件，等级过滤发生在格式化参数求值之前。设置中的等级修改即时作用于所有接入模块。未初始化时仅允许 Error 走不抛出 panic 的 stderr 兜底，不自行创建默认目录。不同进程/DLL 不假定共享 Rust 静态变量；Explorer 内当前没有正式运行的直接日志出口，其测试输出不接入应用文件日志。
+
+菜单焦点、生命周期、选择及图标细节使用 Trace，菜单耗时使用 Debug。旧 `LUCIDDESK_MENU_TRACE`、`LUCIDDESK_MENU_PERF` 和 `LUCIDDESK_ICON_TRACE` 不再绕过设置；通过设置选择 Trace/Debug。实验菜单计时仍需要其原有编译特性。不会另建 `menu-focus.log` 或 `menu-performance.log`。测试/基准的控制台输出及 CLI 的协议输出保持独立。

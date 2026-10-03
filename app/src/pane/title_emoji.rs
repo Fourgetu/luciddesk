@@ -8,13 +8,13 @@ pub(super) fn color() -> bool {
     COLOR.load(Ordering::Relaxed)
 }
 
-pub(super) fn load(store: &desktop_storage::WorkspaceStore) -> Result<(), String> {
+pub(super) fn load(store: &luciddesk_storage::WorkspaceStore) -> Result<(), String> {
     let value = store.preference(KEY).map_err(|e| e.to_string())?;
     COLOR.store(value.as_deref() != Some("false"), Ordering::Relaxed);
     Ok(())
 }
 
-pub(super) fn save(store: &desktop_storage::WorkspaceStore, color: bool) -> Result<(), String> {
+pub(super) fn save(store: &luciddesk_storage::WorkspaceStore, color: bool) -> Result<(), String> {
     store
         .save_preference(KEY, if color { "true" } else { "false" })
         .map_err(|e| e.to_string())?;
@@ -37,7 +37,7 @@ mod tests {
             }
         }
         let _restore = Restore(color());
-        let store = desktop_storage::WorkspaceStore::open_in_memory().unwrap();
+        let store = luciddesk_storage::WorkspaceStore::open_in_memory().unwrap();
         load(&store).unwrap();
         assert!(color());
         let device = GpuDevice::new_warp().unwrap();

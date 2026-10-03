@@ -36,13 +36,13 @@ sequenceDiagram
 | 位置 | 职责 |
 | --- | --- |
 | `app/src/pane/window.rs` | 捕获完整选中集合；释放模型借用后打开菜单；接收重命名结果；键盘菜单锚定选中图标 |
-| `crates/desktop-shell/src/native_menu.rs` | 前台授权、菜单观察器、关闭后有条件返回 Pane 焦点 |
-| `crates/desktop-explorer/src/filter/engine.rs` | 验证 owner 所属进程，管理准备/结束协议，菜单错误不撤销桌面过滤 |
-| `crates/desktop-explorer/src/filter/menu/worker.rs` | 常驻独立 STA，序列化准备、结束与消息派发；超时取消过期准备请求 |
-| `crates/desktop-explorer/src/filter/menu.rs` | 原生结果视图、选中身份校验、视图命令消息转发及统一菜单请求 |
-| `crates/desktop-explorer/src/filter/menu/presenter.rs` | 封装私有 COM 接口，处理注册消息对应的 Invoke，保留回调生命周期 |
-| `crates/desktop-explorer/src/filter/menu/commands.rs` | 包装本次 IContextMenu，记录动态编号起点，查询标准动词并转发普通命令 |
-| `crates/desktop-explorer/src/filter/menu/callback.rs` | 保留原生 Shell 回调；将 rename 转回 Pane，其他命令继续交给原生回调 |
+| `crates/luciddesk-shell/src/native_menu.rs` | 前台授权、菜单观察器、关闭后有条件返回 Pane 焦点 |
+| `crates/luciddesk-explorer/src/filter/engine.rs` | 验证 owner 所属进程，管理准备/结束协议，菜单错误不撤销桌面过滤 |
+| `crates/luciddesk-explorer/src/filter/menu/worker.rs` | 常驻独立 STA，序列化准备、结束与消息派发；超时取消过期准备请求 |
+| `crates/luciddesk-explorer/src/filter/menu.rs` | 原生结果视图、选中身份校验、视图命令消息转发及统一菜单请求 |
+| `crates/luciddesk-explorer/src/filter/menu/presenter.rs` | 封装私有 COM 接口，处理注册消息对应的 Invoke，保留回调生命周期 |
+| `crates/luciddesk-explorer/src/filter/menu/commands.rs` | 包装本次 IContextMenu，记录动态编号起点，查询标准动词并转发普通命令 |
+| `crates/luciddesk-explorer/src/filter/menu/callback.rs` | 保留原生 Shell 回调；将 rename 转回 Pane，其他命令继续交给原生回调 |
 
 ## 宿主复用与生命周期
 
@@ -127,16 +127,16 @@ Pane 将鼠标或键盘来源传给菜单。Presenter 适配层在 `DoContextMen
 先按[构建与验证](development/build.md)准备环境。命令包装和输入适配测试可分别检查动态编号、上下文与取消行为：
 
 ```powershell
-cargo test -p desktop-explorer --lib filter::menu::commands::tests --locked --offline -- --test-threads=1
-cargo test -p desktop-explorer --lib reused_presenter_preserves_source_and_arguments_on_both_native_paths --locked --offline -- --test-threads=1
-cargo test -p desktop-explorer --lib cancelled_extension_completion_cannot_show_either_popup_path --locked --offline -- --test-threads=1
-cargo test -p desktop-explorer --lib modal_worker_does_not_block_normal_finish_and_cancel_propagates_close_failure --locked --offline -- --test-threads=1
+cargo test -p luciddesk-explorer --lib filter::menu::commands::tests --locked --offline -- --test-threads=1
+cargo test -p luciddesk-explorer --lib reused_presenter_preserves_source_and_arguments_on_both_native_paths --locked --offline -- --test-threads=1
+cargo test -p luciddesk-explorer --lib cancelled_extension_completion_cannot_show_either_popup_path --locked --offline -- --test-threads=1
+cargo test -p luciddesk-explorer --lib modal_worker_does_not_block_normal_finish_and_cancel_propagates_close_failure --locked --offline -- --test-threads=1
 ```
 
 原生 Presenter 接口检查单独运行，测试默认忽略：
 
 ```powershell
-cargo test -p desktop-explorer --lib native_presenter_uses_queried_interface_instead_of_unknown_identity --locked --offline -- --ignored --test-threads=1 --nocapture
+cargo test -p luciddesk-explorer --lib native_presenter_uses_queried_interface_instead_of_unknown_identity --locked --offline -- --ignored --test-threads=1 --nocapture
 ```
 
 确认过滤器实际命中测试。模拟 COM 对象可验证参数和引用规则，不能替代 Explorer 内的原生接口验证。

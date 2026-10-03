@@ -2,7 +2,7 @@ use std::path::PathBuf;
 fn main() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let check = std::env::args().any(|arg| arg == "--check");
-    let output = root.join("crates/desktop-graphics/src/bindings");
+    let output = root.join("crates/luciddesk-graphics/src/bindings");
     let temporary = root.join("target/bindings-check");
     std::fs::create_dir_all(&output).unwrap();
     std::fs::create_dir_all(&temporary).unwrap();

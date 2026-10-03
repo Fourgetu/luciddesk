@@ -1,8 +1,8 @@
 //! Desktop icon loading, refresh, and bounded pixel retention.
 use super::{icon_changes, image_retention, refresh_views};
 use crate::pane::{Loaded, PaneApp, assets};
-use desktop_core::{DesktopPlacement, ShellIdentity, Workspace};
-use desktop_shell::ShellApartment;
+use luciddesk_core::{DesktopPlacement, ShellIdentity, Workspace};
+use luciddesk_shell::ShellApartment;
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, mpsc},
@@ -43,7 +43,7 @@ fn apply_pane_images(
     loaded: Vec<(String, assets::Pixels)>,
 ) -> bool {
     let live = pane_image_keys(workspace);
-    let trace = std::env::var_os("LUCIDDESK_ICON_TRACE").is_some();
+    let trace = luciddesk_diagnostics::enabled(luciddesk_diagnostics::Level::Trace);
     let mut changed = false;
     for (key, image) in loaded {
         // A worker can complete after the item was released to Explorer.
@@ -54,7 +54,7 @@ fn apply_pane_images(
             old.width != image.width || old.height != image.height || old.data != image.data
         });
         if trace {
-            eprintln!(
+            luciddesk_diagnostics::emit!(luciddesk_diagnostics::Level::Trace, "pane.icons",
                 "icon-result key={key} differs={differs} hash={:x}",
                 image
                     .data
@@ -249,8 +249,8 @@ fn refresh_changed_icons(s: &mut PaneApp) -> bool {
                         return;
                     };
                     let affected = pending.affected(identities);
-                    if std::env::var_os("LUCIDDESK_ICON_TRACE").is_some() {
-                        eprintln!(
+                    if luciddesk_diagnostics::enabled(luciddesk_diagnostics::Level::Trace) {
+                        luciddesk_diagnostics::emit!(luciddesk_diagnostics::Level::Trace, "pane.icons",
                             "icon-targets {:?}",
                             affected
                                 .iter()
@@ -312,8 +312,8 @@ pub(super) fn queue_pane_icons(s: &mut PaneApp, force: bool) {
         let started = Instant::now();
         let requested = requests.iter().map(ShellIdentity::persistent_key).collect();
         let images = load_icon_batch(requests, size);
-        if std::env::var_os("LUCIDDESK_ICON_TRACE").is_some() {
-            eprintln!(
+        if luciddesk_diagnostics::enabled(luciddesk_diagnostics::Level::Trace) {
+            luciddesk_diagnostics::emit!(luciddesk_diagnostics::Level::Trace, "pane.icons",
                 "startup-icon-batch requested={count} loaded={} elapsed_ms={}",
                 images.len(),
                 started.elapsed().as_millis()

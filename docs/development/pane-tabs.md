@@ -6,11 +6,11 @@
 
 | 入口 | 职责 |
 | --- | --- |
-| `crates/desktop-core/src/workspace.rs` | 标签组成员、活动 ID 和共享窗口状态约束 |
+| `crates/luciddesk-core/src/workspace.rs` | 标签组成员、活动 ID 和共享窗口状态约束 |
 | `app/src/pane/tabs.rs` | 切换、关闭、排序、分离、合并及标题栏几何 |
 | `app/src/pane/window.rs`、`render.rs` | 输入、原生移动循环和标签绘制 |
 | `app/src/pane/rename.rs` | 标签标题内联编辑 |
-| `crates/desktop-storage/src/store/tabs.rs` | `pane_tabs_v1` 编解码、校验及兼容读取 |
+| `crates/luciddesk-storage/src/store/tabs.rs` | `pane_tabs_v1` 编解码、校验及兼容读取 |
 
 表中的 `render.rs` 位于 `app/src/pane/`。
 
@@ -78,9 +78,9 @@
 先准备[构建环境](build.md)，分别检查模型与存储：
 
 ```powershell
-cargo test -p desktop-core --lib tab_groups --locked --offline
-cargo test -p desktop-core --lib folder_panels_cannot_join_tab_groups --locked --offline
-cargo test -p desktop-storage --lib store::tabs::tests --locked --offline
+cargo test -p luciddesk-core --lib tab_groups --locked --offline
+cargo test -p luciddesk-core --lib folder_panels_cannot_join_tab_groups --locked --offline
+cargo test -p luciddesk-storage --lib store::tabs::tests --locked --offline
 ```
 
 复用 HWND 的原生窗口测试在交互桌面独立运行：

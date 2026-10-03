@@ -2,9 +2,9 @@
 #[ignore = "Activates real windows; run alone in an interactive desktop session"]
 fn editor_click_raises_search_among_panes_but_hotkey_stays_on_desktop() {
     use super::*;
-    let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
     let state = Rc::new(RefCell::new(super::super::tests::test_state()));
-    super::super::handle(&state, desktop_core::PanelId::new(0), Event::EnableSearch).unwrap();
+    super::super::handle(&state, luciddesk_core::PanelId::new(0), Event::EnableSearch).unwrap();
     let hwnd = state.borrow().views[0].window.hwnd().cast();
     let make = || windows_window::Window::new("Search layer regression")
         .style(WS_POPUP).ex_style(WS_EX_TOOLWINDOW).size(100, 100)
@@ -215,9 +215,9 @@ fn full_path_tooltip_updates_and_releases_native_window() {
 
 #[test]
 fn clear_button_keeps_fixed_input_and_ime_escape_is_not_intercepted() {
-    let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let _apartment = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
     let app = Rc::new(RefCell::new(super::super::tests::test_state()));
-    super::super::handle(&app, desktop_core::PanelId::new(0), Event::EnableSearch).unwrap();
+    super::super::handle(&app, luciddesk_core::PanelId::new(0), Event::EnableSearch).unwrap();
     let hwnd = app.borrow().views[0].window.hwnd().cast();
     unsafe {
         SetWindowTextW(edit(hwnd), wide("query").as_ptr());
@@ -308,7 +308,7 @@ fn keyboard_range_extension_keeps_disjoint_selection_and_ctrl_only_focus() {
 }
 #[test]
 fn input_colors_survive_owner_callback_reentry() {
-    let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let _apartment = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
     const REENTER: u32 = WM_APP + 121;
     let owner = windows_window::Window::new("Search color regression")
         .on_message(|raw, msg, wp, _| {
@@ -347,13 +347,13 @@ fn input_colors_survive_owner_callback_reentry() {
 #[test]
 #[ignore = "requires Everything and an interactive desktop"]
 fn live_compact_query_and_clear() {
-    let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let _apartment = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
     let app = Rc::new(RefCell::new(super::super::tests::test_state()));
     app.borrow_mut().workspace.set_appearance(
-        desktop_core::PanelTheme::Dark,
-        desktop_core::Backdrop::Translucent { opacity: 1.0 },
+        luciddesk_core::PanelTheme::Dark,
+        luciddesk_core::Backdrop::Translucent { opacity: 1.0 },
     );
-    super::super::handle(&app, desktop_core::PanelId::new(0), Event::EnableSearch).unwrap();
+    super::super::handle(&app, luciddesk_core::PanelId::new(0), Event::EnableSearch).unwrap();
     let hwnd = app.borrow().views[0].window.hwnd().cast();
     unsafe {
         let mut key = 0;
@@ -458,13 +458,13 @@ fn live_compact_query_and_clear() {
 
 #[test]
 fn compact_render_keeps_rows_and_border_inside_the_pane() {
-    let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let _apartment = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
     let app = Rc::new(RefCell::new(super::super::tests::test_state()));
     app.borrow_mut().workspace.set_appearance(
-        desktop_core::PanelTheme::Dark,
-        desktop_core::Backdrop::Translucent { opacity: 1.0 },
+        luciddesk_core::PanelTheme::Dark,
+        luciddesk_core::Backdrop::Translucent { opacity: 1.0 },
     );
-    super::super::handle(&app, desktop_core::PanelId::new(0), Event::EnableSearch).unwrap();
+    super::super::handle(&app, luciddesk_core::PanelId::new(0), Event::EnableSearch).unwrap();
     let mut model = app.borrow().views[0].model.borrow().clone();
     let fixture = windows_window::Window::new("Search render fixture")
         .style(WS_POPUP)
@@ -475,7 +475,7 @@ fn compact_render_keeps_rows_and_border_inside_the_pane() {
     let hwnd = fixture.hwnd().cast();
 
     model.dark = true;
-    model.backdrop = desktop_core::Backdrop::Translucent { opacity: 1.0 };
+    model.backdrop = luciddesk_core::Backdrop::Translucent { opacity: 1.0 };
     let mut state = Search::new();
     state.change("LucidDesk".into());
     state.entries = vec![

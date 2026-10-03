@@ -6,7 +6,7 @@
     clippy::cast_precision_loss
 )]
 use super::GroupModel;
-use desktop_core::ShellIdentity;
+use luciddesk_core::ShellIdentity;
 use std::{cell::RefCell, rc::Rc};
 use windows_sys::Win32::{
     Foundation::{HWND, POINT, RECT},
@@ -67,7 +67,7 @@ struct Editor {
     font: HFONT,
     composing: bool,
     finishing: bool,
-    title_target: Option<desktop_core::PanelId>,
+    title_target: Option<luciddesk_core::PanelId>,
     title_commit: Option<Box<dyn Fn(String) -> Result<(), String>>>,
     item_commit: Option<Rc<dyn Fn(&ShellIdentity, &str) -> Result<bool, String>>>,
     background: HBRUSH,
@@ -80,7 +80,7 @@ pub(super) fn show_title(
     show_tab_title(owner, model, None, commit)
 }
 pub(super) fn show_tab_title(
-    owner: HWND, model: Rc<RefCell<GroupModel>>, target: Option<desktop_core::PanelId>,
+    owner: HWND, model: Rc<RefCell<GroupModel>>, target: Option<luciddesk_core::PanelId>,
     commit: Box<dyn Fn(String) -> Result<(), String>>,
 ) -> Result<(), String> {
     let title = {
@@ -121,7 +121,7 @@ fn show_editor(
     model: Rc<RefCell<GroupModel>>,
     title_commit: Option<Box<dyn Fn(String) -> Result<(), String>>>,
     item_commit: Option<Rc<dyn Fn(&ShellIdentity, &str) -> Result<bool, String>>>,
-    title_target: Option<desktop_core::PanelId>,
+    title_target: Option<luciddesk_core::PanelId>,
 ) -> Result<(), String> {
     unsafe {
         if active(owner) {
@@ -419,13 +419,13 @@ unsafe fn resize(edit: HWND, pointer: *mut Editor) {
         }
     }
 }
-fn title_bounds(model: &GroupModel, width: f32) -> desktop_core::RectDip {
+fn title_bounds(model: &GroupModel, width: f32) -> luciddesk_core::RectDip {
     if let Some((_, rect)) = super::tabs::strip(model, width).into_iter().find(|(id, _)| *id == model.active_tab) {
         return rect;
     }
     let (left, width) = super::layout::title_area(width);
     let inset = super::layout::HEADER_INSET;
-    desktop_core::RectDip {
+    luciddesk_core::RectDip {
         x: left - 6.0,
         y: inset,
         width: width + 12.0,
@@ -499,7 +499,7 @@ unsafe fn finish(edit: HWND, pointer: *mut Editor, commit: bool) {
     } else if let Some(commit) = item_commit {
         commit(&identity, &name)
     } else {
-        desktop_shell::rename_shell_identity(
+        luciddesk_shell::rename_shell_identity(
             windows::Win32::Foundation::HWND(owner),
             &identity,
             &name,
@@ -704,7 +704,7 @@ mod tests {
             merge_preview: Vec::new(),
         merge_occluded: false,
             tabs: Vec::new(),
-            active_tab: desktop_core::PanelId::new(0),
+            active_tab: luciddesk_core::PanelId::new(0),
             folder_sort: (0, false),
             folder_columns: None,
             folder_visible_columns: 15,
@@ -712,8 +712,8 @@ mod tests {
             list_view: false,
             folder: None,
             folder_status: None,
-            options: desktop_core::PaneOptions::default(),
-            theme: desktop_core::PanelTheme::System,
+            options: luciddesk_core::PaneOptions::default(),
+            theme: luciddesk_core::PanelTheme::System,
             dark: true,
 
             hovered_item: None,
@@ -725,7 +725,7 @@ mod tests {
             hovered_tab: None,
             hovered_button: None,
             pressed_button: None,
-            backdrop: desktop_core::Backdrop::Acrylic,
+            backdrop: luciddesk_core::Backdrop::Acrylic,
             native_material: false,
             title: "测试".into(),
             items: vec![super::super::Item {
@@ -898,20 +898,20 @@ mod tests {
             assert!(!active(owner));
             {
                 let mut m = model.borrow_mut();
-                m.tabs = vec![(desktop_core::PanelId::new(1), "工作".into()), (desktop_core::PanelId::new(2), "资料".into())];
-                m.active_tab = desktop_core::PanelId::new(2);
+                m.tabs = vec![(luciddesk_core::PanelId::new(1), "工作".into()), (luciddesk_core::PanelId::new(2), "资料".into())];
+                m.active_tab = luciddesk_core::PanelId::new(2);
             }
             show_tab_title(
                 owner,
                 model.clone(),
-                Some(desktop_core::PanelId::new(1)),
+                Some(luciddesk_core::PanelId::new(1)),
                 Box::new(|_| panic!("cancel must not commit")),
             )
             .unwrap();
             let edit = GetPropW(owner, PROPERTY);
-            assert_eq!(model.borrow().active_tab, desktop_core::PanelId::new(2));
+            assert_eq!(model.borrow().active_tab, luciddesk_core::PanelId::new(2));
             let expected = super::super::tabs::strip(&model.borrow(), owner_bounds.right as f32 / dpi).into_iter()
-                .find(|(id, _)| *id == desktop_core::PanelId::new(1)).unwrap().1;
+                .find(|(id, _)| *id == luciddesk_core::PanelId::new(1)).unwrap().1;
             GetWindowRect(edit, &raw mut bounds);
             MapWindowPoints(std::ptr::null_mut(), owner, (&raw mut bounds).cast(), 2);
             assert_eq!(bounds.left, (expected.x * dpi).round() as i32);

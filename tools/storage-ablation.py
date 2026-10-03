@@ -11,7 +11,7 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
-STORE = Path("crates/desktop-storage/src/store")
+STORE = Path("crates/luciddesk-storage/src/store")
 VALUE_GUARD = """        if updates.iter().all(|(k, v)| self.values.get(*k) == Some(v)) {
             return Ok(());
         }
@@ -85,7 +85,7 @@ def main():
     manifest = (ROOT / "Cargo.toml").read_text(encoding="utf-8")
     manifest, count = re.subn(
         r"members = \[.*?\]",
-        'members = ["crates/desktop-core", "crates/desktop-storage"]',
+        'members = ["crates/luciddesk-core", "crates/luciddesk-storage"]',
         manifest, count=1, flags=re.S,
     )
     if count != 1:
@@ -95,7 +95,7 @@ def main():
     snapshot.mkdir()
     (snapshot / "Cargo.toml").write_text(manifest, encoding="utf-8")
     shutil.copy2(ROOT / "Cargo.lock", snapshot / "Cargo.lock")
-    for crate in ["desktop-core", "desktop-storage"]:
+    for crate in ["luciddesk-core", "luciddesk-storage"]:
         shutil.copytree(ROOT / "crates" / crate, snapshot / "crates" / crate)
     # Prune the copied workspace lockfile offline, then lock all variant builds.
     metadata = command(["cargo", "metadata", "--offline", "--format-version=1"], snapshot)
@@ -126,7 +126,7 @@ def main():
         probe_file = work / STORE / "config_tests.rs"
         with probe_file.open("a", encoding="utf-8") as stream:
             stream.write(PROBE)
-        args = ["cargo", "test", "-p", "desktop-storage", "--lib", "--offline",
+        args = ["cargo", "test", "-p", "luciddesk-storage", "--lib", "--offline",
                 "--locked", "--target-dir", str(ROOT / "target" / "storage-ablation-build"),
                 "--", "--test-threads=1", "--nocapture"]
         run = command(args, work)

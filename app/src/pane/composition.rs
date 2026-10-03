@@ -1,7 +1,7 @@
 //! Transparent content surface over the system-owned backdrop; no whole-window alpha.
 #![allow(clippy::wildcard_imports)]
 use super::native_graphics::*;
-use desktop_core::Backdrop;
+use luciddesk_core::Backdrop;
 use windows::Win32::Foundation::HWND;
 
 use windows::Win32::Graphics::Direct3D11::*;
@@ -22,7 +22,7 @@ pub struct Surface {
     #[cfg(test)]
     context: ID3D11DeviceContext,
     drawing: ID2D1DeviceContext,
-    layer: Option<desktop_graphics::Layer>,
+    layer: Option<luciddesk_graphics::Layer>,
     swap: SwapChain,
     material: Option<Backdrop>,
     effects_enabled: Option<bool>,
@@ -149,7 +149,7 @@ impl Surface {
                 {
                     Ok(material) => Some(material),
                     Err(error) => {
-                        eprintln!("Shared composition unavailable: {error}");
+                        luciddesk_diagnostics::emit!(luciddesk_diagnostics::Level::Warn, "pane.composition", "Shared composition unavailable: {error}");
                         crate::diagnostics::render_trace(format_args!("hwnd={hwnd:?} shared composition failed: {error}"));
                         None
                     }
@@ -182,7 +182,7 @@ impl Surface {
                 hwnd,
                 present: native_swap,
                 rounded_backdrop: None,
-                pane_corner_radius: desktop_core::PaneOptions::DEFAULT.corner_radius,
+                pane_corner_radius: luciddesk_core::PaneOptions::DEFAULT.corner_radius,
                 dark: true,
                 opacity: std::cell::Cell::new(initial_opacity),
                 effects_enabled: None,
@@ -417,7 +417,7 @@ pub(super) mod animation_tests {
     #[test]
     fn system_policy_changes_invalidate_cached_material_and_restore_effects() {
         use windows_sys::Win32::UI::WindowsAndMessaging::*;
-        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let window = windows_window::Window::new("System material fallback")
             .size(96, 64).style(WS_POPUP).ex_style(WS_EX_NOREDIRECTIONBITMAP)
             .create().unwrap();
@@ -444,7 +444,7 @@ pub(super) mod animation_tests {
     #[test]
     fn pane_surface_uses_requested_composition_tree() {
         use windows_sys::Win32::UI::WindowsAndMessaging::*;
-        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let window = windows_window::Window::new("Pane composition isolation")
             .size(240, 160).style(WS_POPUP).ex_style(WS_EX_NOREDIRECTIONBITMAP)
             .create().unwrap();
@@ -463,7 +463,7 @@ pub(super) mod animation_tests {
     #[test]
     fn flyout_material_and_content_share_the_rounded_clip() {
         use windows_sys::Win32::UI::WindowsAndMessaging::*;
-        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let window = windows_window::Window::new("Rounded flyout regression")
             .size(240, 160).style(WS_POPUP).ex_style(WS_EX_NOREDIRECTIONBITMAP)
             .create().unwrap();
@@ -486,7 +486,7 @@ pub(super) mod animation_tests {
 
     pub(crate) fn settings_content_survives_material_changes_and_resize() {
         use windows_sys::Win32::UI::WindowsAndMessaging::*;
-        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let window = windows_window::Window::new("Settings composition regression")
             .size(240, 160)
             .style(WS_POPUP)
@@ -565,7 +565,7 @@ pub(super) mod animation_tests {
     #[test]
     fn warp_surface_draws_resizes_and_defers_without_losing_the_wakeup() {
         use windows_sys::Win32::UI::WindowsAndMessaging::*;
-        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let window = windows_window::Window::new("WARP rendering regression")
             .size(96, 64)
             .style(WS_POPUP)
@@ -627,7 +627,7 @@ pub(super) mod animation_tests {
 
     #[test]
     fn fade_applies_to_native_material_and_finishes_after_a_delayed_tick() {
-        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let window = windows_window::Window::new("Fade integration")
             .size(240, 160)
             .style(windows_sys::Win32::UI::WindowsAndMessaging::WS_POPUP)

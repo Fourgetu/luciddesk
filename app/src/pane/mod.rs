@@ -52,11 +52,11 @@ mod wake;
 mod window;
 pub use hybrid::run;
 
-use desktop_core::{
+use luciddesk_core::{
     DesktopItem, DesktopPlacement, GridPosition, Panel, PanelId, RectDip, ShellIdentity, Workspace,
 };
-use desktop_shell::{ShellApartment, open_shell_identity};
-use desktop_storage::WorkspaceStore;
+use luciddesk_shell::{ShellApartment, open_shell_identity};
+use luciddesk_storage::WorkspaceStore;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::Path;
@@ -178,17 +178,17 @@ enum Event {
     ToggleLocked,
     SetCornerRadius(f32),
     SetIconGrid(f32),
-    SetPanelText(desktop_core::PanelText),
+    SetPanelText(luciddesk_core::PanelText),
     ToggleTextProtection,
     ToggleBorder,
     ToggleSnap,
     ResetPaneOptions,
-    Theme(desktop_core::PanelTheme),
+    Theme(luciddesk_core::PanelTheme),
     // Hover-driven window visibility; never persisted as the manual fold preference.
     AutoHideCollapsed(bool),
     Moving(*mut RECT),
     Sizing(*mut RECT, RECT, u32),
-    Material(desktop_core::Backdrop),
+    Material(luciddesk_core::Backdrop),
     New,
     EnableSearch,
     ToggleSearch,
@@ -206,8 +206,8 @@ enum Event {
     Activate(usize),
     ActivateSelection,
     Peek,
-    FileCommand(desktop_shell::FileCommand),
-    FileDrag(Option<desktop_shell::FileDragImage>),
+    FileCommand(luciddesk_shell::FileCommand),
+    FileDrag(Option<luciddesk_shell::FileDragImage>),
     ToggleListView,
     Drop { index: usize, point: POINT },
     Geometry(RectDip),

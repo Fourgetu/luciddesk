@@ -1,6 +1,6 @@
 //! cargo run -p luciddesk --example icon_quality_probe -- <shortcut> <output.bmp>
 //! Read-only Shell extraction and a 72-pixel preview for inspecting real icon edges.
-#[path = "../src/diagnostics.rs"]
+#[path = "../src/diagnostics/mod.rs"]
 #[allow(dead_code)]
 mod diagnostics;
 #[path = "../src/i18n.rs"]
@@ -14,13 +14,13 @@ mod assets;
 mod fonts;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let _apartment = desktop_shell::ShellApartment::initialize_sta()?;
+    let _apartment = luciddesk_shell::ShellApartment::initialize_sta()?;
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     if args.len() != 2 {
         return Err("expected shortcut path and output BMP path".into());
     }
     let path = std::path::PathBuf::from(&args[0]);
-    let identity = desktop_core::ShellIdentity::FileSystem {
+    let identity = luciddesk_core::ShellIdentity::FileSystem {
         path,
         volume_id: None,
         file_id: None,

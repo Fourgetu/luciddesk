@@ -27,7 +27,7 @@ Clone the repository, then run the build commands from its root:
 git clone https://github.com/Yuch3nE/luciddesk.git
 cd luciddesk
 .\tools\use-windows-toolchain.ps1
-cargo build -p luciddesk -p desktop-explorer --locked
+cargo build -p luciddesk -p luciddesk-explorer --locked
 ```
 
 After a successful build, exit any running LucidDesk instance and start the development build with a separate data directory:
@@ -64,7 +64,7 @@ Choose checks relevant to the change. Documentation edits do not require a full 
 
 ```powershell
 cargo check --workspace --all-targets --locked
-cargo test -p desktop-core -p desktop-storage --lib --locked
+cargo test -p luciddesk-core -p luciddesk-storage --lib --locked
 python tools/check-locales.py
 cargo test -p luciddesk --bin luciddesk i18n::tests --locked
 ```

@@ -1,9 +1,9 @@
 use super::*;
-use desktop_core::Backdrop;
+use luciddesk_core::Backdrop;
 
 #[test]
 fn diagnostic_bypass_never_enables_host_or_wallpaper_backdrops() {
-    let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
     let window = windows_window::Window::new("Backdrop isolation")
         .size(96, 64)
         .style(windows_sys::Win32::UI::WindowsAndMessaging::WS_POPUP)
@@ -37,7 +37,7 @@ fn diagnostic_bypass_never_enables_host_or_wallpaper_backdrops() {
 
 #[test]
 fn missing_wallpaper_uses_acrylic_then_opaque_color_without_hiding_content() {
-    let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
     let window = windows_window::Window::new("Material fallback regression")
         .size(96, 64)
         .style(windows_sys::Win32::UI::WindowsAndMessaging::WS_POPUP)
@@ -117,11 +117,11 @@ impl Acrylic {
     }
 
     #[cfg(test)]
-    pub fn assert_material_colors(&self, material: desktop_core::Backdrop, dark: bool) {
-        let (luminosity, tint) = if material.base() == desktop_core::Backdrop::Acrylic {
+    pub fn assert_material_colors(&self, material: luciddesk_core::Backdrop, dark: bool) {
+        let (luminosity, tint) = if material.base() == luciddesk_core::Backdrop::Acrylic {
             effects::acrylic_palette(dark)
         } else {
-            effects::mica_palette(dark, material.base() == desktop_core::Backdrop::MicaAlt)
+            effects::mica_palette(dark, material.base() == luciddesk_core::Backdrop::MicaAlt)
         };
         let (luminosity, tint) =
             effects::adjust_strength(luminosity, tint, material.strength().unwrap_or(50));

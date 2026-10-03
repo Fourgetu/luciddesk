@@ -51,12 +51,12 @@ Explorer 继续负责未收纳图标的绘制、排列、命中和原生交互�
 | `app/src/pane/folder/`、`folder.rs`、`search/` | 文件夹来源、目录监听、Everything 查询及搜索快捷键 |
 | `app/src/pane/window.rs`、`render.rs`、`settings.rs`、`settings/` | 窗口、绘图、设置布局与输入 |
 | `app/src/pane/drag_drop/`、`tray.rs`、`i18n.rs` | 分别负责拖放、托盘和本地化 |
-| `desktop-core` | Shell 身份、坐标、面板与工作区模型 |
-| `desktop-storage` | 配置与数据库读取、编解码和事务式保存 |
-| `desktop-shell` | Shell 查询、通知、菜单、文件操作和 OLE 能力 |
-| `desktop-menu` | 两侧共用的原生菜单主题与边框，不依赖 Shell 或 Explorer 实现 |
-| `desktop-explorer` | 控制端会话、IPC、DLL 引导、成员过滤与控制端存活监测 |
-| `desktop-graphics`、`desktop-window` | 分别提供合成层与生成绑定、显示器枚举与错误提示 |
+| `luciddesk-core` | Shell 身份、坐标、面板与工作区模型 |
+| `luciddesk-storage` | 配置与数据库读取、编解码和事务式保存 |
+| `luciddesk-shell` | Shell 查询、通知、菜单、文件操作和 OLE 能力 |
+| `luciddesk-menu` | 两侧共用的原生菜单主题与边框，不依赖 Shell 或 Explorer 实现 |
+| `luciddesk-explorer` | 控制端会话、IPC、DLL 引导、成员过滤与控制端存活监测 |
+| `luciddesk-graphics`、`luciddesk-window` | 分别提供合成层与生成绑定、显示器枚举与错误提示 |
 
 表中的 `tray.rs`、`i18n.rs` 位于 `app/src/`。crate 的公共入口与内部目录见 [crates 导航](../../crates/README.md)；新增模块按实际功能归属放置，具体规则见[目录结构](structure.md#新增文件约定)。
 

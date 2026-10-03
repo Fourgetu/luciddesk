@@ -9,7 +9,7 @@
     clippy::cast_sign_loss
 )]
 use super::{composition::Surface, render::Renderer};
-use desktop_core::Backdrop;
+use luciddesk_core::Backdrop;
 use std::{cell::Cell, rc::Rc, time::Instant};
 use windows_sys::Win32::{
     Foundation::{HWND, POINT, RECT},
@@ -65,7 +65,7 @@ pub fn show(
     anchored: bool,
     auto_hide: bool,
     locked: bool,
-    theme: desktop_core::PanelTheme,
+    theme: luciddesk_core::PanelTheme,
     backdrop: Backdrop,
     folder: (bool, bool),
     visible_columns: u8,
@@ -165,7 +165,7 @@ pub(crate) fn show_entries(
     owner: HWND,
     anchor: POINT,
     anchored: bool,
-    theme: desktop_core::PanelTheme,
+    theme: luciddesk_core::PanelTheme,
     backdrop: Backdrop,
     rows: Vec<Entry>,
 ) -> i32 {
@@ -174,7 +174,7 @@ pub(crate) fn show_entries(
 
 fn show_level(
     owner: HWND, anchor: POINT, anchored: bool,
-    theme: desktop_core::PanelTheme, backdrop: Backdrop, rows: Vec<Entry>,
+    theme: luciddesk_core::PanelTheme, backdrop: Backdrop, rows: Vec<Entry>,
     parent_row: Option<RECT>,
     resume_parent: Rc<Cell<bool>>,
 ) -> i32 {
@@ -582,7 +582,7 @@ mod tests {
             unsafe { EnumThreadWindows(GetCurrentThreadId(), Some(visit), (&raw mut pair) as isize); }
             pair.1
         }
-        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         for keyboard in [false, true] {
             let stage = Rc::new(Cell::new(0));
             let observed = Rc::clone(&stage);
@@ -637,7 +637,7 @@ mod tests {
             parent.children = column_entries(15);
             unsafe { SetTimer(hwnd, 99, 250, None); }
             let result = show_entries(hwnd, POINT { x: 100, y: 100 }, false,
-                desktop_core::PanelTheme::Dark, Backdrop::Acrylic, vec![parent]);
+                luciddesk_core::PanelTheme::Dark, Backdrop::Acrylic, vec![parent]);
             unsafe { KillTimer(hwnd, 99); }
             assert_eq!(stage.get(), 4);
             assert_eq!(result, 31);
@@ -647,7 +647,7 @@ mod tests {
     #[test]
     #[ignore = "Opens a real menu; run in an interactive desktop session"]
     fn owner_menu_button_dismisses_without_rearming() {
-        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let clicks = Rc::new(Cell::new(0));
         let pulses = Rc::new(Cell::new(0));
         let topmost = Rc::new(Cell::new(false));
@@ -713,7 +713,7 @@ mod tests {
                 true,
                 false,
                 false,
-                desktop_core::PanelTheme::Dark,
+                luciddesk_core::PanelTheme::Dark,
                 Backdrop::Acrylic,
                 (false, false), 15, false
             ),
@@ -749,7 +749,7 @@ mod tests {
                 EnumThreadWindows(GetCurrentThreadId(), Some(close), 0);
             }
         }
-        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let owner = windows_window::Window::new("Menu lifecycle fixture")
             .style(WS_POPUP)
             .size(320, 240)
@@ -771,7 +771,7 @@ mod tests {
                         false,
                         false,
                         false,
-                        desktop_core::PanelTheme::Dark,
+                        luciddesk_core::PanelTheme::Dark,
                         Backdrop::Mica,
                         (false, false), 15, false
                     ),

@@ -8,7 +8,7 @@ pub(super) mod everything_settings;
 pub(super) mod hotkey;
 
 use super::{Event, GroupModel};
-use desktop_core::{RectDip, ShellIdentity};
+use luciddesk_core::{RectDip, ShellIdentity};
 use everything::{Entry, Page};
 use std::{
     cell::RefCell,
@@ -1469,16 +1469,16 @@ fn action(hwnd: HWND, command: usize, items: Vec<ShellIdentity>) {
             return;
         }
         let result = match command {
-            OPEN => desktop_shell::open_shell_identity(owner, &items[0]).map_err(|e| e.to_string()),
+            OPEN => luciddesk_shell::open_shell_identity(owner, &items[0]).map_err(|e| e.to_string()),
             LOCATION => show_location(&items[0]),
             PEEK => super::peek::open_path(&items[0]),
-            COPY | CUT | DELETE => desktop_shell::invoke_file_commands(
+            COPY | CUT | DELETE => luciddesk_shell::invoke_file_commands(
                 windows::Win32::Foundation::HWND(owner as _),
                 &items,
                 match command {
-                    COPY => desktop_shell::FileCommand::Copy,
-                    CUT => desktop_shell::FileCommand::Cut,
-                    _ => desktop_shell::FileCommand::Delete,
+                    COPY => luciddesk_shell::FileCommand::Copy,
+                    CUT => luciddesk_shell::FileCommand::Cut,
+                    _ => luciddesk_shell::FileCommand::Delete,
                 },
             )
             .map(|_| ())

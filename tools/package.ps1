@@ -64,7 +64,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Could not read Cargo version.' }
     # Keep release artifacts separate from explicitly enabled diagnostic backends.
     $productionTarget = Join-Path $repoRoot 'target\production'
-    $buildArgs = @('build', '--release', '--locked', '--no-default-features', '--target-dir', $productionTarget, '-p', 'luciddesk', '-p', 'desktop-explorer')
+    $buildArgs = @('build', '--release', '--locked', '--no-default-features', '--target-dir', $productionTarget, '-p', 'luciddesk', '-p', 'luciddesk-explorer')
     if ($Offline) { $buildArgs += '--offline' }
     & cargo @buildArgs
     if ($LASTEXITCODE -ne 0) { throw 'Release build failed.' }

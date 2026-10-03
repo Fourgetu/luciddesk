@@ -10,7 +10,7 @@ mod window_visibility;
 mod updates;
 mod startup;
 
-use desktop_shell::{ShellApartment, local_app_data_path};
+use luciddesk_shell::{ShellApartment, local_app_data_path};
 use std::{ffi::OsString, fs, path::PathBuf};
 
 fn main() -> Result<(), String> {
@@ -51,7 +51,7 @@ fn main() -> Result<(), String> {
     }
     pane::run(&path, title).inspect_err(|error| {
         diagnostics::log(diagnostics::Level::Error, "app.startup", error);
-        desktop_window::show_error(error);
+        luciddesk_window::show_error(error);
     })
 }
 

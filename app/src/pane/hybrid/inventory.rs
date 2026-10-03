@@ -1,6 +1,6 @@
 //! Source membership is independent of the reduced Explorer view.
-use desktop_core::ShellIdentity;
-use desktop_shell::ShellEntry;
+use luciddesk_core::ShellIdentity;
+use luciddesk_shell::ShellEntry;
 
 pub(super) struct Inventory {
     pub icon_size: i32,
@@ -24,14 +24,14 @@ pub(super) fn revision_keys(managed: &[ShellIdentity]) -> Vec<String> {
 }
 
 pub(super) fn capture(managed: &[ShellIdentity]) -> Result<Inventory, String> {
-    let native = desktop_shell::native_desktop_snapshot()?;
+    let native = luciddesk_shell::native_desktop_snapshot()?;
     if !native.is_complete() {
         return Err(crate::i18n::text("ui-desktop-is-changing-group-refresh-deferred").into());
     }
     let mut items: Vec<_> = native.items.into_iter().map(|(item, _, _)| item).collect();
     if !managed.is_empty() {
         let source =
-            desktop_shell::enumerate_desktop_source().map_err(|error| error.to_string())?;
+            luciddesk_shell::enumerate_desktop_source().map_err(|error| error.to_string())?;
         merge_managed(&mut items, source, managed);
     }
     items.sort_by_cached_key(|item| item.identity.persistent_key());

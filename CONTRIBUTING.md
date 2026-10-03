@@ -27,7 +27,7 @@
 git clone https://github.com/Yuch3nE/luciddesk.git
 cd luciddesk
 .\tools\use-windows-toolchain.ps1
-cargo build -p luciddesk -p desktop-explorer --locked
+cargo build -p luciddesk -p luciddesk-explorer --locked
 ```
 
 构建成功后，退出已运行的 LucidDesk，再用独立数据目录启动开发版本：
@@ -64,7 +64,7 @@ EXE 与 `luciddesk_explorer.dll` 必须来自同次构建并放在同一目录�
 
 ```powershell
 cargo check --workspace --all-targets --locked
-cargo test -p desktop-core -p desktop-storage --lib --locked
+cargo test -p luciddesk-core -p luciddesk-storage --lib --locked
 python tools/check-locales.py
 cargo test -p luciddesk --bin luciddesk i18n::tests --locked
 ```

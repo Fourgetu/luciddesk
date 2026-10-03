@@ -1,4 +1,4 @@
-use desktop_storage::WorkspaceStore;
+use luciddesk_storage::WorkspaceStore;
 use std::{
     path::PathBuf,
     sync::{LazyLock, RwLock},

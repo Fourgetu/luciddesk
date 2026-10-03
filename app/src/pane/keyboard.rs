@@ -10,7 +10,7 @@ pub(super) enum Command {
     Refresh,
     Cancel,
     Menu,
-    File(desktop_shell::FileCommand),
+    File(luciddesk_shell::FileCommand),
     SelectAll,
     ToggleSelection,
 }
@@ -52,9 +52,9 @@ pub(super) fn command(key: u16, modifiers: &Modifiers, repeat: bool) -> Option<C
         return match key {
             0x41 => Some(Command::SelectAll),
             VK_SPACE => Some(Command::ToggleSelection),
-            0x43 => Some(Command::File(desktop_shell::FileCommand::Copy)),
-            0x58 => Some(Command::File(desktop_shell::FileCommand::Cut)),
-            0x56 => Some(Command::File(desktop_shell::FileCommand::Paste)),
+            0x43 => Some(Command::File(luciddesk_shell::FileCommand::Copy)),
+            0x58 => Some(Command::File(luciddesk_shell::FileCommand::Cut)),
+            0x56 => Some(Command::File(luciddesk_shell::FileCommand::Paste)),
             _ => None,
         };
     }
@@ -70,7 +70,7 @@ pub(super) fn command(key: u16, modifiers: &Modifiers, repeat: bool) -> Option<C
         VK_F2 if !repeat => Some(Command::Rename),
         VK_F5 if !repeat => Some(Command::Refresh),
         VK_APPS if !repeat => Some(Command::Menu),
-        VK_DELETE if !repeat => Some(Command::File(desktop_shell::FileCommand::Delete)),
+        VK_DELETE if !repeat => Some(Command::File(luciddesk_shell::FileCommand::Delete)),
         _ => None,
     }
 }
@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     fn file_shortcuts_require_exact_modifiers_and_ignore_autorepeat() {
-        use desktop_shell::FileCommand;
+        use luciddesk_shell::FileCommand;
         let ctrl = Modifiers {
             ctrl: true,
             ..Modifiers::default()

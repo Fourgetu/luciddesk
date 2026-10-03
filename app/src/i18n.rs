@@ -109,7 +109,7 @@ fn system_language() -> String {
         "en-US".into()
     }
 }
-pub fn initialize(store: &desktop_storage::WorkspaceStore) -> Result<bool, String> {
+pub fn initialize(store: &luciddesk_storage::WorkspaceStore) -> Result<bool, String> {
     let selected = store
         .preference("language")
         .map_err(|e| e.to_string())?
@@ -185,7 +185,7 @@ mod tests {
     #[test]
     fn live_selection_refreshes_text_and_keeps_borrowed_strings_valid() {
         with_locale(0, || {
-            let store = desktop_storage::WorkspaceStore::open_in_memory().unwrap();
+            let store = luciddesk_storage::WorkspaceStore::open_in_memory().unwrap();
             let original = text("ui-about");
             let original_wide = wide("ui-about");
             for (code, expected) in [("en-US", "About"), ("de-DE", "Info"), ("zh-CN", "关于")] {

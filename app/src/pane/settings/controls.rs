@@ -147,7 +147,7 @@ pub(super) fn centered_icon_left(bounds: Rect, label_width: f32) -> f32 {
 pub(super) fn choose(
     hwnd: windows_sys::Win32::Foundation::HWND,
     point: windows_sys::Win32::Foundation::POINT,
-    appearance: (desktop_core::PanelTheme, desktop_core::Backdrop),
+    appearance: (luciddesk_core::PanelTheme, luciddesk_core::Backdrop),
     options: &[(u64, &'static str)],
     selected: u64,
 ) -> Option<u64> {

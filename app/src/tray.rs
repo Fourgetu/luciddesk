@@ -31,7 +31,7 @@ pub struct Tray {
 }
 impl Tray {
     pub fn new(
-        mut appearance: impl FnMut() -> (desktop_core::PanelTheme, desktop_core::Backdrop, bool) + 'static,
+        mut appearance: impl FnMut() -> (luciddesk_core::PanelTheme, luciddesk_core::Backdrop, bool) + 'static,
         mut action: impl FnMut(Action) + 'static,
     ) -> Result<Self, String> {
         let icon = Rc::new(make_icon()?);
@@ -153,8 +153,8 @@ fn add(hwnd: HWND, icon: HICON) -> Result<(), String> {
 fn menu(
     hwnd: HWND,
     anchor: usize,
-    theme: desktop_core::PanelTheme,
-    backdrop: desktop_core::Backdrop,
+    theme: luciddesk_core::PanelTheme,
+    backdrop: luciddesk_core::Backdrop,
     search_enabled: bool,
 ) -> Option<Action> {
     use crate::pane::menu::show_entries;
@@ -245,7 +245,7 @@ mod tests {
         let exits = Rc::new(Cell::new(0));
         let observed = Rc::clone(&exits);
         let tray = Tray::new(
-            || (desktop_core::PanelTheme::System, desktop_core::Backdrop::Mica, false),
+            || (luciddesk_core::PanelTheme::System, luciddesk_core::Backdrop::Mica, false),
             move |action| { if matches!(action, Action::Exit) { observed.set(observed.get() + 1); } },
         ).unwrap();
         let hwnd = tray.window.hwnd().cast();
@@ -275,8 +275,8 @@ mod tests {
         let tray = Tray::new(
             || {
                 (
-                    desktop_core::PanelTheme::System,
-                    desktop_core::Backdrop::Mica,
+                    luciddesk_core::PanelTheme::System,
+                    luciddesk_core::Backdrop::Mica,
                     false,
                 )
             },
@@ -338,8 +338,8 @@ mod tests {
         let tray = Tray::new(
             || {
                 (
-                    desktop_core::PanelTheme::System,
-                    desktop_core::Backdrop::Mica,
+                    luciddesk_core::PanelTheme::System,
+                    luciddesk_core::Backdrop::Mica,
                     false,
                 )
             },

@@ -10,7 +10,7 @@
 | `app/src/pane/canvas.rs` | 绘制作用域、裁剪、文字回退与离屏读回 |
 | `app/src/pane/composition.rs` | 窗口 Surface、交换链、尺寸调整与呈现重试 |
 | `app/src/pane/native_graphics.rs` | 设备缓存、绑定转换与图形资源退出顺序 |
-| `crates/desktop-graphics/src/layer.rs` | DirectComposition 设备缓存与内容层 |
+| `crates/luciddesk-graphics/src/layer.rs` | DirectComposition 设备缓存与内容层 |
 | `app/src/pane/acrylic.rs` | WinRT 材质视觉树及合成提交 |
 | `app/src/pane/settings.rs` | 设置窗口首帧显示与材质编辑 |
 | `app/src/pane/scaled_icons.rs` | 线程内 CPU 图标缩放缓存 |
@@ -82,7 +82,7 @@ UI 线程复用 D3D/D2D 设备，同一 DXGI 设备还复用 DirectComposition �
 
 ## 生成绑定
 
-`tools/windows-bindings` 是独立工具。`dwm.txt` 筛选 C API 和常量，`dcomp.txt` 筛选内容层需要的 COM 方法，结果保存到 `crates/desktop-graphics/src/bindings`。
+`tools/windows-bindings` 是独立工具。`dwm.txt` 筛选 C API 和常量，`dcomp.txt` 筛选内容层需要的 COM 方法，结果保存到 `crates/luciddesk-graphics/src/bindings`。
 
 不要手工修改生成结果。变更 API 清单后重新生成并运行 `--check`；命令见[构建与验证](build.md)。生成器不参与每次应用构建，API 清单、工具锁文件和生成源码应保持一致。
 

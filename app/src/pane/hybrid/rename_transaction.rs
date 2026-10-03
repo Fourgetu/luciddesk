@@ -48,7 +48,7 @@ pub(in crate::pane) fn commit(
         }
     };
     let Some(hook) = hook else {
-        return desktop_shell::rename_shell_identity(
+        return luciddesk_shell::rename_shell_identity(
             windows::Win32::Foundation::HWND(owner),
             old,
             name,
@@ -67,7 +67,7 @@ pub(in crate::pane) fn commit(
         finished: false,
     };
     let renamed =
-        desktop_shell::rename_shell_item(windows::Win32::Foundation::HWND(owner), old, name)
+        luciddesk_shell::rename_shell_item(windows::Win32::Foundation::HWND(owner), old, name)
             .map_err(|e| e.to_string())?;
     let Some(renamed) = renamed else {
         update.finish()?;
@@ -88,7 +88,7 @@ pub(in crate::pane) fn commit(
 fn reconcile_committed(
     state: &Rc<RefCell<PaneApp>>,
     old: &ShellIdentity,
-    renamed: desktop_shell::ShellEntry,
+    renamed: luciddesk_shell::ShellEntry,
     replace: impl FnOnce(&str) -> Result<(), String>,
     publish: impl FnOnce(&[String]) -> Result<(), String>,
     release: impl FnOnce() -> Result<(), String>,
@@ -145,7 +145,7 @@ fn reconcile_committed(
     }
 }
 
-fn replace_item(s: &mut PaneApp, old: &ShellIdentity, renamed: desktop_shell::ShellEntry) {
+fn replace_item(s: &mut PaneApp, old: &ShellIdentity, renamed: luciddesk_shell::ShellEntry) {
     for item in s.workspace.desktop_items_mut() {
         if item.identity().equivalent_to(old) {
             let placement = item.placement().clone();
@@ -193,7 +193,7 @@ mod tests {
         let identity = ShellIdentity::Namespace {
             parsing_name: "test:renamed".into(),
         };
-        let renamed = desktop_shell::ShellEntry {
+        let renamed = luciddesk_shell::ShellEntry {
             identity: identity.clone(),
             display_name: "Renamed".into(),
             attributes: Default::default(),

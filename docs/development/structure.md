@@ -93,15 +93,15 @@ rg -n 'mod |pub.*use ' app/src/pane/mod.rs
 
 | Crate | 实现入口与内部组织 |
 | --- | --- |
-| `desktop-core` | `src/lib.rs` 重导出领域类型；身份、坐标、外观、项目、面板与工作区分别维护 |
-| `desktop-storage` | `src/store/` 管理配置、数据库、编解码、标签、显示器布局与恢复；公共错误位于 `src/error.rs` |
-| `desktop-shell` | `src/` 按身份、桌面查询、通知、激活、COM/OLE、文件操作和菜单划分 |
-| `desktop-explorer` | `src/discovery.rs` 负责发现与冲突检测；`filter.rs`、`filter/` 包含控制端、IPC 和 Explorer 端实现；`filter/menu/` 管理菜单宿主 |
-| `desktop-menu` | `theme.rs`、`frame.rs` 提供应用与 Explorer 共用的原生菜单外观 |
-| `desktop-graphics` | `src/layer.rs` 管理合成层；`src/bindings/` 保存生成的 DWM/DComp 绑定 |
-| `desktop-window` | `src/lib.rs` 与 `src/monitors.rs` 提供错误提示及显示器能力 |
+| `luciddesk-core` | `src/lib.rs` 重导出领域类型；身份、坐标、外观、项目、面板与工作区分别维护 |
+| `luciddesk-storage` | `src/store/` 管理配置、数据库、编解码、标签、显示器布局与恢复；公共错误位于 `src/error.rs` |
+| `luciddesk-shell` | `src/` 按身份、桌面查询、通知、激活、COM/OLE、文件操作和菜单划分 |
+| `luciddesk-explorer` | `src/discovery.rs` 负责发现与冲突检测；`filter.rs`、`filter/` 包含控制端、IPC 和 Explorer 端实现；`filter/menu/` 管理菜单宿主 |
+| `luciddesk-menu` | `theme.rs`、`frame.rs` 提供应用与 Explorer 共用的原生菜单外观 |
+| `luciddesk-graphics` | `src/layer.rs` 管理合成层；`src/bindings/` 保存生成的 DWM/DComp 绑定 |
+| `luciddesk-window` | `src/lib.rs` 与 `src/monitors.rs` 提供错误提示及显示器能力 |
 
-各库公共入口与依赖边界见 [crates 导航](../../crates/README.md)。`desktop-explorer` 同时包含控制端和 DLL 侧代码，定位问题时应先确认执行进程与线程，不能只按 crate 名判断运行位置。
+各库公共入口与依赖边界见 [crates 导航](../../crates/README.md)。`luciddesk-explorer` 同时包含控制端和 DLL 侧代码，定位问题时应先确认执行进程与线程，不能只按 crate 名判断运行位置。
 
 生成绑定由 `tools/windows-bindings/` 维护，修改时同步生成器、筛选清单与输出。图标生成与验证分别由 `tools/generate-app-icon.ps1`、`tools/verify-app-icon.ps1` 负责；资源规则见[应用资源说明](../../app/assets/README.md)。
 

@@ -24,7 +24,7 @@ mod compatibility_tests {
         for show_mica in [false, true] {
             for material in [Backdrop::Mica, Backdrop::MicaAlt, Backdrop::Mica.with_strength(75)] {
                 let page = scene_with_mica(900.0, 700.0, 0, false,
-                    (PanelTheme::Light, material), desktop_core::PaneOptions::default(), show_mica);
+                    (PanelTheme::Light, material), luciddesk_core::PaneOptions::default(), show_mica);
                 let choices: Vec<_> = page.controls.iter().filter_map(|control| {
                     if let Action::Change(Event::Material(value)) = control.action {
                         Some((value, control.selected))
@@ -120,7 +120,7 @@ pub(super) fn scene(
     page: usize,
     search_enabled: bool,
     appearance: (PanelTheme, Backdrop),
-    options: desktop_core::PaneOptions,
+    options: luciddesk_core::PaneOptions,
 ) -> Scene {
     let version = windows_version::OsVersion::current();
     scene_with_mica(width, _height, page, search_enabled, appearance, options,
@@ -133,7 +133,7 @@ fn scene_with_mica(
     page: usize,
     search_enabled: bool,
     appearance: (PanelTheme, Backdrop),
-    options: desktop_core::PaneOptions,
+    options: luciddesk_core::PaneOptions,
     show_mica: bool,
 ) -> Scene {
     // A portable configuration may have been saved on Windows 11. Reflect the
@@ -348,7 +348,7 @@ fn scene_with_mica(
             crate::i18n::text("ui-adjust-corner-rounding-for-panels-and-tabs"),
             Slider::linear(
                 options.corner_radius,
-                desktop_core::PaneOptions::MAX_CORNER_RADIUS,
+                luciddesk_core::PaneOptions::MAX_CORNER_RADIUS,
             ),
             &format!("{:.1}", options.corner_radius),
             Action::Radius(options.corner_radius),
@@ -391,9 +391,9 @@ fn scene_with_mica(
             crate::i18n::text("ui-panel-text"),
             crate::i18n::text("ui-automatic-mode-selects-text-brightness-for-the-background"),
             [
-                (crate::i18n::text("ui-automatic"), desktop_core::PanelText::Auto),
-                (crate::i18n::text("ui-light-text"), desktop_core::PanelText::Light),
-                (crate::i18n::text("ui-dark-text"), desktop_core::PanelText::Dark),
+                (crate::i18n::text("ui-automatic"), luciddesk_core::PanelText::Auto),
+                (crate::i18n::text("ui-light-text"), luciddesk_core::PanelText::Light),
+                (crate::i18n::text("ui-dark-text"), luciddesk_core::PanelText::Dark),
             ]
             .into_iter()
             .map(|(label, value)| {

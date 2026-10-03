@@ -64,7 +64,7 @@ impl Acrylic {
     #[allow(dead_code)] // Used by the standalone backdrop probe.
     pub fn new(hwnd: HWND) -> Result<Self> {
         let material = Self::new_with_opacity(hwnd, 1.0)?;
-        material.material(desktop_core::Backdrop::Acrylic, true)?;
+        material.material(luciddesk_core::Backdrop::Acrylic, true)?;
         Ok(material)
     }
 
@@ -241,12 +241,12 @@ impl Acrylic {
 }
 
 /// Shared material recipe for the compositor and the illustrative settings preview.
-pub(super) fn material_colors(material: desktop_core::Backdrop, dark: bool) -> (Color, Color) {
+pub(super) fn material_colors(material: luciddesk_core::Backdrop, dark: bool) -> (Color, Color) {
     let colors = if matches!(
         material.base(),
-        desktop_core::Backdrop::Mica | desktop_core::Backdrop::MicaAlt
+        luciddesk_core::Backdrop::Mica | luciddesk_core::Backdrop::MicaAlt
     ) {
-        effects::mica_palette(dark, material.base() == desktop_core::Backdrop::MicaAlt)
+        effects::mica_palette(dark, material.base() == luciddesk_core::Backdrop::MicaAlt)
     } else {
         effects::acrylic_palette(dark)
     };

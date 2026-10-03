@@ -31,76 +31,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
-name = "desktop-api"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "desktop-core"
-version = "0.1.0"
-
-[[package]]
-name = "desktop-explorer"
-version = "0.1.0"
-dependencies = [
- "desktop-menu",
- "windows",
- "windows-core 0.62.2",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "desktop-graphics"
-version = "0.1.0"
-dependencies = [
- "windows-core 0.100.0",
- "windows-link 0.100.0",
-]
-
-[[package]]
-name = "desktop-menu"
-version = "0.1.0"
-dependencies = [
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "desktop-shell"
-version = "0.1.0"
-dependencies = [
- "desktop-core",
- "desktop-explorer",
- "desktop-menu",
- "desktop-window",
- "windows",
- "windows-core 0.62.2",
- "windows-sys 0.61.2",
- "windows-window",
-]
-
-[[package]]
-name = "desktop-storage"
-version = "0.1.0"
-dependencies = [
- "desktop-core",
- "rusqlite",
- "tempfile",
- "toml_edit",
-]
-
-[[package]]
-name = "desktop-window"
-version = "0.1.0"
-dependencies = [
- "desktop-core",
- "windows-sys 0.61.2",
-]
-
-[[package]]
 name = "displaydoc"
 version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -316,15 +246,16 @@ checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 name = "luciddesk"
 version = "0.18.1"
 dependencies = [
- "desktop-api",
- "desktop-core",
- "desktop-explorer",
- "desktop-graphics",
- "desktop-shell",
- "desktop-storage",
- "desktop-window",
  "embed-resource",
  "fluent-bundle",
+ "luciddesk-api",
+ "luciddesk-core",
+ "luciddesk-diagnostics",
+ "luciddesk-explorer",
+ "luciddesk-graphics",
+ "luciddesk-shell",
+ "luciddesk-storage",
+ "luciddesk-window",
  "semver",
  "serde",
  "serde_json",
@@ -343,11 +274,89 @@ dependencies = [
 ]
 
 [[package]]
+name = "luciddesk-api"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "luciddesk-cli"
 version = "0.18.1"
 dependencies = [
- "desktop-api",
+ "luciddesk-api",
  "serde_json",
+]
+
+[[package]]
+name = "luciddesk-core"
+version = "0.1.0"
+
+[[package]]
+name = "luciddesk-diagnostics"
+version = "0.1.0"
+dependencies = [
+ "tempfile",
+]
+
+[[package]]
+name = "luciddesk-explorer"
+version = "0.1.0"
+dependencies = [
+ "luciddesk-menu",
+ "windows",
+ "windows-core 0.62.2",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "luciddesk-graphics"
+version = "0.1.0"
+dependencies = [
+ "windows-core 0.100.0",
+ "windows-link 0.100.0",
+]
+
+[[package]]
+name = "luciddesk-menu"
+version = "0.1.0"
+dependencies = [
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "luciddesk-shell"
+version = "0.1.0"
+dependencies = [
+ "luciddesk-core",
+ "luciddesk-diagnostics",
+ "luciddesk-explorer",
+ "luciddesk-menu",
+ "luciddesk-window",
+ "windows",
+ "windows-core 0.62.2",
+ "windows-sys 0.61.2",
+ "windows-window",
+]
+
+[[package]]
+name = "luciddesk-storage"
+version = "0.1.0"
+dependencies = [
+ "luciddesk-core",
+ "rusqlite",
+ "tempfile",
+ "toml_edit",
+]
+
+[[package]]
+name = "luciddesk-window"
+version = "0.1.0"
+dependencies = [
+ "luciddesk-core",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

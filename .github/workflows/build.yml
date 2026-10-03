@@ -61,9 +61,9 @@ jobs:
       - name: Compile all targets
         run: cargo check --workspace --all-targets --locked
       - name: Test workspace data and layout rules
-        run: cargo test -p desktop-core -p desktop-storage --lib --locked
+        run: cargo test -p luciddesk-core -p luciddesk-storage --lib --locked
       - name: Test drag image alpha conversion
-        run: cargo test -p desktop-shell --lib drag_image::tests::alpha_conversion_preserves_transparency_and_edge_colors --locked -- --exact
+        run: cargo test -p luciddesk-shell --lib drag_image::tests::alpha_conversion_preserves_transparency_and_edge_colors --locked -- --exact
       - name: Test Canvas compatibility with WARP
         run: cargo test -p luciddesk --test canvas_compat --locked -- --test-threads=1
       - name: Test workspace documentation examples

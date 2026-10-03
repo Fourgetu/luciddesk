@@ -1,7 +1,7 @@
 //! CLI dispatcher. Requests use a dedicated message, not the maintenance wake.
 mod plans;
 use super::*;
-use desktop_api::{Request, Response};
+use luciddesk_api::{Request, Response};
 use serde_json::json;
 use std::{
     sync::{
@@ -28,7 +28,7 @@ struct Snapshot {
 impl Snapshot {
     fn new() -> Self {
         Self {
-            instance: desktop_api::request_id(),
+            instance: luciddesk_api::request_id(),
             item_ids: HashMap::new(),
             next_item: 0,
             seen: None,
@@ -38,7 +38,7 @@ impl Snapshot {
     }
     fn respond(&mut self, state: &mut PaneApp, request: &Request) -> Response {
         let fail = |code, message| Response::failure(&request.request_id, code, message);
-        if request.protocol_version != desktop_api::VERSION {
+        if request.protocol_version != luciddesk_api::VERSION {
             return fail("PROTOCOL_MISMATCH", "supported protocol version is 1");
         }
         if let Err(error) = request.validate() {
@@ -58,14 +58,14 @@ impl Snapshot {
         let observed = (
             state.workspace.clone(),
             state.store.change_count(),
-            format!("{:?}", desktop_window::enumerate_monitors()),
+            format!("{:?}", luciddesk_window::enumerate_monitors()),
         );
         if self.seen.as_ref() != Some(&observed) {
             self.version += 1;
             self.seen = Some(observed);
         }
         let version = self.version.to_string();
-        let base = desktop_api::Context {
+        let base = luciddesk_api::Context {
             instance_id: self.instance.clone(),
             state_version: version.clone(),
             inventory_version: version.clone(),
@@ -83,7 +83,7 @@ impl Snapshot {
                 json!({"application_version":env!("CARGO_PKG_VERSION"), "data_dir":directory, "desktop_connected":state.session.as_ref().is_some_and(hybrid::is_alive), "read_only":false})
             }
             "capabilities" => {
-                json!({"commands":desktop_api::COMMANDS,"protocol_version":1,"max_frame_bytes":desktop_api::MAX_FRAME,"writes":true,"plans":true,"concurrency_tokens":true,"plan_operations":["pane.create","pane.update","item.assign","item.reorder"],"pane_geometry":false,"item_ids":"opaque-instance-scoped","schema_version":1})
+                json!({"commands":luciddesk_api::COMMANDS,"protocol_version":1,"max_frame_bytes":luciddesk_api::MAX_FRAME,"writes":true,"plans":true,"concurrency_tokens":true,"plan_operations":["pane.create","pane.update","item.assign","item.reorder"],"pane_geometry":false,"item_ids":"opaque-instance-scoped","schema_version":1})
             }
             command => {
                 let pane_values: Vec<_> = state.workspace.panels().iter().map(|panel| {
@@ -126,11 +126,11 @@ impl Snapshot {
                             format!("{}-item-{}", self.instance, self.next_item)
                         });
                         let (pane, placement) = match item.placement() {
-                            desktop_core::DesktopPlacement::Pane { pane_id, position } => (
+                            luciddesk_core::DesktopPlacement::Pane { pane_id, position } => (
                                 Some(pane_id.get().to_string()),
                                 json!({"kind":"pane","pane_id":pane_id.get().to_string(),"column":position.column,"row":position.row}),
                             ),
-                            desktop_core::DesktopPlacement::FreeDesktop { .. } => {
+                            luciddesk_core::DesktopPlacement::FreeDesktop { .. } => {
                                 (None, json!({"kind":"desktop"}))
                             }
                         };
@@ -158,7 +158,7 @@ impl Snapshot {
 pub(super) fn start(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window::Window, String> {
     start_at(
         state,
-        &desktop_api::transport::endpoint().map_err(|e| e.to_string())?,
+        &luciddesk_api::transport::endpoint().map_err(|e| e.to_string())?,
     )
 }
 fn start_at(
@@ -170,7 +170,7 @@ fn start_at(
     let stopped = Arc::new(AtomicBool::new(false));
     let peer = endpoint.clone();
     let stopping = stopped.clone();
-    let server = desktop_api::transport::Server::start_at(pipe_name, move |request| {
+    let server = luciddesk_api::transport::Server::start_at(pipe_name, move |request| {
         let id = request.request_id.clone();
         let (reply, result) = mpsc::sync_channel(1);
         let expires = Instant::now() + Duration::from_secs(5);
@@ -284,7 +284,7 @@ mod tests {
             plan: None,
             token: None,
         };
-        for command in desktop_api::COMMANDS
+        for command in luciddesk_api::COMMANDS
             .iter()
             .filter(|c| !matches!(**c, "plan.preview" | "plan.apply" | "request.get"))
         {
@@ -313,15 +313,15 @@ mod integration_tests {
     use super::*;
     #[test]
     fn pipe_query_runs_on_ui_thread_without_persistence() {
-        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let mut app = super::super::tests::test_state();
         app.store.save_workspace(&app.workspace).unwrap();
         let before = app.store.change_count();
         let state = Rc::new(RefCell::new(app));
         let name = format!(
             "{}-ui-{}",
-            desktop_api::transport::endpoint().unwrap(),
-            desktop_api::request_id()
+            luciddesk_api::transport::endpoint().unwrap(),
+            luciddesk_api::request_id()
         );
         let control = start_at(&state, &name).unwrap();
         let (tx, rx) = mpsc::channel();
@@ -337,7 +337,7 @@ mod integration_tests {
                 plan: None,
                 token: None,
             };
-            tx.send(desktop_api::transport::call_at(
+            tx.send(luciddesk_api::transport::call_at(
                 &name,
                 &request,
                 Duration::from_secs(3),

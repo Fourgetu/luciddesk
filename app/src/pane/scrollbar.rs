@@ -79,7 +79,7 @@ mod tests {
     use super::*;
     #[test]
     fn hover_expands_and_reverses_smoothly_and_drag_keeps_it_open() {
-        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let start = std::time::Instant::now();
         let at = |ms| start + std::time::Duration::from_millis(ms);
         let mut state = State { hovered: true, ..Default::default() };

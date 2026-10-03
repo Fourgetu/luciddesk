@@ -4,8 +4,8 @@ use super::{
     inventory::{self, Inventory},
 };
 use crate::pane::wake;
-use desktop_core::ShellIdentity;
-use desktop_shell::ShellApartment;
+use luciddesk_core::ShellIdentity;
+use luciddesk_shell::ShellApartment;
 use std::{sync::mpsc, time::Duration};
 
 pub(super) struct AuditResult {
@@ -34,7 +34,7 @@ impl DesktopAudit {
                 let _exit = exit_wake.on_drop();
                 let sender = sender;
                 let apartment = ShellApartment::initialize_sta();
-                let mut reader = desktop_shell::NativeDesktopReader::default();
+                let mut reader = luciddesk_shell::NativeDesktopReader::default();
                 let mut previous = None;
                 while let Ok((managed, force)) = receiver.recv() {
                     let keys = inventory::revision_keys(&managed);
@@ -42,7 +42,7 @@ impl DesktopAudit {
                         Ok(_) => (|| -> Result<Option<Inventory>, String> {
                             let revision = (
                                 reader.revision()?,
-                                desktop_shell::desktop_source_revision()
+                                luciddesk_shell::desktop_source_revision()
                                     .map_err(|error| error.to_string())?,
                                 keys.clone(),
                             );

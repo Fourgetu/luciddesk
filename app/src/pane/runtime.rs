@@ -58,7 +58,7 @@ fn notify_connection(state: &Rc<RefCell<PaneApp>>) {
     };
     let logged = crate::diagnostics::desktop_connection_log(&path, error.as_deref());
     let Some(error) = error else {
-        if let Err(error) = logged { eprintln!("Desktop connection log: {error}"); }
+        if let Err(error) = logged { crate::diagnostics::log(crate::diagnostics::Level::Error, "desktop.connection", &format!("Desktop connection log: {error}")); }
         return;
     };
     let log = match logged {
@@ -267,7 +267,7 @@ pub(super) fn reload(state: &Rc<RefCell<PaneApp>>) -> Result<(), String> {
         }
         s.workspace = workspace;
         s.runtime.as_mut().unwrap().layouts = Default::default();
-        display_layout::initialize(&mut s, desktop_window::enumerate_monitors())?;
+        display_layout::initialize(&mut s, luciddesk_window::enumerate_monitors())?;
         std::mem::take(&mut s.views)
     };
     drop(views);
@@ -481,7 +481,7 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
 mod tests {
     #[test]
     fn saved_language_notifies_open_windows_without_restart() {
-        let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _apartment = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         crate::i18n::with_locale(0, || {
             let state = Rc::new(RefCell::new(super::super::tests::test_state()));
             let observed = Rc::new(std::cell::Cell::new(false));

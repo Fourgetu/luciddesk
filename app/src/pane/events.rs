@@ -32,11 +32,11 @@ mod search_lifecycle_tests {
     use super::*;
     #[test]
     fn failed_search_window_can_be_enabled_again() {
-        let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _apartment = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let state = Rc::new(RefCell::new(super::super::tests::test_state()));
         state.borrow_mut().workspace.set_appearance(
-            desktop_core::PanelTheme::Dark,
-            desktop_core::Backdrop::Translucent { opacity: 1.0 },
+            luciddesk_core::PanelTheme::Dark,
+            luciddesk_core::Backdrop::Translucent { opacity: 1.0 },
         );
         handle(&state, PanelId::new(0), Event::EnableSearch).unwrap();
         let id = state.borrow().views[0].id;
@@ -267,7 +267,7 @@ pub(super) fn handle(
         };
         if let Some((owner, items)) = target {
             window::post_action(owner as _, move || {
-                if let Err(error) = desktop_shell::drag_file_items(
+                if let Err(error) = luciddesk_shell::drag_file_items(
                     windows::Win32::Foundation::HWND(owner as _),
                     &items,
                     image.as_ref(),
@@ -373,7 +373,7 @@ pub(super) fn handle(
             let s = state.borrow();
             s.views.iter().find(|view| view.id == id).map(|view| {
                 let model = view.model.borrow();
-                let destination = (command == desktop_shell::FileCommand::Paste)
+                let destination = (command == luciddesk_shell::FileCommand::Paste)
                     .then(|| s.folders.get(&id).map(|source| source.path.clone()))
                     .flatten();
                 (view.window.hwnd(), model.selected_identities(), destination)
@@ -385,12 +385,12 @@ pub(super) fn handle(
                     return;
                 }
                 let result = if let Some(path) = destination {
-                    desktop_shell::paste_into_folder(
+                    luciddesk_shell::paste_into_folder(
                         windows::Win32::Foundation::HWND(owner.cast()),
                         &path,
                     )
                 } else {
-                    desktop_shell::invoke_file_commands(
+                    luciddesk_shell::invoke_file_commands(
                         windows::Win32::Foundation::HWND(owner.cast()),
                         &identity,
                         command,
@@ -452,13 +452,13 @@ pub(super) fn handle(
                     return Ok(false);
                 }
                 options.corner_radius =
-                    radius.clamp(0.0, desktop_core::PaneOptions::MAX_CORNER_RADIUS)
+                    radius.clamp(0.0, luciddesk_core::PaneOptions::MAX_CORNER_RADIUS)
             }
             Event::SetIconGrid(value) => {
                 if !value.is_finite() {
                     return Ok(false);
                 }
-                let range = desktop_core::PaneOptions::GRID_SCALE_RANGE;
+                let range = luciddesk_core::PaneOptions::GRID_SCALE_RANGE;
                 let value = value.round().clamp(range.0, range.1);
                 options.grid_scale = value;
             }
@@ -466,7 +466,7 @@ pub(super) fn handle(
             Event::SetPanelText(text) => options.text = text,
             Event::ToggleTextProtection => options.text_protection = !options.text_protection,
             Event::ToggleSnap => options.snap = !options.snap,
-            Event::ResetPaneOptions => options = desktop_core::PaneOptions::default(),
+            Event::ResetPaneOptions => options = luciddesk_core::PaneOptions::default(),
             _ => unreachable!(),
         }
         s.workspace.set_pane_options(options);
@@ -517,8 +517,8 @@ pub(super) fn handle(
                     .map(|p| (p.theme(), p.backdrop()))
             })
             .unwrap_or((
-                desktop_core::PanelTheme::System,
-                desktop_core::Backdrop::Mica,
+                luciddesk_core::PanelTheme::System,
+                luciddesk_core::Backdrop::Mica,
             ));
         match event {
             Event::Theme(value) => theme = value,
@@ -738,7 +738,7 @@ pub(super) fn handle(
                 s.workspace
                     .panel_mut(next)
                     .unwrap()
-                    .set_backdrop(desktop_core::Backdrop::Acrylic);
+                    .set_backdrop(luciddesk_core::Backdrop::Acrylic);
             }
             if let Err(error) = save(&mut s) {
                 s.workspace = old;
@@ -1065,7 +1065,7 @@ pub(super) fn handle(
                         .window
                         .hwnd() as isize;
                     window::post_action(owner as _, move || {
-                        if let Err(error) = desktop_shell::copy_to_folder(
+                        if let Err(error) = luciddesk_shell::copy_to_folder(
                             windows::Win32::Foundation::HWND(owner as _),
                             &identities,
                             &path,
@@ -1098,7 +1098,7 @@ pub(super) fn preview_grid(state: &mut PaneApp, value: f32) {
     if !value.is_finite() {
         return;
     }
-    let range = desktop_core::PaneOptions::GRID_SCALE_RANGE;
+    let range = luciddesk_core::PaneOptions::GRID_SCALE_RANGE;
     let value = value.clamp(range.0, range.1);
     let mut options = state.workspace.pane_options();
     options.grid_scale = value;
@@ -1136,7 +1136,7 @@ pub(super) fn preview_radius(state: &mut PaneApp, radius: f32) {
     if !radius.is_finite() {
         return;
     }
-    let radius = radius.clamp(0.0, desktop_core::PaneOptions::MAX_CORNER_RADIUS);
+    let radius = radius.clamp(0.0, luciddesk_core::PaneOptions::MAX_CORNER_RADIUS);
     let mut options = state.workspace.pane_options();
     if options.corner_radius == radius {
         return;
@@ -1164,7 +1164,7 @@ pub(super) fn commit_radius(state: &mut PaneApp, original: f32) -> Result<(), St
 }
 
 /// Update only memory and visuals during a continuous material gesture.
-pub(super) fn preview_material(state: &mut PaneApp, backdrop: desktop_core::Backdrop) {
+pub(super) fn preview_material(state: &mut PaneApp, backdrop: luciddesk_core::Backdrop) {
     if state
         .workspace
         .appearance()
@@ -1175,7 +1175,7 @@ pub(super) fn preview_material(state: &mut PaneApp, backdrop: desktop_core::Back
     let theme = state
         .workspace
         .appearance()
-        .map_or(desktop_core::PanelTheme::System, |v| v.0);
+        .map_or(luciddesk_core::PanelTheme::System, |v| v.0);
     state.workspace.set_appearance(theme, backdrop);
     for view in &state.views {
         view.model.borrow_mut().backdrop = backdrop;
@@ -1192,7 +1192,7 @@ pub(super) fn preview_material(state: &mut PaneApp, backdrop: desktop_core::Back
 
 pub(super) fn commit_material(
     state: &mut PaneApp,
-    original: desktop_core::Backdrop,
+    original: luciddesk_core::Backdrop,
 ) -> Result<(), String> {
     if let Err(error) = save(state) {
         preview_material(state, original);

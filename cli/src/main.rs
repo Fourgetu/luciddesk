@@ -1,4 +1,4 @@
-use desktop_api::{Request, Response, VERSION};
+use luciddesk_api::{Request, Response, VERSION};
 use std::{ffi::OsString, time::Duration};
 const HELP: &str = "LucidDesk CLI\nUsage: luciddesk-cli <command> [options]\nCommands: schema (offline), status, capabilities, workspace get, pane list, pane get --id ID, item list, plan preview --input FILE|-, plan apply --token TOKEN --request-id ID, request get --id ID\nOptions: --json, --data-dir PATH, --timeout-ms 1..60000, --protocol-version N\nItem filters: --pane ID | --unassigned\nThe GUI must already be running. This CLI never opens the database.";
 struct Options {
@@ -9,7 +9,7 @@ struct Options {
 fn parse(args: Vec<OsString>) -> Result<Options, String> {
     let mut request = Request {
         protocol_version: VERSION,
-        request_id: desktop_api::request_id(),
+        request_id: luciddesk_api::request_id(),
         command: String::new(),
         id: None,
         pane: None,
@@ -83,10 +83,10 @@ fn parse(args: Vec<OsString>) -> Result<Options, String> {
         let mut bytes = Vec::new();
         reader
             .by_ref()
-            .take((desktop_api::MAX_FRAME + 1) as u64)
+            .take((luciddesk_api::MAX_FRAME + 1) as u64)
             .read_to_end(&mut bytes)
             .map_err(|e| e.to_string())?;
-        if bytes.len() > desktop_api::MAX_FRAME {
+        if bytes.len() > luciddesk_api::MAX_FRAME {
             return Err("plan input exceeds 4 MiB".into());
         }
         request.plan = Some(serde_json::from_slice(&bytes).map_err(|e| e.to_string())?);
@@ -116,7 +116,7 @@ fn main() {
     {
         println!(
             "{}",
-            include_str!("../../crates/desktop-api/protocol.schema.json")
+            include_str!("../../crates/luciddesk-api/protocol.schema.json")
         );
         return;
     }
@@ -124,7 +124,7 @@ fn main() {
     let (response, json) = match parse(args) {
         Err(error) => (Response::failure("", "INVALID_REQUEST", error), wants_json),
         Ok(options) => {
-            let response = desktop_api::transport::call(&options.request, options.timeout)
+            let response = luciddesk_api::transport::call(&options.request, options.timeout)
                 .unwrap_or_else(|e| {
                     let code = match e.kind() {
                         std::io::ErrorKind::NotFound => "APP_NOT_RUNNING",

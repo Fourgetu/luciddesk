@@ -63,7 +63,7 @@ pub struct Renderer {
     labels: windows_canvas::TextFormat,
     title: windows_canvas::TextFormat,
     title_layout: Option<TitleLayout>,
-    pub(super) marquee: Option<desktop_core::RectDip>,
+    pub(super) marquee: Option<luciddesk_core::RectDip>,
     details: windows_canvas::TextFormat,
     tab_title: windows_canvas::TextFormat,
     column_label_widths: [f32; 4],
@@ -582,7 +582,7 @@ impl Renderer {
                     }
                 }
                 let mut chrome = super::theme::material_chrome(model.backdrop, model.dark);
-                if !matches!(model.backdrop.base(), desktop_core::Backdrop::Acrylic | desktop_core::Backdrop::Mica | desktop_core::Backdrop::MicaAlt) {
+                if !matches!(model.backdrop.base(), luciddesk_core::Backdrop::Acrylic | luciddesk_core::Backdrop::Mica | luciddesk_core::Backdrop::MicaAlt) {
                     chrome.tab_active = ColorF::new(ink, ink, ink, 0.14);
                     chrome.tab_inactive = ColorF::new(ink, ink, ink, 0.04);
                     chrome.tab_hover = ColorF::new(ink, ink, ink, 0.09);
@@ -791,12 +791,12 @@ impl Renderer {
                                 ))?;
                                 self.images
                                     .insert(key, (Arc::clone(image), bitmap, size));
-                                if std::env::var_os("LUCIDDESK_ICON_TRACE").is_some()
+                                if luciddesk_diagnostics::enabled(luciddesk_diagnostics::Level::Trace)
                                     && item.identity.persistent_key()
                                         .to_ascii_lowercase()
                                         .contains("645ff040-5081-101b-9f08-00aa002f954e")
                                 {
-                                    eprintln!(
+                                    luciddesk_diagnostics::emit!(luciddesk_diagnostics::Level::Trace, "pane.render",
                                         "recycle-render-upload hash={:x} size={:?}",
                                         image.data.iter().fold(0u64, |h, b| h
                                             .wrapping_mul(31)
@@ -956,7 +956,7 @@ mod tests {
     #[test]
     fn title_ellipsis_stays_stable_when_width_jitters_at_last_character() {
         use windows::Win32::Graphics::DirectWrite::{DWRITE_LINE_METRICS, IDWriteTextLayout};
-        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let trimmed = |title: &windows_canvas::TextLayout| {
             let native: IDWriteTextLayout =
                 super::super::native_graphics::native_interface(title.raw()).unwrap();
@@ -1006,7 +1006,7 @@ mod tests {
     #[test]
     fn title_trimming_does_not_reverse_while_shrinking() {
         use windows::Win32::Graphics::DirectWrite::{DWRITE_LINE_METRICS, IDWriteTextLayout};
-        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let mut renderer = Renderer::new().unwrap();
         for scale in [1.0, 1.25, 1.5, 2.0] {
             for text in ["新建分组", "Project 项目文件夹与资料", "tinyMediaManager"] {
@@ -1046,7 +1046,7 @@ mod tests {
     }
     #[test]
     fn list_view_columns_render_and_share_scrolled_hit_geometry() {
-        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let mut model = sample_model();
         model.folder = Some(std::path::PathBuf::from(r"C:\Documents"));
         assert!(!model.header_button_enabled(2));
@@ -1120,7 +1120,7 @@ mod tests {
     }
     #[test]
     fn desktop_list_renders_full_width_names_and_row_drag_preview() {
-        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let mut model = sample_model();
         model.list_view = true;
         model.items[0].label = "普通分组中较长的文件名称 — desktop document.txt".into();
@@ -1146,7 +1146,7 @@ mod tests {
 
     #[test]
     fn grid_scale_changes_icon_and_text_size_together() {
-        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let mut model = sample_model();
         let mut renderer = Renderer::new().unwrap();
         for dpi_scale in [1.0, 1.25, 1.5, 2.0] {
@@ -1172,7 +1172,7 @@ mod tests {
 
     #[test]
     fn icon_pixels_remain_sharp_at_fractional_dpi_and_invalidate_size_cache() {
-        let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _apartment = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let mut model = sample_model();
         let mut data = vec![0; 48 * 48 * 4];
         for y in 4..44usize {
@@ -1218,7 +1218,7 @@ mod tests {
 
     #[test]
     fn canvas_flyout_retains_transparency_and_hover_after_resize() {
-        let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _apartment = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let mut renderer = Renderer::new().unwrap();
         let entries = [super::super::menu::Entry {
             id: 1,
@@ -1252,16 +1252,16 @@ mod tests {
         }
     }
     use crate::pane::{Item, assets::Pixels};
-    use desktop_core::ShellIdentity;
+    use luciddesk_core::ShellIdentity;
     use std::sync::Arc;
 
     #[test]
     fn tab_strip_renders_at_supported_dpi_and_widths() {
-        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let mut model = sample_model();
         model.tabs = ["工作", "项目资料", "下载与归档"].into_iter().enumerate()
-            .map(|(at, title)| (desktop_core::PanelId::new(at as u64 + 1), title.into())).collect();
-        model.active_tab = desktop_core::PanelId::new(2);
+            .map(|(at, title)| (luciddesk_core::PanelId::new(at as u64 + 1), title.into())).collect();
+        model.active_tab = luciddesk_core::PanelId::new(2);
         let mut renderer = Renderer::new().unwrap();
         for scale in [1.0, 1.5, 2.0] {
             for width in [260, 420, 800] {
@@ -1306,7 +1306,7 @@ mod tests {
 
     #[test]
     fn placeholders_render_without_textures_then_yield_to_loaded_icons() {
-        let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _apartment = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         for dark in [false, true] {
             let mut model = sample_model();
             model.dark = dark;
@@ -1346,7 +1346,7 @@ mod tests {
     fn sample_model() -> GroupModel {
         GroupModel {
             focused: true,
-            backdrop: desktop_core::Backdrop::Acrylic,
+            backdrop: luciddesk_core::Backdrop::Acrylic,
             native_material: true,
             items: vec![Item {
                 details: Default::default(),
@@ -1366,7 +1366,7 @@ mod tests {
 
     #[test]
     fn pane_border_and_corners_can_be_disabled_independently() {
-        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let mut renderer = Renderer::new().unwrap();
         let mut model = sample_model();
         model.items.clear();
@@ -1386,7 +1386,7 @@ mod tests {
 
     #[test]
     fn item_hit_stops_at_visible_highlight_across_dpi_and_scroll() {
-        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let mut model = sample_model();
 
         model.items.push(sample_model().items.remove(0));
@@ -1429,7 +1429,7 @@ mod tests {
 
     #[test]
     fn light_and_dark_text_contrast_without_changing_icon_pixels() {
-        let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _apartment = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let mut model = sample_model();
         model.native_material = false;
         let mut renderer = Renderer::new().unwrap();
@@ -1451,17 +1451,17 @@ mod tests {
 
     #[test]
     fn transparent_panel_protection_preserves_icons_and_rounded_edges() {
-        let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _apartment = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let mut model = sample_model();
         model.options.text_protection = true;
-        model.backdrop = desktop_core::Backdrop::Solid {
+        model.backdrop = luciddesk_core::Backdrop::Solid {
             color: 0xffffff,
             opacity: 0.0,
         };
         let mut renderer = Renderer::new().unwrap();
         for mode in [
-            desktop_core::PanelText::Light,
-            desktop_core::PanelText::Dark,
+            luciddesk_core::PanelText::Light,
+            luciddesk_core::PanelText::Dark,
         ] {
             model.options.text = mode;
             let pixels = renderer.pixels(400, 240, 1.0, &model).unwrap();
@@ -1469,7 +1469,7 @@ mod tests {
             assert_eq!(at(59, 78), [80, 100, 200, 255]);
             assert!(at(380, 200)[3] > 0 && at(380, 200)[3] < 255);
             assert_eq!(at(0, 0)[3], 0);
-            assert_eq!(at(380, 200)[0] == 0, mode == desktop_core::PanelText::Light);
+            assert_eq!(at(380, 200)[0] == 0, mode == luciddesk_core::PanelText::Light);
             model.options.text_protection = false;
             let unprotected = renderer.pixels(400, 240, 1.0, &model).unwrap();
             assert_eq!(unprotected[(200 * 400 + 380) * 4 + 3], 0);
@@ -1483,7 +1483,7 @@ mod tests {
 
     #[test]
     fn background_alpha_does_not_dim_icons_at_multiple_scales() {
-        let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _apartment = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let mut model = sample_model();
         let mut renderer = Renderer::new().unwrap();
         for scale in [1.0, 1.5, 2.0] {
@@ -1522,7 +1522,7 @@ mod tests {
 
     #[test]
     fn viewport_layout_matches_full_measurement_across_sizes_and_scroll_positions() {
-        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let mut model = sample_model();
         let template = model.items[0].clone();
         for count in [1, 37, 257] {
@@ -1561,7 +1561,7 @@ mod tests {
 
     #[test]
     fn selection_backgrounds_release_old_sizes_and_deselected_textures() {
-        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let mut model = sample_model();
         model.list_view = true;
         model.selection.insert(0);
@@ -1587,7 +1587,7 @@ mod tests {
 
     #[test]
     fn identical_visible_icons_share_one_gpu_upload_and_changed_pixels_replace_it() {
-        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let mut model = sample_model();
         let template = model.items[0].clone();
         model.items = (0..8).map(|index| Item {
@@ -1612,7 +1612,7 @@ mod tests {
 
     #[test]
     fn scrolling_releases_offscreen_icon_textures() {
-        let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let mut model = sample_model();
         let image = model.items[0].image.clone();
         model.items = (0..1000)
@@ -1653,7 +1653,7 @@ mod tests {
 
     #[test]
     fn gpu_frames_preserve_colors_alpha_and_cached_images_across_resize() {
-        let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+        let _apartment = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let model = sample_model();
         // Exercise the actual swap-chain path, including buffer rotation and resize.
         // The test window stays hidden and never takes over Explorer.

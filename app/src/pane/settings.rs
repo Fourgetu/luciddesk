@@ -10,7 +10,7 @@ use windows_canvas::{ColorF, Ellipse, Rect, RoundedRect, Vector2};
 use super::native_graphics::canvas_result;
 use super::search::{everything_settings, hotkey as search_hotkey};
 use super::*;
-use desktop_core::{Backdrop, PanelTheme};
+use luciddesk_core::{Backdrop, PanelTheme};
 use windows_canvas::ID2D1DeviceContext;
 use windows_sys::Win32::{
     Graphics::Gdi::*,
@@ -240,7 +240,7 @@ fn filter_fonts(names: &[String], query: &str) -> Vec<String> {
 }
 
 fn grid_range() -> (f32, f32) {
-    desktop_core::PaneOptions::GRID_SCALE_RANGE
+    luciddesk_core::PaneOptions::GRID_SCALE_RANGE
 }
 
 fn grid_slider_position(value: f32) -> f32 {
@@ -265,10 +265,10 @@ fn grid_slider_value(position: f32) -> f32 {
 
 fn radius_from_pointer(bounds: Rect, x: f32) -> f32 {
     let progress = controls::slider_fraction(bounds, x);
-    progress * desktop_core::PaneOptions::MAX_CORNER_RADIUS
+    progress * luciddesk_core::PaneOptions::MAX_CORNER_RADIUS
 }
 
-fn solid_style(store: &desktop_storage::WorkspaceStore, dark: bool) -> Backdrop {
+fn solid_style(store: &luciddesk_storage::WorkspaceStore, dark: bool) -> Backdrop {
     if let Ok(Some(value)) = store.preference("solid_style") {
         if let Some((color, opacity)) = value.split_once('|') {
             if let (Ok(color), Ok(opacity)) = (color.parse::<u32>(), opacity.parse::<f32>()) {
@@ -319,7 +319,7 @@ fn settings_backdrop(backdrop: Backdrop, dark: bool) -> Backdrop {
     }
 }
 
-fn material_style(store: &desktop_storage::WorkspaceStore, backdrop: Backdrop) -> Backdrop {
+fn material_style(store: &luciddesk_storage::WorkspaceStore, backdrop: Backdrop) -> Backdrop {
     backdrop
         .strength_key()
         .and_then(|key| store.preference(key).ok().flatten())
@@ -1530,7 +1530,7 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
                         }
                     }
                     Action::ProjectLink(url) => {
-                        if let Err(error) = desktop_shell::open_shell_identity(hwnd as isize, &desktop_core::ShellIdentity::Namespace {
+                        if let Err(error) = luciddesk_shell::open_shell_identity(hwnd as isize, &luciddesk_core::ShellIdentity::Namespace {
                             parsing_name: (*url).into(),
                         }) { window::error(&error.to_string()); }
                     }

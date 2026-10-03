@@ -1,5 +1,5 @@
 //! Explorer hosts the compact menu against an isolated, validated Shell selection.
-use desktop_core::ShellIdentity;
+use luciddesk_core::ShellIdentity;
 use luciddesk_explorer::filter::FilterSession;
 use windows_sys::Win32::Foundation::{HWND, POINT};
 
@@ -17,27 +17,33 @@ pub fn show_many(
         .iter()
         .map(|item| item.activation_name().to_string_lossy().into_owned())
         .collect();
-    #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
     let started = std::time::Instant::now();
     let shown = hook
         .prepare_menu(owner as isize, &names, point.x, point.y)
         .and_then(|host| {
-
-            #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
             {
-                crate::diagnostics::log(crate::diagnostics::Level::Debug, "shell.menu", &format!("menu_prepare_us={}", started.elapsed().as_micros()));
+                luciddesk_diagnostics::emit!(
+                    luciddesk_diagnostics::Level::Debug,
+                    "shell.menu",
+                    "menu_prepare_us={}",
+                    started.elapsed().as_micros()
+                );
             }
-            let result = desktop_shell::show_isolated_item_menu(
+            let result = luciddesk_shell::show_isolated_item_menu(
                 windows::Win32::Foundation::HWND(owner),
                 windows::Win32::Foundation::HWND(host as _),
                 if keyboard {
-                    desktop_shell::MenuInvocation::Keyboard
+                    luciddesk_shell::MenuInvocation::Keyboard
                 } else {
-                    desktop_shell::MenuInvocation::Mouse
+                    luciddesk_shell::MenuInvocation::Mouse
                 },
             )
-            .map_err(|error| crate::i18n::format("ui-could-not-open-explorer-icon-menu", &[("error", format!("{}", error))]));
-            #[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
+            .map_err(|error| {
+                crate::i18n::format(
+                    "ui-could-not-open-explorer-icon-menu",
+                    &[("error", format!("{}", error))],
+                )
+            });
             record_presenter(host);
             result
         });
@@ -51,17 +57,39 @@ pub fn show_many(
     shown.and(finished)
 }
 
-#[cfg(any(debug_assertions, feature = "menu-diagnostics"))]
 fn record_presenter(host: isize) {
-    if crate::diagnostics::level() < crate::diagnostics::Level::Debug { return; }
+    if crate::diagnostics::level() < crate::diagnostics::Level::Debug {
+        return;
+    }
     use windows_sys::Win32::UI::WindowsAndMessaging::GetPropW;
     let (mode, error) = unsafe {
-        (GetPropW(host as _, windows_sys::w!("LucidDesk.Menu.Presenter")) as usize,
-         GetPropW(host as _, windows_sys::w!("LucidDesk.Menu.PresenterError")) as usize as u32)
+        (
+            GetPropW(host as _, windows_sys::w!("LucidDesk.Menu.Presenter")) as usize,
+            GetPropW(host as _, windows_sys::w!("LucidDesk.Menu.PresenterError")) as usize as u32,
+        )
     };
-        let values = unsafe { ["PrepareCalled", "PrepareResult", "ReadyCalled", "ReadyResult", "ShowCalled"].map(|name| {
-            let key: Vec<u16> = format!("LucidDesk.Menu.{name}").encode_utf16().chain(Some(0)).collect();
+    let values = unsafe {
+        [
+            "PrepareCalled",
+            "PrepareResult",
+            "ReadyCalled",
+            "ReadyResult",
+            "ShowCalled",
+        ]
+        .map(|name| {
+            let key: Vec<u16> = format!("LucidDesk.Menu.{name}")
+                .encode_utf16()
+                .chain(Some(0))
+                .collect();
             GetPropW(host as _, key.as_ptr()) as usize as u32
-        }) };
-        crate::diagnostics::log(crate::diagnostics::Level::Debug, "shell.menu", &format!("host={host:x} presenter={mode} initialization_hresult=0x{error:08X} prepare_called={} prepare_hresult=0x{:08X} ready_called={} ready={} show={}", values[0], values[1], values[2], values[3], values[4]));
+        })
+    };
+    crate::diagnostics::log(
+        crate::diagnostics::Level::Debug,
+        "shell.menu",
+        &format!(
+            "host={host:x} presenter={mode} initialization_hresult=0x{error:08X} prepare_called={} prepare_hresult=0x{:08X} ready_called={} ready={} show={}",
+            values[0], values[1], values[2], values[3], values[4]
+        ),
+    );
 }

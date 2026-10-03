@@ -1,7 +1,7 @@
 //! Material selection, brush reuse and ordered fallback.
 use super::super::native_graphics::{DWMWA_USE_HOSTBACKDROPBRUSH, set_attribute};
 use super::{Acrylic, effects, host, material_colors};
-use desktop_core::Backdrop;
+use luciddesk_core::Backdrop;
 use windows::{
     UI::{
         Color,

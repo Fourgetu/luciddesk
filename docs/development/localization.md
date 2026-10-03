@@ -90,14 +90,14 @@ let message = crate::i18n::format(
 1. **资源**：以现有文件为模板创建 `app/locales/<代码>.ftl`，保留全部键、顺序和变量，并完成译文。
 2. **注册与索引**：更新 `app/src/i18n.rs` 的 `LANGUAGES`、`SOURCES`、`CATALOGS` 及数组长度。`LANGUAGES` 的首项是 `system`，资源索引与其后各项一一对应。英文回退目前写死为索引 `2`；调整排序时必须同步所有相关索引，不能只移动列表项。
 3. **匹配**：扩展 `resolve` 及 `system_locale_matching`，覆盖语言代码、地区或脚本变体与未知语言回退。系统标签匹配与配置允许值是两套规则，不能用前者替代配置验证。
-4. **配置**：更新 `crates/desktop-storage/src/store/config.rs` 的 `validate_language` 白名单，以及 `config_tests.rs` 中的语言往返测试。确认旧配置缺少 `language` 时仍默认 `system`。
+4. **配置**：更新 `crates/luciddesk-storage/src/store/config.rs` 的 `validate_language` 白名单，以及 `config_tests.rs` 中的语言往返测试。确认旧配置缺少 `language` 时仍默认 `system`。
 5. **字体**：更新 `default_font` 和 `font_sample`。代表字符应包含目标语言特有字形，并验证系统默认字体、自定义字体筛选和缺字回退。
 6. **检查与界面**：更新 `tools/check-locales.py` 的 `LANGUAGES`，检查设置页测试中的固定语言数量和索引范围，扩展新语言布局覆盖。最后同步本指南及用户文档中的语言清单。
 
 定位注册点和固定范围：
 
 ```powershell
-rg -n 'LANGUAGES|SOURCES|CATALOGS|validate_language|font_sample|default_font|0\.\.7' app/src crates/desktop-storage/src tools/check-locales.py
+rg -n 'LANGUAGES|SOURCES|CATALOGS|validate_language|font_sample|default_font|0\.\.7' app/src crates/luciddesk-storage/src tools/check-locales.py
 ```
 
 当前布局没有承诺支持从右向左书写。添加此类语言时，还需验证阅读方向、文本对齐、混排、光标和布局镜像，不能仅凭资源检查通过就宣布支持。
@@ -107,7 +107,7 @@ rg -n 'LANGUAGES|SOURCES|CATALOGS|validate_language|font_sample|default_font|0\.
 ```powershell
 python tools/check-locales.py
 cargo test -p luciddesk --bin luciddesk i18n::tests --locked
-cargo test -p desktop-storage --lib language_round_trip_and_legacy_default --locked
+cargo test -p luciddesk-storage --lib language_round_trip_and_legacy_default --locked
 cargo test -p luciddesk --bin luciddesk all_languages_layout_and_render_without_control_overflow --locked -- --test-threads=1
 ```
 

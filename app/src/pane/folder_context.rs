@@ -1,6 +1,6 @@
 //! Folder content invokes Explorer's native directory background menu.
 use super::{Event, GroupModel};
-use desktop_shell::FolderMenuResult;
+use luciddesk_shell::FolderMenuResult;
 use std::{cell::RefCell, rc::Rc};
 use windows_sys::Win32::Foundation::{HWND, POINT};
 
@@ -30,7 +30,7 @@ pub(super) fn show(
         return Ok(());
     };
     // Release the model borrow before Shell calls, which can pump window messages.
-    match desktop_shell::show_folder_menu(
+    match luciddesk_shell::show_folder_menu(
         windows::Win32::Foundation::HWND(owner),
         &path,
         windows::Win32::Foundation::POINT {
@@ -54,7 +54,7 @@ mod tests {
     #[test]
     fn right_click_routes_title_columns_and_empty_content_separately() {
         let state = super::super::tests::test_state();
-        let mut model = super::super::create_model(&state, desktop_core::PanelId::new(1)).unwrap();
+        let mut model = super::super::create_model(&state, luciddesk_core::PanelId::new(1)).unwrap();
         assert!(!is_content_background(&model, Some(200.0), false));
         model.folder = Some(std::path::PathBuf::from(r"C:\Data"));
         model.list_view = true;

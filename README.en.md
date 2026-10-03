@@ -157,7 +157,7 @@ Requires Windows x64, rustup, Visual Studio C++ Build Tools and the Windows SDK.
 git clone https://github.com/Yuch3nE/luciddesk.git
 cd luciddesk
 .\tools\use-windows-toolchain.ps1
-cargo build -p luciddesk -p desktop-explorer --locked
+cargo build -p luciddesk -p luciddesk-explorer --locked
 .\target\debug\luciddesk.exe
 ```
 

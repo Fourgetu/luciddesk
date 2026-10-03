@@ -1,7 +1,7 @@
 //! Folder view defaults and per-pane column preferences.
 use crate::pane::{PaneApp, columns};
-use desktop_core::{Panel, PanelId};
-use desktop_storage::WorkspaceStore;
+use luciddesk_core::{Panel, PanelId};
+use luciddesk_storage::WorkspaceStore;
 
 const ALL_COLUMNS: u8 = 15;
 

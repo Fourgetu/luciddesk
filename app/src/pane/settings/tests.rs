@@ -9,7 +9,7 @@ fn backup_in_progress_preserves_policy_controls_and_prevents_duplicate_jobs() {
             6,
             true,
             (PanelTheme::System, Backdrop::Mica),
-            desktop_core::PaneOptions::default(),
+            luciddesk_core::PaneOptions::default(),
         );
 
         let view = recovery::View {
@@ -59,7 +59,7 @@ fn folder_modes_fit_minimum_window_and_show_current_choice() {
             8,
             false,
             (PanelTheme::System, Backdrop::Mica),
-            desktop_core::PaneOptions::default(),
+            luciddesk_core::PaneOptions::default(),
         );
         layout::folder_defaults(&mut body, 800.0, folder::Defaults::default(), mode);
         let s = with_titlebar(body, 800.0, false);
@@ -95,7 +95,7 @@ fn folder_defaults_are_saved_and_only_copied_into_new_panels() {
     let mut first = Panel::new(
         PanelId::new(10),
         "first",
-        desktop_core::RectDip::new(0.0, 0.0, 480.0, 360.0),
+        luciddesk_core::RectDip::new(0.0, 0.0, 480.0, 360.0),
     );
     first.set_folder(Some(std::path::PathBuf::from(r"C:\first")));
     folder::Defaults::load(&store)
@@ -310,7 +310,7 @@ fn switch_thumb_stays_centered_with_equal_end_insets() {
 #[test]
 fn switch_motion_reverses_continuously_and_respects_disabled_animation() {
     let now = std::time::Instant::now();
-    let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
     let mut motion = ToggleMotion::settled(0.0, now);
     assert_eq!(motion.retarget(1.0, now, true), 0.0);
     let halfway = now + std::time::Duration::from_millis(80);
@@ -343,7 +343,7 @@ fn custom_frame_keeps_caption_buttons_and_resize_edges_separate() {
             0,
             false,
             (PanelTheme::Dark, Backdrop::Mica),
-            desktop_core::PaneOptions::default(),
+            luciddesk_core::PaneOptions::default(),
         ),
         1040.0,
         false,
@@ -358,7 +358,7 @@ fn custom_frame_keeps_caption_buttons_and_resize_edges_separate() {
 }
 #[test]
 fn settings_layout_and_rendering_at_multiple_scales() {
-    let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let _apartment = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
     let painter = Painter::new().unwrap();
     let export_snapshots = std::env::var_os("LUCIDDESK_TEST_EXPORT_SNAPSHOTS").is_some();
     {
@@ -386,7 +386,7 @@ fn settings_layout_and_rendering_at_multiple_scales() {
                                         Backdrop::Mica
                                     },
                                 ),
-                                desktop_core::PaneOptions::default(),
+                                luciddesk_core::PaneOptions::default(),
                             );
                             if matches!(page, 6 | 9 | 10) {
                                 let view = recovery::View {
@@ -577,7 +577,7 @@ fn font_picker_fits_minimum_window_and_exposes_list_and_reset() {
             11,
             false,
             (PanelTheme::Dark, Backdrop::Mica),
-            desktop_core::PaneOptions::default(),
+            luciddesk_core::PaneOptions::default(),
         );
         layout::fonts(&mut body, 800.0, &names, offset);
         let s = with_titlebar(body, 800.0, false);
@@ -828,7 +828,7 @@ fn color_channel_titles_align_with_slider_centers() {
 
 #[test]
 fn material_choices_reach_the_preview_with_their_strength() {
-    let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let _apartment = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
     let painter = Painter::new().unwrap();
     let device = windows_canvas::GpuDevice::new_warp().unwrap();
     for dark in [false, true] {
@@ -909,7 +909,7 @@ fn material_choices_reach_the_preview_with_their_strength() {
 
 #[test]
 fn corner_slider_drags_to_both_limits_and_saves() {
-    let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
     let state = Rc::new(RefCell::new(super::super::tests::test_state()));
     state.borrow_mut().workspace.set_appearance(PanelTheme::Dark, Backdrop::Mica);
     show(&state, PanelId::new(1)).unwrap();
@@ -927,7 +927,7 @@ fn corner_slider_drags_to_both_limits_and_saves() {
         assert_eq!(state.borrow().workspace.pane_options().corner_radius, 12.0);
         SendMessageW(hwnd, WM_MOUSEMOVE, 1, left);
         assert_eq!(state.borrow().workspace.pane_options().corner_radius, 0.0);
-        assert_eq!(saved(), desktop_core::PaneOptions::DEFAULT.corner_radius, "preview must not write storage");
+        assert_eq!(saved(), luciddesk_core::PaneOptions::DEFAULT.corner_radius, "preview must not write storage");
         SendMessageW(hwnd, WM_MOUSEMOVE, 1, right);
         SendMessageW(hwnd, WM_LBUTTONUP, 0, right);
         assert_eq!(saved(), 24.0);
@@ -1060,7 +1060,7 @@ pub(in crate::pane) fn solid_settings_edit_preview_save_and_remember_style() {
 
 #[test]
 fn all_languages_layout_and_render_without_control_overflow() {
-    let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let _apartment = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
     let device = windows_canvas::GpuDevice::new_warp().unwrap();
     for locale in 0..7 {
         crate::i18n::with_locale(locale, || {
@@ -1070,7 +1070,7 @@ fn all_languages_layout_and_render_without_control_overflow() {
                 let height = MIN_HEIGHT;
                 let material = if page == 7 { Backdrop::Solid { color: 0xf3f3f3, opacity: 1.0 } } else { Backdrop::Acrylic };
                 let mut body = scene(width, height - TITLE_HEIGHT, page, true,
-                    (PanelTheme::Light, material), desktop_core::PaneOptions::default());
+                    (PanelTheme::Light, material), luciddesk_core::PaneOptions::default());
                 match page {
                     1 => layout::show_panels_shortcut(&mut body, width, false, show_hotkey::default_shortcut()),
                     5 => layout::about_status(&mut body, width, "桌面面板已连接", true),
@@ -1187,7 +1187,7 @@ fn font_list_scroll_keeps_search_and_current_font_fixed() {
 #[test]
 #[ignore = "Native composition window; run alone to isolate STA graphics lifetime"]
 fn native_font_search_tracks_window_and_handles_clear_and_page_leave() {
-    let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
     let state = Rc::new(RefCell::new(super::super::tests::test_state()));
     show(&state, PanelId::new(1)).unwrap();
     let hwnd = state.borrow().settings.as_ref().unwrap().hwnd().cast();

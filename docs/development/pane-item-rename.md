@@ -9,8 +9,8 @@
 | `app/src/pane/shell_menu.rs` | 菜单准备、打开和结束／取消 |
 | `app/src/pane/rename.rs` | 原生 EDIT、输入法、文本选择、提交及销毁 |
 | `app/src/pane/hybrid/rename_transaction.rs` | 托管桌面成员的身份交接与失败补偿 |
-| `crates/desktop-shell/src/rename.rs` | `IFileOperation` 与 Shell 返回的新项目 |
-| `crates/desktop-explorer/src/filter/menu/` | Explorer 内的独立宿主与命令路由 |
+| `crates/luciddesk-shell/src/rename.rs` | `IFileOperation` 与 Shell 返回的新项目 |
+| `crates/luciddesk-explorer/src/filter/menu/` | Explorer 内的独立宿主与命令路由 |
 
 菜单返回的是操作意图，Shell 返回的是文件操作结果，两者不能混为一谈。打开编辑器时保留当初选中的身份，不根据菜单关闭后的选择状态重新猜测目标。
 
@@ -18,7 +18,7 @@
 
 `app/src/pane/shell_menu.rs` 将选中项目的 Shell 解析名、owner 和菜单锚点交给 `FilterSession::prepare_menu`。Explorer 内的菜单 STA 创建或复用独立 Shell 视图，重新解析并校验目标身份。真实桌面持续过滤分组成员，菜单使用独立的选择状态。
 
-控制端安装菜单观察器后，通过 `desktop_shell::show_isolated_item_menu` 打开菜单，保留鼠标与键盘来源。菜单宿主使用空窗口区域，不显示图标；其职责是提供 Shell 上下文、原生菜单和命令服务。准备和弹出可能泵送消息，调用期间必须释放应用及模型借用。
+控制端安装菜单观察器后，通过 `luciddesk_shell::show_isolated_item_menu` 打开菜单，保留鼠标与键盘来源。菜单宿主使用空窗口区域，不显示图标；其职责是提供 Shell 上下文、原生菜单和命令服务。准备和弹出可能泵送消息，调用期间必须释放应用及模型借用。
 
 宿主将原生注册消息转给本次 Presenter，普通命令继续交给 Shell。重命名按本次菜单编号范围查询标准 `rename` 动词，转换为 Pane 编辑请求，不写死命令编号，也不依赖隐藏视图一定产生 `LVN_BEGINLABELEDIT`。缺失精简菜单能力时使用经典菜单降级。平台验证状态见[验证与兼容边界](validation.md)。
 
@@ -80,7 +80,7 @@ Shell 成功之后，文件系统结果已经生效。这不是能整体回滚�
 ```powershell
 cargo test -p luciddesk --bin luciddesk hidden_extensions_are_preserved_and_visible_extensions_are_not_preselected --locked --offline -- --test-threads=1
 cargo test -p luciddesk --bin luciddesk committed_rename_is_saved_before_failed_ipc_and_still_attempts_repair_and_release --locked --offline -- --test-threads=1
-cargo test -p desktop-shell --lib shell_rename_keeps_the_same_file_identity --locked --offline -- --test-threads=1
+cargo test -p luciddesk-shell --lib shell_rename_keeps_the_same_file_identity --locked --offline -- --test-threads=1
 ```
 
 原生编辑器测试在交互桌面单独运行：

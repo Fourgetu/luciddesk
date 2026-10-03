@@ -14,8 +14,8 @@ Exit the app before upgrading a portable installation and preserve its `data` fo
 
 - Raise the minimum Rust version to 1.99 and enable raw-pointer borrow checks for FFI. Simplify native interface arguments and string conversion in diagnostic tools.
 - Separate material runtime, brush fallback and window visual-tree code while preserving palettes, strength settings, system policy and fallback behavior.
-- Extract shared native menu themes and frames into `desktop-menu`, replacing implicit cross-crate source references in production code with explicit dependencies. Separate monitor-layout storage from backup recovery and clarify Shell entry and tunable-material type names.
-- Rename `desktop-hook` to `desktop-explorer` and its DLL to `luciddesk_explorer.dll`, updating loading and packaging references. Upgrade checks still detect the old DLL when loaded. Replace the complete app package when upgrading to keep the EXE and DLL from the same build.
+- Extract shared native menu themes and frames into `luciddesk-menu`, replacing implicit cross-crate source references in production code with explicit dependencies. Separate monitor-layout storage from backup recovery and clarify Shell entry and tunable-material type names.
+- Rename `desktop-hook` to `luciddesk-explorer` and its DLL to `luciddesk_explorer.dll`, updating loading and packaging references. Upgrade checks still detect the old DLL when loaded. Replace the complete app package when upgrading to keep the EXE and DLL from the same build.
 
 ### perf
 

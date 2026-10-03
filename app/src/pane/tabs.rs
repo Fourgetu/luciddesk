@@ -1,6 +1,6 @@
 //! One native window per tab group; content IDs and worker channels never change.
 use super::*;
-use desktop_core::PaneTabs;
+use luciddesk_core::PaneTabs;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 /// A mixed group remains available when Explorer reconnects.
@@ -770,7 +770,7 @@ mod tests {
         state
             .borrow_mut()
             .workspace
-            .set_appearance(desktop_core::PanelTheme::Dark, desktop_core::Backdrop::Mica);
+            .set_appearance(luciddesk_core::PanelTheme::Dark, luciddesk_core::Backdrop::Mica);
         let first = PanelId::new(1);
         create_view(&state, first).unwrap();
         let hwnd = state.borrow().views[0].window.hwnd();
@@ -865,7 +865,7 @@ mod tests {
         state
             .borrow_mut()
             .workspace
-            .set_appearance(desktop_core::PanelTheme::Dark, desktop_core::Backdrop::Mica);
+            .set_appearance(luciddesk_core::PanelTheme::Dark, luciddesk_core::Backdrop::Mica);
         let first = PanelId::new(1);
         create_view(&state, first).unwrap();
         add(&state, first, None).unwrap();
@@ -951,7 +951,7 @@ mod tests {
         let mut panel = Panel::new(folder, "Folder", RectDip::default());
         panel.set_folder(Some(root.path().to_path_buf()));
         state.borrow_mut().workspace.add_panel(panel).unwrap();
-        state.borrow_mut().workspace.set_appearance(desktop_core::PanelTheme::Dark, desktop_core::Backdrop::Mica);
+        state.borrow_mut().workspace.set_appearance(luciddesk_core::PanelTheme::Dark, luciddesk_core::Backdrop::Mica);
         create_view(&state, first).unwrap();
         create_view(&state, folder).unwrap();
         let before = state.borrow().workspace.clone();
@@ -1058,7 +1058,7 @@ mod tests {
         let mut state = super::super::tests::test_state();
         state
             .workspace
-            .set_appearance(desktop_core::PanelTheme::Dark, desktop_core::Backdrop::Mica);
+            .set_appearance(luciddesk_core::PanelTheme::Dark, luciddesk_core::Backdrop::Mica);
         let mut model = create_model(&state, PanelId::new(1)).unwrap();
         model.tabs = (1..=12)
             .map(|id| (PanelId::new(id), format!("标签 {id}")))

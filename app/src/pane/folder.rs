@@ -183,7 +183,7 @@ impl Source {
                     }
                     if commands.active.load(std::sync::atomic::Ordering::Acquire) {
                         let mut jobs = Vec::new();
-                        let result = desktop_shell::enumerate_folder(&root)
+                        let result = luciddesk_shell::enumerate_folder(&root)
                             .map(|entries| {
                                 let mut cache = cache.lock().unwrap();
                                 let mut items: Vec<Item> = entries.into_iter().map(|entry| {

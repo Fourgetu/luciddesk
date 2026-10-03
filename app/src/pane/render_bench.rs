@@ -6,7 +6,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::*;
 #[test]
 #[ignore = "Shows four GPU windows; run alone on an interactive desktop"]
 fn multi_window_render_latency() {
-    let _sta = desktop_shell::ShellApartment::initialize_sta().unwrap();
+    let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
     let start = Instant::now();
     let mut windows = Vec::new();
     let mut surfaces = Vec::new();
@@ -43,7 +43,7 @@ fn multi_window_render_latency() {
             Surface::new(windows::Win32::Foundation::HWND(window.hwnd().cast())).unwrap();
         surface.material(
             windows::Win32::Foundation::HWND(window.hwnd().cast()),
-            desktop_core::Backdrop::Acrylic,
+            luciddesk_core::Backdrop::Acrylic,
         );
         surfaces.push(surface);
         windows.push(window);

@@ -25,8 +25,8 @@ pub(super) struct Session {
     wake: wake::Wake,
     // Drop the Hook before its owner HWND and before the pane windows.
     hook: Rc<FilterSession>,
-    _icon_subscription: desktop_shell::DesktopChangeSubscription,
-    _recycle_subscription: desktop_shell::DesktopChangeSubscription,
+    _icon_subscription: luciddesk_shell::DesktopChangeSubscription,
+    _recycle_subscription: luciddesk_shell::DesktopChangeSubscription,
     _controller: windows_window::Window,
     icons_dirty: Rc<RefCell<icon_changes::Pending>>,
     icon_due: Option<Instant>,
@@ -101,14 +101,14 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
             .save_workspace(&workspace)
             .map_err(|e| e.to_string())?;
     }
-    let monitors = desktop_window::enumerate_monitors();
+    let monitors = luciddesk_window::enumerate_monitors();
     if workspace.panels().is_empty() && first_run {
         let mut pane = Panel::new(
             PanelId::new(1),
             title.clone().unwrap_or_else(|| crate::i18n::text("ui-new-group").into()),
             display_layout::new_pane(&workspace, false),
         );
-        pane.set_backdrop(desktop_core::Backdrop::Acrylic);
+        pane.set_backdrop(luciddesk_core::Backdrop::Acrylic);
         workspace.add_panel(pane).map_err(|e| e.to_string())?;
     } else if let Some(title) = title.filter(|_| !workspace.panels().is_empty()) {
         let id = workspace.panels()[0].id();
@@ -170,12 +170,12 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
                             .first()
                             .map(|p| (p.theme(), p.backdrop()))
                     });
-                    let (theme, backdrop) = appearance.unwrap_or((desktop_core::PanelTheme::System, desktop_core::Backdrop::Mica));
+                    let (theme, backdrop) = appearance.unwrap_or((luciddesk_core::PanelTheme::System, luciddesk_core::Backdrop::Mica));
                     Some((theme, backdrop, search::everything_settings::enabled(&s.store).unwrap_or(false)))
                 })
                 .unwrap_or((
-                    desktop_core::PanelTheme::System,
-                    desktop_core::Backdrop::Mica,
+                    luciddesk_core::PanelTheme::System,
+                    luciddesk_core::Backdrop::Mica,
                     false,
                 ))
         },
@@ -239,7 +239,7 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, _path: &Path) -> Result<(), 
     if luciddesk_explorer::conflicting_desktop_extension() {
         return Err(crate::i18n::text("ui-close-other-desktop-organizers-first").into());
     }
-    if desktop_shell::desktop_icons_hidden() {
+    if luciddesk_shell::desktop_icons_hidden() {
         return Err(crate::i18n::text("ui-exit-the-legacy-desktop-replacement-to-restore-desktop-icons").into());
     }
     let view = luciddesk_explorer::desktop_view()?;
@@ -268,7 +268,7 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, _path: &Path) -> Result<(), 
             } else if message == ICON_CHANGE_MESSAGE {
                 notify.set(true);
                 work_ready.notify();
-                if std::env::var_os("LUCIDDESK_ICON_TRACE").is_some() {
+                if luciddesk_diagnostics::enabled(luciddesk_diagnostics::Level::Debug) {
                     crate::diagnostics::log(crate::diagnostics::Level::Debug, "pane.hybrid", &format!("icon-notify event={:x}", lparam));
                 }
                 icon_notify
@@ -277,7 +277,7 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, _path: &Path) -> Result<(), 
                 Some(0)
             } else if message == RECYCLE_CHANGE_MESSAGE {
                 work_ready.notify();
-                if std::env::var_os("LUCIDDESK_ICON_TRACE").is_some() {
+                if luciddesk_diagnostics::enabled(luciddesk_diagnostics::Level::Debug) {
                     crate::diagnostics::log(crate::diagnostics::Level::Debug, "pane.hybrid", &format!("recycle-notify event={:x}", lparam));
                 }
                 icon_notify
@@ -302,12 +302,12 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, _path: &Path) -> Result<(), 
         .create()
         .map_err(|e| e.to_string())?;
     // Subscribe before reading so changes during initialization are not lost.
-    let icon_subscription = desktop_shell::DesktopChangeSubscription::register(
+    let icon_subscription = luciddesk_shell::DesktopChangeSubscription::register(
         controller.hwnd() as isize,
         ICON_CHANGE_MESSAGE,
     )
     .map_err(|error| error.to_string())?;
-    let recycle_subscription = desktop_shell::DesktopChangeSubscription::register_recycle_bin(
+    let recycle_subscription = luciddesk_shell::DesktopChangeSubscription::register_recycle_bin(
         controller.hwnd() as isize,
         RECYCLE_CHANGE_MESSAGE,
     )
@@ -425,7 +425,7 @@ pub(super) fn register_drop(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result
                 let items = identities.to_vec();
                 drop(s);
                 return window::post_action(hwnd.cast(), move || {
-                    if let Err(error) = desktop_shell::copy_to_folder(
+                    if let Err(error) = luciddesk_shell::copy_to_folder(
                         windows::Win32::Foundation::HWND(hwnd.cast()),
                         &items,
                         &path,

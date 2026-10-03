@@ -18,7 +18,7 @@
 | `theme.rs` | 面板边框、标签及卡片的局部配色 |
 | `settings/preview.rs`、`settings/components.rs` | 材质示意预览、导航选中和悬停配色 |
 
-材质类型与参数定义在 `crates/desktop-core/src/appearance.rs`。配方以源码为准，修改效果时同步预览和测试，避免另存一套容易漂移的颜色参数。
+材质类型与参数定义在 `crates/luciddesk-core/src/appearance.rs`。配方以源码为准，修改效果时同步预览和测试，避免另存一套容易漂移的颜色参数。
 
 ## 四种材质与参数
 

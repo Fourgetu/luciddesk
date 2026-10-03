@@ -1,6 +1,6 @@
 //! Interoperation between application bindings and the Canvas/generated graphics ABI.
 use canvas_core::Interface as _;
-use desktop_graphics::dwm;
+use luciddesk_graphics::dwm;
 pub use dwm::{
     DWMNCRP_DISABLED, DWMSBT_NONE, DWMWA_BORDER_COLOR, DWMWA_NCRENDERING_POLICY,
     DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_USE_HOSTBACKDROPBRUSH, DWMWA_USE_IMMERSIVE_DARK_MODE,
@@ -22,7 +22,7 @@ impl Drop for GraphicsLifetime {
     fn drop(&mut self) {
         crate::diagnostics::render_trace(format_args!("shutdown: graphics caches begin"));
         super::acrylic::clear_thread_cache();
-        desktop_graphics::clear_thread_cache();
+        luciddesk_graphics::clear_thread_cache();
         let device = DEVICE.with(|slot| slot.borrow_mut().take());
         drop(device);
         crate::diagnostics::render_trace(format_args!("shutdown: graphics caches released"));
@@ -80,11 +80,11 @@ pub fn create_layer(
     dxgi: &windows::Win32::Graphics::Dxgi::IDXGIDevice,
     content: &windows::Win32::Graphics::Dxgi::IDXGISwapChain1,
     opacity: f32,
-) -> Result<desktop_graphics::Layer> {
+) -> Result<luciddesk_graphics::Layer> {
     let dxgi_ptr = dxgi.as_raw();
     let content_ptr = content.as_raw();
     canvas_result(unsafe {
-        desktop_graphics::Layer::new(
+        luciddesk_graphics::Layer::new(
             hwnd.0,
             canvas_core::IUnknown::from_raw_borrowed(&dxgi_ptr).unwrap(),
             canvas_core::IUnknown::from_raw_borrowed(&content_ptr).unwrap(),
@@ -111,7 +111,7 @@ mod shutdown_tests {
     fn graphics_caches_release_before_apartment_and_process_exit() {
         const CHILD: &str = "LUCIDDESK_GRAPHICS_SHUTDOWN_TEST";
         if std::env::var_os(CHILD).is_some() {
-            let _apartment = desktop_shell::ShellApartment::initialize_sta().unwrap();
+            let _apartment = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
             let graphics = GraphicsLifetime;
             for shared in [false, true] {
                 use windows_sys::Win32::UI::WindowsAndMessaging::*;
@@ -125,7 +125,7 @@ mod shutdown_tests {
                 } else {
                     super::super::composition::Surface::new_pane(hwnd)
                 }.unwrap();
-                surface.material(hwnd, desktop_core::Backdrop::Acrylic);
+                surface.material(hwnd, luciddesk_core::Backdrop::Acrylic);
                 surface.present(96, 64, &[255; 96 * 64 * 4]).unwrap();
             }
             assert!(DEVICE.with(|slot| slot.borrow().is_some()));

@@ -1,6 +1,6 @@
 //! Physical window bounds are remembered independently for each display topology.
 use super::*;
-use desktop_window::MonitorDescriptor;
+use luciddesk_window::MonitorDescriptor;
 use std::time::{Duration, Instant};
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
@@ -179,7 +179,7 @@ pub(super) fn capture(s: &mut PaneApp) -> Option<(String, Vec<(PanelId, RectDip)
     let Some(runtime) = &mut s.runtime else {
         return None;
     };
-    let current = desktop_window::enumerate_monitors();
+    let current = luciddesk_window::enumerate_monitors();
     if runtime.layouts.monitors != current || runtime.layouts.pending.is_some() {
         return None;
     }
@@ -239,7 +239,7 @@ pub(super) fn tick(state: &Rc<RefCell<PaneApp>>) -> Result<(), String> {
         // Retry transient empty topology and wait for a stable display arrangement.
         runtime.layouts.next_check = Some(Instant::now() + Duration::from_secs(2));
     }
-    let current = desktop_window::enumerate_monitors();
+    let current = luciddesk_window::enumerate_monitors();
     if current.is_empty() {
         return Ok(());
     }
@@ -305,14 +305,14 @@ mod tests {
     #[test]
     fn removed_monitor_moves_panes_into_work_area_without_minimum_width() {
         let monitor = MonitorDescriptor {
-            id: desktop_core::MonitorId::new("primary"),
-            bounds: desktop_window::PixelRect {
+            id: luciddesk_core::MonitorId::new("primary"),
+            bounds: luciddesk_window::PixelRect {
                 x: 0,
                 y: 0,
                 width: 1920,
                 height: 1080,
             },
-            work_area: desktop_window::PixelRect {
+            work_area: luciddesk_window::PixelRect {
                 x: 0,
                 y: 0,
                 width: 1920,

@@ -1,7 +1,7 @@
 //! Use the resident Peek Shell entry point for files and virtual desktop items.
 use super::keyboard::{self, Modifiers};
-use desktop_core::ShellIdentity;
-use desktop_storage::WorkspaceStore;
+use luciddesk_core::ShellIdentity;
+use luciddesk_storage::WorkspaceStore;
 use std::{cell::RefCell, path::PathBuf};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
 
@@ -413,7 +413,7 @@ pub(super) fn open(owner: isize, identity: &ShellIdentity) -> Result<(), String>
         .filter(|path| path.is_file())
         .ok_or(crate::i18n::text("ui-peek-not-found-select-powertoys-peek-ui-exe-in-settings"))?;
     let _signals = ensure_running(&path)?;
-    desktop_shell::peek_desktop_item(windows::Win32::Foundation::HWND(owner as _), identity)
+    luciddesk_shell::peek_desktop_item(windows::Win32::Foundation::HWND(owner as _), identity)
         .map_err(|error| crate::i18n::format("ui-could-not-open-powertoys-peek", &[("error", format!("{}", error))]))
 }
 
