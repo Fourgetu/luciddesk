@@ -23,6 +23,9 @@
 #ifndef UserDataFolderName
   #define UserDataFolderName "LucidDesk"
 #endif
+#ifndef InstallerCompression
+  #define InstallerCompression "fast"
+#endif
 
 [Setup]
 AppId={#ProductId}
@@ -52,7 +55,7 @@ CloseApplications=no
 RestartApplications=no
 RestartIfNeededByRun=no
 WizardStyle=modern
-Compression=lzma2
+Compression=lzma2/{#InstallerCompression}
 SolidCompression=yes
 SetupIconFile=..\app\assets\luciddesk.ico
 OutputDir={#OutputPath}

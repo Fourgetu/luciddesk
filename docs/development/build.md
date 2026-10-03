@@ -76,6 +76,8 @@ cargo build -p luciddesk -p desktop-hook --locked --offline --target-dir target\
 .\tools\package.ps1 -Offline
 ```
 
+EXE 默认采用 `lzma2/fast` 固实压缩，以较小的体积增量缩短打包时间。需要更小的安装包时使用 `-ExeCompression Max`，也可选择 `Normal`。
+
 MSI 构建在 `target/msi-cache` 中复用 WiX CAB 压缩缓存和安装检查 DLL；DLL 按源码、构建脚本、工具链及测试模式隔离，并校验文件哈希。MSI 仍执行默认校验，不生成未发布的 `.wixpdb`。
 
 产物位于 `target\packages`。包内配置仍默认保存在 LocalAppData；未提交代码会在包名和 `build.json` 中标记为 dirty。GitHub Actions 的 Build CI 工作流执行全目标编译、核心与存储、多语言、更新检查、框选规则、拖动图像透明度、WARP 彩色 emoji 与 Canvas 兼容测试，以及工作区文档示例。完成安装与升级验证后，同时上传安装包、普通 ZIP、便携 ZIP 及 SHA256 校验文件；需要窗口、焦点或 Explorer 的桌面 UI 测试仍在交互会话运行。
