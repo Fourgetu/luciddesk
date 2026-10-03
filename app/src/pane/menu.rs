@@ -102,6 +102,14 @@ fn pane_entries(folder: (bool, bool), visible_columns: u8,
         view.children.push(columns);
     }
     rows.push(view);
+    if !folder.0 && !locked {
+        let mut sort = entry(51, crate::i18n::text("ui-sort-by-name"), "", "");
+        sort.children = vec![
+            entry(52, crate::i18n::text("ui-sort-ascending"), "", ""),
+            entry(53, crate::i18n::text("ui-sort-descending"), "", ""),
+        ];
+        rows.push(sort);
+    }
     rows.extend([
         entry(48, crate::i18n::text(if collapsed { "ui-expand-panel" } else { "ui-collapse-panel" }), "", ""),
         entry(7, crate::i18n::text("ui-auto-collapse"), if auto_hide { "✓" } else { "" }, ""),
@@ -125,6 +133,16 @@ fn pane_entries(folder: (bool, bool), visible_columns: u8,
         entry(11, crate::i18n::text("ui-close-panel"), "", ""),
     ]);
     rows
+}
+
+#[test]
+fn ordinary_sort_menu_is_available_only_when_unlocked() {
+    let rows = pane_entries((false,false),15,false,false,false,false);
+    let sort = rows.iter().find(|e|e.id==51).unwrap();
+    assert_eq!(sort.children.iter().map(|e|e.id).collect::<Vec<_>>(), vec![52,53]);
+    for (folder,locked) in [(true,false),(false,true)] {
+        assert!(!pane_entries((folder,false),15,false,locked,false,false).iter().any(|e|e.id==51));
+    }
 }
 
 pub(super) fn tab_entries() -> Vec<Entry> {

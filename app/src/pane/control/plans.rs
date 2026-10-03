@@ -153,6 +153,7 @@ fn prepare(
     plan: &Plan,
     ids: &HashMap<String, String>,
     monitors: &[luciddesk_window::MonitorDescriptor],
+    folder_content: &super::content_layout::FolderSnapshots,
 ) -> Result<Prepared, (String, String)> {
     if plan.protocol_version != 1 {
         return Err(("PROTOCOL_MISMATCH".into(), "plan protocol must be 1".into()));
@@ -208,9 +209,24 @@ fn prepare(
         .map(|p| p.id().get())
         .max()
         .unwrap_or(0);
-    for operation in &plan.operations {
+    let mut operations: VecDeque<_> = plan.operations.iter().cloned().collect();
+    while let Some(operation) = operations.pop_front() {
+        let operation = &operation;
         match operation {
-            Operation::FolderNavigate{..}|Operation::FolderBack{..}|Operation::FolderHome{..}|Operation::SearchQuery{..}|Operation::SearchRefresh{..}|Operation::SearchMore{..} => unreachable!("handled above"),
+            Operation::FolderFit { .. } | Operation::Snap { .. } | Operation::Fit { .. } | Operation::Arrange { .. } => {
+                let targets: Vec<&str> = match operation {
+                    Operation::FolderFit { pane_id, .. } | Operation::Snap { pane_id, .. } | Operation::Fit { pane_id, .. } => vec![pane_id.as_str()],
+                    Operation::Arrange { columns, .. } => columns.iter().flatten().map(String::as_str).collect(),
+                    _ => unreachable!(),
+                };
+                for raw in targets {
+                    let panel = next.panel(id(raw)?).ok_or_else(|| ("NOT_FOUND".into(), "panel does not exist".into()))?;
+                    if panel.locked() { return Err(("PANE_LOCKED".into(), "explicitly unlock the panel first".into())); }
+                }
+                let expanded = super::content_layout::expand_with_folders(&next, store, operation, monitors, &geometry, folder_content).map_err(invalid)?;
+                for op in expanded.into_iter().rev() { operations.push_front(op); }
+            }
+            Operation::FolderRefresh{..}|Operation::FolderNavigate{..}|Operation::FolderBack{..}|Operation::FolderHome{..}|Operation::SearchQuery{..}|Operation::SearchRefresh{..}|Operation::SearchMore{..} => unreachable!("handled above"),
             Operation::StartupSet { .. } | Operation::SettingsUpdate { .. } => unreachable!("handled above"),
             Operation::FolderUpdate { pane_id, path, list_view, sort_column, descending, column_widths, visible_columns } => {
                 let target=id(pane_id)?;
@@ -391,6 +407,11 @@ fn prepare(
                     order(&mut next, pane, &items);
                 }
             }
+            Operation::Sort { pane_id, descending } => {
+                let target = id(pane_id)?;
+                editable(&next, target)?;
+                membership |= super::super::sorting::apply(&mut next, target, *descending).map_err(invalid)?;
+            }
             Operation::Reorder { pane_id, item_ids } => {
                 membership = true;
                 let target = id(pane_id)?;
@@ -537,7 +558,7 @@ impl Plans {
             if plan.base != *context {
                 return fail("CONFLICT", "workspace changed; query and preview again");
             }
-            match prepare(&state.workspace, &state.store, plan, ids, monitors) {
+            match prepare(&state.workspace, &state.store, plan, ids, monitors, &super::content_layout::snapshots(state)) {
                 Err((code, message)) => fail(&code, &message),
                 Ok(plan) => {
                     let response = Response::success(
@@ -670,6 +691,135 @@ mod tests {
         );
         req
     }
+    #[test]
+    fn folder_refresh_is_transient_and_invalidates_prepared_fit() {
+        let _sta=luciddesk_shell::ShellApartment::initialize_sta().unwrap();
+        let root=tempfile::tempdir().unwrap();std::fs::write(root.path().join("one.txt"),"fixture").unwrap();
+        let mut app=super::super::super::tests::test_state();
+        app.workspace.panel_mut(PanelId::new(1)).unwrap().set_folder(Some(root.path().into()));
+        app.store.save_workspace(&app.workspace).unwrap();
+        let state=Rc::new(RefCell::new(app));create_view(&state,PanelId::new(1)).unwrap();
+        let deadline=Instant::now()+Duration::from_secs(5);
+        while state.borrow().folders[&PanelId::new(1)].loading {
+            assert!(Instant::now()<deadline);
+            std::thread::sleep(Duration::from_millis(10));folder::poll(&mut state.borrow_mut());
+        }
+        let mut snapshot=Snapshot::new();
+        let p=preview(&mut snapshot,&mut state.borrow_mut(),json!([{"op":"folder.fit","pane_id":"1","max_rows":4}]));
+        assert!(p.ok,"{p:?}");
+        let count=state.borrow().store.change_count();
+        let refreshed=super::super::transient::execute(&state,Operation::FolderRefresh{pane_id:"1".into()}).unwrap();
+        assert_eq!(refreshed["loading"],true);
+        assert_eq!(snapshot.respond(&mut state.borrow_mut(),&apply(&p)).error.unwrap().code,"CONFLICT");
+        assert_eq!(state.borrow().store.change_count(),count);
+    }
+
+    #[test]
+    fn content_layout_preview_commits_once_and_repeated_fit_is_noop() {
+        let mut state=super::super::super::tests::test_state();
+        state.store.save_workspace(&state.workspace).unwrap();
+        let mut snapshot=Snapshot::new();
+        let count=state.store.change_count();
+        let op=json!({"op":"pane.fit","pane_id":"1","icon_columns":6});
+        let p=preview(&mut snapshot,&mut state,json!([op.clone()]));
+        assert!(p.ok,"{p:?}");
+        assert_eq!(state.store.change_count(),count);
+        assert!(p.data.as_ref().unwrap()["diff"]["geometry"]["1"].is_object());
+        assert!(snapshot.respond(&mut state,&apply(&p)).ok);
+        let committed=state.store.change_count();assert!(committed>count);
+        let repeated=preview(&mut snapshot,&mut state,json!([op.clone()]));
+        assert_eq!(repeated.data.as_ref().unwrap()["changed"],false);
+        assert!(snapshot.respond(&mut state,&apply(&repeated)).ok);
+        assert_eq!(state.store.change_count(),committed);
+        state.workspace.panel_mut(PanelId::new(1)).unwrap().set_locked(true);
+        assert_eq!(preview(&mut snapshot,&mut state,json!([op])).error.unwrap().code,"PANE_LOCKED");
+    }
+
+    #[test]
+    fn auto_hide_interactions_preserve_preview_context_and_do_not_write() {
+        let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
+        let state = Rc::new(RefCell::new(super::super::super::tests::test_state()));
+        let id = PanelId::new(1);
+        create_view(&state, id).unwrap();
+        handle(&state, id, Event::ToggleAutoHide).unwrap();
+        let mut snapshot = Snapshot::new();
+        let p = preview(&mut snapshot, &mut state.borrow_mut(), json!([
+            {"op":"pane.update","pane_id":"1","title":"after hovering"}
+        ]));
+        let count = state.borrow().store.change_count();
+        let context = snapshot.respond(&mut state.borrow_mut(), &request("status")).context;
+        for collapsed in [true, false, true, false] {
+            handle(&state, id, Event::AutoHideCollapsed(collapsed)).unwrap();
+            assert_eq!(state.borrow().views[0].model.borrow().collapsed, collapsed);
+            assert_eq!(snapshot.respond(&mut state.borrow_mut(), &request("status")).context, context);
+            assert_eq!(state.borrow().store.change_count(), count);
+        }
+        assert!(snapshot.respond(&mut state.borrow_mut(), &apply(&p)).ok);
+        assert_eq!(state.borrow().workspace.panel(id).unwrap().title(), "after hovering");
+    }
+
+    #[test]
+    fn failed_storage_transaction_preserves_live_state_and_allows_exact_retry() {
+        let mut state = super::super::super::tests::test_state();
+        state.store.save_workspace(&state.workspace).unwrap();
+        let original = state.workspace.clone();
+        let count = state.store.change_count();
+        let mut snapshot = Snapshot::new();
+        let p = preview(&mut snapshot, &mut state, json!([
+            {"op":"pane.update","pane_id":"1","title":"committed only after recovery"}
+        ]));
+        let req = apply(&p);
+        // Exercise the transaction coordinator with a fixed observed context;
+        // topology changes are covered separately, not part of this fault case.
+        let base = snapshot.plans.pending.back().unwrap().base.clone();
+        let monitors = luciddesk_window::enumerate_monitors();
+        // Inject a foreign-key failure after workspace rows have been updated inside
+        // the real SQLite transaction. No production fault-injection API is needed.
+        snapshot.plans.pending.back_mut().unwrap().layout = Some((
+            "fault-test".into(), vec![(PanelId::new(999), RectDip::default())],
+        ));
+        let failed = snapshot.plans.handle(&mut state, &base, &snapshot.item_ids, &req, &monitors);
+        assert_eq!(failed.error.unwrap().code, "PERSISTENCE_ERROR");
+        assert_eq!(state.workspace, original);
+        assert_eq!(state.store.load_workspace().unwrap(), original);
+        assert_eq!(state.store.change_count(), count);
+        assert!(snapshot.plans.receipts.is_empty());
+        assert!(!snapshot.plans.pending.back().unwrap().applied);
+        snapshot.plans.pending.back_mut().unwrap().layout = None;
+        let recovered = snapshot.plans.handle(&mut state, &base, &snapshot.item_ids, &req, &monitors);
+        assert!(recovered.ok, "{recovered:?}");
+        assert_eq!(state.store.load_workspace().unwrap(), state.workspace);
+        let committed = state.store.change_count();
+        assert!(committed > count);
+        assert!(snapshot.plans.handle(&mut state, &base, &snapshot.item_ids, &req, &monitors).ok);
+        assert_eq!(state.store.change_count(), committed);
+    }
+
+    #[test]
+    fn restored_database_and_changed_inventory_invalidate_old_plans() {
+        let dir = tempfile::tempdir().unwrap();
+        let backup = dir.path().join("restore-test.backup");
+        let mut state = super::super::super::tests::test_state();
+        state.store.save_workspace(&state.workspace).unwrap();
+        state.store.export_backup(&backup).unwrap();
+        let mut snapshot = Snapshot::new();
+        let p = preview(&mut snapshot, &mut state, json!([
+            {"op":"pane.update","pane_id":"1","title":"stale before restore"}
+        ]));
+        state.store.restore_backup(&backup).unwrap();
+        state.workspace = state.store.load_workspace().unwrap();
+        let restored = state.store.change_count();
+        assert_eq!(snapshot.respond(&mut state, &apply(&p)).error.unwrap().code, "CONFLICT");
+        assert_eq!(state.store.change_count(), restored);
+        let p = preview(&mut snapshot, &mut state, json!([
+            {"op":"pane.update","pane_id":"1","title":"stale before inventory change"}
+        ]));
+        let remaining = state.workspace.desktop_items()[1..].to_vec();
+        state.workspace.reconcile_desktop_items(remaining);
+        assert_eq!(snapshot.respond(&mut state, &apply(&p)).error.unwrap().code, "CONFLICT");
+        assert_eq!(state.store.change_count(), restored);
+    }
+
     #[test]
     fn pending_receipts_survive_expiry_and_saturation_prevents_writes() {
         let mut state=super::super::super::tests::test_state();
@@ -834,6 +984,37 @@ mod tests {
         assert_eq!(state.store.change_count(), count + 1);
     }
 
+    #[test]
+    fn ordinary_panel_sort_is_natural_scoped_and_noop_aware() {
+        let mut state = super::super::super::tests::test_state();
+        for (index, item) in state.workspace.desktop_items_mut().iter_mut().enumerate() {
+            item.set_display_name(["文件10", "文件2", "Other"][index]);
+            item.set_placement(DesktopPlacement::Pane { pane_id: PanelId::new(if index == 2 { 2 } else { 1 }), position: GridPosition::new(index as u32, 0) });
+        }
+        let original = state.workspace.clone();
+        let mut snapshot = Snapshot::new();
+        let p = preview(&mut snapshot, &mut state, json!([{"op":"pane.sort","pane_id":"1"}]));
+        assert!(p.ok, "{p:?}");
+        assert_eq!(state.workspace, original);
+        let sorted = snapshot.plans.pending.back().unwrap().next.clone();
+        assert_eq!(ordered(&sorted, PanelId::new(1)), ordered(&original, PanelId::new(1)).into_iter().rev().collect::<Vec<_>>());
+        assert_eq!(ordered(&sorted, PanelId::new(2)), ordered(&original, PanelId::new(2)));
+        state.workspace = sorted;
+        state.store.save_workspace(&state.workspace).unwrap();
+        let count = state.store.change_count();
+        let same = preview(&mut snapshot, &mut state, json!([{"op":"pane.sort","pane_id":"1"}]));
+        assert_eq!(same.data.as_ref().unwrap()["changed"], false);
+        assert!(snapshot.respond(&mut state, &apply(&same)).ok);
+        assert_eq!(state.store.change_count(), count);
+        let reversed = preview(&mut snapshot, &mut state, json!([{"op":"pane.sort","pane_id":"1","descending":true}]));
+        assert!(reversed.ok);
+        assert_eq!(ordered(&snapshot.plans.pending.back().unwrap().next, PanelId::new(1)), ordered(&original, PanelId::new(1)));
+        state.workspace.panel_mut(PanelId::new(1)).unwrap().set_locked(true);
+        assert_eq!(preview(&mut snapshot, &mut state, json!([{"op":"pane.sort","pane_id":"1"}])).error.unwrap().code, "PANE_LOCKED");
+        state.workspace.panel_mut(PanelId::new(1)).unwrap().set_locked(false);
+        state.workspace.panel_mut(PanelId::new(1)).unwrap().set_folder(Some(std::env::temp_dir()));
+        assert!(!preview(&mut snapshot, &mut state, json!([{"op":"pane.sort","pane_id":"1"}])).ok);
+    }
     #[test]
     fn preview_is_pure_commit_is_idempotent_and_receipt_is_queryable() {
         let mut state = super::super::super::tests::test_state();
@@ -1063,7 +1244,7 @@ mod tests {
         let data = snapshot.respond(&mut state, &request("workspace.get"));
         let items = &data.data.as_ref().unwrap()["items"];
         let plan:Plan=serde_json::from_value(json!({"protocol_version":1,"base":data.context,"operations":[{"op":"pane.create","ref":"new","title":"new"},{"op":"item.assign","pane_ref":"new","item_ids":[items[0]["id"]]}]})).unwrap();
-        let prepared = prepare(&state.workspace, &state.store, &plan, &snapshot.item_ids, &luciddesk_window::enumerate_monitors()).unwrap();
+        let prepared = prepare(&state.workspace, &state.store, &plan, &snapshot.item_ids, &luciddesk_window::enumerate_monitors(), &super::content_layout::snapshots(&state)).unwrap();
         assert_eq!(
             prepared.next.desktop_items()[2],
             original.desktop_items()[2]

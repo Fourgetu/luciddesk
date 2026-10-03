@@ -7,13 +7,24 @@ fn enable_search_view(
     id: PanelId,
     create: impl FnOnce(&Rc<RefCell<PaneApp>>, PanelId) -> Result<(), String>,
 ) -> Result<bool, String> {
+    enable_search_view_with(state, id, create, |store| everything_settings::set_enabled(store, true))
+}
+
+fn enable_search_view_with(
+    state: &Rc<RefCell<PaneApp>>,
+    id: PanelId,
+    create: impl FnOnce(&Rc<RefCell<PaneApp>>, PanelId) -> Result<(), String>,
+    persist: impl FnOnce(&WorkspaceStore) -> Result<(), String>,
+) -> Result<bool, String> {
     if !state.borrow().views.iter().any(|v| v.id == id) {
         if let Err(error) = create(state, id) {
             everything_settings::set_enabled(&state.borrow().store, false)?;
             return Err(error);
         }
     }
-    if let Err(error) = everything_settings::set_enabled(&state.borrow().store, true) {
+    // Release PaneApp before the failure path removes and destroys the view.
+    let saved = persist(&state.borrow().store);
+    if let Err(error) = saved {
         let view = {
             let mut s = state.borrow_mut();
             s.views
@@ -30,6 +41,17 @@ fn enable_search_view(
 #[cfg(test)]
 mod search_lifecycle_tests {
     use super::*;
+    #[test]
+    fn failed_enable_save_releases_state_before_removing_window() {
+        let _apartment = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
+        let state = Rc::new(RefCell::new(super::super::tests::test_state()));
+        let id = PanelId::new(1);
+        let result = enable_search_view_with(&state, id, create_view, |_| Err("injected persistence failure".into()));
+        assert_eq!(result.unwrap_err(), "injected persistence failure");
+        assert!(state.borrow().views.is_empty());
+        assert!(state.try_borrow_mut().is_ok());
+        assert!(!everything_settings::enabled(&state.borrow().store).unwrap());
+    }
     #[test]
     fn failed_search_window_can_be_enabled_again() {
         let _apartment = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
@@ -890,7 +912,7 @@ pub(super) fn handle(
                             &proposal,
                             edge,
                             &peers,
-                            5,
+                            snap::GAP_PX,
                             (14.0 * scale).round() as i32,
                         );
                     }
@@ -911,10 +933,20 @@ pub(super) fn handle(
                         &mut *rect,
                         &peers,
                         work.as_ref(),
-                        5, // Screen rectangles use physical pixels: keep a 5px gap at every DPI.
+                        snap::GAP_PX, // Physical pixels at every DPI.
                         (14.0 * scale).round() as i32,
                     );
                 }
+            }
+        }
+        Event::SortPane(target, descending) => {
+            let previous = s.workspace.clone();
+            if sorting::apply(&mut s.workspace, target, descending)? {
+                if let Err(error) = save(&mut s) {
+                    s.workspace = previous;
+                    return Err(error);
+                }
+                refresh_views(&mut s);
             }
         }
         Event::ToggleAutoHide => {

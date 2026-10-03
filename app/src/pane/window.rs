@@ -24,6 +24,16 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 use windows_window::Window;
 mod shape;
+pub(super) fn dispatch_sort_menu(
+    model: &RefCell<GroupModel>,
+    tab_context: Option<luciddesk_core::PanelId>,
+    descending: bool,
+    event: impl FnOnce(Event),
+) {
+    // End the read before dispatch: sorting refreshes this same model synchronously.
+    let id = tab_context.unwrap_or_else(|| model.borrow().active_tab);
+    event(Event::SortPane(id, descending));
+}
 pub(super) fn round_flyout(hwnd: HWND, width: i32, height: i32, radius: f32, scale: f32) {
     shape::WindowShape::default().update(hwnd, width, height, radius, scale);
 }
@@ -2179,6 +2189,7 @@ where
                         update_pointer(hwnd, &model, None);
                         invalidate(hwnd);
                         match command {
+                            52 | 53 => dispatch_sort_menu(&model, tab_context, command == 53, |action| { event(action); }),
                             49 => { let id = tab_context.unwrap_or(model.borrow().active_tab); event(Event::DetachTab(id)); }
                             48 => { event(Event::Collapse); }
                             40 => { event(Event::NewTab(false)); }

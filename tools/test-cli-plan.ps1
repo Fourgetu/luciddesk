@@ -2,6 +2,11 @@
 $ErrorActionPreference = 'Stop'
 $build = (Resolve-Path -LiteralPath $BuildDirectory).Path
 if ((Split-Path $build -Leaf) -ne 'debug') { throw 'Only Debug builds are allowed' }
+foreach ($required in @('luciddesk.exe','luciddesk-cli.exe','luciddesk_explorer.dll')) {
+    if (-not (Test-Path -LiteralPath (Join-Path $build $required) -PathType Leaf)) {
+        throw "Incomplete Debug build: missing $required. Build luciddesk, luciddesk-cli and luciddesk-explorer together before launching."
+    }
+}
 if (Get-Process luciddesk -ErrorAction SilentlyContinue) { throw 'LucidDesk is already running; stop the authorized Debug instance first' }
 $cli = Join-Path $build 'luciddesk-cli.exe'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../target/cli-e2e-$([guid]::NewGuid().ToString('N'))"))

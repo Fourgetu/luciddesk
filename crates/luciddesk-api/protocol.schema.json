@@ -910,6 +910,176 @@
                     ]
                   }
                 }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "op",
+                  "pane_id",
+                  "icon_columns"
+                ],
+                "properties": {
+                  "op": {
+                    "const": "pane.fit"
+                  },
+                  "pane_id": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]*$"
+                  },
+                  "icon_columns": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 64
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "op",
+                  "monitor_id",
+                  "columns",
+                  "icon_columns"
+                ],
+                "properties": {
+                  "op": {
+                    "const": "pane.arrange"
+                  },
+                  "monitor_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "columns": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 16,
+                    "items": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 256,
+                      "items": {
+                        "type": "string",
+                        "pattern": "^[1-9][0-9]*$"
+                      }
+                    }
+                  },
+                  "icon_columns": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 64
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "op",
+                  "pane_id",
+                  "target_pane_id",
+                  "side"
+                ],
+                "properties": {
+                  "op": {
+                    "const": "pane.snap"
+                  },
+                  "pane_id": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]*$"
+                  },
+                  "target_pane_id": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]*$"
+                  },
+                  "side": {
+                    "enum": [
+                      "left",
+                      "right",
+                      "top",
+                      "bottom"
+                    ]
+                  },
+                  "align": {
+                    "enum": [
+                      "start",
+                      "center",
+                      "end"
+                    ],
+                    "default": "start"
+                  },
+                  "icon_columns": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 64
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "op",
+                  "pane_id"
+                ],
+                "properties": {
+                  "op": {
+                    "const": "folder.fit"
+                  },
+                  "pane_id": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]*$"
+                  },
+                  "icon_columns": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 64
+                  },
+                  "max_rows": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10000
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "op",
+                  "pane_id"
+                ],
+                "properties": {
+                  "op": {
+                    "const": "folder.refresh"
+                  },
+                  "pane_id": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]*$"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "op",
+                  "pane_id"
+                ],
+                "properties": {
+                  "op": {
+                    "const": "pane.sort"
+                  },
+                  "pane_id": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]*$"
+                  },
+                  "descending": {
+                    "type": "boolean",
+                    "default": false
+                  }
+                }
               }
             ]
           }

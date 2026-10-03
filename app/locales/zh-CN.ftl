@@ -1234,3 +1234,7 @@ ui-desktop-log-failed = 诊断日志写入失败：{ $error }
 diagnostics-section = 诊断日志
 diagnostics-level = 日志级别
 diagnostics-level-description = 默认 ERROR，仅记录错误。提高级别可帮助排查问题，并增加日志写入；立即生效。
+
+ui-sort-by-name = 按名称排序
+ui-sort-ascending = 升序
+ui-sort-descending = 降序

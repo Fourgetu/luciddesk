@@ -1234,3 +1234,7 @@ ui-desktop-log-failed = Could not write diagnostic log: { $error }
 diagnostics-section = Diagnostic logging
 diagnostics-level = Log level
 diagnostics-level-description = Default: ERROR, errors only. Higher levels help troubleshooting and increase log writes. Changes apply immediately.
+
+ui-sort-by-name = 名前で並べ替え
+ui-sort-ascending = 昇順
+ui-sort-descending = 降順

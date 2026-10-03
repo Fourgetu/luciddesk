@@ -5,6 +5,7 @@ pub(super) fn is_runtime(op: &Operation) -> bool {
     matches!(
         op,
         Operation::StartupSet { .. } | Operation::FolderNavigate { .. }
+            | Operation::FolderRefresh { .. }
             | Operation::FolderBack { .. }
             | Operation::FolderHome { .. }
             | Operation::SearchQuery { .. }
@@ -27,6 +28,7 @@ pub(super) fn prepare(workspace: &Workspace, op: &Operation) -> Result<Operation
     }
     let (raw, folder) = match op {
         Operation::FolderNavigate { pane_id, .. }
+        | Operation::FolderRefresh { pane_id }
         | Operation::FolderBack { pane_id }
         | Operation::FolderHome { pane_id } => (pane_id, true),
         Operation::SearchQuery { pane_id, .. }
@@ -71,7 +73,7 @@ pub(super) fn fingerprint(s: &PaneApp) -> String {
     let mut folders: Vec<_> = s
         .folders
         .iter()
-        .map(|(id, source)| (id.get(), source.navigation_context()))
+        .map(|(id, source)| (id.get(), source.navigation_context(), source.items.len(), source.loading, source.status.clone()))
         .collect();
     folders.sort();
     let searches: Vec<_> = s
@@ -98,6 +100,15 @@ pub(super) fn execute(
                 }
             }
             super::folders::query(&state.borrow(), id)
+        }
+        Operation::FolderRefresh { pane_id } => {
+            let id=id(&pane_id)?;
+            let mut s=state.borrow_mut();
+            let source=s.folders.get_mut(&id).ok_or("folder panel is not open")?;
+            source.loading=true;
+            source.status=None;
+            source.refresh();
+            super::folders::query(&s,id)
         }
         Operation::FolderBack { pane_id } => {
             let id = id(&pane_id)?;

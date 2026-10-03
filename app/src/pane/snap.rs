@@ -1,3 +1,4 @@
+pub const GAP_PX: i32 = 5;
 use windows_sys::Win32::Foundation::RECT;
 
 /// Derive each proposal from the original pointer offset, never from a snapped frame.

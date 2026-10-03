@@ -11,6 +11,8 @@ pub struct Grid {
     pub scroll_limit: Option<usize>,
 }
 
+pub const DESKTOP_ICON_SIZE: f32 = 48.0;
+
 pub const HEADER: f32 = 40.0;
 pub const HEADER_INSET: f32 = 6.0;
 pub const LIST_HEADER: f32 = 28.0;

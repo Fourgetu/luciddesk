@@ -4,33 +4,16 @@ use luciddesk_api::{Context, Operation, Plan};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 pub(super) fn supported(command: &str) -> bool {
-    matches!(
-        command,
-        "pane.create"
-            | "pane.update"
-            | "pane.remove"
-            | "pane.geometry"
-            | "folder.create"
-            | "folder.update"
-            | "folder.navigate"
-            | "folder.back"
-            | "folder.home"
-            | "search.query"
-            | "search.refresh"
-            | "search.more"
-            | "tab.merge"
-            | "tab.select"
-            | "tab.reorder"
-            | "tab.detach"
-            | "item.assign"
-            | "item.release"
-            | "item.reorder"
-            | "settings.update"
-            | "startup.set"
-    )
+    luciddesk_api::OPERATIONS.contains(&command)
 }
 pub(super) fn flag(flag: &str) -> Option<&'static str> {
     Some(match flag {
+        "--target" => "target_pane_id",
+        "--descending" => "descending",
+        "--side" => "side",
+        "--align" => "align",
+        "--max-rows" => "max_rows",
+        "--icon-columns" => "icon_columns",
         "--title" => "title",
         "--path" => "path",
         "--query" => "query",
@@ -54,7 +37,19 @@ pub(super) fn flag(flag: &str) -> Option<&'static str> {
 pub(super) fn value(flag_name: &str, raw: &str) -> Result<(String, Value), String> {
     let key = flag(flag_name).ok_or("unknown shortcut option")?;
     let value = match key {
-        "locked" | "auto_hide" | "collapsed" | "always_on_top" | "list_view" | "enabled" => json!(
+        "max_rows" => json!(
+            raw.parse::<u32>()
+                .ok()
+                .filter(|n| (1..=10000).contains(n))
+                .ok_or("--max-rows expects 1..10000")?
+        ),
+        "icon_columns" => json!(
+            raw.parse::<u32>()
+                .ok()
+                .filter(|n| (1..=64).contains(n))
+                .ok_or("--icon-columns expects 1..64")?
+        ),
+        "descending" | "locked" | "auto_hide" | "collapsed" | "always_on_top" | "list_view" | "enabled" => json!(
             raw.parse::<bool>()
                 .map_err(|_| format!("{flag_name} expects true or false"))?
         ),
@@ -189,6 +184,32 @@ mod tests {
         parse(words.iter().map(OsString::from).collect()).unwrap()
     }
     #[test]
+    fn folder_fit_and_refresh_preserve_typed_optional_fields() {
+        assert!(matches!(parse_words(&["folder","fit","--id","1","--max-rows","5"]).operation,Some(Operation::FolderFit{icon_columns:None,max_rows:Some(5),..})));
+        assert!(matches!(parse_words(&["folder","refresh","--id","1"]).operation,Some(Operation::FolderRefresh{..})));
+        assert!(parse("folder fit --id 1 --max-rows 0".split_whitespace().map(OsString::from).collect()).is_err());
+    }
+    #[test]
+    fn snap_flags_are_typed_and_do_not_accept_per_operation_gap() {
+        let parsed = parse_words(&[
+            "pane", "snap", "--id", "1", "--target", "2", "--side", "bottom", "--align", "end",
+        ]);
+        assert!(matches!(
+            parsed.operation,
+            Some(Operation::Snap {
+                side: luciddesk_api::SnapSide::Bottom,
+                align: luciddesk_api::SnapAlign::End,
+                ..
+            })
+        ));
+        for command in [
+            "pane snap --id 1 --target 2 --side sideways",
+            "pane snap --id 1 --target 2 --side left --gap-px 8",
+        ] {
+            assert!(parse(command.split_whitespace().map(OsString::from).collect()).is_err());
+        }
+    }
+    #[test]
     fn shortcuts_preserve_typed_values_and_reject_ambiguous_flags() {
         let options = parse_words(&[
             "pane",
@@ -222,6 +243,14 @@ mod tests {
                 "{words:?}"
             );
         }
+    }
+    #[test]
+    fn sort_shortcut_has_typed_direction_and_default() {
+        let ascending = parse_words(&["pane", "sort", "--id", "1"]);
+        assert!(matches!(ascending.operation, Some(Operation::Sort { descending: false, .. })));
+        let descending = parse_words(&["pane", "sort", "--id", "1", "--descending", "true"]);
+        assert!(matches!(descending.operation, Some(Operation::Sort { descending: true, .. })));
+        assert!(value("--descending", "yes").is_err());
     }
     #[test]
     fn shortcut_preview_and_apply_use_same_context_and_preserve_recovery_after_timeout() {

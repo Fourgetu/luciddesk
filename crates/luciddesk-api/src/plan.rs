@@ -15,11 +15,33 @@ pub struct Plan {
     pub base: Context,
     pub operations: Vec<Operation>,
 }
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SnapSide { Left, Right, Top, Bottom }
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SnapAlign { #[default] Start, Center, End }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "op", deny_unknown_fields)]
 pub enum Operation {
+    #[serde(rename = "pane.sort")]
+    Sort {
+        pane_id: String,
+        #[serde(default)]
+        descending: bool,
+    },
     #[serde(rename = "startup.set")]
     StartupSet { enabled: bool, expected_status: String },
+    #[serde(rename = "folder.fit")]
+    FolderFit {
+        pane_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "optional")]
+        icon_columns: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "optional")]
+        max_rows: Option<u32>,
+    },
+    #[serde(rename = "folder.refresh")]
+    FolderRefresh { pane_id: String },
     #[serde(rename = "folder.navigate")]
     FolderNavigate { pane_id: String, path: String },
     #[serde(rename = "folder.back")]
@@ -93,6 +115,20 @@ pub enum Operation {
     },
     #[serde(rename = "tab.detach")]
     TabDetach { pane_id: String },
+    #[serde(rename = "pane.snap")]
+    Snap {
+        pane_id: String,
+        target_pane_id: String,
+        side: SnapSide,
+        #[serde(default)]
+        align: SnapAlign,
+        #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "optional")]
+        icon_columns: Option<u32>,
+    },
+    #[serde(rename = "pane.fit")]
+    Fit { pane_id: String, icon_columns: u32 },
+    #[serde(rename = "pane.arrange")]
+    Arrange { monitor_id: String, columns: Vec<Vec<String>>, icon_columns: u32 },
     #[serde(rename = "pane.geometry")]
     Geometry {
         pane_id: String,

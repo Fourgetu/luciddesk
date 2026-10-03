@@ -47,6 +47,7 @@ mod settings;
 use events::handle;
 mod shell_menu;
 mod snap;
+mod sorting;
 mod theme;
 mod wake;
 mod window;
@@ -198,6 +199,7 @@ enum Event {
     SetFolder(std::path::PathBuf),
     OpenFolder,
     SortFolder(u8),
+    SortPane(PanelId, bool),
     FolderItemCreated(std::path::PathBuf),
     SetFolderColumns([f32; 4]),
     ToggleFolderColumn(u8),
@@ -286,7 +288,7 @@ fn create_model(state: &PaneApp, id: PanelId) -> Result<GroupModel, String> {
         native_material: false,
         title: panel.title().to_string(),
         items,
-        icon_size: 48.0,
+        icon_size: layout::DESKTOP_ICON_SIZE,
         selected: None,
         selection: Default::default(),
         selection_anchor: None,

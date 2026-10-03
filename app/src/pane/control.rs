@@ -2,6 +2,7 @@
 mod plans;
 mod settings;
 mod geometry;
+mod content_layout;
 mod tab_plan;
 mod folders;
 mod transient;
@@ -123,7 +124,7 @@ impl Snapshot {
                 json!({"application_version":env!("CARGO_PKG_VERSION"), "data_dir":directory, "desktop_connected":state.session.as_ref().is_some_and(hybrid::is_alive), "desktop_sync_status":hybrid::membership_status(state), "read_only":false})
             }
             "capabilities" => {
-                json!({"commands":luciddesk_api::COMMANDS,"protocol_version":1,"max_frame_bytes":luciddesk_api::MAX_FRAME,"writes":true,"plans":true,"concurrency_tokens":true,"plan_operations":luciddesk_api::OPERATIONS,"pane_geometry":true,"item_ids":"opaque-instance-scoped","schema_version":1})
+                json!({"commands":luciddesk_api::COMMANDS,"protocol_version":1,"max_frame_bytes":luciddesk_api::MAX_FRAME,"writes":true,"plans":true,"concurrency_tokens":true,"plan_operations":luciddesk_api::OPERATIONS,"pane_geometry":true,"content_layout":{"kinds":["desktop","folder"],"arrange_anchor":"top_right","gap_px":snap::GAP_PX,"icon_columns_min":1,"icon_columns_max":64},"item_ids":"opaque-instance-scoped","schema_version":1})
             }
             command => {
                 let pane_values: Vec<_> = state.workspace.panels().iter().map(|panel| {
@@ -131,7 +132,7 @@ impl Snapshot {
                         .or_else(|| state.workspace.tab_group(panel.id()).and_then(|g| state.views.iter().find(|v| v.id == g.active)).map(|v| v.model.borrow().collapsed));
                     json!({"id":panel.id().get().to_string(),"title":panel.title(),
                         "kind":if panel.is_search(){"search"} else if panel.folder().is_some(){"folder"} else {"desktop"},
-                        "geometry":geometry::query(state,panel,&monitors),"window_bounds_px":geometry::window_bounds(state,panel.id()),"folder_path":panel.folder(),"locked":panel.locked(),"auto_hide":panel.auto_hide(),
+                        "content_layout":content_layout::live_query(state,panel.id()),"geometry":geometry::query(state,panel,&monitors),"window_bounds_px":geometry::window_bounds(state,panel.id()),"folder_path":panel.folder(),"locked":panel.locked(),"auto_hide":panel.auto_hide(),
                         "manual_collapsed":panel.collapsed(),"effective_collapsed":effective,
                         "list_view":panel.list_view(),"always_on_top":panel.always_on_top()})
                 }).collect();

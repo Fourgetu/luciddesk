@@ -1,7 +1,7 @@
 mod shortcuts;
 use luciddesk_api::{Request, Response, VERSION};
 use std::{ffi::OsString, time::Duration};
-const HELP: &str = "LucidDesk CLI\nUsage: luciddesk-cli <command> [options]\nCommands: schema (offline), skill show (offline), status, capabilities, workspace get, settings get, font list, startup get, monitor list, folder get --id ID, search get --id ID, pane list, pane get --id ID, item list, plan preview --input FILE|-, plan apply --token TOKEN --request-id ID, request get --id ID\nOptions: --json, --data-dir PATH, --timeout-ms 1..60000, --protocol-version N\nItem filters: --pane ID | --unassigned\nShortcut mutations: pane create/update/remove/geometry, folder create/update/navigate/back/home, search query/refresh/more, tab merge/select/reorder/detach, item assign/release/reorder, settings update, startup set. Add --dry-run to preview only; otherwise the CLI previews then applies once. Use --input FILE|- for operation fields or documented flags.
+const HELP: &str = "LucidDesk CLI\nUsage: luciddesk-cli <command> [options]\nCommands: schema (offline), skill show (offline), status, capabilities, workspace get, settings get, font list, startup get, monitor list, folder get --id ID, search get --id ID, pane list, pane get --id ID, item list, plan preview --input FILE|-, plan apply --token TOKEN --request-id ID, request get --id ID\nOptions: --json, --data-dir PATH, --timeout-ms 1..60000, --protocol-version N\nItem filters: --pane ID | --unassigned\nShortcut mutations: pane create/update/remove/geometry/fit/arrange/snap/sort, folder create/update/navigate/back/home/refresh/fit, search query/refresh/more, tab merge/select/reorder/detach, item assign/release/reorder, settings update, startup set. Add --dry-run to preview only; otherwise the CLI previews then applies once. Use --input FILE|- for operation fields or documented flags. Sort: pane sort --id ID [--descending true|false]. Snap: pane snap --id ID --target ID --side left|right|top|bottom [--align start|center|end] [--icon-columns N]. Folder fit: folder fit --id ID [--icon-columns N] [--max-rows N]. Fit: pane fit --id ID --icon-columns N. Arrange: pane arrange --input FILE|- with monitor_id, columns (pane IDs grouped left-to-right/top-to-bottom), icon_columns.
 The GUI must already be running. This CLI never opens the database.";
 struct Options {
     request: Request,
@@ -155,6 +155,30 @@ fn call(request: &Request, timeout: Duration) -> Response {
         Response::failure(&request.request_id, code, e.to_string())
     })
 }
+fn offline_output(args: &[OsString]) -> Option<String> {
+    let json_count = args.iter().filter(|arg| *arg == "--json").count();
+    if json_count > 1 {
+        return None; // Let the regular parser report duplicate options.
+    }
+    let words: Vec<_> = args.iter().filter(|arg| *arg != "--json").collect();
+    if words == [&OsString::from("schema")] {
+        return Some(include_str!("../../crates/luciddesk-api/protocol.schema.json").into());
+    }
+    if words != [&OsString::from("skill"), &OsString::from("show")] {
+        return None;
+    }
+    const SKILL: &str = include_str!("../../skills/luciddesk-control/SKILL.md");
+    Some(if json_count == 1 {
+        let response = Response::success(
+            "offline",
+            serde_json::Value::Null,
+            serde_json::json!({"name":"luciddesk-control","format":"markdown","content":SKILL}),
+        );
+        serde_json::to_string(&response).expect("skill serialization")
+    } else {
+        SKILL.into()
+    })
+}
 fn main() {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     if args == [OsString::from("--help")] || args.is_empty() {
@@ -168,37 +192,8 @@ fn main() {
         );
         return;
     }
-    if args == [OsString::from("schema")]
-        || args == [OsString::from("schema"), OsString::from("--json")]
-    {
-        println!(
-            "{}",
-            include_str!("../../crates/luciddesk-api/protocol.schema.json")
-        );
-        return;
-    }
-    if args == [OsString::from("skill"), OsString::from("show")]
-        || args
-            == [
-                OsString::from("skill"),
-                OsString::from("show"),
-                OsString::from("--json"),
-            ]
-    {
-        const SKILL: &str = include_str!("../../skills/luciddesk-control/SKILL.md");
-        if args.last().is_some_and(|a| a == "--json") {
-            let response = Response::success(
-                "offline",
-                serde_json::Value::Null,
-                serde_json::json!({"name":"luciddesk-control","format":"markdown","content":SKILL}),
-            );
-            println!(
-                "{}",
-                serde_json::to_string(&response).expect("skill serialization")
-            );
-        } else {
-            println!("{SKILL}");
-        }
+    if let Some(output) = offline_output(&args) {
+        println!("{output}");
         return;
     }
     let wants_json = args.iter().any(|a| a == "--json");
@@ -236,6 +231,30 @@ mod tests {
     use super::*;
     fn args(s: &str) -> Vec<OsString> {
         s.split_whitespace().map(Into::into).collect()
+    }
+    #[test]
+    fn offline_commands_accept_global_json_without_ignoring_other_options() {
+        let schema = offline_output(&args("schema --json")).unwrap();
+        assert_eq!(offline_output(&args("--json schema")).unwrap(), schema);
+        let skill = offline_output(&args("skill show --json")).unwrap();
+        for command in ["--json skill show", "skill --json show"] {
+            assert_eq!(offline_output(&args(command)).unwrap(), skill);
+        }
+        let response: Response = serde_json::from_str(&skill).unwrap();
+        assert!(response.ok);
+        assert_eq!(
+            response.data.unwrap()["content"],
+            offline_output(&args("skill show")).unwrap()
+        );
+        for command in [
+            "schema --json --json",
+            "skill --json show --json",
+            "schema --id 1",
+            "skill show --timeout-ms 5",
+        ] {
+            assert!(offline_output(&args(command)).is_none());
+            assert!(parse(args(command)).is_err());
+        }
     }
     #[test]
     fn options_validate_commands_and_filters() {

@@ -5,7 +5,7 @@
 ## 构建与运行
 
 ```powershell
-cargo build -p luciddesk -p luciddesk-cli --locked --offline
+cargo build -p luciddesk -p luciddesk-cli -p luciddesk-explorer --locked --offline
 .\target\debug\luciddesk.exe
 .\target\debug\luciddesk-cli.exe status --json
 .\target\debug\luciddesk-cli.exe capabilities --json
@@ -235,3 +235,41 @@ Agent 可以先使用 `--dry-run --json` 查看差异，再按既有用户授权
 开发验收命令：先构建 `cargo build -p luciddesk-shell --example desktop_snapshot --locked --offline --target-dir target/cli-plan-build`，再运行 `tools/test-cli-plan.ps1 -LiveDesktopItems -RestartRecovery`。它要求没有其他主程序运行，使用独立数据目录，并只创建/整理/清理唯一命名的桌面测试文件；测试包含独立 Explorer 可见性及位置探针。
 
 持续查询验证可使用 `tools/test-cli-plan.ps1 -IdleSeconds 30`：先等待之前修改触发的自动备份完成，再比较整个测试数据目录的文件哈希、大小及写入时间，并记录 GUI CPU/内存。保持默认 error 日志，不禁用自动备份。正常自动备份是预期写入，不应误归因于只读查询。
+
+
+启动 Debug 前确认同一输出目录包含 `luciddesk.exe`、`luciddesk-cli.exe` 和 `luciddesk_explorer.dll`。仅构建主程序和 CLI 不会生成独立桌面组件 DLL；缺失时桌面收纳不可用。
+
+### 内容适配与右侧吸附排列
+
+`pane get/list` 返回 `content_layout`：支持范围、项目数、图标列数、单元格 DIP、内容所需高度与物理吸附间距。Agent 无需读取源码计算布局。
+
+- `pane fit --id ID --icon-columns 6 --dry-run --json`：按完整图标行适配，尽量保留原位置，必要时向工作区内移动。标签组按内容最多的成员适配。
+- `pane arrange --input FILE|- --dry-run --json`：输入 `{"monitor_id":"查询所得 ID","columns":[["左上面板ID","左下面板ID"],["右上面板ID"]],"icon_columns":6}`。自动适配后靠右上排列；每列从上到下、列从左到右，保持 GUI 标准物理吸附间距。
+
+两者支持常规 preview/apply、原子保存、版本冲突及回执。icon_columns 范围 1..64，面板列 1..16，总面板最多 256。支持普通桌面面板及已加载的文件夹面板；锁定或手动折叠需先处理，同一标签窗口不可重复选择。空间不足或排列会覆盖未选面板时拒绝，不会偷偷缩放图标、截断内容或覆盖其他窗口。排列不是永久绑定；后续拖动吸附由 panel_defaults.snap 设置控制。
+
+
+### 相对面板吸附
+
+```powershell
+luciddesk-cli pane snap --id 7 --target 4 --side bottom --align start --dry-run --json
+```
+
+将 7 号面板放到 4 号面板下方并左对齐。side 支持 left/right/top/bottom；align 默认 start，也支持 center/end。左右吸附时对齐上/中/下，上下吸附时对齐左/中/右。间距固定沿用 GUI 吸附距离（当前 5 个物理像素），不接受单次 gap 参数。间距配置与吸附动作分离。
+
+默认保持源面板 DIP 尺寸，可加 --icon-columns N 在同一次事务内适配普通面板内容。目标面板不移动，可处于锁定状态；源面板须解锁，双方须手动展开。支持普通及文件夹面板，动态高度的搜索面板不能作为源或目标。同一标签窗口不可互相吸附，源标签组整体移动。超出目标显示器工作区或覆盖第三个面板会拒绝，不自动换边或截断。批量计划中的后续吸附读取之前操作生成的位置。吸附为一次位置调整，不创建联动移动关系。
+
+
+### 文件夹内容适配与刷新
+
+- `folder fit --id ID --icon-columns 4 --max-rows 5 --dry-run --json`：图标视图每行四个、最多五行可见；省略 max_rows 时适配完整内容。
+- `folder fit --id ID --max-rows 8 --dry-run --json`：列表视图保持宽度，按表头及最多八行计算高度；列表视图不接受 icon_columns。
+- `folder refresh --id ID --json`：请求重扫当前目录，属于单独的临时操作，不保存导航或偏好。查询 folder get 等待 available=true、loading=false、error=null，并核对 current_path。
+
+文件夹 content_layout 暴露 ready、view、item_count、content_rows、required_height_dip 和当前路径。只使用已加载的快照，不在查询/预览阶段重新扫描目录。pane fit / pane arrange 也支持已加载的文件夹：图标视图使用列数，列表视图保留宽度。max_rows 是可见区域上限，所有文件仍可滚动访问。加载/错误/清单数量或导航变化使旧计划失效；新建或改映射后须等待目录加载再适配。超出工作区会拒绝，不自动隐藏条目。
+
+### 普通面板图标排序
+
+`pane sort --id ID --dry-run --json` 按显示名称自然升序预览，例如“文件2”在“文件10”之前；`--descending true` 为降序。对应操作为 `{"op":"pane.sort","pane_id":"ID","descending":false}`，方向默认为升序。同名项使用稳定身份消除歧义。
+
+排序只改变指定普通面板内部顺序，不改变文件、面板位置或其他标签页，不扫描文件元数据，也不启用持续自动排序。锁定面板须先解锁；文件夹使用 folder.update 排序。复用 preview/apply、冲突保护及回执，顺序已满足时不写数据库。任意自定义顺序继续使用 `item reorder --pane ID --input FILE`，文件为完整当前成员 ID 数组；查询后按 placement.row/column 核对顺序。

@@ -126,5 +126,47 @@
     "op": "startup.set",
     "enabled": true,
     "expected_status": "off"
+  },
+  {
+    "op": "pane.fit",
+    "pane_id": "1",
+    "icon_columns": 6
+  },
+  {
+    "op": "pane.arrange",
+    "monitor_id": "display",
+    "columns": [
+      [
+        "1",
+        "2"
+      ],
+      [
+        "3"
+      ]
+    ],
+    "icon_columns": 6
+  },
+  {
+    "op": "pane.snap",
+    "pane_id": "1",
+    "target_pane_id": "2",
+    "side": "bottom",
+    "align": "center",
+    "icon_columns": 6
+  },
+  {
+    "op": "folder.fit",
+    "pane_id": "1",
+    "icon_columns": 4,
+    "max_rows": 5
+  },
+  {
+    "op": "folder.refresh",
+    "pane_id": "1"
+  },
+  {
+    "op": "pane.sort",
+    "pane_id": "1",
+    "descending": true
   }
 ]

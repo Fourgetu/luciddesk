@@ -2,6 +2,40 @@ use super::search::everything_settings;
 use super::*;
 
 #[test]
+fn menu_sort_saves_once_and_preserves_other_panes() {
+    let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
+    let state = Rc::new(RefCell::new(test_state()));
+    {
+        let mut s = state.borrow_mut();
+        for (at,item) in s.workspace.desktop_items_mut().iter_mut().enumerate() {
+            item.set_display_name(["File10","File2","Other"][at]);
+            item.set_placement(DesktopPlacement::Pane { pane_id: PanelId::new(if at==2 {2} else {1}), position: GridPosition::new(at as u32,0) });
+        }
+        let workspace = s.workspace.clone();
+        s.store.save_workspace(&workspace).unwrap();
+    }
+    create_view(&state, PanelId::new(1)).unwrap();
+    let model = state.borrow().views[0].model.clone();
+    let before = state.borrow().store.change_count();
+    window::dispatch_sort_menu(&model, None, false, |event| {
+        assert!(model.try_borrow_mut().is_ok(), "menu must release the model before dispatch");
+        handle(&state, PanelId::new(1), event).unwrap();
+    });
+    assert_eq!(model.borrow().items[0].label, "File2");
+    let count = state.borrow().store.change_count();
+    assert!(count > before);
+    assert!(matches!(state.borrow().workspace.desktop_items()[1].placement(), DesktopPlacement::Pane { pane_id, position } if pane_id.get()==1 && position.column==0));
+    assert!(matches!(state.borrow().workspace.desktop_items()[2].placement(), DesktopPlacement::Pane { pane_id, position } if pane_id.get()==2 && position.column==2));
+    handle(&state, PanelId::new(2), Event::SortPane(PanelId::new(1), false)).unwrap();
+    assert_eq!(state.borrow().store.change_count(),count);
+    window::dispatch_sort_menu(&model, Some(PanelId::new(1)), true, |event| {
+        assert!(model.try_borrow_mut().is_ok());
+        handle(&state, PanelId::new(1), event).unwrap();
+    });
+    assert_eq!(model.borrow().items[0].label, "File10");
+}
+
+#[test]
 fn changing_language_keeps_all_panel_windows_and_saved_panels() {
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
     let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
@@ -222,6 +256,13 @@ pub(super) fn test_model(title: &str) -> GroupModel {
 }
 
 pub(super) fn test_state() -> PaneApp {
+    // Match main's DPI context before any snapshot is captured. Other UI tests
+    // may initialize process DPI awareness concurrently when creating windows.
+    unsafe {
+        windows_sys::Win32::UI::HiDpi::SetThreadDpiAwarenessContext(
+            windows_sys::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+        );
+    }
     let mut workspace = Workspace::new();
     for id in [1, 2] {
         workspace
@@ -591,6 +632,12 @@ fn activation_releases_state_and_model_before_shell_reentry() {
     }
     let _apartment = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
     let state = Rc::new(RefCell::new(test_state()));
+    // Geometry updates persist existing panel rows, as in a running app.
+    {
+        let mut owner = state.borrow_mut();
+        let workspace = owner.workspace.clone();
+        owner.store.save_workspace(&workspace).unwrap();
+    }
     create_view(&state, PanelId::new(1)).unwrap();
     create_view(&state, PanelId::new(2)).unwrap();
     let model = Rc::clone(&state.borrow().views[0].model);

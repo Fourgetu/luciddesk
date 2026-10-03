@@ -5,7 +5,7 @@ mod plan;
 mod strict_json;
 pub use strict_json::validate_json;
 pub mod transport;
-pub use plan::{Context, Operation, Plan, SettingValue, FolderColumn};
+pub use plan::{SnapSide, SnapAlign, Context, Operation, Plan, SettingValue, FolderColumn};
 pub const VERSION: u32 = 1;
 pub const MAX_FRAME: usize = 4 * 1024 * 1024;
 pub const COMMANDS: &[&str] = &[
@@ -28,10 +28,14 @@ pub const COMMANDS: &[&str] = &[
 
 /// Plan operations supported by this protocol implementation.
 pub const OPERATIONS: &[&str] = &[
+    "pane.sort",
     "pane.create",
     "pane.update",
     "pane.remove",
     "pane.geometry",
+    "pane.fit",
+    "pane.snap",
+    "pane.arrange",
     "item.assign",
     "item.release",
     "item.reorder",
@@ -43,6 +47,8 @@ pub const OPERATIONS: &[&str] = &[
     "folder.create",
     "folder.update",
     "folder.navigate",
+    "folder.fit",
+    "folder.refresh",
     "folder.back",
     "folder.home",
     "search.query",

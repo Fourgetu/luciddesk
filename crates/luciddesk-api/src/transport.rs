@@ -455,6 +455,34 @@ mod fault_tests {
         drop(server);
     }
     #[test]
+    fn disconnect_after_dispatch_does_not_cancel_handler_or_break_next_connection() {
+        let name = format!("{}-disconnect-{}", endpoint().unwrap(), crate::request_id());
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (resume_tx, resume_rx) = std::sync::mpsc::channel();
+        let completed = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let observed = completed.clone();
+        let server = Server::start_at(&name, move |r| {
+            if observed.load(std::sync::atomic::Ordering::SeqCst) == 0 {
+                started_tx.send(()).unwrap();
+                resume_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+            }
+            observed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Response::success(&r.request_id, serde_json::json!({}), serde_json::json!({}))
+        }).unwrap();
+        let pipe = owned(unsafe {
+            CreateFileW(wide(&name).as_ptr(), GENERIC_READ | GENERIC_WRITE, 0,
+                ptr::null(), OPEN_EXISTING, FILE_FLAG_OVERLAPPED, ptr::null_mut())
+        }).unwrap();
+        write_frame(pipe.0, &serde_json::to_vec(&request()).unwrap(),
+            Instant::now() + Duration::from_secs(2), None).unwrap();
+        started_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        drop(pipe);
+        resume_tx.send(()).unwrap();
+        assert!(call_at(&name, &request(), Duration::from_secs(2)).unwrap().ok);
+        assert_eq!(completed.load(std::sync::atomic::Ordering::SeqCst), 2);
+        drop(server);
+    }
+    #[test]
     fn duplicate_nested_keys_never_reach_handler_and_server_recovers() {
         let name=format!("{}-duplicates-{}",endpoint().unwrap(),crate::request_id());
         let calls=std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
