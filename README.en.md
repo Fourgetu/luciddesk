@@ -12,7 +12,7 @@ Desktop panels · Folder panels · Everything search · Spacebar preview · Agen
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Build CI](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml/badge.svg)](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml)
-[![Version](https://img.shields.io/badge/version-0.18.1-087EA4?style=flat-square)](CHANGELOG.en.md)
+[![Version](https://img.shields.io/badge/version-0.19.0-087EA4?style=flat-square)](CHANGELOG.en.md)
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square)](#compatibility)
 [![Architecture](https://img.shields.io/badge/arch-x64-475569?style=flat-square)](docs/portable.md)
 
@@ -124,7 +124,7 @@ Start with read-only queries from the application directory:
 
 **Agent workflow: query → create a plan → preview differences → apply → verify.** The CLI provides JSON output, schema discovery and request receipts. Previews do not persist changes; query again after a state conflict, and use receipts to check execution after a timeout. Add `--dry-run` to shortcut mutations to preview only; without it, the CLI previews and immediately applies the change.
 
-Agents can read the built-in guide with `skill show` or use the repository's [SKILL.md](skills/luciddesk-control/SKILL.md). Supported operations vary by panel type. See the [CLI guide](docs/cli.md) (Chinese) for commands, scope and recovery, and the [changelog](CHANGELOG.en.md#unreleased) for recent additions.
+Agents can read the built-in guide with `skill show` or use the repository's [SKILL.md](skills/luciddesk-control/SKILL.md). Supported operations vary by panel type. See the [CLI guide](docs/cli.md) (Chinese) for commands, scope and recovery, and the [changelog](CHANGELOG.en.md#v0190) for recent additions.
 
 <a id="upgrading-and-backups"></a>
 

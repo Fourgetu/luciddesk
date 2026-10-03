@@ -2,16 +2,17 @@
 
 [简体中文](CHANGELOG.md) · English
 
-Current version: **0.18.1**. Features and fixes by release.
+Current version: **0.19.0**. Features and fixes by release.
 
 Exit the app before upgrading a portable installation and preserve its `data` folder. See the [portable guide](docs/portable.md) (Chinese).
 
-<a id="unreleased"></a>
+<a id="v0190"></a>
 
-## Unreleased
+## 0.19.0 · 2026-10-04
 
 ### feat
 
+- Add offline CLI help for the overview, resource groups and individual commands, with `-h`, `--help` and JSON output. Generate mutation field descriptions from the protocol and add actionable error hints.
 - Add `luciddesk-cli` and an Agent skill to query the running app, preview organization plans and apply them. Support JSON output, offline schema and skill discovery, request receipts and timeout recovery. Packaging includes the CLI, schema and skill files.
 - Add content fitting, right-side column arrangement and relative snapping commands. Choose icon columns, a target panel, side and alignment; snapping retains the fixed 5-physical-pixel gap.
 - Add folder panel fitting and explicit refresh. List view preserves its width, supports a visible-row limit and checks folder snapshot readiness.
@@ -27,6 +28,10 @@ Exit the app before upgrading a portable installation and preserve its `data` fo
 - Separate settings windows, panel events, native menus, input handling and task scheduling by responsibility.
 - Separate content measurement, fitting, snapping and arrangement algorithms behind a read-only layout context, preserving persistence and rollback in the control layer.
 - Expand CLI/Agent documentation, module boundaries and native window test isolation notes. Real-machine acceptance for multiple monitors, another Windows login session and an installed MSIX remains pending.
+
+### ci
+
+- Add CLI command and control protocol tests, with layout plan and task scheduling reentry tests isolated in separate processes. Check GUI/CLI version and lockfile consistency in the metadata job.
 
 ## 0.18.1 · 2026-10-03
 

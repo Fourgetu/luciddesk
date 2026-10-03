@@ -12,7 +12,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Build CI](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml/badge.svg)](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml)
-[![版本](https://img.shields.io/badge/version-0.18.1-087EA4?style=flat-square)](CHANGELOG.md)
+[![版本](https://img.shields.io/badge/version-0.19.0-087EA4?style=flat-square)](CHANGELOG.md)
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square)](#系统与兼容性)
 [![架构](https://img.shields.io/badge/arch-x64-475569?style=flat-square)](docs/portable.md)
 
@@ -125,7 +125,7 @@ LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。把零散图标�
 
 **Agent 工作流程：查询 → 生成计划 → 预览差异 → 应用 → 核对结果。** CLI 提供 JSON 输出、协议查询和请求回执；预览不保存修改，状态冲突时重新查询，超时后通过回执确认执行结果。快捷修改命令加 `--dry-run` 只预览，省略时会预览后立即应用。
 
-Agent 可通过 `skill show` 读取内置操作指南，或使用仓库中的 [SKILL.md](skills/luciddesk-control/SKILL.md)。不同面板类型支持的操作有所区别，完整命令、适用范围和恢复流程见 [CLI 使用说明](docs/cli.md)；近期新增能力见[更新记录](CHANGELOG.md#unreleased)。
+Agent 可通过 `skill show` 读取内置操作指南，或使用仓库中的 [SKILL.md](skills/luciddesk-control/SKILL.md)。不同面板类型支持的操作有所区别，完整命令、适用范围和恢复流程见 [CLI 使用说明](docs/cli.md)；近期新增能力见[更新记录](CHANGELOG.md#v0190)。
 
 <a id="升级与备份"></a>
 
