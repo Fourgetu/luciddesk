@@ -60,6 +60,10 @@ jobs:
         run: cargo test -p luciddesk --bin luciddesk --locked -- i18n::tests pane::marquee::tests pane::title_emoji::tests updates::tests --test-threads=1 --skip marquee_window_messages_commit_cancel_and_ignore_mapped_folders
       - name: Compile all targets
         run: cargo check --workspace --all-targets --locked
+      - name: Test CLI commands and control protocol
+        run: cargo test -p luciddesk-cli -p luciddesk-api --locked -- --test-threads=1
+      - name: Test layout plans and deferred task reentry
+        run: python tools/test-control-ci.py
       - name: Test workspace data and layout rules
         run: cargo test -p luciddesk-core -p luciddesk-storage --lib --locked
       - name: Test drag image alpha conversion

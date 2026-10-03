@@ -55,6 +55,9 @@ class ReleaseNotesTests(unittest.TestCase):
         self.assertEqual(versions(zh)[0], version)
         lock = tomllib.loads((ROOT / "Cargo.lock").read_text())
         self.assertEqual(next(p["version"] for p in lock["package"] if p["name"] == "luciddesk"), version)
+        cli_version = tomllib.loads((ROOT / "cli/Cargo.toml").read_text())["package"]["version"]
+        self.assertEqual(cli_version, version, "GUI and CLI versions must match")
+        self.assertEqual(next(p["version"] for p in lock["package"] if p["name"] == "luciddesk-cli"), version)
         for name in ["README.md", "README.en.md"]:
             badges = re.findall(r"badge/version-([0-9]+\.[0-9]+\.[0-9]+)-", (ROOT / name).read_text(encoding="utf-8"))
             self.assertEqual(badges, [version])
