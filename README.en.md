@@ -6,9 +6,9 @@
 
 [简体中文](README.md) · English
 
-**Turn your Windows desktop into a workspace that works for you.**
+**Turn your Windows desktop into a workspace you can organize yourself or with an agent.**
 
-Desktop panels · Folder panels · Everything search · Spacebar preview
+Desktop panels · Folder panels · Everything search · Spacebar preview · Agent integration
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Build CI](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml/badge.svg)](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml)
@@ -18,7 +18,7 @@ Desktop panels · Folder panels · Everything search · Spacebar preview
 
 [⬇️ Download](https://github.com/Yuch3nE/luciddesk/releases) · [📸 Screenshots](#screenshots) · [🚀 Get started](#getting-started) · [📋 Changelog](CHANGELOG.en.md) · [🤝 Contribute](#contributing)
 
-Organize desktop icons into panels, browse your favorite folders, and find files with Everything. Built with Rust for Windows, LucidDesk keeps your everyday files within reach.
+LucidDesk is a Windows desktop organizer built with Rust. Group icons into panels, browse your favorite folders, and find files with Everything. With the CLI and companion skill, agents can organize icons, adjust panel layouts, and manage folders and settings at your request—previewing changes before applying them to the desktop.
 
 ![LucidDesk feature illustration: panel tabs, folder browsing and Everything search](docs/images/overview.en.svg)
 
@@ -46,12 +46,13 @@ Click a screenshot to view the original. These show dark Acrylic; the appearance
 
 | Feature | What you can do |
 | --- | --- |
-| Desktop panels | Organize files, folders and shortcuts without moving the original files |
+| Desktop panels | Organize files, folders and shortcuts without moving the original files; sort names in ascending or descending order |
 | Panel tabs | Switch between panels, reorder tabs, merge them or detach them into separate windows |
 | Folder panels | Browse directories, sort by name, type, date or size, and follow file changes automatically |
 | File search | Find local files through Everything and open files or their locations |
 | File preview | Press Space to preview selected files with PowerToys Peek or QuickLook |
 | Fonts & languages | Search fonts suited to the current language and switch between seven interface languages without restarting |
+| Agent integration & CLI | Let agents use the companion skill and CLI to inspect the desktop, plan changes and apply them across panels, icons, layouts, folders, search and settings |
 | Backup & restore | Save and restore settings and layouts; automatic backups skip unchanged content |
 
 Panels can move, resize, collapse, auto-hide, snap to edges, lock, or stay on top. Customize fonts, rounded corners, colors and background materials. Folder and search panels remain independent of panel tabs.
@@ -98,6 +99,32 @@ Search and preview are **disabled by default** and require separately installed 
 These tools are not bundled with LucidDesk. See the [user guide](docs/usage.md) (Chinese) for more controls and shortcuts.
 
 An optional **Show all panels** global shortcut is available in **Settings → Panel layout**. It is off by default, with `Ctrl + Shift + D` as the preset. It performs the same action as **Show panels** in the tray and preserves each panel’s always-on-top setting.
+
+### CLI and agents
+
+`luciddesk-cli.exe` gives scripts and agents a structured interface for desktop management. Start the matching version of the app to inspect the workspace, plan changes and have the app apply them to the UI.
+
+| Capability | Available operations |
+| --- | --- |
+| Status and inventory | Query connection status, supported capabilities, monitors, panels, icons and workspace snapshots |
+| Panel management | Create, update and remove panels; configure titles, locking, collapse, auto-hide and always-on-top options |
+| Layout | Set positions and sizes, fit content to icon columns, arrange columns, and choose a target panel, snapping side and alignment |
+| Icons and tabs | Assign desktop icons to panels or release them to the desktop, sort by name or explicit order, and merge, select, reorder or detach tabs |
+| Folders and search | Manage folder mappings, views and sorting; navigate and refresh directories; submit searches, refresh results and load more |
+| Settings and system | Query and change supported application settings, discover available fonts, and inspect or configure startup |
+
+Start with read-only queries from the application directory:
+
+```powershell
+.\luciddesk-cli.exe status --json
+.\luciddesk-cli.exe capabilities --json
+.\luciddesk-cli.exe workspace get --json
+.\luciddesk-cli.exe skill show
+```
+
+**Agent workflow: query → create a plan → preview differences → apply → verify.** The CLI provides JSON output, schema discovery and request receipts. Previews do not persist changes; query again after a state conflict, and use receipts to check execution after a timeout. Add `--dry-run` to shortcut mutations to preview only; without it, the CLI previews and immediately applies the change.
+
+Agents can read the built-in guide with `skill show` or use the repository's [SKILL.md](skills/luciddesk-control/SKILL.md). Supported operations vary by panel type. See the [CLI guide](docs/cli.md) (Chinese) for commands, scope and recovery, and the [changelog](CHANGELOG.en.md#unreleased) for recent additions.
 
 <a id="upgrading-and-backups"></a>
 
@@ -157,7 +184,7 @@ Requires Windows x64, rustup, Visual Studio C++ Build Tools and the Windows SDK.
 git clone https://github.com/Yuch3nE/luciddesk.git
 cd luciddesk
 .\tools\use-windows-toolchain.ps1
-cargo build -p luciddesk -p luciddesk-explorer --locked
+cargo build -p luciddesk -p luciddesk-cli -p luciddesk-explorer --locked
 .\target\debug\luciddesk.exe
 ```
 

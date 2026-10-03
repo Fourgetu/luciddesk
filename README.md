@@ -6,9 +6,9 @@
 
 简体中文 · [English](README.en.md)
 
-**把 Windows 桌面整理成顺手的工作区。**
+**把 Windows 桌面整理成顺手的工作区，也能交给 Agent 协助打理。**
 
-桌面面板 · 文件夹面板 · Everything 搜索 · 空格预览
+桌面面板 · 文件夹面板 · Everything 搜索 · 空格预览 · Agent 联动
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Build CI](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml/badge.svg)](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml)
@@ -18,7 +18,7 @@
 
 [⬇️ 下载](https://github.com/Yuch3nE/luciddesk/releases) · [📸 截图](#界面截图) · [🚀 开始使用](#开始使用) · [📖 使用指南](docs/usage.md) · [📋 更新记录](CHANGELOG.md) · [🤝 参与开发](#参与开发)
 
-把零散图标收进面板，把常用目录放到桌面，再用 Everything 搜索快速找到文件。LucidDesk 使用 Rust 开发，让 Windows 桌面上的常用内容触手可及。
+LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。把零散图标收进面板，把常用目录放到桌面，再用 Everything 搜索快速找到文件。通过 CLI 与配套 Skill，还可以让 Agent 按你的要求整理图标、调整面板布局、管理文件夹和设置，先预览改动，再应用到桌面。
 
 ![LucidDesk 功能示意：面板标签、文件夹浏览与 Everything 搜索](docs/images/overview.svg)
 
@@ -46,12 +46,13 @@
 
 | 功能 | 你可以做什么 |
 | --- | --- |
-| 桌面面板 | 将文件、文件夹和快捷方式拖入面板，按工作、学习或工具分类 |
+| 桌面面板 | 将文件、文件夹和快捷方式拖入面板，按工作、学习或工具分类；支持按名称升序或降序整理 |
 | 面板标签 | 把多个桌面面板放进一个窗口，按需切换、排序、合并或分离 |
 | 文件夹面板 | 在桌面浏览常用目录，按名称、类型、时间或大小排序，文件变化后自动刷新 |
 | 文件搜索 | 通过 Everything 查找本机文件，直接打开或定位所在文件夹 |
 | 文件预览 | 选中文件后按空格，使用 PowerToys Peek 或 QuickLook 查看内容 |
 | 字体与语言 | 搜索适合当前语言的字体，切换七种界面语言，无需重启 |
+| Agent 联动与 CLI | 让 Agent 通过配套 Skill 和 CLI 查询桌面、规划整理方案并应用；支持面板、图标、布局、文件夹、搜索和设置管理 |
 | 备份与恢复 | 保存设置和布局，按需恢复；自动备份跳过未变化的内容 |
 
 面板可以移动、缩放、折叠、自动收起，也可以吸附边缘、锁定或置顶。支持调整字体、圆角与颜色，选择纯色、亚克力或云母材质。文件夹与搜索面板独立显示，不参与面板标签合并。
@@ -99,6 +100,32 @@
 | 空格预览 | 安装 PowerToys Peek 或 QuickLook，在“设置 → 文件预览”中选择程序并启用 |
 
 这些软件不包含在 LucidDesk 的任何发布包中。更多操作和快捷键见[使用说明](docs/usage.md)。
+
+### CLI 与 Agent
+
+`luciddesk-cli.exe` 为脚本和 Agent 提供结构化的桌面管理接口。启动同一版本主程序后，即可查询当前工作区、规划修改并让主程序应用到界面。
+
+| 能力 | 可以完成的操作 |
+| --- | --- |
+| 状态与清单 | 查询连接状态、可用能力、显示器、面板、图标和工作区快照 |
+| 面板管理 | 创建、修改和移除面板，调整标题、锁定、折叠、自动收起和置顶等选项 |
+| 布局整理 | 调整位置与大小，按图标列数适配内容，分列排列，指定目标面板、吸附侧和对齐方式 |
+| 图标与标签 | 将桌面图标收纳到面板或移回桌面，按名称或指定顺序排列；合并、切换、排序和分离标签 |
+| 文件夹与搜索 | 管理文件夹映射、视图和排序，浏览与刷新目录；提交搜索、刷新结果和加载下一页 |
+| 设置与系统 | 查询和修改支持的应用设置，查找可用字体，查询与设置开机启动 |
+
+在程序目录中从只读查询开始：
+
+```powershell
+.\luciddesk-cli.exe status --json
+.\luciddesk-cli.exe capabilities --json
+.\luciddesk-cli.exe workspace get --json
+.\luciddesk-cli.exe skill show
+```
+
+**Agent 工作流程：查询 → 生成计划 → 预览差异 → 应用 → 核对结果。** CLI 提供 JSON 输出、协议查询和请求回执；预览不保存修改，状态冲突时重新查询，超时后通过回执确认执行结果。快捷修改命令加 `--dry-run` 只预览，省略时会预览后立即应用。
+
+Agent 可通过 `skill show` 读取内置操作指南，或使用仓库中的 [SKILL.md](skills/luciddesk-control/SKILL.md)。不同面板类型支持的操作有所区别，完整命令、适用范围和恢复流程见 [CLI 使用说明](docs/cli.md)；近期新增能力见[更新记录](CHANGELOG.md#unreleased)。
 
 <a id="升级与备份"></a>
 
@@ -165,7 +192,7 @@ cd luciddesk
 
 ```powershell
 .\tools\use-windows-toolchain.ps1
-cargo build -p luciddesk -p luciddesk-explorer --locked
+cargo build -p luciddesk -p luciddesk-cli -p luciddesk-explorer --locked
 .\target\debug\luciddesk.exe
 ```
 
@@ -204,6 +231,7 @@ MSI 使用 `ensure-wix.ps1` 准备工具后，加 `-InstallerFormat Msi`；`Both
 | [使用说明](docs/usage.md) | 面板操作、快捷键、外观与故障处理 |
 | [安装版](docs/installer.md) · [普通 ZIP](docs/package.md) · [便携版](docs/portable.md) | 安装、升级与配置保存 |
 | [更新记录](CHANGELOG.md) | 各版本的应用功能与修复 |
+| [CLI 使用说明](docs/cli.md) · [Agent 技能](skills/luciddesk-control/SKILL.md) | 命令、整理计划、预览与恢复 |
 | [开发文档](docs/development/README.md) | 架构、构建、存储与验证 |
 | [贡献指南](CONTRIBUTING.md) · [隐私政策](PRIVACY.md) | 参与方式与数据处理说明 |
 

@@ -6,6 +6,28 @@ Current version: **0.18.1**. Features and fixes by release.
 
 Exit the app before upgrading a portable installation and preserve its `data` folder. See the [portable guide](docs/portable.md) (Chinese).
 
+<a id="unreleased"></a>
+
+## Unreleased
+
+### feat
+
+- Add `luciddesk-cli` and an Agent skill to query the running app, preview organization plans and apply them. Support JSON output, offline schema and skill discovery, request receipts and timeout recovery. Packaging includes the CLI, schema and skill files.
+- Add content fitting, right-side column arrangement and relative snapping commands. Choose icon columns, a target panel, side and alignment; snapping retains the fixed 5-physical-pixel gap.
+- Add folder panel fitting and explicit refresh. List view preserves its width, supports a visible-row limit and checks folder snapshot readiness.
+- Add ascending and descending name sorting for desktop panels through the CLI and unlocked panel context menus. Reapplying the same order does not write to the database.
+
+### fix
+
+- Fix an application exit caused by model borrow reentry when sorting from a desktop panel menu.
+- Fix state borrow reentry during failed search-enable saves, settings error dialogs and font editor destruction.
+
+### changed
+
+- Separate settings windows, panel events, native menus, input handling and task scheduling by responsibility.
+- Separate content measurement, fitting, snapping and arrangement algorithms behind a read-only layout context, preserving persistence and rollback in the control layer.
+- Expand CLI/Agent documentation, module boundaries and native window test isolation notes. Real-machine acceptance for multiple monitors, another Windows login session and an installed MSIX remains pending.
+
 ## 0.18.1 · 2026-10-03
 
 ### changed
