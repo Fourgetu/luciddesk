@@ -21,6 +21,14 @@ namespace LucidDesk {
         static extern IntPtr LoadResource(IntPtr module, IntPtr resource);
         [DllImport("kernel32.dll")]
         static extern IntPtr LockResource(IntPtr resource);
+        public static bool Matches(byte[] actual, byte[] expected, int offset, int count) {
+            if (actual.Length != count || offset < 0 || count < 0 ||
+                offset > expected.Length - count) return false;
+            for (int i = 0; i < count; i++) {
+                if (actual[i] != expected[offset + i]) return false;
+            }
+            return true;
+        }
         public static byte[] Read(IntPtr module, int type, int id) {
             var resource = FindResource(module, (IntPtr)id, (IntPtr)type);
             if (resource == IntPtr.Zero) throw new Exception("Missing icon resource " + id);
@@ -35,12 +43,16 @@ namespace LucidDesk {
 '@
 }
 # Load as data; do not execute the application.
+if ($ico.Length -lt 6 -or [BitConverter]::ToUInt16($ico, 0) -ne 0 -or
+    [BitConverter]::ToUInt16($ico, 2) -ne 1) { throw 'Invalid source ICO header.' }
+$count = [BitConverter]::ToUInt16($ico, 4)
+if ($count -eq 0 -or $ico.Length -lt 6 + 16 * $count) { throw 'Invalid source ICO directory.' }
 $module = [LucidDesk.IconResourceCheck]::LoadLibraryEx($exe, [IntPtr]::Zero, 0x22)
 if ($module -eq [IntPtr]::Zero) { throw "Could not load EXE resources: $exe" }
 try {
     $group = [LucidDesk.IconResourceCheck]::Read($module, 14, 1)
-    $count = [BitConverter]::ToUInt16($ico, 4)
-    if ([BitConverter]::ToUInt16($group, 4) -ne $count) { throw 'Embedded icon frame count differs from source ICO.' }
+    if ($group.Length -lt 6 + 14 * $count -or [BitConverter]::ToUInt16($group, 0) -ne 0 -or
+        [BitConverter]::ToUInt16($group, 2) -ne 1 -or [BitConverter]::ToUInt16($group, 4) -ne $count) { throw 'Embedded icon frame count differs from source ICO.' }
     for ($i = 0; $i -lt $count; $i++) {
         $entry = 6 + 16 * $i
         $groupEntry = 6 + 14 * $i
@@ -52,8 +64,11 @@ try {
         $length = [BitConverter]::ToUInt32($ico, $entry + 8)
         $offset = [BitConverter]::ToUInt32($ico, $entry + 12)
         if ($bytes.Length -ne $length) { throw "Icon frame $i size differs." }
-        for ($j = 0; $j -lt $length; $j++) {
-            if ($bytes[$j] -ne $ico[$offset + $j]) { throw "Icon frame $i content differs." }
+        if ($offset -lt 6 + 16 * $count -or [uint64]$offset + $length -gt $ico.Length) {
+            throw "Icon frame $i is outside the source ICO."
+        }
+        if (-not [LucidDesk.IconResourceCheck]::Matches($bytes, $ico, [int]$offset, [int]$length)) {
+            throw "Icon frame $i content differs."
         }
     }
     Write-Output "Verified all $count embedded icon frames: $exe"
