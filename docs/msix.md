@@ -138,3 +138,10 @@ cargo test -p luciddesk --bin luciddesk desktop_component::tests --locked --offl
 包清单声明稳定任务 ID `LucidDeskStartup`，默认 `Enabled="false"`。用户主动开启后调用 `RequestEnableAsync`，关闭调用 `Disable`；状态读取与修改在后台进行。Task Manager/Windows 启动设置禁用后的 `DisabledByUser` 以及策略控制的状态均只读显示，引导用户到系统设置，不覆盖系统选择。任务 ID 在更新中保持一致，卸载由 Windows 清理包登记。
 
 验证应区分清单校验和真实部署：MakeAppx 校验通过不能替代受信任签名包安装后对启用、停用、任务管理器禁用、更新保留状态及卸载的测试。
+
+
+## CLI 与 Agent Skill
+
+包内包含同版本的 `luciddesk-cli.exe`、`cli.md`、`protocol.schema.json` 和 `skills/luciddesk-control/SKILL.md`。主程序运行后，在程序目录执行 `./luciddesk-cli.exe status --json` 验证连接。`./luciddesk-cli.exe skill show` 离线显示配套 Skill，Agent 可使用 `skill show --json` 获取结构化结果。
+
+需要让 Agent 自动发现 Skill 时，将完整 `skills/luciddesk-control` 文件夹复制到该 Agent 配置的技能目录；若已有同名技能，先比较内容，保留本地定制。安装程序不会修改 Agent 的配置、技能目录或系统 PATH。程序移动或升级后，使用新目录中的 CLI 与 Skill。操作命令和恢复规则见 `cli.md`。

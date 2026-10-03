@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [switch]$Offline, [switch]$Portable, [switch]$RenderDiagnostics, [switch]$Installer, [switch]$All,
     [ValidateSet('Exe', 'Msi', 'Both')][string]$InstallerFormat = 'Exe',
@@ -43,6 +43,7 @@ try {
     $metadata = $metadataJson | ConvertFrom-Json
     $version = ($metadata.packages | Where-Object name -eq 'luciddesk').version
     if (-not $version) { throw 'The luciddesk package version is missing.' }
+    if (($metadata.packages | Where-Object name -eq 'luciddesk-cli').version -ne $version) { throw 'GUI and CLI versions must match.' }
     & (Join-Path $PSScriptRoot 'use-windows-toolchain.ps1')
     $revision = & git rev-parse --short HEAD
     if ($LASTEXITCODE -ne 0) { throw 'Could not read Git revision.' }
@@ -64,13 +65,13 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Could not read Cargo version.' }
     # Keep release artifacts separate from explicitly enabled diagnostic backends.
     $productionTarget = Join-Path $repoRoot 'target\production'
-    $buildArgs = @('build', '--release', '--locked', '--no-default-features', '--target-dir', $productionTarget, '-p', 'luciddesk', '-p', 'luciddesk-explorer')
+    $buildArgs = @('build', '--release', '--locked', '--no-default-features', '--target-dir', $productionTarget, '-p', 'luciddesk', '-p', 'luciddesk-explorer', '-p', 'luciddesk-cli')
     if ($Offline) { $buildArgs += '--offline' }
     & cargo @buildArgs
     if ($LASTEXITCODE -ne 0) { throw 'Release build failed.' }
     & (Join-Path $PSScriptRoot 'verify-app-icon.ps1') -Executable (Join-Path $productionTarget 'release/luciddesk.exe')
     # All package modes share these exact binaries and build provenance.
-    $binaryFiles = @('luciddesk.exe', 'luciddesk_explorer.dll')
+    $binaryFiles = @('luciddesk.exe', 'luciddesk_explorer.dll', 'luciddesk-cli.exe')
     $files = @($binaryFiles | ForEach-Object {
         $fileHash = Get-FileHash -LiteralPath (Join-Path $productionTarget "release\$_") -Algorithm SHA256
         [ordered]@{ file = $_; sha256 = $fileHash.Hash.ToLowerInvariant() }
@@ -93,6 +94,7 @@ try {
         foreach ($file in $binaryFiles) {
             Copy-Item -LiteralPath (Join-Path $productionTarget "release\$file") -Destination $stage
         }
+        $agentFiles = & (Join-Path $PSScriptRoot 'stage-agent-payload.ps1') -SourceRoot $repoRoot -Destination $stage
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Refresh-App-Icon.ps1') -Destination $stage
         $readme = if ($isPortable) { 'docs\portable.md' } else { 'docs\package.md' }
         Copy-Item -LiteralPath (Join-Path $repoRoot $readme) -Destination (Join-Path $stage 'README.md')
@@ -122,8 +124,9 @@ try {
             renderingDiagnostics = [bool]$RenderDiagnostics
             builtAt = $builtAt; architecture = 'windows-x64'
             buildEnvironment = $buildEnvironment
-            files = $files
+            files = @($files) + @($agentFiles)
         } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $stage 'build.json') -Encoding UTF8
+        $null = & (Join-Path $PSScriptRoot 'test-agent-package.ps1') -Directory $stage
         $archive = Join-Path $outRoot "$name.zip"
         Compress-Archive -LiteralPath $stage -DestinationPath $archive -CompressionLevel Optimal
         $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()

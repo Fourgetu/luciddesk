@@ -81,3 +81,10 @@ Get-FileHash -LiteralPath '<下载的 ZIP 完整路径>' -Algorithm SHA256
 Windows 10 的用户反馈不等于每个构建均完成验收；ARM64 和远程桌面也不能由 Windows 11 x64 启动成功推断支持。系统更新和第三方 Shell 扩展可能影响菜单或桌面连接，报告问题时附上 Windows 构建号、应用版本、复现步骤与错误信息。
 
 面板使用、快捷键、文件夹映射及更多故障处理见[使用指南](usage.md)。
+
+
+## CLI 与 Agent Skill
+
+包内包含同版本的 `luciddesk-cli.exe`、`cli.md`、`protocol.schema.json` 和 `skills/luciddesk-control/SKILL.md`。主程序运行后，在程序目录执行 `./luciddesk-cli.exe status --json` 验证连接。`./luciddesk-cli.exe skill show` 离线显示配套 Skill，Agent 可使用 `skill show --json` 获取结构化结果。
+
+需要让 Agent 自动发现 Skill 时，将完整 `skills/luciddesk-control` 文件夹复制到该 Agent 配置的技能目录；若已有同名技能，先比较内容，保留本地定制。安装程序不会修改 Agent 的配置、技能目录或系统 PATH。程序移动或升级后，使用新目录中的 CLI 与 Skill。操作命令和恢复规则见 `cli.md`。

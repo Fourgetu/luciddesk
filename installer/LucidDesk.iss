@@ -1,4 +1,4 @@
-; Build only through tools/package.ps1 -Installer so the EXE and Hook match.
+﻿; Build only through tools/package.ps1 -Installer so the EXE and Hook match.
 #ifndef AppVersion
   #error AppVersion is required
 #endif
@@ -73,6 +73,7 @@ Name: "chinesesimplified"; MessagesFile: "ChineseSimplified.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
+Source: "{#SourcePath}\skills\*"; DestDir: "{app}\skills"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#SourcePath}\*"; DestDir: "{app}"; Flags: ignoreversion; Excludes: "portable,msix,README.md,luciddesk_explorer.dll,luciddesk.exe"
 Source: "{#SourcePath}\luciddesk.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourcePath}\luciddesk_explorer.dll"; DestDir: "{app}"; Flags: ignoreversion

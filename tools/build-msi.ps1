@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$SourcePath,
     [Parameter(Mandatory)][string]$OutputPath,
@@ -27,6 +27,11 @@ $SourcePath = (Resolve-Path -LiteralPath $SourcePath).Path
 foreach ($required in @('luciddesk.exe', 'luciddesk_explorer.dll', 'build.json', 'LICENSE')) {
     if (-not (Test-Path -LiteralPath (Join-Path $SourcePath $required) -PathType Leaf)) { throw "Missing payload: $required" }
 }
+if (-not $TestFixture) {
+    foreach ($required in @('luciddesk-cli.exe', 'cli.md', 'protocol.schema.json', 'skills/luciddesk-control/SKILL.md')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $SourcePath $required) -PathType Leaf)) { throw "Missing Agent payload: $required" }
+    }
+}
 $OutputPath = [IO.Path]::GetFullPath($OutputPath)
 New-Item -ItemType Directory -Force -Path $OutputPath | Out-Null
 $work = Join-Path $OutputPath 'build'
@@ -39,6 +44,7 @@ $source = Join-Path $repo 'installer/msi-actions.cpp'
 $identity = @(
     (Get-FileHash -LiteralPath $source).Hash,
     (Get-FileHash -LiteralPath $PSCommandPath).Hash,
+    (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'msi-payload.ps1')).Hash,
     $env:LUCIDDESK_WINDOWS_BUILD_ENVIRONMENT,
     "fixture=$([bool]$TestFixture)"
 ) -join "`n"
@@ -61,16 +67,8 @@ if ($cached) {
     if ($LASTEXITCODE -ne 0) { throw 'Native MSI action compilation failed.' }
     (Get-FileHash -LiteralPath $actions).Hash | Set-Content -LiteralPath $stamp -Encoding ASCII
 }
-$escape = { param($text) [Security.SecurityElement]::Escape($text) }
-$components = foreach ($file in (Get-ChildItem -LiteralPath $SourcePath -File | Sort-Object Name)) {
-    if ($file.Name -in @('portable', 'portable.marker', 'msix', 'README.md', 'installed')) { continue }
-    $id = if ($file.Name -eq 'luciddesk.exe') { 'AppExe' } else { 'File_' + ($file.Name -replace '[^A-Za-z0-9_]', '_') }
-    '<Component Guid="*"><File Id="' + $id + '" Source="' + (& $escape $file.FullName) + '" KeyPath="yes" /></Component>'
-}
-$components += '<Component Guid="*"><File Source="' + (& $escape (Join-Path $repo 'installer/installed')) + '" KeyPath="yes" /></Component>'
-$components += '<Component Guid="*"><File Name="README.md" Source="' + (& $escape (Join-Path $repo 'docs/installer.md')) + '" KeyPath="yes" /></Component>'
 $payload = Join-Path $work 'payload.wxs'
-('<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"><Fragment><ComponentGroup Id="Payload" Directory="INSTALLFOLDER">' + ($components -join "`n") + '</ComponentGroup></Fragment></Wix>') | Set-Content -LiteralPath $payload -Encoding UTF8
+& (Join-Path $PSScriptRoot 'msi-payload.ps1') -SourcePath $SourcePath -RepoRoot $repo -OutputFile $payload
 $output = Join-Path $OutputPath "LucidDesk-$Version-windows-x64.msi"
 & $wix build (Join-Path $repo 'installer/LucidDesk.wxs') $payload -arch x64 -culture zh-CN -ext $extension `
     -cabcache (Join-Path $cache 'cabinets') -pdbtype none `

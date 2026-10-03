@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$SourcePath,
     [string]$IdentityName = 'Yuchen95.LucidDesk',
@@ -24,7 +24,7 @@ if ($versionParts[0] -lt 1 -or @($versionParts | Where-Object { $_ -gt 65535 }).
     throw 'Store package version parts must be within 0..65535, with a nonzero major.'
 }
 if ($IdentityName -notmatch '^[A-Za-z0-9.-]{3,50}$') { throw 'Invalid MSIX identity name.' }
-foreach ($file in @('luciddesk.exe', 'luciddesk_explorer.dll')) {
+foreach ($file in @('luciddesk.exe', 'luciddesk_explorer.dll', 'luciddesk-cli.exe', 'cli.md', 'protocol.schema.json', 'skills/luciddesk-control/SKILL.md')) {
     $entry = @($build.files | Where-Object file -eq $file)
     if ($entry.Count -ne 1 -or (Get-FileHash -LiteralPath (Join-Path $source $file) -Algorithm SHA256).Hash -ne $entry[0].sha256) {
         throw "Source checksum mismatch: $file"
@@ -40,10 +40,12 @@ $outRoot = Join-Path $repoRoot "target/msix/$stamp"
 $stage = Join-Path $outRoot 'stage'
 $assets = Join-Path $stage 'Assets'
 New-Item -ItemType Directory -Path $assets -Force | Out-Null
-foreach ($file in @('luciddesk.exe', 'luciddesk_explorer.dll', 'build.json', 'LICENSE')) {
+foreach ($file in @('luciddesk.exe', 'luciddesk_explorer.dll', 'luciddesk-cli.exe', 'build.json', 'LICENSE', 'cli.md', 'protocol.schema.json')) {
     Copy-Item -LiteralPath (Join-Path $source $file) -Destination $stage
 }
+Copy-Item -LiteralPath (Join-Path $source 'skills') -Destination $stage -Recurse
 [IO.File]::WriteAllBytes((Join-Path $stage 'msix'), [byte[]]@())
+$null = & (Join-Path $PSScriptRoot 'test-agent-package.ps1') -Directory $stage
 
 # Generate package logos from the application's existing icon.
 Add-Type -AssemblyName System.Drawing
