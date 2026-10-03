@@ -25,7 +25,47 @@ pub enum Operation {
         title: String,
     },
     #[serde(rename = "pane.update")]
-    Update { pane_id: String, title: String },
+    Update {
+        pane_id: String,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "optional"
+        )]
+        title: Option<String>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "optional"
+        )]
+        locked: Option<bool>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "optional"
+        )]
+        auto_hide: Option<bool>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "optional"
+        )]
+        collapsed: Option<bool>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "optional"
+        )]
+        always_on_top: Option<bool>,
+    },
+    #[serde(rename = "pane.remove")]
+    Remove {
+        pane_id: String,
+        #[serde(default)]
+        release_items: bool,
+    },
+    #[serde(rename = "item.release")]
+    Release { item_ids: Vec<String> },
     #[serde(rename = "item.assign")]
     Assign {
         item_ids: Vec<String>,
@@ -39,6 +79,15 @@ pub enum Operation {
         pane_id: String,
         item_ids: Vec<String>,
     },
+}
+
+// Omission means unchanged; explicit null is invalid, never an implicit reset.
+fn optional<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    T::deserialize(deserializer).map(Some)
 }
 
 #[cfg(test)]

@@ -359,8 +359,7 @@
                 "additionalProperties": false,
                 "required": [
                   "op",
-                  "pane_id",
-                  "title"
+                  "pane_id"
                 ],
                 "properties": {
                   "op": {
@@ -374,8 +373,21 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 256
+                  },
+                  "locked": {
+                    "type": "boolean"
+                  },
+                  "auto_hide": {
+                    "type": "boolean"
+                  },
+                  "collapsed": {
+                    "type": "boolean"
+                  },
+                  "always_on_top": {
+                    "type": "boolean"
                   }
-                }
+                },
+                "minProperties": 3
               },
               {
                 "type": "object",
@@ -460,6 +472,50 @@
                   },
                   "item_ids": {
                     "type": "array",
+                    "maxItems": 10000,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "op",
+                  "pane_id"
+                ],
+                "properties": {
+                  "op": {
+                    "const": "pane.remove"
+                  },
+                  "pane_id": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]*$"
+                  },
+                  "release_items": {
+                    "type": "boolean",
+                    "default": false
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "op",
+                  "item_ids"
+                ],
+                "properties": {
+                  "op": {
+                    "const": "item.release"
+                  },
+                  "item_ids": {
+                    "type": "array",
+                    "minItems": 1,
                     "maxItems": 10000,
                     "uniqueItems": true,
                     "items": {

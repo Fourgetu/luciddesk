@@ -108,8 +108,32 @@ fn keys(
         })
         .collect()
 }
+fn release(workspace: &mut Workspace, moving: &[String]) -> Result<(), (String, String)> {
+    let moving: HashSet<_> = moving.iter().collect();
+    let mut sources = HashSet::new();
+    for item in workspace.desktop_items() {
+        if moving.contains(&item.identity().persistent_key()) {
+            if let DesktopPlacement::Pane { pane_id, .. } = item.placement() {
+                editable(workspace, *pane_id)?;
+                sources.insert(*pane_id);
+            }
+        }
+    }
+    for item in workspace.desktop_items_mut() {
+        if moving.contains(&item.identity().persistent_key())
+            && matches!(item.placement(), DesktopPlacement::Pane { .. })
+        {
+            item.set_placement(DesktopPlacement::default());
+        }
+    }
+    for pane in sources {
+        let items = ordered(workspace, pane);
+        order(workspace, pane, &items);
+    }
+    Ok(())
+}
 fn summary(workspace: &Workspace) -> serde_json::Value {
-    json!({"panes":workspace.panels().iter().map(|p|json!({"id":p.id().get().to_string(),"title":p.title()})).collect::<Vec<_>>(),
+    json!({"panes":workspace.panels().iter().map(|p|json!({"id":p.id().get().to_string(),"title":p.title(),"locked":p.locked(),"auto_hide":p.auto_hide(),"manual_collapsed":p.collapsed(),"always_on_top":p.always_on_top()})).collect::<Vec<_>>(),
         "placements":workspace.desktop_items().iter().map(|item|{
             let placement=match item.placement(){DesktopPlacement::Pane{pane_id,position}=>json!({"pane_id":pane_id.get().to_string(),"column":position.column,"row":position.row}),_=>serde_json::Value::Null};
             (item.identity().persistent_key(),placement)
@@ -129,6 +153,12 @@ fn prepare(
     let mut next = workspace.clone();
     let mut refs = HashMap::new();
     let mut membership = false;
+    let mut next_id = workspace
+        .panels()
+        .iter()
+        .map(|p| p.id().get())
+        .max()
+        .unwrap_or(0);
     for operation in &plan.operations {
         match operation {
             Operation::Create { reference, title } => {
@@ -138,15 +168,11 @@ fn prepare(
                 if title.trim().is_empty() || title.chars().count() > 256 {
                     return Err(invalid("title must contain 1..256 characters"));
                 }
-                let number = next
-                    .panels()
-                    .iter()
-                    .map(|p| p.id().get())
-                    .max()
-                    .unwrap_or(0)
+                next_id = next_id
                     .checked_add(1)
                     .filter(|n| *n <= i64::MAX as u64)
                     .ok_or_else(|| invalid("panel ID exhausted"))?;
+                let number = next_id;
                 let panel = Panel::new(
                     PanelId::new(number),
                     title,
@@ -155,13 +181,81 @@ fn prepare(
                 next.add_panel(panel).map_err(|e| invalid(e.to_string()))?;
                 refs.insert(reference.clone(), number.to_string());
             }
-            Operation::Update { pane_id, title } => {
+            Operation::Update {
+                pane_id,
+                title,
+                locked,
+                auto_hide,
+                collapsed,
+                always_on_top,
+            } => {
+                let target = id(pane_id)?;
+                let panel = next
+                    .panel(target)
+                    .ok_or_else(|| ("NOT_FOUND".into(), "panel does not exist".into()))?;
+                if !panel.supports_tabs() {
+                    return Err(invalid("only desktop panels are currently supported"));
+                }
+                if title.is_none()
+                    && locked.is_none()
+                    && auto_hide.is_none()
+                    && collapsed.is_none()
+                    && always_on_top.is_none()
+                {
+                    return Err(invalid("update requires at least one field"));
+                }
+                if panel.locked() && *locked != Some(false) {
+                    return Err((
+                        "PANE_LOCKED".into(),
+                        "explicitly unlock the panel first".into(),
+                    ));
+                }
+                if let Some(title) = title {
+                    if title.trim().is_empty() || title.chars().count() > 256 {
+                        return Err(invalid("title must contain 1..256 characters"));
+                    }
+                    next.panel_mut(target).unwrap().set_title(title);
+                }
+                // Window options belong to every member of a tab group, including inactive tabs.
+                let members = next
+                    .tab_group(target)
+                    .map_or_else(|| vec![target], |g| g.members.clone());
+                for member in members {
+                    let panel = next.panel_mut(member).unwrap();
+                    if let Some(value) = locked {
+                        panel.set_locked(*value);
+                    }
+                    if let Some(value) = auto_hide {
+                        panel.set_auto_hide(*value);
+                    }
+                    if let Some(value) = collapsed {
+                        panel.set_collapsed(*value);
+                    }
+                    if let Some(value) = always_on_top {
+                        panel.set_always_on_top(*value);
+                    }
+                }
+            }
+            Operation::Release { item_ids } => {
+                let moving = keys(&next, item_ids, ids)?;
+                release(&mut next, &moving)?;
+                membership = true;
+            }
+            Operation::Remove {
+                pane_id,
+                release_items,
+            } => {
                 let target = id(pane_id)?;
                 editable(&next, target)?;
-                if title.trim().is_empty() || title.chars().count() > 256 {
-                    return Err(invalid("title must contain 1..256 characters"));
+                let members = ordered(&next, target);
+                if !members.is_empty() && !release_items {
+                    return Err(invalid("panel is not empty; set release_items explicitly"));
                 }
-                next.panel_mut(target).unwrap().set_title(title);
+                if !members.is_empty() {
+                    release(&mut next, &members)?;
+                    membership = true;
+                }
+                next.remove_panel(target);
             }
             Operation::Assign {
                 item_ids,
@@ -220,6 +314,7 @@ fn prepare(
             }
         }
     }
+    refs.retain(|_, raw| id(raw).is_ok_and(|id| next.panel(id).is_some()));
     let mut before = summary(workspace);
     let mut after = summary(&next);
     // Never expose internal Shell identity encoding in the wire diff.
@@ -444,6 +539,98 @@ mod tests {
             "RESULT_UNKNOWN"
         );
         assert_eq!(state.store.change_count(), count);
+    }
+    #[test]
+    fn remove_requires_explicit_release_and_normalizes_only_affected_members() {
+        let mut state = super::super::super::tests::test_state();
+        let mut snapshot = Snapshot::new();
+        for (index, item) in state.workspace.desktop_items_mut().iter_mut().enumerate() {
+            item.set_placement(DesktopPlacement::Pane {
+                pane_id: PanelId::new(1),
+                position: GridPosition::new(index as u32, 0),
+            });
+        }
+        let before = state.workspace.clone();
+        let count = state.store.change_count();
+        let denied = preview(
+            &mut snapshot,
+            &mut state,
+            json!([{"op":"pane.remove","pane_id":"1"}]),
+        );
+        assert!(!denied.ok);
+        let prepared = preview(
+            &mut snapshot,
+            &mut state,
+            json!([{"op":"pane.remove","pane_id":"1","release_items":true}]),
+        );
+        assert!(prepared.ok);
+        let next = &snapshot.plans.pending.back().unwrap().next;
+        assert!(next.panel(PanelId::new(1)).is_none());
+        assert!(
+            next.desktop_items()
+                .iter()
+                .all(|i| matches!(i.placement(), DesktopPlacement::FreeDesktop { .. }))
+        );
+        assert_eq!(state.workspace, before);
+        assert_eq!(state.store.change_count(), count);
+        assert_eq!(
+            snapshot
+                .respond(&mut state, &apply(&prepared))
+                .error
+                .unwrap()
+                .code,
+            "CAPABILITY_UNAVAILABLE"
+        );
+    }
+    #[test]
+    fn options_require_explicit_unlock_and_preview_lists_shared_changes() {
+        let mut state = super::super::super::tests::test_state();
+        let mut snapshot = Snapshot::new();
+        state
+            .workspace
+            .set_tab_groups(vec![luciddesk_core::PaneTabs {
+                members: vec![PanelId::new(1), PanelId::new(2)],
+                active: PanelId::new(1),
+            }])
+            .unwrap();
+        let p = preview(
+            &mut snapshot,
+            &mut state,
+            json!([{"op":"pane.update","pane_id":"2","locked":true,"auto_hide":true,"collapsed":true,"always_on_top":true}]),
+        );
+        assert!(snapshot.respond(&mut state, &apply(&p)).ok);
+        for panel in state.workspace.panels() {
+            assert!(
+                panel.locked() && panel.auto_hide() && panel.collapsed() && panel.always_on_top()
+            );
+        }
+        let denied = preview(
+            &mut snapshot,
+            &mut state,
+            json!([{"op":"pane.update","pane_id":"1","title":"blocked"}]),
+        );
+        assert_eq!(denied.error.unwrap().code, "PANE_LOCKED");
+        let p = preview(
+            &mut snapshot,
+            &mut state,
+            json!([{"op":"pane.update","pane_id":"2","locked":false,"title":"unlocked"}]),
+        );
+        assert!(snapshot.respond(&mut state, &apply(&p)).ok);
+        assert!(state.workspace.panels().iter().all(|p| !p.locked()));
+    }
+    #[test]
+    fn provisional_ids_are_not_reused_within_a_plan() {
+        let mut state = super::super::super::tests::test_state();
+        let mut snapshot = Snapshot::new();
+        let p = preview(
+            &mut snapshot,
+            &mut state,
+            json!([{"op":"pane.create","ref":"discarded","title":"discarded"},{"op":"pane.remove","pane_id":"3"},{"op":"pane.create","ref":"kept","title":"kept"}]),
+        );
+        assert!(p.ok);
+        let refs = &p.data.unwrap()["provisional_refs"];
+        assert!(refs.get("discarded").is_none());
+        assert_eq!(refs["kept"], "4");
     }
     #[test]
     fn stale_plan_and_invalid_batch_never_write() {

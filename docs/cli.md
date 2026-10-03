@@ -27,7 +27,7 @@ cargo build -p luciddesk -p luciddesk-cli --locked --offline
 
 `workspace get` 返回当前应用的面板、桌面项目、标签组快照，不强制重新扫描磁盘。面板明确区分 `manual_collapsed` 与 `effective_collapsed`；没有对应窗口时后者为 null。项目 ID 是当前应用实例内的不透明 token，不要解析或跨重启复用。项目清单不包含文件夹面板内文件或搜索结果。
 
-当前支持计划式写入，`capabilities` 返回 `writes:true`、`plans:true`、`concurrency_tokens:true`。面板几何、移除/释放项目、标签修改、单项写入快捷命令及自动整理 Skills 尚未开放。
+当前支持计划式写入，`capabilities` 返回 `writes:true`、`plans:true`、`concurrency_tokens:true`。面板几何、标签修改、单项写入快捷命令及自动整理 Skills 尚未开放。
 
 本地管道限制当前用户，核验对端用户与会话，并拒绝远程连接。独立 CLI 不链接桌面存储模块。查询队列只读访问 UI 状态，不调用保存、桌面刷新或备份维护；应用自己的既有后台任务仍可能独立运行。
 
@@ -40,11 +40,13 @@ cargo build -p luciddesk -p luciddesk-cli --locked --offline
 | op | 参数 | 行为 |
 | --- | --- | --- |
 | `pane.create` | `ref`, `title` | 创建普通面板，继承外观，使用 GUI 默认尺寸及避让位置 |
-| `pane.update` | `pane_id`, `title` | 修改普通面板标题 |
+| `pane.update` | `pane_id`；可选 `title`, `locked`, `auto_hide`, `collapsed`, `always_on_top` | 至少提供一个修改字段；窗口选项作用于整个标签组 |
+| `pane.remove` | `pane_id`, 可选 `release_items` | 删除指定内容面板，非空时必须显式释放项目 |
+| `item.release` | `item_ids` | 将项目归还桌面，不移动或删除真实文件 |
 | `item.assign` | `item_ids`，以及二选一的 `pane_id` / `pane_ref` | 收纳项目；保留目标现有顺序，新项目按输入追加 |
 | `item.reorder` | `pane_id`, `item_ids` | 提供该面板全部项目 ID 的完整顺序；空面板允许空列表 |
 
-`pane_ref` 引用同一计划中此前创建的面板。ID 均为字符串；项目 ID 必须取自当前实例的查询结果。源/目标面板锁定时拒绝修改，不绕过锁。不移动或删除真实文件。标题最多 256 个字符，计划最多 256 个操作，每个项目列表最多 10000 项，输入及 IPC 消息上限 4 MiB。
+`pane_ref` 引用同一计划中此前创建的面板。ID 均为字符串；项目 ID 必须取自当前实例的查询结果。源/目标面板锁定时拒绝修改；使用 `pane.update` 显式设置 `locked:false` 后可继续修改。不移动或删除真实文件。标题最多 256 个字符，计划最多 256 个操作，每个项目列表最多 10000 项，输入及 IPC 消息上限 4 MiB。
 
 PowerShell 示例（创建空面板）：
 

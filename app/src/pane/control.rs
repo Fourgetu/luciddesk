@@ -83,7 +83,7 @@ impl Snapshot {
                 json!({"application_version":env!("CARGO_PKG_VERSION"), "data_dir":directory, "desktop_connected":state.session.as_ref().is_some_and(hybrid::is_alive), "read_only":false})
             }
             "capabilities" => {
-                json!({"commands":luciddesk_api::COMMANDS,"protocol_version":1,"max_frame_bytes":luciddesk_api::MAX_FRAME,"writes":true,"plans":true,"concurrency_tokens":true,"plan_operations":["pane.create","pane.update","item.assign","item.reorder"],"pane_geometry":false,"item_ids":"opaque-instance-scoped","schema_version":1})
+                json!({"commands":luciddesk_api::COMMANDS,"protocol_version":1,"max_frame_bytes":luciddesk_api::MAX_FRAME,"writes":true,"plans":true,"concurrency_tokens":true,"plan_operations":["pane.create","pane.update","pane.remove","item.assign","item.release","item.reorder"],"pane_geometry":false,"item_ids":"opaque-instance-scoped","schema_version":1})
             }
             command => {
                 let pane_values: Vec<_> = state.workspace.panels().iter().map(|panel| {
@@ -236,10 +236,14 @@ fn start_at(
                     while let Ok(pending) = receive.try_recv() {
                         if Instant::now() < pending.expires {
                             let previous = state.borrow().store.change_count();
+                            let before = (pending.request.command == "plan.apply")
+                                .then(|| state.borrow().workspace.clone());
                             let response =
                                 snapshot.respond(&mut state.borrow_mut(), &pending.request);
                             if state.borrow().store.change_count() != previous {
-                                present(&state);
+                                if let Some(before) = &before {
+                                    present(&state, before);
+                                }
                             }
                             let _ = pending.reply.send(response);
                         }
@@ -312,6 +316,25 @@ mod tests {
 mod integration_tests {
     use super::*;
     #[test]
+    fn presentation_removes_windows_without_resetting_transient_collapse() {
+        let _sta=luciddesk_shell::ShellApartment::initialize_sta().unwrap();
+        let mut app=super::super::tests::test_state();
+        app.workspace.panel_mut(PanelId::new(1)).unwrap().set_auto_hide(true);
+        let state=Rc::new(RefCell::new(app));create_view(&state,PanelId::new(1)).unwrap();
+        state.borrow().views[0].model.borrow_mut().collapsed=true;
+        let before=state.borrow().workspace.clone();
+        state.borrow_mut().workspace.panel_mut(PanelId::new(1)).unwrap().set_title("renamed");
+        present(&state,&before);
+        assert!(state.borrow().views.iter().find(|v|v.id==PanelId::new(1)).unwrap().model.borrow().collapsed);
+        let before=state.borrow().workspace.clone();
+        let hwnd=state.borrow().views.iter().find(|v|v.id==PanelId::new(1)).unwrap().window.hwnd();
+        state.borrow_mut().workspace.remove_panel(PanelId::new(1));
+        present(&state,&before);
+        assert!(state.borrow().views.iter().all(|v|v.id!=PanelId::new(1)));
+        assert_eq!(unsafe{IsWindow(hwnd.cast())},0);
+    }
+
+    #[test]
     fn pipe_query_runs_on_ui_thread_without_persistence() {
         let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
         let mut app = super::super::tests::test_state();
@@ -371,7 +394,29 @@ mod integration_tests {
 }
 
 /// Presentation follows durable state. Failures never turn a committed plan into a retryable write.
-fn present(state: &Rc<RefCell<PaneApp>>) {
+fn present(state: &Rc<RefCell<PaneApp>>, before: &Workspace) {
+    // Destroy outside the RefCell borrow: native teardown may pump callbacks.
+    let removed = {
+        let mut s = state.borrow_mut();
+        let mut removed = Vec::new();
+        let mut at = 0;
+        while at < s.views.len() {
+            let id = s.views[at].id;
+            if s.workspace.panel(id).is_none() || !s.workspace.tab_visible(id) {
+                let view = s.views.remove(at);
+                let hwnd = view.window.hwnd().cast();
+                window::prepare_close(hwnd);
+                hybrid::unregister_drop(&mut s, hwnd);
+                s.tab_models.remove(&id);
+                s.folders.remove(&id);
+                removed.push(view);
+            } else {
+                at += 1;
+            }
+        }
+        removed
+    };
+    drop(removed);
     let missing: Vec<_> = {
         let s = state.borrow();
         s.workspace
@@ -393,7 +438,23 @@ fn present(state: &Rc<RefCell<PaneApp>>) {
     let mut s = state.borrow_mut();
     for view in &s.views {
         if let Some(panel) = s.workspace.panel(view.id) {
-            view.model.borrow_mut().title = panel.title().to_owned();
+            {
+                let mut model = view.model.borrow_mut();
+                model.title = panel.title().to_owned();
+                model.locked = panel.locked();
+                model.auto_hide = panel.auto_hide();
+            }
+            if before.panel(view.id).is_none_or(|old| {
+                old.collapsed() != panel.collapsed() || old.auto_hide() != panel.auto_hide()
+            }) {
+                events::show_collapsed(&s, view.id, panel.collapsed());
+            }
+            if before
+                .panel(view.id)
+                .is_none_or(|old| old.always_on_top() != panel.always_on_top())
+            {
+                window::set_layer(view.window.hwnd().cast(), panel.always_on_top());
+            }
             unsafe {
                 windows_sys::Win32::Graphics::Gdi::InvalidateRect(
                     view.window.hwnd().cast(),

@@ -1202,7 +1202,7 @@ pub(super) fn commit_material(
 }
 
 /// Animate effective visibility without changing saved window preferences.
-fn show_collapsed(state: &PaneApp, id: PanelId, collapsed: bool) {
+pub(super) fn show_collapsed(state: &PaneApp, id: PanelId, collapsed: bool) {
     let Some(panel) = state.workspace.panel(id) else { return; };
     let Some(view) = state.views.iter().find(|v| v.id == id) else { return; };
     if view.model.borrow().collapsed == collapsed { return; }
