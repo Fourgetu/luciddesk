@@ -2,7 +2,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$SourcePath,
     [switch]$AllUsers,
-    [string]$InnoCompiler = (Join-Path $PSScriptRoot '../target/tooling/inno-6.7.3/ISCC.exe')
+    [string]$InnoCompiler = (Join-Path $PSScriptRoot '../target/tooling/inno-7.1.0/ISCC.exe')
 )
 $ErrorActionPreference = 'Stop'
 $SourcePath = (Resolve-Path -LiteralPath $SourcePath).Path

@@ -90,7 +90,7 @@ try {
     Write-Output $archive
     if ($Installer) {
         if (-not $InnoCompiler) {
-            $InnoCompiler = Join-Path $repoRoot 'target\tooling\inno-6.7.3\ISCC.exe'
+            $InnoCompiler = Join-Path $repoRoot 'target\tooling\inno-7.1.0\ISCC.exe'
             if (-not (Test-Path -LiteralPath $InnoCompiler)) {
                 throw 'Install the compiler with ./tools/ensure-inno.ps1, or pass -InnoCompiler <ISCC.exe>.'
             }

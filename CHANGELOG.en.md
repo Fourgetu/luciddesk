@@ -10,6 +10,7 @@ Exit the app before upgrading a portable installation and preserve its `data` fo
 
 ### changed
 
+- Upgrade build tools to Rust 1.99.0 and Inno Setup 7.1.0 x64, and update CI checkout and artifact actions.
 - Adjust app icon panel spacing and proportions to form an overall square silhouette while preserving the gradient colors.
 
 ## 0.17.0 · 2026-10-03

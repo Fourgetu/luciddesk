@@ -209,7 +209,7 @@ def installer(args, root, checks):
     assert verify_payload(old)["version"] == "0.13.0"
     (old / "portable.marker").unlink()  # Historical 0.13.0 archive.
     output = root / "old-installer"
-    subprocess.run([str(ROOT / "target/tooling/inno-6.7.3/ISCC.exe"), "/Q", "/DAppVersion=0.13.0",
+    subprocess.run([str(ROOT / "target/tooling/inno-7.1.0/ISCC.exe"), "/Q", "/DAppVersion=0.13.0",
                     f"/DSourcePath={old}", f"/DOutputPath={output}", str(ROOT / "installer/LucidDesk.iss")], check=True)
     uninstaller = directory / "unins000.exe"
     process = None

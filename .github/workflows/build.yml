@@ -10,7 +10,7 @@ jobs:
   build:
     runs-on: windows-2025-vs2026
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - name: Select latest installed x64 MSVC and Windows SDK
         shell: pwsh
         run: ./tools/use-windows-toolchain.ps1 -GitHubActions
@@ -67,7 +67,7 @@ jobs:
         run: |
           $stage = Get-ChildItem -LiteralPath target/packages -Directory | Select-Object -First 1
           ./tools/test-installer.ps1 -SourcePath $stage.FullName
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.1
         with:
           name: LucidDesk-windows-x64
           path: |
@@ -88,8 +88,8 @@ jobs:
       group: release-${{ github.ref }}
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/download-artifact@v8.0.1
         with:
           name: LucidDesk-windows-x64
           path: artifacts

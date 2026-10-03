@@ -23,7 +23,7 @@ jobs:
       group: release-notes-${{ github.ref }}
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - name: Test release notes
         run: python3 -m unittest discover -s tools -p "test_release_notes.py"
       - name: Update existing release notes
