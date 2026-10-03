@@ -219,11 +219,13 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
     )?;
     display_layout::record(&mut state.borrow_mut())?;
     let supervisor = runtime::supervisor(&state)?;
+    let control = control::start(&state)?;
     if state.borrow().session.is_none() {
         settings::show(&state, PanelId::new(0))?;
     }
     windows_window::run();
     crate::diagnostics::render_trace(format_args!("shutdown: stop supervisor"));
+    drop(control);
     drop(supervisor);
     drop(tray);
     // DETACH restores Explorer's Shell view and can synchronously call back

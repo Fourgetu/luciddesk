@@ -1,0 +1,149 @@
+//! Versioned read-only control protocol. No storage dependency.
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+pub mod transport;
+pub const VERSION: u32 = 1;
+pub const MAX_FRAME: usize = 4 * 1024 * 1024;
+pub const COMMANDS: &[&str] = &[
+    "status",
+    "capabilities",
+    "workspace.get",
+    "pane.list",
+    "pane.get",
+    "item.list",
+];
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Request {
+    pub protocol_version: u32,
+    pub request_id: String,
+    pub command: String,
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub pane: Option<String>,
+    #[serde(default)]
+    pub unassigned: bool,
+    #[serde(default)]
+    pub data_dir: Option<String>,
+}
+impl Request {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.request_id.is_empty() || self.request_id.len() > 128 {
+            return Err("invalid request_id");
+        }
+        if !COMMANDS.contains(&self.command.as_str()) {
+            return Err("unsupported command");
+        }
+        if (self.command == "pane.get") != self.id.is_some() {
+            return Err("--id is required only for pane get");
+        }
+        if self.command != "item.list" && (self.pane.is_some() || self.unassigned) {
+            return Err("item filters require item list");
+        }
+        if self.pane.is_some() && self.unassigned {
+            return Err("conflicting item filters");
+        }
+        for id in [&self.id, &self.pane].into_iter().flatten() {
+            if id
+                .parse::<u64>()
+                .ok()
+                .filter(|n| *n > 0 && *n <= i64::MAX as u64)
+                .is_none()
+            {
+                return Err("invalid panel ID");
+            }
+        }
+        Ok(())
+    }
+}
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ApiError {
+    pub code: String,
+    pub message: String,
+    pub retryable: bool,
+}
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Response {
+    pub protocol_version: u32,
+    pub request_id: String,
+    pub ok: bool,
+    pub context: Option<Value>,
+    pub data: Option<Value>,
+    pub error: Option<ApiError>,
+}
+impl Response {
+    pub fn success(id: &str, context: Value, data: Value) -> Self {
+        Self {
+            protocol_version: VERSION,
+            request_id: id.into(),
+            ok: true,
+            context: Some(context),
+            data: Some(data),
+            error: None,
+        }
+    }
+    pub fn failure(id: &str, code: &str, message: impl Into<String>) -> Self {
+        Self {
+            protocol_version: VERSION,
+            request_id: id.into(),
+            ok: false,
+            context: None,
+            data: None,
+            error: Some(ApiError {
+                code: code.into(),
+                message: message.into(),
+                retryable: matches!(code, "BUSY" | "TIMEOUT"),
+            }),
+        }
+    }
+    pub fn exit_code(&self) -> i32 {
+        match self.error.as_ref().map(|e| e.code.as_str()) {
+            None => 0,
+            Some("INVALID_REQUEST") => 2,
+            Some("APP_NOT_RUNNING") => 3,
+            Some("NOT_FOUND") => 4,
+            Some("DATA_DIR_MISMATCH") => 5,
+            Some("BUSY" | "RESULT_TOO_LARGE") => 6,
+            Some("TIMEOUT") => 8,
+            Some("ACCESS_DENIED") => 9,
+            Some("PROTOCOL_MISMATCH") => 10,
+            _ => 1,
+        }
+    }
+}
+pub fn request_id() -> String {
+    use std::{
+        sync::atomic::{AtomicU64, Ordering},
+        time::{SystemTime, UNIX_EPOCH},
+    };
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    format!(
+        "{}-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn strict_request_and_unicode() {
+        let raw = r#"{"protocol_version":1,"request_id":"中文","command":"status"}"#;
+        let request: Request = serde_json::from_str(raw).unwrap();
+        assert!(request.validate().is_ok());
+        assert!(serde_json::from_str::<Request>(&raw.replace("command", "unknown")).is_err());
+        assert!(
+            serde_json::from_str::<Request>(
+                &raw.replace(r#""command":"#, r#""command":"status","command":"#)
+            )
+            .is_err()
+        );
+    }
+}

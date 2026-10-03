@@ -38,6 +38,7 @@ mod runtime;
 mod quick_reveal;
 mod show_hotkey;
 mod auto_hide;
+mod control;
 mod tabs;
 mod scaled_icons;
 mod scrollbar;

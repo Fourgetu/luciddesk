@@ -1,0 +1,10 @@
+[package]
+name = "luciddesk-cli"
+version = "0.18.1"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+desktop-api = { path = "../crates/desktop-api" }
+serde_json = "1"

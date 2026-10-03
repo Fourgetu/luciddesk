@@ -1,6 +1,8 @@
 [workspace]
 members = [
     "app",
+    "cli",
+    "crates/desktop-api",
     "crates/desktop-core",
     "crates/desktop-graphics",
     "crates/desktop-shell",

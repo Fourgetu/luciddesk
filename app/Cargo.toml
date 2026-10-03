@@ -16,6 +16,7 @@ default = []
 menu-diagnostics = ["desktop-explorer/menu-diagnostics", "desktop-shell/menu-diagnostics"]
 
 [dependencies]
+desktop-api = { path = "../crates/desktop-api" }
 desktop-core.workspace = true
 desktop-shell.workspace = true
 desktop-storage.workspace = true

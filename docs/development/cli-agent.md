@@ -1,6 +1,8 @@
 # CLI 与 Agent 接口设计
 
-状态：设计草案，尚未实现。范围：首版桌面整理 CLI，供人、脚本及 Agent Skills 共用。
+状态：阶段 A 只读闭环已实现，其余内容为设计。范围：首版桌面整理 CLI，供人、脚本及 Agent Skills 共用。
+
+当前支持 `status`、`capabilities`、`workspace get`、`pane list/get`、`item list` 及离线 `schema`；使用说明见 [CLI 使用](../cli.md)。写入、计划、monitor list、并发版本和 Skills 尚未实现。当前 context 中版本/拓扑字段为 null，能力明确报告不支持；面板几何暂不暴露，待显示器相对 DIP 契约与测试完成后开放。协议 schema 目前描述请求与响应信封；命令参数组合另由 Request::validate 校验。实际服务每次只处理一个管道连接，每个请求的 UI 等待上限 5 秒、传输上限 10 秒；客户端 --timeout-ms 控制更短或更长的本地等待，不延长服务端上限。
 
 ## 1. 设计决定
 
