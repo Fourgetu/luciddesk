@@ -76,7 +76,7 @@ cargo build -p luciddesk -p desktop-hook --locked --offline --target-dir target\
 .\tools\package.ps1 -Offline
 ```
 
-EXE 默认采用 `lzma2/fast` 固实压缩，以较小的体积增量缩短打包时间。需要更小的安装包时使用 `-ExeCompression Max`，也可选择 `Normal`。
+EXE 默认采用 `lzma2/fast` 固实压缩，以较小的体积增量缩短打包时间。需要更小的安装包时使用 `-ExeCompression Max`，也可选择 `Normal`。 CI 按准备脚本版本缓存 Inno 编译器。
 
 MSI 构建在 `target/msi-cache` 中复用 WiX CAB 压缩缓存和安装检查 DLL；DLL 按源码、构建脚本、工具链及测试模式隔离，并校验文件哈希。MSI 仍执行默认校验，不生成未发布的 `.wixpdb`。
 
@@ -99,7 +99,7 @@ MSI 构建在 `target/msi-cache` 中复用 WiX CAB 压缩缓存和安装检查 D
 .\tools\package.ps1 -Installer -InstallerFormat Both -Offline
 ```
 
-`-InnoCompiler <ISCC.exe>` 可指定已有的 Inno 编译器。未传 `-Installer` 时仍只生成 ZIP。CI 使用 `Both`，发布 EXE、MSI、普通 ZIP、便携 ZIP 及各自 SHA256。
+`-InnoCompiler <ISCC.exe>` 可指定已有的 Inno 编译器。未传 `-Installer` 时仍只生成 ZIP。`-All` 在一次构建后生成普通 ZIP、便携 ZIP 和所选格式的安装包。CI 使用 `-All -InstallerFormat Both`，发布 EXE、MSI、普通 ZIP、便携 ZIP 及各自 SHA256。
 
 产物位于 `target/installers/版本-修订-时间戳`。`installer/LucidDesk.iss` 定义 EXE 安装流程；`installer/LucidDesk.wxs` 定义 MSI 文件、快捷方式和升级规则，`msi-actions.cpp` 检查进程退出及组件占用。安装范围、静默参数和旧版迁移见[安装版说明](../installer.md)。应用与快捷方式使用固定 AppUserModelID `Yuchen95.LucidDesk`；MSI 升级身份由固定 UpgradeCode 管理。
 
@@ -213,6 +213,8 @@ Release 包含 EXE 和 MSI 安装包、两个 ZIP 及各自的 SHA256 文件，�
 项目在 `0.x` 阶段采用以下约定：新增功能递增次版本并将修订号归零；只有兼容修复时递增修订号。破坏兼容性的变更在 `0.x` 阶段递增次版本并明确记录迁移要求；稳定的兼容性承诺从 `1.0.0` 开始。进入 `1.x` 后，破坏兼容的变更递增主版本。参见 [Semantic Versioning 2.0.0](https://semver.org/lang/zh-CN/)。
 
 已有版本记录和 Git 标签不追溯重编号。尚未发布的变更先记录在双语 Changelog 的“未发布 / Unreleased”章节，确定版本后移入对应版本章节。发布时同步 `Cargo.lock`、双语 README 徽章和双语 Changelog；CI 验证版本一致性，发布标签必须为 `<应用版本>` 或 `v<应用版本>`。
+
+CI 的语言资源和发布说明检查在 Linux 上与 Windows 构建并行。Cargo 依赖缓存覆盖 `target/ci-tests` 和 `target/production`，缓存按 Rust、Cargo 配置和 Windows 工具链隔离；不缓存发布包或测试临时目录。同一分支的新运行会取消旧构建，标签构建不自动取消。产物上传使用零级压缩，避免再次压缩 ZIP、EXE 和 MSI。
 
 ## Windows 工具链选择
 

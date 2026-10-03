@@ -7,8 +7,22 @@ on:
 permissions:
   contents: read
 jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Test bilingual release notes
+        run: python3 -m unittest discover -s tools -p "test_release_notes.py"
+      - name: Check language resources
+        run: python3 tools/check-locales.py
   build:
     runs-on: windows-2025-vs2026
+    concurrency:
+      group: build-${{ github.ref }}
+      cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_TARGET_DIR: target/ci-tests
     steps:
       - uses: actions/checkout@v7.0.1
       - name: Select latest installed x64 MSVC and Windows SDK
@@ -32,38 +46,39 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Could not read package version.' }
           $version = ($metadata.packages | Where-Object name -eq 'luciddesk').version
           if (@($version, "v$version") -cnotcontains $env:GITHUB_REF_NAME) { throw 'Tag must match the app version: <version> or v<version>.' }
-      - name: Test bilingual release notes / 测试双语发布说明
-        run: python -m unittest discover -s tools -p "test_release_notes.py"
-      - name: Check language resources
-        run: python tools/check-locales.py
-      - name: Test Fluent resources
-        run: cargo test -p luciddesk --bin luciddesk i18n::tests --locked
+      - name: Cache Cargo dependencies and build outputs
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target/ci-tests
+            . -> target/production
+          env-vars: LUCIDDESK_WINDOWS_BUILD_ENVIRONMENT
+          cache-bin: false
+      - name: Test app rules and WARP emoji rendering
+        run: cargo test -p luciddesk --bin luciddesk --locked -- i18n::tests pane::marquee::tests pane::title_emoji::tests updates::tests --test-threads=1 --skip marquee_window_messages_commit_cancel_and_ignore_mapped_folders
       - name: Compile all targets
         run: cargo check --workspace --all-targets --locked
       - name: Test workspace data and layout rules
         run: cargo test -p desktop-core -p desktop-storage --lib --locked
-      - name: Test marquee selection rules
-        run: cargo test -p luciddesk --bin luciddesk pane::marquee::tests --locked -- --test-threads=1 --skip marquee_window_messages_commit_cancel_and_ignore_mapped_folders
       - name: Test drag image alpha conversion
         run: cargo test -p desktop-shell --lib drag_image::tests::alpha_conversion_preserves_transparency_and_edge_colors --locked -- --exact
-      - name: Test color emoji rendering with WARP
-        run: cargo test -p luciddesk --bin luciddesk pane::title_emoji::tests --locked -- --test-threads=1
       - name: Test Canvas compatibility with WARP
         run: cargo test -p luciddesk --test canvas_compat --locked -- --test-threads=1
       - name: Test workspace documentation examples
         run: cargo test --workspace --doc --locked
+      - name: Cache Inno Setup compiler
+        uses: actions/cache@v5
+        with:
+          path: target/tooling/inno-*
+          key: inno-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/ensure-inno.ps1') }}
       - name: Prepare installer compilers
         shell: pwsh
         run: |
           ./tools/ensure-inno.ps1
           ./tools/ensure-wix.ps1
-      - name: Test release checks
-        run: cargo test -p luciddesk --bin luciddesk updates::tests --locked
       - name: Package installer and ZIPs
         shell: pwsh
-        run: |
-          ./tools/package.ps1 -Installer -InstallerFormat Both
-          ./tools/package.ps1 -Portable
+        run: ./tools/package.ps1 -All -InstallerFormat Both
       - name: Verify MSI install and upgrade lifecycle
         shell: pwsh
         run: |
@@ -72,6 +87,7 @@ jobs:
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: LucidDesk-windows-x64
+          compression-level: 0
           path: |
             target/packages/*.zip
             target/packages/*.sha256
@@ -82,7 +98,7 @@ jobs:
             target/installers/**/*.sha256
           if-no-files-found: error
   release:
-    needs: build
+    needs: [metadata, build]
     if: github.repository == 'Yuch3nE/luciddesk' && startsWith(github.ref, 'refs/tags/') && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
