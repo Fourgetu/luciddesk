@@ -9,12 +9,10 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
-$wixRoot = Join-Path $repo 'target/tooling/wix-5.0.2'
-$wix = Join-Path $wixRoot 'wix.exe'
-$extension = Join-Path $wixRoot '.wix/extensions/WixToolset.UI.wixext/5.0.2/wixext5/WixToolset.UI.wixext.dll'
-if (-not (Test-Path -LiteralPath $wix) -or -not (Test-Path -LiteralPath $extension)) {
-    throw 'Run ./tools/ensure-wix.ps1 first. WiX is kept inside the project.'
-}
+. (Join-Path $PSScriptRoot 'installer-tooling.ps1')
+$wixTools = Get-WixTooling
+$wix = $wixTools.Compiler
+$extension = $wixTools.Extension
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'MSI requires a three-part numeric version.' }
 $numericVersion = [version]$Version
 if ($numericVersion.Major -gt 255 -or $numericVersion.Minor -gt 255 -or $numericVersion.Build -gt 65535) {

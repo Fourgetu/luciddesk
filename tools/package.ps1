@@ -22,10 +22,33 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $previousRevision = $env:LUCIDDESK_BUILD_REVISION
 Push-Location -LiteralPath $repoRoot
 try {
+    # Fail before compiling when a requested installer cannot be produced.
+    if ($Installer -and $InstallerFormat -in @('Exe', 'Both')) {
+        if (-not $InnoCompiler) { $InnoCompiler = Join-Path $repoRoot 'target/tooling/inno-7.1.0/ISCC.exe' }
+        if (-not (Test-Path -LiteralPath $InnoCompiler -PathType Leaf)) {
+            throw 'Run ./tools/ensure-inno.ps1 first, or pass -InnoCompiler <ISCC.exe>.'
+        }
+        $InnoCompiler = (Resolve-Path -LiteralPath $InnoCompiler).Path
+    }
+    if ($Installer -and $InstallerFormat -in @('Msi', 'Both')) {
+        . (Join-Path $PSScriptRoot 'installer-tooling.ps1')
+        $wixTools = Get-WixTooling
+        & $wixTools.Compiler --version | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw 'WiX cannot run. Check the installed .NET runtime.' }
+    }
+    $metadataArgs = @('metadata', '--no-deps', '--format-version', '1', '--locked')
+    if ($Offline) { $metadataArgs += '--offline' }
+    $metadataJson = & cargo @metadataArgs
+    if ($LASTEXITCODE -ne 0) { throw 'Could not read package metadata.' }
+    $metadata = $metadataJson | ConvertFrom-Json
+    $version = ($metadata.packages | Where-Object name -eq 'luciddesk').version
+    if (-not $version) { throw 'The luciddesk package version is missing.' }
     & (Join-Path $PSScriptRoot 'use-windows-toolchain.ps1')
     $revision = & git rev-parse --short HEAD
     if ($LASTEXITCODE -ne 0) { throw 'Could not read Git revision.' }
-    $dirty = [bool](& git status --porcelain --untracked-files=no)
+    $gitStatus = & git status --porcelain --untracked-files=no
+    if ($LASTEXITCODE -ne 0) { throw 'Could not read Git working-tree status.' }
+    $dirty = [bool]$gitStatus
     $revisionLabel = if ($dirty) { "$revision-dirty" } else { $revision }
     $env:LUCIDDESK_BUILD_REVISION = $revisionLabel
     $toolchain = Get-Content -LiteralPath (Join-Path $repoRoot 'rust-toolchain.toml') -Raw
@@ -46,9 +69,18 @@ try {
     & cargo @buildArgs
     if ($LASTEXITCODE -ne 0) { throw 'Release build failed.' }
     & (Join-Path $PSScriptRoot 'verify-app-icon.ps1') -Executable (Join-Path $productionTarget 'release/luciddesk.exe')
-    $metadata = & cargo metadata --no-deps --format-version 1 --offline --locked | ConvertFrom-Json
-    if ($LASTEXITCODE -ne 0) { throw 'Could not read package metadata.' }
-    $version = ($metadata.packages | Where-Object name -eq 'luciddesk').version
+    # All package modes share these exact binaries and build provenance.
+    $binaryFiles = @('luciddesk.exe', 'luciddesk_explorer.dll')
+    $files = @($binaryFiles | ForEach-Object {
+        $fileHash = Get-FileHash -LiteralPath (Join-Path $productionTarget "release\$_") -Algorithm SHA256
+        [ordered]@{ file = $_; sha256 = $fileHash.Hash.ToLowerInvariant() }
+    })
+    $builtAt = (Get-Date).ToUniversalTime().ToString('o')
+    $buildEnvironment = [ordered]@{
+        rustc = ($hostInfo -join "`n"); cargo = $cargoVersion
+        runnerImage = $env:ImageOS; runnerVersion = $env:ImageVersion
+        windows = ($env:LUCIDDESK_WINDOWS_BUILD_ENVIRONMENT | ConvertFrom-Json)
+    }
     $packageModes = if ($All) { @($false, $true) } else { @([bool]$Portable) }
     foreach ($isPortable in $packageModes) {
         $stamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
@@ -58,7 +90,7 @@ try {
         $outRoot = Join-Path $repoRoot $(if ($isPortable) { "target\portable\$stamp" } else { 'target\packages' })
         $stage = Join-Path $outRoot $name
         New-Item -ItemType Directory -Path $stage | Out-Null
-        foreach ($file in @('luciddesk.exe', 'luciddesk_explorer.dll')) {
+        foreach ($file in $binaryFiles) {
             Copy-Item -LiteralPath (Join-Path $productionTarget "release\$file") -Destination $stage
         }
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Refresh-App-Icon.ps1') -Destination $stage
@@ -84,20 +116,12 @@ try {
         foreach ($changelog in @('CHANGELOG.md', 'CHANGELOG.en.md')) {
             Copy-Item -LiteralPath (Join-Path $repoRoot $changelog) -Destination (Join-Path $stage $changelog)
         }
-        $files = @('luciddesk.exe', 'luciddesk_explorer.dll') | ForEach-Object {
-            $fileHash = Get-FileHash -LiteralPath (Join-Path $stage $_) -Algorithm SHA256
-            [ordered]@{ file = $_; sha256 = $fileHash.Hash.ToLowerInvariant() }
-        }
         [ordered]@{
             version = $version; channel = 'release'; revision = $revision; uncommittedChanges = $dirty
             portable = [bool]$isPortable
             renderingDiagnostics = [bool]$RenderDiagnostics
-            builtAt = (Get-Date).ToUniversalTime().ToString('o'); architecture = 'windows-x64'
-            buildEnvironment = [ordered]@{
-                rustc = ($hostInfo -join "`n"); cargo = $cargoVersion
-                runnerImage = $env:ImageOS; runnerVersion = $env:ImageVersion
-                windows = ($env:LUCIDDESK_WINDOWS_BUILD_ENVIRONMENT | ConvertFrom-Json)
-            }
+            builtAt = $builtAt; architecture = 'windows-x64'
+            buildEnvironment = $buildEnvironment
             files = $files
         } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $stage 'build.json') -Encoding UTF8
         $archive = Join-Path $outRoot "$name.zip"
@@ -109,8 +133,6 @@ try {
             $setupRoot = Join-Path $repoRoot "target\installers\$version-$revisionLabel-$stamp"
             $setups = @()
             if ($InstallerFormat -in @('Exe', 'Both')) {
-                if (-not $InnoCompiler) { $InnoCompiler = Join-Path $repoRoot 'target/tooling/inno-7.1.0/ISCC.exe' }
-                if (-not (Test-Path -LiteralPath $InnoCompiler)) { throw 'Run ./tools/ensure-inno.ps1 first, or pass -InnoCompiler <ISCC.exe>.' }
                 & $InnoCompiler /Q "/DAppVersion=$version" "/DSourcePath=$stage" "/DOutputPath=$setupRoot" "/DInstallerCompression=$($ExeCompression.ToLowerInvariant())" (Join-Path $repoRoot 'installer/LucidDesk.iss')
                 if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed.' }
                 $setups += Join-Path $setupRoot "LucidDesk-$version-windows-x64-setup.exe"
