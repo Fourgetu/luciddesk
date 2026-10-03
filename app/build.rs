@@ -90,10 +90,7 @@ fn main() {
         .replace("@VERSION_STRING@", &version);
     let resource_path = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap())
         .join("app.rc");
-    std::fs::write(&resource_path, resource).expect("failed to write application resources");
-    embed_resource::compile(&resource_path, embed_resource::NONE)
-        .manifest_required()
-        .expect("failed to embed the LucidDesk application resources");
+    compile_resources(&resource_path, &resource);
     // Native search controls and the backdrop fixture use Explorer's v6 controls.
     if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
         let manifest = std::path::PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap())
@@ -109,5 +106,59 @@ fn main() {
             "cargo:rustc-link-arg-examples=/MANIFESTINPUT:{}",
             manifest.display()
         );
+    }
+}
+
+fn compile_resources(path: &std::path::Path, resource: &str) {
+    // embed-resource 3.x emits app.lib for native MSVC. Keep other hosts/targets
+    // on its normal path, and only cache with the selected toolchain recorded.
+    let target = std::env::var("TARGET").unwrap();
+    let environment = std::env::var("LUCIDDESK_WINDOWS_BUILD_ENVIRONMENT").unwrap_or_default();
+    let mut inputs = Vec::new();
+    for value in [
+        resource.as_bytes().to_vec(),
+        std::fs::read("assets/luciddesk.ico").expect("failed to read icon"),
+        std::fs::read("build.rs").expect("failed to read build script"),
+        std::fs::read("../Cargo.lock").expect("failed to read Cargo.lock"),
+    ] {
+        inputs.extend_from_slice(&(value.len() as u64).to_le_bytes());
+        inputs.extend_from_slice(&value);
+    }
+    let mut custom_rc = false;
+    for name in [
+        "LUCIDDESK_WINDOWS_BUILD_ENVIRONMENT".to_owned(),
+        "INCLUDE".to_owned(),
+        "RC".to_owned(),
+        format!("RC_{target}"),
+        format!("RC_{}", target.replace('-', "_")),
+    ] {
+        println!("cargo:rerun-if-env-changed={name}");
+        let value = std::env::var_os(&name).unwrap_or_default();
+        custom_rc |= name.starts_with("RC") && !value.is_empty();
+        let bytes = value.as_encoded_bytes();
+        inputs.extend_from_slice(&(bytes.len() as u64).to_le_bytes());
+        inputs.extend_from_slice(bytes);
+    }
+    let stamp = path.with_extension("inputs");
+    let output = path.with_extension("lib");
+    let cacheable = cfg!(all(windows, target_env = "msvc"))
+        && std::env::var("HOST").as_deref() == Ok(target.as_str())
+        && target.ends_with("-msvc")
+        && !environment.is_empty()
+        && !custom_rc;
+    if cacheable && output.is_file() && std::fs::read(&stamp).ok().as_deref() == Some(&inputs) {
+        println!("cargo:rustc-link-arg-bins={}", output.display());
+        return;
+    }
+    // Invalidate before compiling so a failed compiler cannot leave a valid stamp.
+    if stamp.exists() {
+        std::fs::remove_file(&stamp).expect("failed to invalidate resource cache");
+    }
+    std::fs::write(path, resource).expect("failed to write application resources");
+    embed_resource::compile(path, embed_resource::NONE)
+        .manifest_required()
+        .expect("failed to embed the LucidDesk application resources");
+    if cacheable {
+        std::fs::write(stamp, inputs).expect("failed to record resource inputs");
     }
 }

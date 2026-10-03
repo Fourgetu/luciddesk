@@ -7,7 +7,12 @@ license.workspace = true
 
 [dependencies]
 desktop-core.workspace = true
-windows-sys.workspace = true
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_HiDpi",
+    "Win32_UI_WindowsAndMessaging",
+] }
 
 [lints]
 workspace = true

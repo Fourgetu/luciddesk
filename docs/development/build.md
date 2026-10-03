@@ -219,6 +219,8 @@ Release 包含 EXE 安装包、普通 ZIP、便携 ZIP 及各自的 SHA256 文�
 
 CI 的语言资源和发布说明检查在 Linux 上与 Windows 构建并行。Cargo 依赖缓存覆盖 `target/ci-tests` 和 `target/production`，缓存按 Rust、Cargo 配置、编译环境变量和 Windows 工具链隔离；不缓存发布包或测试临时目录。CI 的 dev/test 构建使用 `line-tables-only` 调试信息，保留回溯文件名和行号，省去类型和变量信息；本地仍使用完整调试信息，release 配置不变。同一分支的新运行会取消旧构建，标签构建不自动取消。产物上传使用零级压缩，避免再次压缩 ZIP 和 EXE。
 
+Windows 依赖版本在工作区统一管理，API 特性由各 crate 按需声明。应用资源在原生 MSVC 构建中按模板、图标、版本和已记录的工具链输入复用；修改文档仍更新 Git 修订状态，但不重复编译未变化的资源。未记录工具链或指定自定义 RC 时正常重新编译资源。
+
 ## Windows 工具链选择
 
 CI 使用滚动更新的 `windows-2025-vs2026` 镜像，MSVC 和 Windows SDK 跟随镜像安装的工具链；本地选择本机可用工具链。Rust 1.99.0、Inno Setup 7.1.0（x64 编译器）、WiX 5.0.2 仍固定版本。`tools/windows-toolchain.json` 仅规定最低 MSVC 14.51.36231 和 SDK 10.0.26100.0；`tools/use-windows-toolchain.ps1` 按数值版本选择最新可用的 x64 MSVC，由 vcvarsall 选择最新 SDK，并显式指定 Cargo 链接器和 C/C++ 工具。缺少工具或版本低于要求时停止，cl/link/lib/rc 的 SHA256 仅用于记录实际构建环境。`build.json` 记录实际 Rust、Cargo、MSVC、SDK、工具版本及 SHA256、CI runner 版本，供定位构建差异；不保证本地与 CI 或不同日期构建的二进制一致。

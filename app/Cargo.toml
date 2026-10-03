@@ -25,9 +25,70 @@ serde_json = "1"
 semver = "1"
 desktop-window.workspace = true
 desktop-hook.workspace = true
-windows = { workspace = true, features = ["ApplicationModel", "Storage", "Storage_Search", "UI_ViewManagement", "Graphics_Effects", "Win32_System_WinRT_Graphics_Direct2D"] }
+windows = { workspace = true, features = [
+    "Win32_Storage_FileSystem",
+    "Foundation",
+    "System",
+    "UI",
+    "UI_Composition",
+    "UI_Composition_Desktop",
+    "Win32_Foundation",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Direct2D",
+    "Win32_Graphics_Direct2D_Common",
+    "Win32_Graphics_DirectWrite",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Imaging",
+    "Win32_Graphics_Gdi",
+    "Win32_System_WinRT",
+    "Win32_System_WinRT_Composition",
+    "Win32_System_Com",
+    "Win32_System_Ole",
+    "Win32_System_Memory",
+    "Win32_System_DataExchange",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Variant",
+    "Win32_System_SystemServices",
+    "Win32_UI_Controls",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+    "Win32_UI_WindowsAndMessaging",
+    "ApplicationModel",
+    "Storage",
+    "Storage_Search",
+    "UI_ViewManagement",
+    "Graphics_Effects",
+    "Win32_System_WinRT_Graphics_Direct2D",
+] }
 windows-core = "0.62.2"
-windows-sys = { workspace = true, features = ["Win32_Storage_Packaging_Appx", "Win32_Security_Cryptography", "Win32_Networking_WinHttp", "Win32_System_Power", "Win32_System_SystemServices", "Win32_System_ProcessStatus", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Time", "Win32_System_DataExchange", "Win32_System_LibraryLoader"] }
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Controls",
+    "Win32_UI_Controls_Dialogs",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Storage_Packaging_Appx",
+    "Win32_Security_Cryptography",
+    "Win32_Networking_WinHttp",
+    "Win32_System_Power",
+    "Win32_System_SystemServices",
+    "Win32_System_ProcessStatus",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_System_Time",
+    "Win32_System_DataExchange",
+    "Win32_System_LibraryLoader",
+] }
 windows-window.workspace = true
 windows-numerics.workspace = true
 windows-canvas = { version = "=0.100.0", default-features = false }

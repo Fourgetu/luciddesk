@@ -14,6 +14,7 @@ Exit the app before upgrading a portable installation and preserve its `data` fo
 
 ### perf
 
+- Declare Windows API features per crate to reduce modules included in individual builds. Reuse unchanged application resources instead of recompiling icons and version resources after documentation edits.
 - Generate only line-table debug information for CI builds and tests to reduce build artifact size. Include build-configuration environment variables in cache keys.
 
 ## 0.18.0 · 2026-10-03
