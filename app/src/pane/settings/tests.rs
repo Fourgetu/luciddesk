@@ -1,6 +1,59 @@
 use super::*;
 
 #[test]
+fn changing_font_releases_app_before_editor_destruction() {
+    let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
+    let state = Rc::new(RefCell::new(super::super::tests::test_state()));
+    create_view(&state, PanelId::new(1)).unwrap();
+    let mut cancelled = 0;
+    actions::refresh_font_views(&state, |hwnd| {
+        assert!(!hwnd.is_null());
+        assert!(state.try_borrow_mut().is_ok(), "editor destruction must allow app reentry");
+        cancelled += 1;
+    });
+    assert_eq!(cancelled, 1);
+}
+
+#[test]
+fn closing_settings_retries_without_consuming_pending_styles() {
+    let state = Rc::new(RefCell::new(super::super::tests::test_state()));
+    let mut pending = PendingStyles { grid: Some(100.0), ..Default::default() };
+    let owner = state.borrow_mut();
+    assert!(!lifecycle::close(&state, std::ptr::null_mut(), &mut pending));
+    assert_eq!(pending.grid, Some(100.0));
+    drop(owner);
+}
+
+#[test]
+fn close_errors_are_reported_after_borrows_and_callback_return() {
+    let state = Rc::new(RefCell::new(super::super::tests::test_state()));
+    let reported = Rc::new(std::cell::Cell::new(false));
+    let observed = reported.clone();
+    let callback_state = state.clone();
+    let owner = state.borrow_mut();
+    report_close_errors(vec!["material failed".into(), "grid failed".into()], move |message| {
+        assert!(callback_state.try_borrow_mut().is_ok());
+        assert_eq!(message, "material failed\ngrid failed");
+        observed.set(true);
+    });
+    assert!(!reported.get());
+    drop(owner);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while !reported.get() && std::time::Instant::now() < deadline {
+        unsafe {
+            let mut message = MSG::default();
+            while PeekMessageW(&mut message, std::ptr::null_mut(), 0, 0, PM_REMOVE) != 0 {
+                TranslateMessage(&message);
+                DispatchMessageW(&message);
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(reported.get());
+    report_close_errors(Vec::new(), |_| panic!("no errors must not show a dialog"));
+}
+
+#[test]
 fn backup_in_progress_preserves_policy_controls_and_prevents_duplicate_jobs() {
     for enabled in [false, true] {
         let mut body = scene(
