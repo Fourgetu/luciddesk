@@ -509,16 +509,8 @@ pub(super) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), Stri
     let mut painter = Painter::new().map_err(|e| e.to_string())?;
     let mut surface: Option<composition::Surface> = None;
     let mut reveal: Option<PendingReveal> = None;
-    let mut page = if state
-        .borrow()
-        .runtime
-        .as_ref()
-        .is_some_and(|r| r.desktop_error.is_some())
-    {
-        5
-    } else {
-        0
-    };
+    // Navigation belongs to this window, not the saved workspace or connection state.
+    let mut page = 0;
     let mut recording_peek = false;
     let mut recording_search = false;
     let mut recording_show_panels = false;
