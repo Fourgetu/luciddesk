@@ -465,6 +465,62 @@ fn update(doc: &mut DocumentMut, key: &str, raw: &str) -> Result<(), StoreError>
     Ok(())
 }
 
+/// A scalar application setting. Paths use the named config.toml fields.
+#[derive(Clone, Debug, PartialEq)]
+pub enum SettingValue {
+    Boolean(bool),
+    Number(f64),
+    Text(String),
+}
+impl SettingValue {
+    fn read(item: &Item) -> Option<Self> {
+        if let Some(v) = item.as_bool() { Some(Self::Boolean(v)) }
+        else if let Some(v) = item.as_str() { Some(Self::Text(v.to_owned())) }
+        else { item.as_float().or_else(|| item.as_integer().map(|v| v as f64)).map(Self::Number) }
+    }
+    fn item(&self) -> Item {
+        match self {
+            Self::Boolean(v) => value(*v),
+            Self::Number(v) => value(*v),
+            Self::Text(v) => value(v.clone()),
+        }
+    }
+}
+fn settings(doc: &DocumentMut) -> BTreeMap<String, SettingValue> {
+    fn visit(doc: &DocumentMut, table: &toml_edit::Table, prefix: &str, out: &mut BTreeMap<String, SettingValue>) {
+        for (key, item) in table.iter() {
+            let path = if prefix.is_empty() { key.to_owned() } else { format!("{prefix}.{key}") };
+            if path == "config_version" { continue; }
+            if let Some(table) = item.as_table() { visit(doc, table, &path, out); }
+            else {
+                let parts: Vec<_> = path.split('.').collect();
+                let setting = SettingValue::read(get(doc, &parts).unwrap_or(item)).unwrap();
+                out.insert(path, setting);
+            }
+        }
+    }
+    let defaults: DocumentMut = DEFAULTS.parse().unwrap();
+    let mut result = BTreeMap::new();
+    visit(doc, defaults.as_table(), "", &mut result);
+    result
+}
+fn patch_settings(doc: &DocumentMut, updates: &BTreeMap<String, SettingValue>) -> Result<DocumentMut, StoreError> {
+    let current = settings(doc);
+    let mut next = doc.clone();
+    for (path, proposed) in updates {
+        let old = current.get(path).ok_or_else(|| error(format!("unknown setting: {path}")))?;
+        if std::mem::discriminant(old) != std::mem::discriminant(proposed) {
+            return Err(error(format!("invalid setting type: {path}")));
+        }
+        if matches!(proposed, SettingValue::Number(v) if !v.is_finite()) {
+            return Err(error(format!("non-finite setting: {path}")));
+        }
+        if old != proposed { set(&mut next, &path.split('.').collect::<Vec<_>>(), proposed.item()); }
+    }
+    decode(&next)?;
+    Ok(next)
+}
+
 pub(super) struct ConfigFile {
     pub path: PathBuf,
     pub source: String,
@@ -500,6 +556,9 @@ impl ConfigFile {
         for (key, raw) in updates {
             update(&mut doc, key, raw)?;
         }
+        self.commit(doc)
+    }
+    fn commit(&mut self, doc: DocumentMut) -> Result<(), StoreError> {
         let values = decode(&doc)?;
         let source = doc.to_string();
         if source == self.source {
@@ -528,6 +587,36 @@ pub(super) fn atomic_write(path: &Path, source: &str) -> Result<(), StoreError> 
 }
 
 impl WorkspaceStore {
+    /// Reads effective named settings without disk access. Unknown TOML fields are not exposed.
+    /// # Errors
+    /// Returns an error for stores without an attached application configuration.
+    pub fn settings(&self) -> Result<BTreeMap<String, SettingValue>, StoreError> {
+        let config = self.config.as_ref().ok_or_else(|| error("application configuration unavailable"))?;
+        Ok(settings(&config.borrow().doc))
+    }
+    /// Validates a complete settings patch without persisting or changing active values.
+    /// # Errors
+    /// Rejects unknown fields, wrong types and invalid values.
+    pub fn preview_settings(&self, updates: &BTreeMap<String, SettingValue>) -> Result<BTreeMap<String, SettingValue>, StoreError> {
+        let config = self.config.as_ref().ok_or_else(|| error("application configuration unavailable"))?;
+        Ok(settings(&patch_settings(&config.borrow().doc, updates)?))
+    }
+    /// Saves a validated patch with one atomic replacement and at most one notification.
+    /// Same-value patches do not write. Callers must apply the resulting settings to live UI state.
+    /// # Errors
+    /// Rejects invalid patches, external edits and filesystem failures without changing the cache.
+    pub fn save_settings(&self, updates: &BTreeMap<String, SettingValue>) -> Result<(), StoreError> {
+        let previous = self.raw_change_count();
+        {
+            let config = self.config.as_ref().ok_or_else(|| error("application configuration unavailable"))?;
+            let mut config = config.borrow_mut();
+            let next = patch_settings(&config.doc, updates)?;
+            config.commit(next)?;
+        }
+        self.notify_change(previous);
+        Ok(())
+    }
+
     pub(super) fn attach_config(&mut self, path: &Path) -> Result<(), StoreError> {
         if let Some(source) = self.preference("pending_config")? {
             ConfigFile::parse(path.to_owned(), source.clone())?;

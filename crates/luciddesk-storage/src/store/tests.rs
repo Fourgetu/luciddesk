@@ -770,3 +770,21 @@ fn folder_view_survives_backup_restore() {
     store.save_preference("panel_folder_visible_columns:1","15").unwrap();store.restore_backup(&backup).unwrap();
     assert_eq!(store.preference("panel_folder_visible_columns:1").unwrap().as_deref(),Some("3"));
 }
+
+#[test]
+fn workspace_and_folder_preferences_commit_together_and_rollback_invalid_batches() {
+    let mut store=WorkspaceStore::open_in_memory().unwrap();
+    let mut workspace=Workspace::new();
+    let mut panel=Panel::new(PanelId::new(1),"mapped",RectDip::default());
+    panel.set_folder(Some(std::env::temp_dir()));
+    workspace.add_panel(panel).unwrap();
+    let valid=crate::FolderPreferences{sort_column:2,descending:true,column_widths:Some([0.4,0.2,0.2,0.2]),visible_columns:3};
+    let invalid=crate::FolderPreferences{visible_columns:2,..valid.clone()};
+    assert!(store.save_workspace_with_folder_preferences(&workspace,None,&[(PanelId::new(1),invalid)]).is_err());
+    assert!(store.load_workspace().unwrap().panels().is_empty());
+    store.save_workspace_with_folder_preferences(&workspace,None,&[(PanelId::new(1),valid.clone())]).unwrap();
+    assert_eq!(store.folder_preferences(PanelId::new(1)).unwrap(),valid);
+    let count=store.change_count();
+    store.save_workspace_with_folder_preferences(&workspace,None,&[(PanelId::new(1),valid)]).unwrap();
+    assert_eq!(store.change_count(),count);
+}

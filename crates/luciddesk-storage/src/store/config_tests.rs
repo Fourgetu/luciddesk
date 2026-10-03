@@ -353,3 +353,70 @@ fn log_level_defaults_persists_and_rejects_unknown_values() {
     assert!(store.save_preference("log_level","verbose").is_err());
     assert_eq!(store.preference("log_level").unwrap().as_deref(),Some("error"));
 }
+
+#[test]
+fn named_settings_patch_is_atomic_typed_and_noop_aware() {
+    use crate::SettingValue::{Boolean, Number, Text};
+    let (_dir, mut store) = open();
+    let notifications = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let observed = notifications.clone();
+    store.set_change_callback(move || { observed.fetch_add(1, std::sync::atomic::Ordering::Relaxed); });
+    let path = store.config_path().unwrap();
+    let before = std::fs::read(&path).unwrap();
+    let revision = store.change_count();
+    let patch = std::collections::BTreeMap::from([
+        ("diagnostics.level".into(), Text("debug".into())),
+        ("panel_defaults.grid_scale".into(), Number(125.0)),
+        ("search.enabled".into(), Boolean(true)),
+    ]);
+    let next = store.preview_settings(&patch).unwrap();
+    assert_eq!(next["search.enabled"], Boolean(true));
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    assert_eq!(store.change_count(), revision);
+    store.save_settings(&patch).unwrap();
+    assert_eq!(store.change_count(), revision + 1);
+    assert_eq!(store.settings().unwrap(), next);
+    assert_eq!(store.preference("log_level").unwrap().as_deref(), Some("debug"));
+    let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+    store.save_settings(&patch).unwrap();
+    assert_eq!(store.change_count(), revision + 1);
+    assert_eq!(std::fs::metadata(&path).unwrap().modified().unwrap(), modified);
+    for (key, value) in [
+        ("diagnostics.level", Text("invalid".into())),
+        ("search.enabled", Number(1.0)),
+        ("panel_defaults.grid_scale", Number(f64::NAN)),
+        ("appearance.mica.strength", Number(0.5)),
+        ("config_version", Number(2.0)),
+        ("unknown.setting", Boolean(true)),
+    ] {
+        let mut invalid = patch.clone();
+        invalid.insert("language".into(), Text("en-US".into()));
+        invalid.insert(key.into(), value);
+        assert!(store.preview_settings(&invalid).is_err(), "{key}");
+        assert!(store.save_settings(&invalid).is_err(), "{key}");
+        assert_eq!(store.settings().unwrap(), next);
+        assert_eq!(store.change_count(), revision + 1);
+    }
+    assert_eq!(notifications.load(std::sync::atomic::Ordering::Relaxed), 1);
+    let reopened = WorkspaceStore::open(&path.with_file_name("workspace.db")).unwrap();
+    assert_eq!(reopened.settings().unwrap(), next);
+}
+
+#[test]
+fn named_settings_preserve_comments_extensions_and_external_changes() {
+    use crate::SettingValue::Text;
+    let (_dir, store) = open();
+    let path = store.config_path().unwrap();
+    let original = std::fs::read_to_string(&path).unwrap();
+    let edited = format!("{original}\n[extension]\nprivate = 'keep' # future\n");
+    std::fs::write(&path, &edited).unwrap();
+    let patch = std::collections::BTreeMap::from([("language".into(), Text("en-US".into()))]);
+    assert!(store.save_settings(&patch).is_err());
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), edited);
+    store.reload_config().unwrap();
+    store.save_settings(&patch).unwrap();
+    let saved = std::fs::read_to_string(&path).unwrap();
+    assert!(saved.contains("private = 'keep' # future"));
+    assert!(!store.settings().unwrap().contains_key("extension.private"));
+    assert!(WorkspaceStore::open_in_memory().unwrap().settings().is_err());
+}

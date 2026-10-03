@@ -6,4 +6,4 @@ mod error;
 mod store;
 
 pub use error::StoreError;
-pub use store::WorkspaceStore;
+pub use store::{FolderPreferences, SettingValue, WorkspaceStore};

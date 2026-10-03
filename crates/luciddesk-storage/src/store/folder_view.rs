@@ -86,3 +86,49 @@ pub(super) fn absorb(db: &Connection) -> Result<(), StoreError> {
     }
     Ok(())
 }
+
+/// Persisted folder view preferences, independent of transient navigation and listing contents.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FolderPreferences {
+    pub sort_column: u8,
+    pub descending: bool,
+    pub column_widths: Option<[f32;4]>,
+    pub visible_columns: u8,
+}
+impl Default for FolderPreferences {
+    fn default() -> Self { Self { sort_column:0, descending:false, column_widths:None, visible_columns:15 } }
+}
+impl FolderPreferences {
+    /// Validates the same limits used by the structured database tables.
+    /// # Errors
+    /// Rejects invalid sort columns, visibility masks and column proportions.
+    pub fn validate(&self) -> Result<(),StoreError> {
+        if self.sort_column>3 || self.visible_columns>15 || self.visible_columns&1==0
+            || self.column_widths.is_some_and(|v|v.iter().any(|x|!x.is_finite()||*x<=0.0||*x>=1.0)||(v.iter().sum::<f32>()-1.0).abs()>=0.001) {
+            return Err(StoreError::InvalidData("invalid folder view preferences".into()));
+        }
+        Ok(())
+    }
+}
+pub(super) fn save_preferences(db:&Connection,id:PanelId,value:&FolderPreferences)->Result<(),StoreError> {
+    value.validate()?;
+    let exists:bool=db.query_row("SELECT EXISTS(SELECT 1 FROM panel_folder_settings WHERE panel_id=?1)",[id.get()],|r|r.get(0))?;
+    if !exists { return Err(StoreError::InvalidData("folder panel does not exist".into())); }
+    let direction=if value.descending {"desc"} else {"asc"};
+    db.execute("UPDATE panel_folder_settings SET sort_column=?2,sort_direction=?3 WHERE panel_id=?1 AND (sort_column IS NOT ?2 OR sort_direction IS NOT ?3)",params![id.get(),value.sort_column,direction])?;
+    let widths=value.column_widths.map(|v|v.map(f64::from));
+    db.execute("INSERT INTO panel_folder_view(panel_id,name_width,modified_width,type_width,size_width,visible_columns) VALUES (?1,?2,?3,?4,?5,?6) ON CONFLICT(panel_id) DO UPDATE SET name_width=excluded.name_width,modified_width=excluded.modified_width,type_width=excluded.type_width,size_width=excluded.size_width,visible_columns=excluded.visible_columns WHERE (name_width,modified_width,type_width,size_width,visible_columns) IS NOT (excluded.name_width,excluded.modified_width,excluded.type_width,excluded.size_width,excluded.visible_columns)",params![id.get(),widths.map(|v|v[0]),widths.map(|v|v[1]),widths.map(|v|v[2]),widths.map(|v|v[3]),value.visible_columns])?;
+    Ok(())
+}
+impl WorkspaceStore {
+    /// Reads typed folder preferences. Missing optional columns use GUI defaults.
+    /// # Errors
+    /// Reports missing folder panels or database failures.
+    pub fn folder_preferences(&self,id:PanelId)->Result<FolderPreferences,StoreError> {
+        let (sort_column,direction):(u8,String)=self.connection.query_row("SELECT sort_column,sort_direction FROM panel_folder_settings WHERE panel_id=?1",[id.get()],|r|Ok((r.get(0)?,r.get(1)?)))?;
+        let values=self.connection.query_row("SELECT name_width,modified_width,type_width,size_width,visible_columns FROM panel_folder_view WHERE panel_id=?1",[id.get()],|r|Ok((r.get::<_,Option<f32>>(0)?,r.get::<_,Option<f32>>(1)?,r.get::<_,Option<f32>>(2)?,r.get::<_,Option<f32>>(3)?,r.get::<_,Option<u8>>(4)?))).optional()?;
+        let (a,b,c,d,visible)=values.unwrap_or((None,None,None,None,None));
+        let widths=match (a,b,c,d) {(Some(a),Some(b),Some(c),Some(d))=>Some([a,b,c,d]),_=>None};
+        Ok(FolderPreferences{sort_column,descending:direction=="desc",column_widths:widths,visible_columns:visible.unwrap_or(15)})
+    }
+}

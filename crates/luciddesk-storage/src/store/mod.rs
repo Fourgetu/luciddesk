@@ -1,10 +1,12 @@
 //! Workspace database lifecycle, loading, and transactional saves.
 mod codec;
 mod config;
+pub use config::SettingValue;
 #[cfg(test)]
 mod config_tests;
 mod desktop_items;
 mod folder_view;
+pub use folder_view::FolderPreferences;
 mod geometry;
 mod monitor_layout;
 mod recovery;
@@ -360,6 +362,18 @@ impl WorkspaceStore {
         workspace: &Workspace,
         layout: Option<(&str, &[(PanelId, RectDip)])>,
     ) -> Result<(), StoreError> {
+        self.save_workspace_with_folder_preferences(workspace, layout, &[])
+    }
+
+    /// Commits workspace, display layout and folder preferences in one transaction.
+    /// # Errors
+    /// Invalid folder preferences or database errors roll back the whole operation.
+    pub fn save_workspace_with_folder_preferences(
+        &mut self,
+        workspace: &Workspace,
+        layout: Option<(&str, &[(PanelId, RectDip)])>,
+        folders: &[(PanelId, FolderPreferences)],
+    ) -> Result<(), StoreError> {
         let previous = self.raw_change_count();
         let transaction = self.connection.transaction()?;
         tabs::save(&transaction, workspace)?;
@@ -396,6 +410,7 @@ impl WorkspaceStore {
             insert_panel(&transaction, panel, workspace.appearance())?;
         }
         folder_view::absorb(&transaction)?;
+        for (id, preferences) in folders { folder_view::save_preferences(&transaction, *id, preferences)?; }
         insert_desktop_items(&transaction, workspace.desktop_items())?;
         let live_panels: std::collections::HashSet<_> =
             workspace.panels().iter().map(|p| p.id().get()).collect();
