@@ -78,19 +78,17 @@ fn api() -> Option<&'static ThemeApi> {
 
 // Refresh on opening, so changing Windows' default app mode takes effect on the
 // next popup without restarting or polling. This changes only this process.
-pub(crate) fn apply(owner: HWND) -> Option<bool> {
+pub fn apply(owner: HWND) -> Option<bool> {
     configure(owner).map(|(dark, _)| dark)
 }
 
 // Explorer hosts the desktop fallback menu. Restore process-wide opt-in after
 // its popup loop rather than leaving our preference in the host process.
-#[allow(dead_code)] // Used when compiled into the Explorer fallback host.
-pub(crate) struct ScopedTheme {
+pub struct ScopedTheme {
     preferred: i32,
 }
 
-#[allow(dead_code)] // Folder menus use persistent opt-in in our own process.
-pub(crate) fn apply_scoped(owner: HWND) -> Option<ScopedTheme> {
+pub fn apply_scoped(owner: HWND) -> Option<ScopedTheme> {
     let (_, preferred) = configure(owner)?;
     Some(ScopedTheme { preferred })
 }

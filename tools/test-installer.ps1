@@ -49,7 +49,7 @@ try {
     Require ($shell.CreateShortcut($shortcut).TargetPath -eq (Join-Path $installed 'luciddesk.exe')) 'Shortcut target is incorrect.'
     New-Item -ItemType Directory -Path "$installed/data" | Out-Null
     Set-Content "$installed/data/keep.txt" 'retain user data'
-    $lock = [IO.File]::Open((Join-Path $installed 'luciddesk_desktop.dll'), 'Open', 'Read', 'None')
+    $lock = [IO.File]::Open((Join-Path $installed 'luciddesk_explorer.dll'), 'Open', 'Read', 'None')
     Require ((Run-Msi i $current) -ne 0) 'Locked component was overwritten.'
     $lock.Dispose(); $lock = $null
     $csc = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'

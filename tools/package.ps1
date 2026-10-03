@@ -41,7 +41,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Could not read Cargo version.' }
     # Keep release artifacts separate from explicitly enabled diagnostic backends.
     $productionTarget = Join-Path $repoRoot 'target\production'
-    $buildArgs = @('build', '--release', '--locked', '--no-default-features', '--target-dir', $productionTarget, '-p', 'luciddesk', '-p', 'desktop-hook')
+    $buildArgs = @('build', '--release', '--locked', '--no-default-features', '--target-dir', $productionTarget, '-p', 'luciddesk', '-p', 'desktop-explorer')
     if ($Offline) { $buildArgs += '--offline' }
     & cargo @buildArgs
     if ($LASTEXITCODE -ne 0) { throw 'Release build failed.' }
@@ -58,7 +58,7 @@ try {
         $outRoot = Join-Path $repoRoot $(if ($isPortable) { "target\portable\$stamp" } else { 'target\packages' })
         $stage = Join-Path $outRoot $name
         New-Item -ItemType Directory -Path $stage | Out-Null
-        foreach ($file in @('luciddesk.exe', 'luciddesk_desktop.dll')) {
+        foreach ($file in @('luciddesk.exe', 'luciddesk_explorer.dll')) {
             Copy-Item -LiteralPath (Join-Path $productionTarget "release\$file") -Destination $stage
         }
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Refresh-App-Icon.ps1') -Destination $stage
@@ -84,7 +84,7 @@ try {
         foreach ($changelog in @('CHANGELOG.md', 'CHANGELOG.en.md')) {
             Copy-Item -LiteralPath (Join-Path $repoRoot $changelog) -Destination (Join-Path $stage $changelog)
         }
-        $files = @('luciddesk.exe', 'luciddesk_desktop.dll') | ForEach-Object {
+        $files = @('luciddesk.exe', 'luciddesk_explorer.dll') | ForEach-Object {
             $fileHash = Get-FileHash -LiteralPath (Join-Path $stage $_) -Algorithm SHA256
             [ordered]@{ file = $_; sha256 = $fileHash.Hash.ToLowerInvariant() }
         }

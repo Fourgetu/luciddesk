@@ -4,9 +4,10 @@ members = [
     "crates/desktop-core",
     "crates/desktop-graphics",
     "crates/desktop-shell",
+    "crates/desktop-menu",
     "crates/desktop-storage",
     "crates/desktop-window",
-    "crates/desktop-hook",
+    "crates/desktop-explorer",
 ]
 resolver = "3"
 
@@ -16,11 +17,12 @@ rust-version = "1.99"
 license = "MIT"
 
 [workspace.dependencies]
+desktop-menu = { path = "crates/desktop-menu" }
 desktop-core = { path = "crates/desktop-core" }
 desktop-shell = { path = "crates/desktop-shell" }
 desktop-storage = { path = "crates/desktop-storage" }
 desktop-window = { path = "crates/desktop-window" }
-desktop-hook = { path = "crates/desktop-hook" }
+desktop-explorer = { path = "crates/desktop-explorer" }
 # Panel IDs use u64; preserve checked INTEGER conversions in rusqlite 0.40.
 rusqlite = { version = "0.40.2", features = ["bundled", "backup", "fallible_uint"] }
 windows-window = "0.100.0"

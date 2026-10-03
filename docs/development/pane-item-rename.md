@@ -10,7 +10,7 @@
 | `app/src/pane/rename.rs` | 原生 EDIT、输入法、文本选择、提交及销毁 |
 | `app/src/pane/hybrid/rename_transaction.rs` | 托管桌面成员的身份交接与失败补偿 |
 | `crates/desktop-shell/src/rename.rs` | `IFileOperation` 与 Shell 返回的新项目 |
-| `crates/desktop-hook/src/filter/menu/` | Explorer 内的独立宿主与命令路由 |
+| `crates/desktop-explorer/src/filter/menu/` | Explorer 内的独立宿主与命令路由 |
 
 菜单返回的是操作意图，Shell 返回的是文件操作结果，两者不能混为一谈。打开编辑器时保留当初选中的身份，不根据菜单关闭后的选择状态重新猜测目标。
 

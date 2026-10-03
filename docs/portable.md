@@ -7,7 +7,7 @@
 ## 首次启动
 
 1. 将 ZIP 完整解压到有写入权限的文件夹，不要直接在压缩包内运行。
-2. 确认 `luciddesk.exe`、`luciddesk_desktop.dll` 和 `portable` 位于同一目录。
+2. 确认 `luciddesk.exe`、`luciddesk_explorer.dll` 和 `portable` 位于同一目录。
 3. 退出已经运行的 LucidDesk，再双击本目录的 `luciddesk.exe`。
 4. 首次运行后确认数据目录；没有环境变量覆盖时，程序会在旁边创建 `data`。
 
@@ -20,7 +20,7 @@
 | 文件或目录 | 用途 |
 | --- | --- |
 | `luciddesk.exe` | 主程序 |
-| `luciddesk_desktop.dll` | 同次构建的桌面组件，必须与主程序配套 |
+| `luciddesk_explorer.dll` | 同次构建的桌面组件，必须与主程序配套 |
 | `portable` | 便携模式标记，文件名没有扩展名 |
 | `data/config.toml` | 使用便携数据路径时的全局配置 |
 | `data/workspace.db` | 工作区、布局及其他持久化状态 |

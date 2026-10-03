@@ -34,7 +34,7 @@
 
 ```powershell
 cargo check --workspace --all-targets --locked --offline
-cargo test -p desktop-core -p desktop-storage -p desktop-hook -p desktop-shell --lib --locked --offline -- --test-threads=1
+cargo test -p desktop-core -p desktop-storage -p desktop-explorer -p desktop-shell --lib --locked --offline -- --test-threads=1
 cargo test -p luciddesk --bin luciddesk --locked --offline -- --test-threads=1
 cargo test -p luciddesk --test canvas_compat --locked --offline
 cargo test -p desktop-shell --doc --locked --offline

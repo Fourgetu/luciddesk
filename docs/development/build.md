@@ -16,7 +16,7 @@
 
 ```powershell
 .\tools\use-windows-toolchain.ps1
-cargo build -p luciddesk -p desktop-hook --locked --offline
+cargo build -p luciddesk -p desktop-explorer --locked --offline
 $env:LUCIDDESK_DATA_DIR = Join-Path $PWD 'target\dev-data'
 & .\target\debug\luciddesk.exe
 ```
@@ -36,7 +36,7 @@ Remove-Item Env:LUCIDDESK_DATA_DIR -ErrorAction SilentlyContinue
 | Feature | 所属包 | 用途 |
 | --- | --- | --- |
 | `desktop-menu-diagnostics` | desktop-shell | 在真实桌面选择项目的菜单诊断入口，默认关闭 |
-| `menu-diagnostics` | desktop-hook、desktop-shell；app 同时转发 | 在 Release 中收集菜单计时，默认关闭；Debug 自动收集 |
+| `menu-diagnostics` | desktop-explorer、desktop-shell；app 同时转发 | 在 Release 中收集菜单计时，默认关闭；Debug 自动收集 |
 
 诊断构建使用独立目录，避免与发布产物混用。菜单探针会操作真实桌面选择，应在可中断的交互会话中运行。
 
@@ -45,7 +45,7 @@ Remove-Item Env:LUCIDDESK_DATA_DIR -ErrorAction SilentlyContinue
 cargo build -p desktop-shell --example desktop_menu_service_probe --features desktop-menu-diagnostics --target-dir target\desktop-menu-diagnostics --locked --offline
 
 # 同时启用主程序、Hook 和 Shell 的 Release 菜单计时
-cargo build -p luciddesk -p desktop-hook --release --features luciddesk/menu-diagnostics --target-dir target\menu-diagnostics --locked --offline
+cargo build -p luciddesk -p desktop-explorer --release --features luciddesk/menu-diagnostics --target-dir target\menu-diagnostics --locked --offline
 ```
 
 `tools/package.ps1` 在 `target\production` 构建并取件，显式禁用默认 feature；不要用 `--all-features` 生成发布包，以免启用诊断入口和计时。
@@ -61,7 +61,7 @@ cargo build -p luciddesk -p desktop-hook --release --features luciddesk/menu-dia
 如果正在运行的程序占用了原构建产物，可以先编译到独立目录：
 
 ```powershell
-cargo build -p luciddesk -p desktop-hook --locked --offline --target-dir target\convergence-check
+cargo build -p luciddesk -p desktop-explorer --locked --offline --target-dir target\convergence-check
 ```
 
 退出旧实例后，再从 `target\convergence-check\debug` 启动新程序。不要同时运行新旧实例以测试桌面 Hook。
@@ -143,7 +143,7 @@ MSIX 从普通生产包生成，不使用便携包作为输入；包身份、签
 
 ```powershell
 cargo check --workspace --all-targets --locked --offline
-cargo test -p desktop-core -p desktop-storage -p desktop-hook -p desktop-shell --lib --locked --offline -- --test-threads=1
+cargo test -p desktop-core -p desktop-storage -p desktop-explorer -p desktop-shell --lib --locked --offline -- --test-threads=1
 cargo test -p luciddesk --bin luciddesk --locked --offline -- --test-threads=1
 cargo test -p luciddesk --test canvas_compat --locked --offline
 ```
@@ -187,7 +187,7 @@ cargo run --locked --offline --manifest-path tools/windows-bindings/Cargo.toml -
 退出 LucidDesk 后运行。探针会临时移除两个原生桌面项目，验证刷新、菜单暂停/恢复、坐标恢复和测试控制进程退出后的恢复，不修改磁盘文件。
 
 ```powershell
-cargo build -p desktop-hook --locked
+cargo build -p desktop-explorer --locked
 cargo build -p desktop-shell --example filter_backend_probe --locked
 .\target\debug\examples\filter_backend_probe.exe
 ```

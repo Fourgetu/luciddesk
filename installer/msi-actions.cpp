@@ -57,7 +57,8 @@ static int mapped_component(DWORD pid) {
     BOOL available = Module32FirstW(snapshot, &entry);
     int result = 0;
     while (available) {
-        if (_wcsicmp(entry.szModule, L"luciddesk_desktop.dll") == 0) {
+        if (_wcsicmp(entry.szModule, L"luciddesk_explorer.dll") == 0 ||
+            _wcsicmp(entry.szModule, L"luciddesk_desktop.dll") == 0) {
             result = 1;
             break;
         }
@@ -131,7 +132,7 @@ extern "C" __declspec(dllexport) UINT __stdcall Preflight(MSIHANDLE install) {
     CloseHandle(processes);
     if (status) return fail(install, L"Explorer still has a desktop component loaded, or could not be inspected. Exit LucidDesk; if necessary restart Explorer, then retry. / Explorer 桌面组件尚未释放或无法检查，请退出 LucidDesk，必要时重启资源管理器后重试。");
 #endif
-    for (const wchar_t* file : {L"luciddesk.exe", L"luciddesk_desktop.dll"}) {
+    for (const wchar_t* file : {L"luciddesk.exe", L"luciddesk_explorer.dll", L"luciddesk_desktop.dll"}) {
         const auto path = folder + file;
         if (!exists(path)) continue;
         HANDLE handle = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ,

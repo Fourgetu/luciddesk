@@ -170,7 +170,7 @@ pub fn show_file_items_menu(
     if selected.is_empty() {
         return Ok(false);
     }
-    crate::menu_theme::apply(owner.0);
+    desktop_menu::apply_theme(owner.0);
     unsafe {
         let context: IContextMenu = shell_items(selected)?.BindToHandler(None, &BHID_SFUIObject)?;
         let menu = Menu(CreatePopupMenu()?);
@@ -191,7 +191,7 @@ pub fn show_file_items_menu(
         {
             return Err(windows::core::Error::from_thread());
         }
-        let frame = crate::menu_frame::MenuFrame::install(owner.0, windows_sys::Win32::Foundation::POINT { x: point.x, y: point.y });
+        let frame = desktop_menu::MenuFrame::install(owner.0, windows_sys::Win32::Foundation::POINT { x: point.x, y: point.y });
         let chosen = TrackPopupMenuEx(
             menu.0,
             (TPM_RETURNCMD | TPM_RIGHTBUTTON).0,

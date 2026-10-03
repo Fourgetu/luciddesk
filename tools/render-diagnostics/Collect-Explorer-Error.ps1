@@ -5,7 +5,7 @@ $since = (Get-Date).AddDays(-7)
 $appPattern = '(?i)\b(?:explorer|luciddesk|luciddesk)\.exe\b'
 $lines.Add('Explorer and LucidDesk errors from the last 7 days. This script does not start or stop any application.')
 $lines.Add("Collected: $((Get-Date).ToString('o'))")
-foreach ($name in @('build.json', 'luciddesk.exe', 'luciddesk_desktop.dll')) {
+foreach ($name in @('build.json', 'luciddesk.exe', 'luciddesk_explorer.dll')) {
     $path = Join-Path $PSScriptRoot $name
     if (Test-Path -LiteralPath $path -PathType Leaf) {
         if ($name -eq 'build.json') {

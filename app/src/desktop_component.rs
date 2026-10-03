@@ -14,7 +14,7 @@ use windows_sys::Win32::{
     },
 };
 
-const DLL: &str = "luciddesk_desktop.dll";
+const DLL: &str = "luciddesk_explorer.dll";
 
 pub(crate) struct Component {
     pub path: PathBuf,

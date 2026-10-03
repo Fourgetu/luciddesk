@@ -27,7 +27,7 @@ Clone the repository, then run the build commands from its root:
 git clone https://github.com/Yuch3nE/luciddesk.git
 cd luciddesk
 .\tools\use-windows-toolchain.ps1
-cargo build -p luciddesk -p desktop-hook --locked
+cargo build -p luciddesk -p desktop-explorer --locked
 ```
 
 After a successful build, exit any running LucidDesk instance and start the development build with a separate data directory:
@@ -44,7 +44,7 @@ try {
 
 This command waits for the application to exit before restoring the terminal's previous environment variable. A separate data directory isolates configuration, but not Explorer or real file operations. A second launch may still activate the existing instance; data isolation does not enable independent application instances.
 
-Keep the EXE and `luciddesk_desktop.dll` from the same build in the same directory. Native desktop tests affect the real Explorer session, so use an environment where interruption is acceptable. Check files, layouts, and running instances before testing, then restore any state that needs to be preserved.
+Keep the EXE and `luciddesk_explorer.dll` from the same build in the same directory. Native desktop tests affect the real Explorer session, so use an environment where interruption is acceptable. Check files, layouts, and running instances before testing, then restore any state that needs to be preserved.
 
 ## Find the relevant implementation
 

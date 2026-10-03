@@ -154,7 +154,7 @@ enum Event {
     ToggleCompactMenu,
     SetTitleEmojiColor(bool),
     PaneItemFocus,
-    BeginItemMenu(Rc<RefCell<Option<Result<Rc<luciddesk_desktop::filter::FilterSession>, String>>>>),
+    BeginItemMenu(Rc<RefCell<Option<Result<Rc<luciddesk_explorer::filter::FilterSession>, String>>>>),
     EndItemMenu,
     RenameItem(ShellIdentity),
     RenameTitle,

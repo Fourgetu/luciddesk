@@ -13,7 +13,7 @@ path = "src/main.rs"
 
 [features]
 default = []
-menu-diagnostics = ["desktop-hook/menu-diagnostics", "desktop-shell/menu-diagnostics"]
+menu-diagnostics = ["desktop-explorer/menu-diagnostics", "desktop-shell/menu-diagnostics"]
 
 [dependencies]
 desktop-core.workspace = true
@@ -24,7 +24,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 semver = "1"
 desktop-window.workspace = true
-desktop-hook.workspace = true
+desktop-explorer.workspace = true
 windows = { workspace = true, features = [
     "Win32_Storage_FileSystem",
     "Foundation",

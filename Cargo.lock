@@ -35,6 +35,16 @@ name = "desktop-core"
 version = "0.1.0"
 
 [[package]]
+name = "desktop-explorer"
+version = "0.1.0"
+dependencies = [
+ "desktop-menu",
+ "windows",
+ "windows-core 0.62.2",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "desktop-graphics"
 version = "0.1.0"
 dependencies = [
@@ -43,11 +53,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "desktop-hook"
+name = "desktop-menu"
 version = "0.1.0"
 dependencies = [
- "windows",
- "windows-core 0.62.2",
  "windows-sys 0.61.2",
 ]
 
@@ -56,7 +64,8 @@ name = "desktop-shell"
 version = "0.1.0"
 dependencies = [
  "desktop-core",
- "desktop-hook",
+ "desktop-explorer",
+ "desktop-menu",
  "desktop-window",
  "windows",
  "windows-core 0.62.2",
@@ -299,8 +308,8 @@ name = "luciddesk"
 version = "0.18.0"
 dependencies = [
  "desktop-core",
+ "desktop-explorer",
  "desktop-graphics",
- "desktop-hook",
  "desktop-shell",
  "desktop-storage",
  "desktop-window",

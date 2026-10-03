@@ -20,7 +20,7 @@
 
 ## 启动
 
-安装版按[安装说明](installer.md)完成安装后启动；便携版按[便携说明](portable.md)完整解压。普通免安装包需将同次构建的 `luciddesk.exe` 和 `luciddesk_desktop.dll` 放在一起。MSIX 从系统安装入口启动，不要自行移动包内文件。
+安装版按[安装说明](installer.md)完成安装后启动；便携版按[便携说明](portable.md)完整解压。普通免安装包需将同次构建的 `luciddesk.exe` 和 `luciddesk_explorer.dll` 放在一起。MSIX 从系统安装入口启动，不要自行移动包内文件。
 
 首次使用可先从托盘菜单新建一个面板，再将桌面图标拖入。需要浏览实际目录时选择“新建文件夹面板”，需要搜索时先配置 Everything。退出程序使用托盘菜单中的“退出 LucidDesk”。
 
@@ -246,7 +246,7 @@ Windows 11 的“设置 → 面板布局”提供“使用 Windows 11 风格右�
 
 | 现象 | 处理方式 |
 | --- | --- |
-| 提示缺少 Hook DLL | 检查主程序与同次构建的 `luciddesk_desktop.dll` 是否放在一起 |
+| 提示缺少 Hook DLL | 检查主程序与同次构建的 `luciddesk_explorer.dll` 是否放在一起 |
 | 提示数据库结构不兼容 | 保留原库与错误信息，核对程序版本；需要隔离排查时使用新数据目录，不直接删除旧库 |
 | 提示找不到 Explorer 桌面视图 | 确认 Explorer 正常运行，并从实际桌面会话启动 |
 | 找不到面板或托盘图标 | 先检查通知区域折叠菜单，再选择“显示面板” |

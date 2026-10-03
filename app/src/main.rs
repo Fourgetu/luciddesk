@@ -16,7 +16,7 @@ use std::{ffi::OsString, fs, path::PathBuf};
 fn main() -> Result<(), String> {
     // Installer preflight only: no COM, application windows, data access or hooks.
     if std::env::args_os().skip(1).eq([OsString::from("--check-desktop-component")]) {
-        std::process::exit(match luciddesk_desktop::desktop_component_released() {
+        std::process::exit(match luciddesk_explorer::desktop_component_released() {
             Ok(true) => 0,
             Ok(false) => 1,
             Err(_) => 2,

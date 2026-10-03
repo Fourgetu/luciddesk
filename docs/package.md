@@ -7,7 +7,7 @@ LucidDesk 提供桌面分组、文件夹面板和 Everything 搜索入口。开�
 ## 启动与退出
 
 1. 将 ZIP 完整解压到独立文件夹，不要直接从压缩包内运行。
-2. 保持 `luciddesk.exe` 与 `luciddesk_desktop.dll` 同目录，且来自同一构建。
+2. 保持 `luciddesk.exe` 与 `luciddesk_explorer.dll` 同目录，且来自同一构建。
 3. 退出已运行的 LucidDesk，再双击 `luciddesk.exe`。
 4. 使用通知区域的托盘菜单退出；图标可能位于系统折叠菜单中。
 
@@ -20,7 +20,7 @@ LucidDesk 提供桌面分组、文件夹面板和 Everything 搜索入口。开�
 | 文件 | 用途 |
 | --- | --- |
 | `luciddesk.exe` | 主程序 |
-| `luciddesk_desktop.dll` | 配套 Explorer 桌面组件 |
+| `luciddesk_explorer.dll` | 配套 Explorer 桌面组件 |
 | `build.json` | 版本、Git 修订、构建环境及二进制校验值 |
 | `README.md` | 本说明 |
 | `usage.md` | 面板、文件操作、快捷键及设置说明 |

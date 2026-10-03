@@ -72,9 +72,9 @@ Name: "chinesesimplified"; MessagesFile: "ChineseSimplified.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "{#SourcePath}\*"; DestDir: "{app}"; Flags: ignoreversion; Excludes: "portable,msix,README.md,luciddesk_desktop.dll,luciddesk.exe"
+Source: "{#SourcePath}\*"; DestDir: "{app}"; Flags: ignoreversion; Excludes: "portable,msix,README.md,luciddesk_explorer.dll,luciddesk.exe"
 Source: "{#SourcePath}\luciddesk.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#SourcePath}\luciddesk_desktop.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourcePath}\luciddesk_explorer.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\docs\installer.md"; DestDir: "{app}"; DestName: "README.md"; Flags: ignoreversion
 Source: "installed"; DestDir: "{app}"; Flags: ignoreversion
 
@@ -259,6 +259,7 @@ end;
 function CheckHookReleased(Uninstalling: Boolean): String;
 var
   ExistingHook: String;
+  ComponentIndex: Integer;
   Stream: TFileStream;
   Attempt: Integer;
   ExitCode: Integer;
@@ -289,20 +290,28 @@ begin
     else Result := OperationMessage('ComponentInspectionFailed', Uninstalling);
     Exit;
   end;
-  ExistingHook := ExpandConstant('{app}\luciddesk_desktop.dll');
-  if not FileExists(ExistingHook) then Exit;
-  // Explorer releases its reference after the final callback/thread has returned.
-  // Do not rename a still-loaded legacy image: the loader can reuse it by path.
-  for Attempt := 1 to 100 do begin
-    try
-      Stream := TFileStream.Create(ExistingHook, fmOpenReadWrite or fmShareDenyNone);
-      Stream.Free;
-      Exit;
-    except
-      Sleep(100);
+  // Check both names when upgrading from the previous desktop component.
+  for ComponentIndex := 0 to 1 do begin
+    if ComponentIndex = 0 then
+      ExistingHook := ExpandConstant('{app}\luciddesk_explorer.dll')
+    else
+      ExistingHook := ExpandConstant('{app}\luciddesk_desktop.dll');
+    if FileExists(ExistingHook) then begin
+      for Attempt := 1 to 100 do begin
+        try
+          Stream := TFileStream.Create(ExistingHook, fmOpenReadWrite or fmShareDenyNone);
+          Stream.Free;
+          Break;
+        except
+          if Attempt = 100 then begin
+            Result := OperationMessage('ComponentBusy', Uninstalling);
+            Exit;
+          end;
+          Sleep(100);
+        end;
+      end;
     end;
   end;
-  Result := OperationMessage('ComponentBusy', Uninstalling);
 end;
 
 function FindAppWindow(ClassName, WindowName: String): HWND;

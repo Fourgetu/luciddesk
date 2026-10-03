@@ -15,7 +15,7 @@ use windows_core::ComObjectInner;
 mod command_route;
 #[path = "presenter_trace.rs"]
 mod trace;
-#[path = "../../../desktop-hook/src/filter/menu/presenter/input.rs"]
+#[path = "../../../desktop-explorer/src/filter/menu/presenter/input.rs"]
 mod input_adapter;
 pub fn log(args: std::fmt::Arguments<'_>) {
     use std::io::Write;

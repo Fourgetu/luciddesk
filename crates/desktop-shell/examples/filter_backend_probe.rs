@@ -1,6 +1,6 @@
 //! Live production-backend regression: remove, refresh, pause, restore, owner death.
 //! Run with LucidDesk closed. Never deletes, moves, or opens desktop file content.
-use luciddesk_desktop::filter::FilterSession;
+use luciddesk_explorer::filter::FilterSession;
 use desktop_shell::{NativeDesktopSnapshot, native_desktop_snapshot};
 use std::{
     os::windows::process::CommandExt,
@@ -24,7 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return restore_saved_baseline();
     }
     let before = native_desktop_snapshot()?;
-    let view = luciddesk_desktop::desktop_view()?;
+    let view = luciddesk_explorer::desktop_view()?;
     let owner = windows_window::Window::new("LucidDesk Filter Regression")
         .size(1, 1)
         .style(WS_POPUP)
@@ -41,7 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap()
         .parent()
         .unwrap()
-        .join("luciddesk_desktop.dll");
+        .join("luciddesk_explorer.dll");
     let bytes = std::fs::read(&source)?;
     let hash = bytes.iter().fold(0xcbf29ce484222325_u64, |h, b| {
         (h ^ u64::from(*b)).wrapping_mul(0x100000001b3)
@@ -236,7 +236,7 @@ fn check(
     hidden: &[String],
 ) -> Result<(), Box<dyn std::error::Error>> {
     let after = native_desktop_snapshot()?;
-    let list = luciddesk_desktop::desktop_view()?;
+    let list = luciddesk_explorer::desktop_view()?;
     let count = unsafe {
         SendMessageW(
             list as _,

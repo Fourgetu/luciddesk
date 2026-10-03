@@ -27,7 +27,7 @@
 git clone https://github.com/Yuch3nE/luciddesk.git
 cd luciddesk
 .\tools\use-windows-toolchain.ps1
-cargo build -p luciddesk -p desktop-hook --locked
+cargo build -p luciddesk -p desktop-explorer --locked
 ```
 
 构建成功后，退出已运行的 LucidDesk，再用独立数据目录启动开发版本：
@@ -44,7 +44,7 @@ try {
 
 上面的命令等待应用退出后恢复当前终端原有变量。独立数据目录隔离配置，但不隔离真实 Explorer 或文件操作；重复启动仍可能唤起已有实例，不能把目录隔离当作多实例隔离。
 
-EXE 与 `luciddesk_desktop.dll` 必须来自同次构建并放在同一目录。原生桌面测试会操作真实 Explorer，应在可中断的环境中执行；测试前确认文件、布局及运行实例，完成后恢复需要保留的状态。
+EXE 与 `luciddesk_explorer.dll` 必须来自同次构建并放在同一目录。原生桌面测试会操作真实 Explorer，应在可中断的环境中执行；测试前确认文件、布局及运行实例，完成后恢复需要保留的状态。
 
 ## 选择代码与文档入口
 

@@ -6,8 +6,6 @@ mod drag_image;
 mod error;
 mod file_command;
 mod folder_menu;
-mod menu_frame;
-mod menu_theme;
 mod namespace;
 mod native_layout;
 mod native_menu;

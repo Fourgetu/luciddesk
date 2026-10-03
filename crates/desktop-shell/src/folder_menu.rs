@@ -84,7 +84,7 @@ pub fn show_folder_menu(owner: HWND, path: &Path, point: POINT) -> Result<Folder
             let _ = with_site.SetSite(&site);
         }
     }
-    crate::menu_theme::apply(owner.0);
+    desktop_menu::apply_theme(owner.0);
     unsafe {
         let menu = Menu(CreatePopupMenu()?);
         context
@@ -103,7 +103,7 @@ pub fn show_folder_menu(owner: HWND, path: &Path, point: POINT) -> Result<Folder
         {
             return Err(windows::core::Error::from_thread());
         }
-        let frame = crate::menu_frame::MenuFrame::install(
+        let frame = desktop_menu::MenuFrame::install(
             owner.0,
             windows_sys::Win32::Foundation::POINT {
                 x: point.x,

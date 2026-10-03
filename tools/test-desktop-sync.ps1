@@ -35,7 +35,7 @@ try {
         # Read-only Explorer probe. Do not enable all ignored tests: some open
         # menus, change the clipboard or exercise the real desktop membership.
         Invoke-CargoCheck 'live-desktop' @('test', '-p', 'desktop-shell', '--lib', '--locked', '--offline', 'native_layout::tests::background_revision_matches_full_snapshot', '--', '--ignored', '--exact', '--test-threads=1')
-        Invoke-CargoCheck 'live-hook' @('test', '-p', 'desktop-hook', '--lib', '--locked', '--offline', 'filter::items::tests::live_filter_snapshot_reads_without_mutating_desktop', '--', '--ignored', '--exact', '--test-threads=1')
+        Invoke-CargoCheck 'live-hook' @('test', '-p', 'desktop-explorer', '--lib', '--locked', '--offline', 'filter::items::tests::live_filter_snapshot_reads_without_mutating_desktop', '--', '--ignored', '--exact', '--test-threads=1')
     }
     Write-Host "All requested checks passed. Logs: $logs"
 } finally {

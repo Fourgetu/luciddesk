@@ -26,7 +26,7 @@ if ($TestFixture -and ($ProductName -eq 'LucidDesk' -or $UpgradeCode -eq '670DDA
 }
 $null = [guid]::Parse($UpgradeCode)
 $SourcePath = (Resolve-Path -LiteralPath $SourcePath).Path
-foreach ($required in @('luciddesk.exe', 'luciddesk_desktop.dll', 'build.json', 'LICENSE')) {
+foreach ($required in @('luciddesk.exe', 'luciddesk_explorer.dll', 'build.json', 'LICENSE')) {
     if (-not (Test-Path -LiteralPath (Join-Path $SourcePath $required) -PathType Leaf)) { throw "Missing payload: $required" }
 }
 $OutputPath = [IO.Path]::GetFullPath($OutputPath)

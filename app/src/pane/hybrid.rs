@@ -10,7 +10,7 @@ use super::assets::RECYCLE_BIN_PARSING_NAME;
 use super::search::{everything_settings, hotkey as search_hotkey};
 use super::*;
 use audit::DesktopAudit;
-use luciddesk_desktop::{filter::FilterSession, notifications::{DESKTOP_INPUT_MESSAGE, DESKTOP_EXIT_MESSAGE}};
+use luciddesk_explorer::{filter::FilterSession, notifications::{DESKTOP_INPUT_MESSAGE, DESKTOP_EXIT_MESSAGE}};
 pub(super) use icons::refresh_icons;
 use icons::{queue_pane_icons, retain_pane_images};
 use inventory::Inventory;
@@ -236,13 +236,13 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
 }
 
 pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), String> {
-    if luciddesk_desktop::conflicting_desktop_extension() {
+    if luciddesk_explorer::conflicting_desktop_extension() {
         return Err(crate::i18n::text("ui-close-other-desktop-organizers-first").into());
     }
     if desktop_shell::desktop_icons_hidden() {
         return Err(crate::i18n::text("ui-exit-the-legacy-desktop-replacement-to-restore-desktop-icons").into());
     }
-    let view = luciddesk_desktop::desktop_view()?;
+    let view = luciddesk_explorer::desktop_view()?;
     let dirty = Rc::new(Cell::new(false));
     let notify = Rc::clone(&dirty);
     let icons_dirty = Rc::new(RefCell::new(icon_changes::Pending::default()));
@@ -317,7 +317,7 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), S
     // is ready; asking Explorer to initialize it from its own callback can stall.
     // Reuse this snapshot below instead of performing a second enumeration.
     let snapshot = inventory::capture(&managed_identities(&state.borrow()))?;
-    if luciddesk_desktop::desktop_view()? != view {
+    if luciddesk_explorer::desktop_view()? != view {
         return Err(crate::i18n::text("ui-desktop-view-changed-while-reading-reconnecting").into());
     }
     let hook_dll = crate::desktop_component::prepare()?;

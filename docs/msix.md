@@ -4,7 +4,7 @@
 
 ## 输入与产物
 
-在 Windows 上使用 `tools/package-msix.ps1`，输入由 `tools/package.ps1` 生成的普通生产包解压目录。脚本读取 `build.json`，拒绝便携包和渲染诊断包，并核对 `luciddesk.exe`、`luciddesk_desktop.dll` 与构建记录中的 SHA256；校验失败时先修复输入，不要手动修改哈希绕过检查。
+在 Windows 上使用 `tools/package-msix.ps1`，输入由 `tools/package.ps1` 生成的普通生产包解压目录。脚本读取 `build.json`，拒绝便携包和渲染诊断包，并核对 `luciddesk.exe`、`luciddesk_explorer.dll` 与构建记录中的 SHA256；校验失败时先修复输入，不要手动修改哈希绕过检查。
 
 脚本通过 `tools/use-windows-toolchain.ps1` 定位 Windows SDK，使用 MakeAppx 打包；签名时还使用 SignTool。不会重新编译 EXE 或 DLL。
 
@@ -35,7 +35,7 @@ MSIX 打包脚本会在 EXE 同目录生成空文件 `msix`；普通安装包和
 
 判断依据是运行进程的包身份，不是 EXE 文件名，也不靠匹配某个 WindowsApps 路径。添加标记不会给普通 EXE 创建包身份。
 
-包内 DLL 按完整 SHA256 部署到 `LocalState\DesktopComponent\<SHA256>\luciddesk_desktop.dll`。每次连接前比对副本内容，缺失或损坏时使用临时文件原子替换；部署锁避免并发写入，验证后的文件句柄保持到加载完成，阻止期间写入和删除。旧哈希目录只尝试删除其中已释放的 DLL，不递归删除未知内容或跟随重解析点；占用时保留并在下次连接时重试。现有 Explorer 旧组件检查继续阻止新旧组件混用。
+包内 DLL 按完整 SHA256 部署到 `LocalState\DesktopComponent\<SHA256>\luciddesk_explorer.dll`。每次连接前比对副本内容，缺失或损坏时使用临时文件原子替换；部署锁避免并发写入，验证后的文件句柄保持到加载完成，阻止期间写入和删除。旧哈希目录只尝试删除其中已释放的 DLL，不递归删除未知内容或跟随重解析点；占用时保留并在下次连接时重试。现有 Explorer 旧组件检查继续阻止新旧组件混用。
 
 `LocalState` 由 `ApplicationData.Current.LocalFolder` 返回，代码不硬编码安装目录或包目录名。`<SHA256>` 是 DLL 内容哈希，不是应用版本号；相同 DLL 内容复用目录，不同内容分别部署。
 

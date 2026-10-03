@@ -31,13 +31,13 @@ struct FrameState {
     popup: RefCell<Option<Box<Popup>>>,
 }
 
-pub(crate) struct MenuFrame {
+pub struct MenuFrame {
     hook: HHOOK,
     state: Box<FrameState>,
 }
 
 impl MenuFrame {
-    pub(crate) fn install(owner: HWND, point: POINT) -> Option<Self> {
+    pub fn install(owner: HWND, point: POINT) -> Option<Self> {
         if ACTIVE.get().is_null() {
             let mut monitor = MONITORINFO {
                 cbSize: size_of::<MONITORINFO>() as u32,

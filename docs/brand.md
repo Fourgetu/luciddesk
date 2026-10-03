@@ -31,7 +31,7 @@ EXE、窗口、托盘和关于页共用程序内嵌图标资源；安装器使�
 | --- | --- |
 | Cargo 应用包 | `luciddesk` |
 | 主程序 | `luciddesk.exe` |
-| 桌面组件 | `luciddesk_desktop.dll` |
+| 桌面组件 | `luciddesk_explorer.dll` |
 | 普通 ZIP | `LucidDesk-<版本>-<构建标识>-windows-x64-<时间戳>.zip` |
 | 便携 ZIP | `LucidDesk-<版本>-windows-x64-portable.zip` |
 | 安装程序 | `LucidDesk-<版本>-windows-x64-setup.exe` / `LucidDesk-<版本>-windows-x64.msi` |

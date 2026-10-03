@@ -30,5 +30,5 @@ for symbol in selected:
     lines.append('    // ' + symbol['name'])
     lines.append('    (0x%x, [%s]),' % (rva, ', '.join('0x%02x' % b for b in data[raw:raw+24])))
 lines.append('];')
-Path('crates/desktop-hook/src/geometry/profile.rs').write_text('\n'.join(lines)+'\n', encoding='utf-8')
+Path('crates/desktop-explorer/src/geometry/profile.rs').write_text('\n'.join(lines)+'\n', encoding='utf-8')
 print('Generated exact-image geometry profile:', hex(hash_value), [hex(s['rva']) for s in selected])

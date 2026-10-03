@@ -204,8 +204,7 @@ pub(crate) fn component_released_in(pid: u32) -> Result<bool, String> {
                 .iter()
                 .position(|c| *c == 0)
                 .unwrap_or(entry.szModule.len());
-            if String::from_utf16_lossy(&entry.szModule[..end])
-                .eq_ignore_ascii_case("luciddesk_desktop.dll")
+            if is_component_module(&String::from_utf16_lossy(&entry.szModule[..end]))
             {
                 released = false;
                 break;
@@ -221,6 +220,12 @@ pub(crate) fn component_released_in(pid: u32) -> Result<bool, String> {
     }
 }
 
+// Older installations may still have the previous DLL loaded in Explorer.
+fn is_component_module(name: &str) -> bool {
+    name.eq_ignore_ascii_case("luciddesk_explorer.dll")
+        || name.eq_ignore_ascii_case("luciddesk_desktop.dll")
+}
+
 #[cfg(test)]
 mod component_tests {
     use super::*;
@@ -233,38 +238,47 @@ mod component_tests {
     fn mapped_component_blocks_attach_before_any_hook_is_installed() {
         let dll = std::env::current_exe()
             .unwrap()
-            .with_file_name("luciddesk_desktop.dll");
-        let path: Vec<u16> = dll
-            .to_string_lossy()
-            .encode_utf16()
-            .chain(Some(0))
-            .collect();
-        unsafe {
-            let module = LoadLibraryExW(path.as_ptr(), null_mut(), 0);
-            assert!(!module.is_null(), "{}", std::io::Error::last_os_error());
-            let window = windows_sys::Win32::UI::WindowsAndMessaging::CreateWindowExW(
-                0,
-                windows_sys::w!("STATIC"),
-                windows_sys::w!("component guard test"),
-                windows_sys::Win32::UI::WindowsAndMessaging::WS_POPUP,
-                0,
-                0,
-                1,
-                1,
-                null_mut(),
-                null_mut(),
-                null_mut(),
-                null_mut(),
-            );
-            assert!(!window.is_null());
-            assert!(!component_released_in(GetCurrentProcessId()).unwrap());
-            let result =
-                crate::filter::FilterSession::connect(window as isize, window as isize, &dll);
-            assert!(result.err().unwrap().contains("旧桌面组件尚未释放"));
-            windows_sys::Win32::UI::WindowsAndMessaging::DestroyWindow(window);
-            assert_ne!(FreeLibrary(module), 0);
-            assert!(component_released_in(GetCurrentProcessId()).unwrap());
+            .with_file_name("luciddesk_explorer.dll");
+        let legacy_dir = std::env::temp_dir().join(format!("luciddesk-component-{}", std::process::id()));
+        std::fs::create_dir_all(&legacy_dir).unwrap();
+        let legacy_dll = legacy_dir.join("luciddesk_desktop.dll");
+        std::fs::copy(&dll, &legacy_dll).unwrap();
+        // Exercise real module enumeration for both current and pre-rename installations.
+        for dll in [dll, legacy_dll.clone()] {
+            let path: Vec<u16> = dll
+                .to_string_lossy()
+                .encode_utf16()
+                .chain(Some(0))
+                .collect();
+            unsafe {
+                let module = LoadLibraryExW(path.as_ptr(), null_mut(), 0);
+                assert!(!module.is_null(), "{}", std::io::Error::last_os_error());
+                let window = windows_sys::Win32::UI::WindowsAndMessaging::CreateWindowExW(
+                    0,
+                    windows_sys::w!("STATIC"),
+                    windows_sys::w!("component guard test"),
+                    windows_sys::Win32::UI::WindowsAndMessaging::WS_POPUP,
+                    0,
+                    0,
+                    1,
+                    1,
+                    null_mut(),
+                    null_mut(),
+                    null_mut(),
+                    null_mut(),
+                );
+                assert!(!window.is_null());
+                assert!(!component_released_in(GetCurrentProcessId()).unwrap());
+                let result =
+                    crate::filter::FilterSession::connect(window as isize, window as isize, &dll);
+                assert!(result.err().unwrap().contains("旧桌面组件尚未释放"));
+                windows_sys::Win32::UI::WindowsAndMessaging::DestroyWindow(window);
+                assert_ne!(FreeLibrary(module), 0);
+                assert!(component_released_in(GetCurrentProcessId()).unwrap());
+            }
         }
+        std::fs::remove_file(legacy_dll).unwrap();
+        std::fs::remove_dir(legacy_dir).unwrap();
     }
 
     #[test]

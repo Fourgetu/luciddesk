@@ -1,6 +1,6 @@
 //! Real Explorer DLL unload regression, with a menu worker and abrupt owner exit.
 //! Uses only a test-owned file and never changes desktop membership.
-use luciddesk_desktop::filter::FilterSession;
+use luciddesk_explorer::filter::FilterSession;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .on_message(|_, msg, _, _| (msg == WM_DESTROY).then_some(0))
         .create()
         .map_err(|e| e.to_string())?;
-    let view = luciddesk_desktop::desktop_view()?;
+    let view = luciddesk_explorer::desktop_view()?;
     let hook = FilterSession::connect(view, owner.hwnd() as isize, &dll)?;
     for _ in 0..3 {
         hook.prepare_menu(

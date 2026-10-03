@@ -165,11 +165,11 @@ cd luciddesk
 
 ```powershell
 .\tools\use-windows-toolchain.ps1
-cargo build -p luciddesk -p desktop-hook --locked
+cargo build -p luciddesk -p desktop-explorer --locked
 .\target\debug\luciddesk.exe
 ```
 
-主程序和 `luciddesk_desktop.dll` 必须来自同次构建并放在同一目录。默认生成 EXE。生成安装包与 ZIP：
+主程序和 `luciddesk_explorer.dll` 必须来自同次构建并放在同一目录。默认生成 EXE。生成安装包与 ZIP：
 
 ```powershell
 .\tools\ensure-inno.ps1

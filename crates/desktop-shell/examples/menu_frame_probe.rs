@@ -1,8 +1,6 @@
 //! Isolated native-frame test. No file verbs run unless explicitly selected.
 use windows_sys::Win32::{Foundation::*, System::LibraryLoader::*, UI::{HiDpi::*, WindowsAndMessaging::*}};
 use std::ptr::null_mut;
-#[path = "../src/menu_theme.rs"] mod menu_theme;
-#[path = "../src/menu_frame.rs"] mod menu_frame;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     unsafe {
         SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
@@ -34,9 +32,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     None
                 }
                 WM_CONTEXTMENU => {
-                    eprintln!("dark={:?} frame={enabled}", menu_theme::apply(hwnd));
+                    eprintln!("dark={:?} frame={enabled}", desktop_menu::apply_theme(hwnd));
                     let point = windows::Win32::Foundation::POINT { x: lp as u16 as i16 as i32, y: (lp >> 16) as u16 as i16 as i32 };
-                    let _frame = (enabled && path.is_none()).then(|| menu_frame::MenuFrame::install(hwnd, POINT { x: point.x, y: point.y })).flatten();
+                    let _frame = (enabled && path.is_none()).then(|| desktop_menu::MenuFrame::install(hwnd, POINT { x: point.x, y: point.y })).flatten();
                     if let Some(path) = &path {
                         let item = desktop_shell::ShellIdentity::FileSystem { path: path.into(), volume_id: None, file_id: None };
                         eprintln!("result={:?}", desktop_shell::show_file_items_menu(windows::Win32::Foundation::HWND(hwnd), &[item], point));
@@ -101,8 +99,8 @@ unsafe extern "system" fn measure_window(hwnd: HWND, _: isize) -> i32 {
 }
 unsafe fn sample_frame(hwnd: HWND, enabled: bool, x: i32, y: i32, extra_rows: u32) -> Dimensions {
     unsafe {
-        menu_theme::apply(hwnd);
-        let _frame = enabled.then(|| menu_frame::MenuFrame::install(hwnd, POINT { x, y })).flatten();
+        desktop_menu::apply_theme(hwnd);
+        let _frame = enabled.then(|| desktop_menu::MenuFrame::install(hwnd, POINT { x, y })).flatten();
         let menu = CreatePopupMenu();
         AppendMenuW(menu, MF_STRING, 1, windows_sys::w!("Open (&O)"));
         SetMenuDefaultItem(menu, 1, 0);

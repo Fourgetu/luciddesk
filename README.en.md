@@ -81,7 +81,7 @@ See the [installer](docs/installer.md), [standard ZIP](docs/package.md) or [port
 **ZIP packages:**
 
 1. Exit any running copy and extract the entire ZIP to a writable folder.
-2. Run `luciddesk.exe`. Keep `luciddesk_desktop.dll` beside it; portable mode also requires `portable`. Do not run the app inside the ZIP.
+2. Run `luciddesk.exe`. Keep `luciddesk_explorer.dll` beside it; portable mode also requires `portable`. Do not run the app inside the ZIP.
 3. Drag desktop icons into a panel. Use the tray menu to create panels or folder panels and open Settings.
 
 Click the tray icon to show panels. Its menu also provides creation, search, refresh, configuration folder and exit actions.
@@ -157,7 +157,7 @@ Requires Windows x64, rustup, Visual Studio C++ Build Tools and the Windows SDK.
 git clone https://github.com/Yuch3nE/luciddesk.git
 cd luciddesk
 .\tools\use-windows-toolchain.ps1
-cargo build -p luciddesk -p desktop-hook --locked
+cargo build -p luciddesk -p desktop-explorer --locked
 .\target\debug\luciddesk.exe
 ```
 
@@ -171,7 +171,7 @@ EXE is the default installer format. Run from the repository root:
 
 For MSI, run `ensure-wix.ps1` and add `-InstallerFormat Msi`; `Both` builds both formats. MSI builds require .NET SDK 8 or newer.
 
-Installers are written to `target/installers/`, standard ZIPs to `target/packages/`, and portable ZIPs to `target/portable/<timestamp>/`. Each package includes a SHA256 checksum file. Keep `luciddesk.exe` and `luciddesk_desktop.dll` from the same build together. See the [build guide](docs/development/build.md) for checks and diagnostic builds.
+Installers are written to `target/installers/`, standard ZIPs to `target/packages/`, and portable ZIPs to `target/portable/<timestamp>/`. Each package includes a SHA256 checksum file. Keep `luciddesk.exe` and `luciddesk_explorer.dll` from the same build together. See the [build guide](docs/development/build.md) for checks and diagnostic builds.
 
 <a id="contributing"></a>
 

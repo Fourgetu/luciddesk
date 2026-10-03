@@ -1,6 +1,6 @@
 # 架构说明
 
-LucidDesk 由主程序 `luciddesk.exe` 和桌面组件 `luciddesk_desktop.dll` 协作完成桌面整理。主程序维护面板、配置与交互；桌面组件在 Explorer 内过滤已收纳项目，并提供桌面集成能力。收纳只改变项目的显示归属，不移动文件，也不切换系统自动排列设置。
+LucidDesk 由主程序 `luciddesk.exe` 和桌面组件 `luciddesk_explorer.dll` 协作完成桌面整理。主程序维护面板、配置与交互；桌面组件在 Explorer 内过滤已收纳项目，并提供桌面集成能力。收纳只改变项目的显示归属，不移动文件，也不切换系统自动排列设置。
 
 本文说明当前运行架构与关键约束。完整文件清单见[目录结构](structure.md)，构建入口见[构建与验证](build.md)。
 
@@ -54,7 +54,8 @@ Explorer 继续负责未收纳图标的绘制、排列、命中和原生交互�
 | `desktop-core` | Shell 身份、坐标、面板与工作区模型 |
 | `desktop-storage` | 配置与数据库读取、编解码和事务式保存 |
 | `desktop-shell` | Shell 查询、通知、菜单、文件操作和 OLE 能力 |
-| `desktop-hook` | 控制端会话、IPC、DLL 引导、成员过滤与控制端存活监测 |
+| `desktop-menu` | 两侧共用的原生菜单主题与边框，不依赖 Shell 或 Explorer 实现 |
+| `desktop-explorer` | 控制端会话、IPC、DLL 引导、成员过滤与控制端存活监测 |
 | `desktop-graphics`、`desktop-window` | 分别提供合成层与生成绑定、显示器枚举与错误提示 |
 
 表中的 `tray.rs`、`i18n.rs` 位于 `app/src/`。crate 的公共入口与内部目录见 [crates 导航](../../crates/README.md)；新增模块按实际功能归属放置，具体规则见[目录结构](structure.md#新增文件约定)。
@@ -103,9 +104,9 @@ Runtime 由通知和截止时间唤醒，统一安排重连、显示布局、备
 
 | 条件 | DLL 加载位置 |
 | --- | --- |
-| EXE 同目录没有 `msix` 标记 | EXE 同目录的 `luciddesk_desktop.dll` |
+| EXE 同目录没有 `msix` 标记 | EXE 同目录的 `luciddesk_explorer.dll` |
 | 有 `msix`，系统明确返回无包身份 | EXE 同目录的 DLL，不创建组件缓存 |
-| 有 `msix` 且具有包身份 | `LocalState\DesktopComponent\<SHA256>\luciddesk_desktop.dll` |
+| 有 `msix` 且具有包身份 | `LocalState\DesktopComponent\<SHA256>\luciddesk_explorer.dll` |
 
 `portable` 控制便携数据目录；`installed` 是安装版标记，不参与 DLL 路径选择。MSIX 标记用于选择部署方式，不证明商店来源。包身份查询或 LocalState 获取发生其他错误时报告失败，不静默回退。
 

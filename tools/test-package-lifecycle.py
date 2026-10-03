@@ -55,7 +55,7 @@ def explorer_modules():
 
 
 def verify_unloaded(directory, explorer_pid):
-    dll = directory / "luciddesk_desktop.dll"
+    dll = directory / "luciddesk_explorer.dll"
     path = str(dll.resolve()).lower()
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
@@ -75,7 +75,7 @@ def verify_unloaded(directory, explorer_pid):
 def unload_test(args, root, checks):
     directory = root / "app"
     directory.mkdir()
-    for name in ["luciddesk.exe", "luciddesk_desktop.dll"]:
+    for name in ["luciddesk.exe", "luciddesk_explorer.dll"]:
         shutil.copy2(args.source / name, directory / name)
     (directory / "portable").write_text("portable")
     process = None
@@ -83,7 +83,7 @@ def unload_test(args, root, checks):
         for cycle in range(10):
             process = launch(directory)
             pid, modules = explorer_modules()
-            assert str((directory / "luciddesk_desktop.dll").resolve()).lower() in modules, "DLL was not loaded from the app directory"
+            assert str((directory / "luciddesk_explorer.dll").resolve()).lower() in modules, "DLL was not loaded from the app directory"
             close(process)
             verify_unloaded(directory, pid)
         checks.append("10 real app start/exit cycles: app-directory DLL loaded, then absent from Explorer and directly replaceable")
@@ -92,7 +92,7 @@ def unload_test(args, root, checks):
             target.write_text("test-owned file")
             for abrupt in [False, True]:
                 explorer_pid, _ = explorer_modules()
-                subprocess.run([str(args.probe.resolve()), str(directory / "luciddesk_desktop.dll"),
+                subprocess.run([str(args.probe.resolve()), str(directory / "luciddesk_explorer.dll"),
                                 str(target), *( ["--abrupt"] if abrupt else [])], check=True, timeout=30)
                 verify_unloaded(directory, explorer_pid)
             checks.append("Real native menu worker is cleaned up and DLL unloaded after both normal detach and abrupt owner exit")
@@ -191,7 +191,7 @@ def portable(args, root, checks):
     try:
         process = launch(directory, title=title)
         explorer_pid, modules = explorer_modules()
-        assert str((directory / "luciddesk_desktop.dll").resolve()).lower() in modules
+        assert str((directory / "luciddesk_explorer.dll").resolve()).lower() in modules
         close(process)
         verify_unloaded(directory, explorer_pid)
         config_hash = seed(data)
@@ -200,7 +200,7 @@ def portable(args, root, checks):
         checks.append("0.13.0 test build upgrades to 0.14.0 by direct ZIP overwrite, with DLL unloaded and data preserved")
         process = launch(directory)
         explorer_pid, modules = explorer_modules()
-        assert str((directory / "luciddesk_desktop.dll").resolve()).lower() in modules
+        assert str((directory / "luciddesk_explorer.dll").resolve()).lower() in modules
         package = root / "LucidDesk-0.14.0-windows-x64-portable.zip"
         shutil.copy2(args.portable_zip, package)
         close(process)

@@ -19,6 +19,7 @@ name = "folder_menu_bridge_probe"
 required-features = ["desktop-menu-diagnostics"]
 
 [dependencies]
+desktop-menu.workspace = true
 desktop-core.workspace = true
 windows = { workspace = true, features = [
     "Win32_Foundation",
@@ -57,7 +58,7 @@ windows-sys = { workspace = true, features = [
 [dev-dependencies]
 windows = { workspace = true, features = ["Win32_System_Search", "Win32_System_Search_Common", "Win32_Storage_EnhancedStorage"] }
 windows-window.workspace = true
-desktop-hook.workspace = true
+desktop-explorer.workspace = true
 desktop-window.workspace = true
 
 [lints]
