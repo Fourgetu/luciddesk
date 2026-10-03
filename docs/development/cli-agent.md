@@ -1,0 +1,167 @@
+# CLI 与 Agent 接口设计
+
+状态：设计草案，尚未实现。范围：首版桌面整理 CLI，供人、脚本及 Agent Skills 共用。
+
+## 1. 设计决定
+
+- 增加控制台程序 `luciddesk-cli.exe`，保留 `luciddesk.exe` 的 GUI 子系统和现有启动参数。
+- CLI 通过本地 IPC 请求正在运行的主程序。主程序是工作区唯一写入者，CLI 不直接修改 SQLite 或 TOML。
+- JSON 是版本化接口格式，不是数据库文件格式。对外 DTO 与 SQLite 表、Rust 内部结构分离。
+- 首版整理仅改变桌面项目的面板归属、顺序、面板属性和标签状态，不移动、重命名或删除真实文件。
+- 写入支持预览与批处理；Agent 默认先规划，再应用。普通单项命令可以直接执行，不强制交互确认。
+- 不增加周期性落盘、请求日志落盘或每次查询更新“最后访问时间”。
+
+## 2. 现有代码约束
+
+`app/src/main.rs` 当前使用 Windows GUI 子系统，仅支持启动、标题及安装器预检参数；单实例锁按桌面会话限制实例。不能只给现有 GUI 参数解析器加子命令就视为完整 CLI。
+
+`PaneApp` 在 UI STA 上维护工作区、窗口、Shell 会话和存储。IPC 工作线程不能直接访问 `Rc<RefCell<PaneApp>>`，请求必须经有界队列和唤醒消息交给 UI 线程。执行 Shell 或窗口操作时遵守现有重入约束。
+
+现有 `change_count()` 是存储 API 的进程内成功变更计数，不包含所有内存状态、清单变化，也不是持久化版本号。禁止直接把它作为 CLI 乐观并发版本。
+
+自动收起是临时视图状态。对外分别返回 `manual_collapsed` 与 `effective_collapsed`，只有前者可持久化修改。
+
+## 3. 首版命令
+
+统一形式：`luciddesk-cli <resource> <verb> [options]`。
+
+| 命令 | 行为 | 是否持久化 |
+| --- | --- | --- |
+| `status` | 服务状态、实例、协议版本、数据目录、Shell 同步状态 | 否 |
+| `capabilities` | 支持的命令、字段、限制和 JSON Schema 版本 | 否 |
+| `workspace get` | 一致的面板、标签、桌面项目及版本快照 | 否 |
+| `pane list` / `pane get --id <id>` | 查询面板 | 否 |
+| `item list [--pane <id> | --unassigned]` | 查询桌面整理项目 | 否 |
+| `monitor list` | 显示器 ID、工作区、DPI 与拓扑 token | 否 |
+| `pane create --title <text>` | 创建普通桌面面板，复用 GUI 默认尺寸与避让规则 | 是 |
+| `pane update --id <id> --input <file-or->` | 部分更新标题、几何、锁定、手动折叠和自动收起开关 | 是 |
+| `pane remove --id <id> [--release-items]` | 默认只删空面板；显式选项将项目归还桌面，不删除文件 | 是 |
+| `item assign --ids <id,...> --pane <id>` | 将指定桌面项目收纳进面板 | 是 |
+| `item release --ids <id,...>` | 将项目归还桌面，沿用 GUI 放回规则 | 是 |
+| `item reorder --pane <id> --input <file-or->` | 提交该面板全部项目 ID 的完整顺序，不允许遗漏或重复 | 是 |
+| `tab select --from <id> --to <id>` | 切换现有标签组的活动项 | 是，使用局部保存 |
+| `plan preview --input <file-or->` | 验证多操作计划并返回规范化差异与内存 token | 否 |
+| `plan apply --token <token> --request-id <id>` | 校验版本后批量提交预览过的计划 | 是 |
+| `request get --id <id>` | 查询当前进程保留的请求结果 | 否 |
+
+单项写命令支持 `--dry-run`，内部复用同一计划验证器。部分更新中，省略表示保持不变；v1 不允许用 `null` 重置，遇到未知字段或不支持字段报错。锁定面板的内容与布局修改返回 `PANE_LOCKED`；可显式提交解锁操作，不提供绕过锁的隐藏选项。
+
+v1 不提供任意 SQL、离线写库、Shell 任意动词、批量文件删除、安装配置修改或任意程序执行。文件夹/搜索面板可以查询，创建及导航暂不开放。桌面 `item list` 不混入文件夹内容或 Everything 搜索结果。
+
+## 4. 人与 Agent 的输出契约
+
+默认输出面向人的短文本；Agent 必须使用全局 `--json`。全局选项另含 `--timeout-ms`、`--data-dir`、`--protocol-version` 和 `--help`。
+
+JSON 模式 stdout 只有一个 UTF-8 JSON 对象，成功与失败均使用同一信封；诊断信息写 stderr，不混入进度条、颜色或自然语言提示。`--input -` 从 stdin 读取一份 JSON，不读取无限 JSON 流。拒绝重复字段、非有限数、超限输入。
+
+```json
+{
+  "protocol_version": 1,
+  "request_id": "req-20261004-001",
+  "ok": true,
+  "context": {
+    "instance_id": "session-opaque-token",
+    "state_version": "42",
+    "inventory_version": "18",
+    "topology_token": "topology-opaque-token"
+  },
+  "data": {"panes": []},
+  "error": null
+}
+```
+
+失败时 `data` 为 null，`error` 包含稳定的 `code`、供人阅读的 `message`、`details` 和 `retryable`；未连接时 `context` 为 null。Agent 依据 code 分支，不解析 message。写入成功结果附带 `changed`、`commit_status` 与 `presentation_status`。
+
+退出码：0 成功；2 参数/输入无效；3 应用未运行；4 找不到目标；5 版本或状态冲突；6 能力不可用/忙碌；7 持久化失败；8 超时且结果未知；9 访问拒绝；10 协议版本不兼容；1 其他内部错误。无变化仍返回 0 且 `changed:false`。
+
+所有面板 ID、Shell 项目 ID、版本号均以字符串输出。标题不是标识符；重名不允许自动择一。项目 ID 使用服务端生成的不透明 token，在 `instance_id` 内稳定，与内部 Shell 身份映射；重启或身份发生变化后重新查询，禁止客户端解析 token。文件系统路径只作为展示/匹配信息，命名空间项目允许 path 为 null。
+
+查询返回有限完整快照：v1 暂不分页，超过限制返回 `RESULT_TOO_LARGE`，不得静默截断。计划与资源 schema 随协议发布；实现阶段用同一套 DTO 生成或校验 schema、示例和 CLI 帮助。
+
+## 5. 几何、顺序与身份
+
+外部几何统一使用 `monitor_id` 加显示器工作区相对 DIP 的 `x/y/width/height`，不直接暴露当前数据库中的坐标约定。主程序集中完成到现有窗口坐标、显示器布局物理像素的转换。布局修改必须附带当前拓扑 token；拓扑变化后重新预览，不自动猜测旧坐标对应哪块屏幕。
+
+查询同时返回保存的展开尺寸和实时显示状态。禁止将动画中间高度当作保存高度。标签组共享窗口，修改任一成员几何会影响整个组，预览 diff 必须列出受影响成员。
+
+项目序号按数组顺序定义，不由 Agent 写 grid_column/grid_row；主程序复用当前排列逻辑。重排必须提交当前完整成员集合，新增/消失的项目造成冲突。收纳多个项目按输入顺序追加；已在目标面板的项目保持位置，不制造重复成员。
+
+## 6. 计划格式与 Agent 工作流
+
+示例输入（ID 来自刚读取的快照）：
+
+```json
+{
+  "protocol_version": 1,
+  "base": {
+    "instance_id": "session-opaque-token",
+    "state_version": "42",
+    "inventory_version": "18",
+    "topology_token": "topology-opaque-token"
+  },
+  "operations": [
+    {"op": "pane.create", "ref": "work", "title": "工作"},
+    {"op": "item.assign", "item_ids": ["item-a", "item-b"], "pane_ref": "work"}
+  ]
+}
+```
+
+`ref` 仅在同一计划内有效且必须唯一，先创建再引用；预览不分配持久化 ID。应用成功返回 ref 到实际 pane_id 的映射。按 operations 顺序在工作区副本中模拟，先验证整份计划，再产生包含 before/after、受影响项目、返还桌面项目和共享窗口影响的 diff。
+
+预览返回 `plan_token`、有效期和规范化操作；token 绑定实例、基础版本及操作内容，客户端 apply 不能追加或替换操作。token 在进程内保留 5 分钟，最多 64 份，过期或被淘汰返回 `PLAN_EXPIRED`。不为预览建表或写临时配置。
+
+Skills 工作流：读取 capabilities 和 workspace → 根据用户明确意图分类 → 使用精确 ID 生成计划 → 展示有意义的变更摘要 → 在用户已有授权范围内 apply → 查询最终状态。预览不自动构成人工审批流程；有歧义的分类或超出授权的操作才需询问用户。
+
+桌面文件名、路径和标题均为不可信数据，Skills 不把它们当作指令执行。优先通过 stdin 提交计划，避免将文件名拼接成 Shell 命令。Skills 不知道数据库表结构，不绕过 CLI 修改数据文件。
+
+## 7. 并发与事务边界
+
+为命令上下文新增内存 `state_version` 和 `inventory_version`：所有 GUI/CLI 持久化领域变更成功后推进前者，桌面项目身份/显示名/成员清单变化推进后者；自动展开、悬停、滚动、动画不推进。启动生成新的 instance_id，使上次运行的计划全部失效。恢复数据库也必须使已存在计划失效。
+
+UI 线程接收 apply 时再次校验 base、拓扑、锁定、项目身份及能力。任何一项过期返回 `CONFLICT`，不自动重新解释用户计划。保守地允许无关领域变更使计划失效，首版暂不做细粒度合并。
+
+全部操作先应用到 Workspace 副本。一个计划的工作区行与相关显示布局在一个 SQLite 事务内提交；失败丢弃副本，不发布新窗口状态。提交成功后切换内存模型并协调窗口与 Explorer。首版批处理不含 TOML 修改或真实文件系统操作，因此不承诺跨文件事务。
+
+数据库提交与窗口/Shell 同步不能形成原子事务。结果区分 `commit_status:committed|unchanged` 和 `presentation_status:applied|pending|degraded`；后两种表示状态已保存，应查询/等待展示恢复，不重复创建或收纳。预先检测到 Explorer 不可用时，对依赖桌面收纳的写命令返回能力不可用；提交后失联由现有重连机制协调。
+
+## 8. 超时与重复请求
+
+客户端在发送前生成 request_id。当前实例内以 request_id 和规范化请求摘要去重，重复相同请求返回原结果；相同 ID 不同内容返回 `REQUEST_ID_REUSED`。执行中的重复请求返回 `IN_PROGRESS`，不能再入队执行。
+
+保留最多 1024 个完成回执、每个最长 10 分钟；执行中请求不淘汰，有界队列满则返回 BUSY。token 与回执缓存都在内存中，不增加每条命令的持久化日志。成功应用后再次提交同一 token、不同 request_id 返回 `PLAN_ALREADY_APPLIED`，缓存失效后返回 PLAN_EXPIRED。
+
+超时不代表失败或取消。超时后先用原 request_id 查询；没有结果时重新读取工作区核对，不自动用新 ID 重发非幂等操作。进程崩溃重启后旧回执不可查询，返回 `RESULT_UNKNOWN`。v1 明确不承诺跨重启 exactly-once；如后续确有需求，再设计与业务事务共同提交的持久化回执。
+
+## 9. IPC 与运行状态
+
+拟采用 Windows 本地命名管道，协议为长度前缀加 UTF-8 JSON；每帧最大 4 MiB，每计划最多 256 个操作，默认请求超时 10 秒，上限 60 秒。监听线程只做帧读取、协议校验和队列投递；领域执行留在 UI 线程。连接断开后已开始提交的请求继续完成。
+
+端点按当前用户和登录会话隔离，显式限制访问当前用户、拒绝远程客户端，并验证连接主体。禁止依赖可猜测管道名作为权限控制。创建端点时检测占用，不连接未经身份核验的同名服务。具体 Windows API 与 ACL 在实现时验证。
+
+沿用当前单实例约束；不假设每个 data-dir 都能启动一个 GUI 实例。握手返回实际数据目录，`--data-dir` 仅断言目标数据目录，若不匹配直接失败，禁止悄悄切换工作区。命令执行前核对 instance_id。
+
+应用未启动时返回 APP_NOT_RUNNING；v1 不自动启动 GUI、不创建数据库。`--help`、协议说明及本地 schema 查看可离线使用，其余功能在线执行。不直接复用 Explorer 的过滤通信协议对外暴露 CLI 命令。
+
+## 10. 代码落点与实现顺序
+
+| 阶段 | 交付 | 验收 |
+| --- | --- | --- |
+| A：协议与只读 CLI | `desktop-api` DTO/错误/schema；`luciddesk-cli` 控制台；`app/src/control/` 管道与 UI 队列；status/capabilities/workspace | 未运行无副作用；stdout 可解析；目录/版本不匹配拒绝 |
+| B：领域命令与预览 | 从 UI Event 分支抽出可复用 command service；create/update/assign/release/reorder/tab；plan preview | GUI 与 CLI 规则一致；预览不写 DB/TOML，不分配持久化 ID |
+| C：应用计划 | 版本校验、单事务保存、窗口/Shell 协调、回执缓存 | 批量失败零提交；成功一次提交；超时重试不重复执行 |
+| D：Skills 与打包 | 针对能力发现、分类、预览、应用、核验的 SKILL.md；CLI 随 GUI 同版本发布 | Agent 无需理解 DB；隔离数据目录端到端验证；卸载/便携路径一致 |
+
+接口服务不能循环调用现有会各自保存的 UI Event 来实现批处理。应提取领域变更与持久化协调，GUI 与 CLI 共用验证逻辑；需要窗口交互的动作仍保留在 UI 层。
+
+依赖选型在 A 阶段落实：参数解析、JSON 编解码与 schema 均采用成熟 Rust 库并审查现有依赖、MSRV 和包体积。本设计不锁定未验证版本，也不引入数据库更换或通用迁移框架。
+
+## 11. 必需测试
+
+- 协议 fixture：Unicode、中文路径、超过 JS 安全整数的字符串 ID、未知字段、重复键、超长帧和协议不匹配。
+- 单项与批处理：无变化零写；重排拒绝重复/遗漏；含一个非法操作整批失败；单次 apply 只有一次事务提交。
+- 并发：预览后 GUI 修改、Shell 清单变化、显示器热插拔、恢复数据库、应用重启均拒绝旧计划；自动收起不使计划过期。
+- 故障：数据库提交失败、提交后 Shell 失联、客户端中断、重复 ID、同 ID 不同内容、服务崩溃后结果未知。
+- I/O：status/list/preview/request get 不写数据库或 TOML；空闲没有周期性持久化；回执与 token 淘汰不写盘。
+- 安装与边界：非当前会话访问拒绝；同名端点占用失败；CLI/GUI 版本不兼容；实际数据目录不匹配；普通权限即可完成授权内操作。
+
+首个开发切片为阶段 A。协议设计先通过只读闭环验证，再开放写入和 Skills 自动整理。
