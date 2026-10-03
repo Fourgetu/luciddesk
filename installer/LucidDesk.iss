@@ -31,6 +31,7 @@
 AppId={#ProductId}
 AppName={#ProductName}
 AppVersion={#AppVersion}
+LicenseFile=license.rtf
 AppPublisher=Yuchen95
 AppPublisherURL=https://github.com/Yuch3nE/luciddesk
 AppSupportURL=https://github.com/Yuch3nE/luciddesk/issues
