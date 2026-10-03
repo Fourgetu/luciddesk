@@ -1,7 +1,9 @@
-//! Versioned read-only control protocol. No storage dependency.
+//! Versioned local control protocol. No storage dependency.
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+mod plan;
 pub mod transport;
+pub use plan::{Context, Operation, Plan};
 pub const VERSION: u32 = 1;
 pub const MAX_FRAME: usize = 4 * 1024 * 1024;
 pub const COMMANDS: &[&str] = &[
@@ -11,9 +13,12 @@ pub const COMMANDS: &[&str] = &[
     "pane.list",
     "pane.get",
     "item.list",
+    "plan.preview",
+    "plan.apply",
+    "request.get",
 ];
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
     pub protocol_version: u32,
@@ -27,6 +32,10 @@ pub struct Request {
     pub unassigned: bool,
     #[serde(default)]
     pub data_dir: Option<String>,
+    #[serde(default)]
+    pub plan: Option<Plan>,
+    #[serde(default)]
+    pub token: Option<String>,
 }
 impl Request {
     pub fn validate(&self) -> Result<(), &'static str> {
@@ -36,8 +45,8 @@ impl Request {
         if !COMMANDS.contains(&self.command.as_str()) {
             return Err("unsupported command");
         }
-        if (self.command == "pane.get") != self.id.is_some() {
-            return Err("--id is required only for pane get");
+        if matches!(self.command.as_str(), "pane.get" | "request.get") != self.id.is_some() {
+            return Err("--id is required for pane get or request get");
         }
         if self.command != "item.list" && (self.pane.is_some() || self.unassigned) {
             return Err("item filters require item list");
@@ -45,7 +54,28 @@ impl Request {
         if self.pane.is_some() && self.unassigned {
             return Err("conflicting item filters");
         }
-        for id in [&self.id, &self.pane].into_iter().flatten() {
+        if (self.command == "plan.preview") != self.plan.is_some() {
+            return Err("plan.preview requires a plan, other commands reject it");
+        }
+        if (self.command == "plan.apply") != self.token.is_some() {
+            return Err("plan.apply requires --token, other commands reject it");
+        }
+        if self
+            .token
+            .as_ref()
+            .is_some_and(|v| v.is_empty() || v.len() > 128)
+        {
+            return Err("invalid plan token");
+        }
+        if self
+            .id
+            .as_ref()
+            .is_some_and(|v| v.is_empty() || v.len() > 128)
+        {
+            return Err("invalid query ID");
+        }
+        let panel_id = self.id.as_ref().filter(|_| self.command == "pane.get");
+        for id in [panel_id, self.pane.as_ref()].into_iter().flatten() {
             if id
                 .parse::<u64>()
                 .ok()
@@ -58,13 +88,13 @@ impl Request {
         Ok(())
     }
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiError {
     pub code: String,
     pub message: String,
     pub retryable: bool,
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Response {
     pub protocol_version: u32,
     pub request_id: String,
@@ -104,9 +134,17 @@ impl Response {
             Some("INVALID_REQUEST") => 2,
             Some("APP_NOT_RUNNING") => 3,
             Some("NOT_FOUND") => 4,
-            Some("DATA_DIR_MISMATCH") => 5,
-            Some("BUSY" | "RESULT_TOO_LARGE") => 6,
-            Some("TIMEOUT") => 8,
+            Some(
+                "DATA_DIR_MISMATCH"
+                | "CONFLICT"
+                | "PLAN_EXPIRED"
+                | "PLAN_ALREADY_APPLIED"
+                | "REQUEST_ID_REUSED"
+                | "PANE_LOCKED",
+            ) => 5,
+            Some("BUSY" | "RESULT_TOO_LARGE" | "CAPABILITY_UNAVAILABLE") => 6,
+            Some("PERSISTENCE_ERROR") => 7,
+            Some("TIMEOUT" | "RESULT_UNKNOWN") => 8,
             Some("ACCESS_DENIED") => 9,
             Some("PROTOCOL_MISMATCH") => 10,
             _ => 1,

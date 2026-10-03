@@ -1,6 +1,6 @@
 use desktop_api::{Request, Response, VERSION};
 use std::{ffi::OsString, time::Duration};
-const HELP: &str = "LucidDesk CLI (read-only)\nUsage: luciddesk-cli <command> [options]\nCommands: schema (offline), status, capabilities, workspace get, pane list, pane get --id ID, item list\nOptions: --json, --data-dir PATH, --timeout-ms 1..60000, --protocol-version N\nItem filters: --pane ID | --unassigned\nThe GUI must already be running. This CLI never opens the database.";
+const HELP: &str = "LucidDesk CLI\nUsage: luciddesk-cli <command> [options]\nCommands: schema (offline), status, capabilities, workspace get, pane list, pane get --id ID, item list, plan preview --input FILE|-, plan apply --token TOKEN --request-id ID, request get --id ID\nOptions: --json, --data-dir PATH, --timeout-ms 1..60000, --protocol-version N\nItem filters: --pane ID | --unassigned\nThe GUI must already be running. This CLI never opens the database.";
 struct Options {
     request: Request,
     json: bool,
@@ -15,10 +15,13 @@ fn parse(args: Vec<OsString>) -> Result<Options, String> {
         pane: None,
         unassigned: false,
         data_dir: None,
+        plan: None,
+        token: None,
     };
     let mut json = false;
     let mut timeout = 10000;
     let mut words = Vec::new();
+    let mut input = None;
     let mut args = args.into_iter();
     let mut seen = std::collections::HashSet::new();
     while let Some(raw) = args.next() {
@@ -31,13 +34,17 @@ fn parse(args: Vec<OsString>) -> Result<Options, String> {
         match arg.as_str() {
             "--json" => json = true,
             "--unassigned" => request.unassigned = true,
-            "--id" | "--pane" | "--data-dir" | "--timeout-ms" | "--protocol-version" => {
+            "--id" | "--pane" | "--data-dir" | "--timeout-ms" | "--protocol-version"
+            | "--input" | "--token" | "--request-id" => {
                 let value = args
                     .next()
                     .ok_or_else(|| format!("{arg} requires a value"))?
                     .into_string()
                     .map_err(|_| "invalid Unicode option")?;
                 match arg.as_str() {
+                    "--input" => input = Some(value),
+                    "--token" => request.token = Some(value),
+                    "--request-id" => request.request_id = value,
                     "--id" => request.id = Some(value),
                     "--pane" => request.pane = Some(value),
                     "--data-dir" => {
@@ -63,6 +70,27 @@ fn parse(args: Vec<OsString>) -> Result<Options, String> {
         }
     }
     request.command = words.join(".");
+    if let Some(input) = input {
+        use std::io::Read;
+        if request.command != "plan.preview" {
+            return Err("--input is only valid for plan preview".into());
+        }
+        let mut reader: Box<dyn Read> = if input == "-" {
+            Box::new(std::io::stdin())
+        } else {
+            Box::new(std::fs::File::open(input).map_err(|e| e.to_string())?)
+        };
+        let mut bytes = Vec::new();
+        reader
+            .by_ref()
+            .take((desktop_api::MAX_FRAME + 1) as u64)
+            .read_to_end(&mut bytes)
+            .map_err(|e| e.to_string())?;
+        if bytes.len() > desktop_api::MAX_FRAME {
+            return Err("plan input exceeds 4 MiB".into());
+        }
+        request.plan = Some(serde_json::from_slice(&bytes).map_err(|e| e.to_string())?);
+    }
     request.validate().map_err(str::to_owned)?;
     Ok(Options {
         request,
@@ -134,11 +162,17 @@ mod tests {
     #[test]
     fn options_validate_commands_and_filters() {
         assert!(parse(args("--json pane get --id 9007199254740993")).is_ok());
+        assert!(parse(args("plan apply --token token --request-id retry-1 --json")).is_ok());
+        assert!(parse(args("request get --id retry-1 --json")).is_ok());
         for s in [
             "pane get",
             "status --id 1",
             "item list --pane 1 --unassigned",
             "pane remove --id 1",
+            "plan preview",
+            "plan apply",
+            "status --token token",
+            "request get",
             "status --timeout-ms 0",
             "status --json --json",
         ] {

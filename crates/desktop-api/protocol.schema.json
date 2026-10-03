@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:luciddesk:control:1",
-  "title": "LucidDesk read-only control protocol v1",
+  "title": "LucidDesk control protocol v1",
   "oneOf": [
     {
       "$ref": "#/$defs/request"
@@ -35,7 +35,10 @@
             "workspace.get",
             "pane.list",
             "pane.get",
-            "item.list"
+            "item.list",
+            "plan.preview",
+            "plan.apply",
+            "request.get"
           ]
         },
         "id": {
@@ -43,7 +46,8 @@
             "string",
             "null"
           ],
-          "pattern": "^[1-9][0-9]*$"
+          "minLength": 1,
+          "maxLength": 128
         },
         "pane": {
           "type": [
@@ -60,8 +64,166 @@
             "string",
             "null"
           ]
+        },
+        "token": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "plan": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/plan"
+            }
+          ]
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "command": {
+                "const": "plan.preview"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "plan"
+            ],
+            "properties": {
+              "plan": {
+                "$ref": "#/$defs/plan"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "plan": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "command": {
+                "const": "plan.apply"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "token"
+            ],
+            "properties": {
+              "token": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "token": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "command": {
+                "enum": [
+                  "pane.get",
+                  "request.get"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "id": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "command": {
+                "const": "pane.get"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[1-9][0-9]*$"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "command": {
+                "const": "item.list"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "pane",
+                "unassigned"
+              ],
+              "properties": {
+                "pane": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "unassigned": {
+                  "const": true
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "pane": {
+                "type": "null"
+              },
+              "unassigned": {
+                "const": false
+              }
+            }
+          }
+        }
+      ]
     },
     "response": {
       "type": "object",
@@ -116,6 +278,199 @@
               }
             }
           ]
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "instance_id",
+        "state_version",
+        "inventory_version",
+        "topology_token"
+      ],
+      "properties": {
+        "instance_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "state_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "inventory_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "topology_token": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocol_version",
+        "base",
+        "operations"
+      ],
+      "properties": {
+        "protocol_version": {
+          "const": 1
+        },
+        "base": {
+          "$ref": "#/$defs/context"
+        },
+        "operations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "op",
+                  "ref",
+                  "title"
+                ],
+                "properties": {
+                  "op": {
+                    "const": "pane.create"
+                  },
+                  "ref": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "op",
+                  "pane_id",
+                  "title"
+                ],
+                "properties": {
+                  "op": {
+                    "const": "pane.update"
+                  },
+                  "pane_id": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]*$"
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "op",
+                  "item_ids"
+                ],
+                "properties": {
+                  "op": {
+                    "const": "item.assign"
+                  },
+                  "item_ids": {
+                    "type": "array",
+                    "maxItems": 10000,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "minItems": 1
+                  },
+                  "pane_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "pane_ref": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "oneOf": [
+                  {
+                    "required": [
+                      "pane_id"
+                    ],
+                    "properties": {
+                      "pane_id": {
+                        "type": "string",
+                        "pattern": "^[1-9][0-9]*$"
+                      },
+                      "pane_ref": {
+                        "type": "null"
+                      }
+                    }
+                  },
+                  {
+                    "required": [
+                      "pane_ref"
+                    ],
+                    "properties": {
+                      "pane_ref": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "pane_id": {
+                        "type": "null"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "op",
+                  "pane_id",
+                  "item_ids"
+                ],
+                "properties": {
+                  "op": {
+                    "const": "item.reorder"
+                  },
+                  "pane_id": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]*$"
+                  },
+                  "item_ids": {
+                    "type": "array",
+                    "maxItems": 10000,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            ]
+          }
         }
       }
     }

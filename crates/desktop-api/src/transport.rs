@@ -395,6 +395,8 @@ mod tests {
                 pane: None,
                 unassigned: false,
                 data_dir: None,
+                plan: None,
+                token: None,
             };
             let response = call_at(&name, &request, Duration::from_secs(2)).unwrap();
             assert_eq!(response.data.unwrap()["title"], "中文");
@@ -419,6 +421,8 @@ mod fault_tests {
             pane: None,
             unassigned: false,
             data_dir: None,
+            plan: None,
+            token: None,
         }
     }
     #[test]

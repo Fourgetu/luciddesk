@@ -1,4 +1,5 @@
-//! Read-only CLI dispatcher. Requests use a dedicated message, not the maintenance wake.
+//! CLI dispatcher. Requests use a dedicated message, not the maintenance wake.
+mod plans;
 use super::*;
 use desktop_api::{Request, Response};
 use serde_json::json;
@@ -20,6 +21,9 @@ struct Snapshot {
     instance: String,
     item_ids: HashMap<String, String>,
     next_item: u64,
+    seen: Option<(Workspace, u64, String)>,
+    version: u64,
+    plans: plans::Plans,
 }
 impl Snapshot {
     fn new() -> Self {
@@ -27,9 +31,12 @@ impl Snapshot {
             instance: desktop_api::request_id(),
             item_ids: HashMap::new(),
             next_item: 0,
+            seen: None,
+            version: 0,
+            plans: plans::Plans::default(),
         }
     }
-    fn respond(&mut self, state: &PaneApp, request: &Request) -> Response {
+    fn respond(&mut self, state: &mut PaneApp, request: &Request) -> Response {
         let fail = |code, message| Response::failure(&request.request_id, code, message);
         if request.protocol_version != desktop_api::VERSION {
             return fail("PROTOCOL_MISMATCH", "supported protocol version is 1");
@@ -48,13 +55,35 @@ impl Snapshot {
                 );
             }
         }
-        let context = json!({"instance_id": self.instance, "state_version": null, "inventory_version": null, "topology_token": null});
+        let observed = (
+            state.workspace.clone(),
+            state.store.change_count(),
+            format!("{:?}", desktop_window::enumerate_monitors()),
+        );
+        if self.seen.as_ref() != Some(&observed) {
+            self.version += 1;
+            self.seen = Some(observed);
+        }
+        let version = self.version.to_string();
+        let base = desktop_api::Context {
+            instance_id: self.instance.clone(),
+            state_version: version.clone(),
+            inventory_version: version.clone(),
+            topology_token: version,
+        };
+        let context = json!(base);
+        if matches!(
+            request.command.as_str(),
+            "plan.preview" | "plan.apply" | "request.get"
+        ) {
+            return self.plans.handle(state, &base, &self.item_ids, request);
+        }
         let data = match request.command.as_str() {
             "status" => {
-                json!({"application_version":env!("CARGO_PKG_VERSION"), "data_dir":directory, "desktop_connected":state.session.as_ref().is_some_and(hybrid::is_alive), "read_only":true})
+                json!({"application_version":env!("CARGO_PKG_VERSION"), "data_dir":directory, "desktop_connected":state.session.as_ref().is_some_and(hybrid::is_alive), "read_only":false})
             }
             "capabilities" => {
-                json!({"commands":desktop_api::COMMANDS,"protocol_version":1,"max_frame_bytes":desktop_api::MAX_FRAME,"writes":false,"plans":false,"concurrency_tokens":false,"pane_geometry":false,"item_ids":"opaque-instance-scoped","schema_version":1})
+                json!({"commands":desktop_api::COMMANDS,"protocol_version":1,"max_frame_bytes":desktop_api::MAX_FRAME,"writes":true,"plans":true,"concurrency_tokens":true,"plan_operations":["pane.create","pane.update","item.assign","item.reorder"],"pane_geometry":false,"item_ids":"opaque-instance-scoped","schema_version":1})
             }
             command => {
                 let pane_values: Vec<_> = state.workspace.panels().iter().map(|panel| {
@@ -203,12 +232,16 @@ fn start_at(
                 KillTimer(raw.cast(), 1);
             }
             if let Some(state) = weak.upgrade() {
-                if let Ok(state) = state.try_borrow() {
+                if state.try_borrow_mut().is_ok() {
                     while let Ok(pending) = receive.try_recv() {
                         if Instant::now() < pending.expires {
-                            let _ = pending
-                                .reply
-                                .send(snapshot.respond(&state, &pending.request));
+                            let previous = state.borrow().store.change_count();
+                            let response =
+                                snapshot.respond(&mut state.borrow_mut(), &pending.request);
+                            if state.borrow().store.change_count() != previous {
+                                present(&state);
+                            }
+                            let _ = pending.reply.send(response);
                         }
                     }
                 } else {
@@ -248,19 +281,24 @@ mod tests {
             pane: None,
             unassigned: false,
             data_dir: None,
+            plan: None,
+            token: None,
         };
-        for command in desktop_api::COMMANDS {
+        for command in desktop_api::COMMANDS
+            .iter()
+            .filter(|c| !matches!(**c, "plan.preview" | "plan.apply" | "request.get"))
+        {
             request.command = (*command).into();
             request.id = (*command == "pane.get").then(|| "1".into());
-            assert!(snapshot.respond(&state, &request).ok, "{command}");
+            assert!(snapshot.respond(&mut state, &request).ok, "{command}");
         }
         request.command = "status".into();
         request.id = None;
         request.protocol_version = 2;
-        assert_eq!(snapshot.respond(&state, &request).exit_code(), 10);
+        assert_eq!(snapshot.respond(&mut state, &request).exit_code(), 10);
         request.protocol_version = 1;
         request.data_dir = Some(dir.path().join("missing").to_string_lossy().into_owned());
-        assert_eq!(snapshot.respond(&state, &request).exit_code(), 5);
+        assert_eq!(snapshot.respond(&mut state, &request).exit_code(), 5);
         assert_eq!(state.store.change_count(), changes);
         assert_eq!(std::fs::read(path).unwrap(), db);
         assert_eq!(
@@ -296,6 +334,8 @@ mod integration_tests {
                 pane: None,
                 unassigned: false,
                 data_dir: None,
+                plan: None,
+                token: None,
             };
             tx.send(desktop_api::transport::call_at(
                 &name,
@@ -328,4 +368,44 @@ mod integration_tests {
         worker.join().unwrap();
         drop(control);
     }
+}
+
+/// Presentation follows durable state. Failures never turn a committed plan into a retryable write.
+fn present(state: &Rc<RefCell<PaneApp>>) {
+    let missing: Vec<_> = {
+        let s = state.borrow();
+        s.workspace
+            .panels()
+            .iter()
+            .filter(|p| {
+                p.supports_tabs()
+                    && s.workspace.tab_visible(p.id())
+                    && !s.views.iter().any(|v| v.id == p.id())
+            })
+            .map(Panel::id)
+            .collect()
+    };
+    for id in missing {
+        if let Err(error) = create_view(state, id) {
+            crate::diagnostics::log(crate::diagnostics::Level::Error, "cli.presentation", &error);
+        }
+    }
+    let mut s = state.borrow_mut();
+    for view in &s.views {
+        if let Some(panel) = s.workspace.panel(view.id) {
+            view.model.borrow_mut().title = panel.title().to_owned();
+            unsafe {
+                windows_sys::Win32::Graphics::Gdi::InvalidateRect(
+                    view.window.hwnd().cast(),
+                    std::ptr::null(),
+                    0,
+                );
+            }
+        }
+    }
+    refresh_views(&mut s);
+    if let Err(error) = hybrid::sync(&mut s) {
+        crate::diagnostics::log(crate::diagnostics::Level::Error, "cli.presentation", &error);
+    }
+    s.wake.notify();
 }
