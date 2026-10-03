@@ -11,6 +11,7 @@ Exit the app before upgrading a portable installation and preserve its `data` fo
 ### changed
 
 - Raise the minimum Rust version to 1.99 and enable raw-pointer borrow checks for FFI. Simplify native interface arguments and string conversion in diagnostic tools.
+- Separate material runtime, brush fallback and window visual-tree code while preserving palettes, strength settings, system policy and fallback behavior.
 
 ### perf
 

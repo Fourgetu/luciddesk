@@ -8,9 +8,12 @@
 
 | 模块 | 职责 |
 | --- | --- |
-| `acrylic.rs` | 合成运行时、窗口目标、画刷选择与系统策略判断 |
+| `acrylic.rs` | 窗口视觉树、内容挂接、圆角与透明度，以及系统策略判断 |
+| `acrylic/runtime.rs` | 线程内合成器、效果工厂缓存与调度队列生命周期 |
+| `acrylic/material.rs` | 纯色画刷、效果画刷复用和有序回退 |
 | `acrylic/effects.rs` | 亮度与染色混合、主题配方、强度调整和效果工厂 |
 | `acrylic/host.rs` | HostBackdrop 能力探测、兼容入口及释放 |
+| `acrylic/tests.rs` | 材质回退回归测试与视觉树断言 |
 | `composition.rs` | 内容交换链、材质状态缓存、窗口透明度与圆角裁剪 |
 | `theme.rs` | 面板边框、标签及卡片的局部配色 |
 | `settings/preview.rs`、`settings/components.rs` | 材质示意预览、导航选中和悬停配色 |

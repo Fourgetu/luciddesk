@@ -63,8 +63,8 @@ app/
         ├── scaled_icons.rs    # CPU 缩放图像缓存
         ├── assets.rs          # 图像资源入口
         ├── assets/            # 图像资源辅助模块
-        ├── acrylic.rs         # Acrylic 材质入口
-        ├── acrylic/           # 材质效果
+        ├── acrylic.rs         # 材质视觉树与窗口接口
+        ├── acrylic/           # 合成运行时、画刷回退、效果与兼容层
         └── tests.rs           # 面板集成回归
 ```
 
