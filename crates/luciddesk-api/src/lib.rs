@@ -2,6 +2,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 mod plan;
+mod strict_json;
+pub use strict_json::validate_json;
 pub mod transport;
 pub use plan::{Context, Operation, Plan, SettingValue, FolderColumn};
 pub const VERSION: u32 = 1;
@@ -11,6 +13,8 @@ pub const COMMANDS: &[&str] = &[
     "capabilities",
     "workspace.get",
     "settings.get",
+    "font.list",
+    "startup.get",
     "monitor.list",
     "folder.get",
     "search.get",
@@ -20,6 +24,31 @@ pub const COMMANDS: &[&str] = &[
     "plan.preview",
     "plan.apply",
     "request.get",
+];
+
+/// Plan operations supported by this protocol implementation.
+pub const OPERATIONS: &[&str] = &[
+    "pane.create",
+    "pane.update",
+    "pane.remove",
+    "pane.geometry",
+    "item.assign",
+    "item.release",
+    "item.reorder",
+    "settings.update",
+    "tab.merge",
+    "tab.select",
+    "tab.reorder",
+    "tab.detach",
+    "folder.create",
+    "folder.update",
+    "folder.navigate",
+    "folder.back",
+    "folder.home",
+    "search.query",
+    "search.refresh",
+    "search.more",
+    "startup.set",
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -175,6 +204,31 @@ pub fn request_id() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn advertised_schema_and_operation_fixtures_match_protocol() {
+        use std::collections::BTreeSet;
+        let schema:Value=serde_json::from_str(include_str!("../protocol.schema.json")).unwrap();
+        let commands:BTreeSet<_>=schema["$defs"]["request"]["properties"]["command"]["enum"].as_array().unwrap().iter().map(|v|v.as_str().unwrap()).collect();
+        assert_eq!(commands,COMMANDS.iter().copied().collect());
+        let variants:BTreeSet<_>=schema["$defs"]["plan"]["properties"]["operations"]["items"]["oneOf"].as_array().unwrap().iter().map(|v|v["properties"]["op"]["const"].as_str().unwrap()).collect();
+        assert_eq!(variants,OPERATIONS.iter().copied().collect());
+        let fixtures:Vec<Value>=serde_json::from_str(include_str!("../tests/fixtures/operations.json")).unwrap();
+        let covered:BTreeSet<_>=fixtures.iter().map(|v|v["op"].as_str().unwrap()).collect();
+        assert_eq!(covered,variants);
+        for fixture in fixtures {
+            let operation:Operation=serde_json::from_value(fixture.clone()).unwrap();
+            let normalized=serde_json::to_value(operation).unwrap();
+            fn equivalent(left:&Value,right:&Value)->bool {
+                match (left,right) {
+                    (Value::Number(a),Value::Number(b))=> (a.as_f64().unwrap()-b.as_f64().unwrap()).abs()<0.000001,
+                    (Value::Array(a),Value::Array(b))=> a.len()==b.len() && a.iter().zip(b).all(|(a,b)|equivalent(a,b)),
+                    (Value::Object(a),Value::Object(b))=> a.len()==b.len() && a.iter().all(|(k,v)|b.get(k).is_some_and(|b|equivalent(v,b))),
+                    _=>left==right,
+                }
+            }
+            for (key,value) in fixture.as_object().unwrap() {assert!(equivalent(&normalized[key],value),"field {key}: {normalized}");}
+        }
+    }
     #[test]
     fn strict_request_and_unicode() {
         let raw = r#"{"protocol_version":1,"request_id":"中文","command":"status"}"#;

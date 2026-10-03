@@ -185,7 +185,7 @@ fn enumerate_candidates(sample: &str, default: &str, cancelled: &std::sync::atom
     names
 }
 // Validate only the selected family; saving or startup never scans all fonts.
-fn available(name: &str) -> bool {
+pub(super) fn available(name: &str) -> bool {
     if name.starts_with('@') || name.encode_utf16().count() >= 32 || name.contains('\0') { return false; }
     let Some(mut probe) = CoverageProbe::new(crate::i18n::font_sample()) else { return false; };
     let mut lf = LOGFONTW { lfCharSet: DEFAULT_CHARSET, ..Default::default() };

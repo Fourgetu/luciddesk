@@ -1,10 +1,10 @@
-//! Runtime-only plans: no database calls and no real file operations.
+//! Deferred single-operation plans. Startup OS writes are dispatched separately.
 use super::*;
 use luciddesk_api::Operation;
 pub(super) fn is_runtime(op: &Operation) -> bool {
     matches!(
         op,
-        Operation::FolderNavigate { .. }
+        Operation::StartupSet { .. } | Operation::FolderNavigate { .. }
             | Operation::FolderBack { .. }
             | Operation::FolderHome { .. }
             | Operation::SearchQuery { .. }
@@ -20,6 +20,11 @@ fn id(raw: &str) -> Result<PanelId, String> {
         .ok_or_else(|| "invalid panel ID".into())
 }
 pub(super) fn prepare(workspace: &Workspace, op: &Operation) -> Result<Operation, String> {
+    if let Operation::StartupSet {expected_status,..} = op {
+        let status = crate::startup::Status::from_code(expected_status).ok_or("invalid expected startup status")?;
+        if !status.editable() {return Err("startup status does not permit changes".into());}
+        return Ok(op.clone());
+    }
     let (raw, folder) = match op {
         Operation::FolderNavigate { pane_id, .. }
         | Operation::FolderBack { pane_id }

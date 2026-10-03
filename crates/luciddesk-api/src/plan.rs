@@ -18,6 +18,8 @@ pub struct Plan {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "op", deny_unknown_fields)]
 pub enum Operation {
+    #[serde(rename = "startup.set")]
+    StartupSet { enabled: bool, expected_status: String },
     #[serde(rename = "folder.navigate")]
     FolderNavigate { pane_id: String, path: String },
     #[serde(rename = "folder.back")]

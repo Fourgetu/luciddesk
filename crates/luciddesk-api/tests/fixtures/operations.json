@@ -1,0 +1,130 @@
+[
+  {
+    "op": "pane.create",
+    "ref": "work",
+    "title": "工作"
+  },
+  {
+    "op": "pane.update",
+    "pane_id": "9007199254740993",
+    "title": "新标题",
+    "locked": false
+  },
+  {
+    "op": "pane.remove",
+    "pane_id": "1",
+    "release_items": true
+  },
+  {
+    "op": "pane.geometry",
+    "pane_id": "1",
+    "monitor_id": "monitor",
+    "x": 10,
+    "y": 10,
+    "width": 480,
+    "height": 360
+  },
+  {
+    "op": "item.assign",
+    "item_ids": [
+      "item-a"
+    ],
+    "pane_ref": "work"
+  },
+  {
+    "op": "item.release",
+    "item_ids": [
+      "item-a"
+    ]
+  },
+  {
+    "op": "item.reorder",
+    "pane_id": "1",
+    "item_ids": [
+      "item-b",
+      "item-a"
+    ]
+  },
+  {
+    "op": "settings.update",
+    "values": {
+      "diagnostics.level": "error",
+      "panel_defaults.grid_scale": 125
+    }
+  },
+  {
+    "op": "tab.merge",
+    "pane_id": "1",
+    "into_pane_id": "2"
+  },
+  {
+    "op": "tab.select",
+    "pane_id": "2"
+  },
+  {
+    "op": "tab.reorder",
+    "pane_id": "1",
+    "pane_ids": [
+      "2",
+      "1"
+    ]
+  },
+  {
+    "op": "tab.detach",
+    "pane_id": "1"
+  },
+  {
+    "op": "folder.create",
+    "ref": "files",
+    "title": "文件",
+    "path": "C:\\中文路径"
+  },
+  {
+    "op": "folder.update",
+    "pane_id": "1",
+    "list_view": false,
+    "sort_column": "size",
+    "descending": true,
+    "visible_columns": [
+      "name",
+      "size"
+    ],
+    "column_widths": [
+      0.4,
+      0.2,
+      0.2,
+      0.2
+    ]
+  },
+  {
+    "op": "folder.navigate",
+    "pane_id": "1",
+    "path": "C:\\中文路径\\子目录"
+  },
+  {
+    "op": "folder.back",
+    "pane_id": "1"
+  },
+  {
+    "op": "folder.home",
+    "pane_id": "1"
+  },
+  {
+    "op": "search.query",
+    "pane_id": "1",
+    "query": "中文 文档"
+  },
+  {
+    "op": "search.refresh",
+    "pane_id": "1"
+  },
+  {
+    "op": "search.more",
+    "pane_id": "1"
+  },
+  {
+    "op": "startup.set",
+    "enabled": true,
+    "expected_status": "off"
+  }
+]

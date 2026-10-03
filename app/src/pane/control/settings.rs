@@ -1,4 +1,5 @@
 //! Apply loaded settings without rebuilding ordinary/folder windows or resetting interactions.
+mod metadata;
 use super::*;
 use crate::pane::search::{everything_settings, hotkey as search_hotkey};
 use luciddesk_storage::SettingValue;
@@ -22,8 +23,34 @@ pub(super) fn values(
         .collect()
 }
 
+// A plan uses one persistence domain so its commit remains atomic.
+pub(super) fn preview(store: &WorkspaceStore, updates: &BTreeMap<String, SettingValue>) -> Result<(BTreeMap<String, SettingValue>, BTreeMap<String, SettingValue>), String> {
+    if updates.keys().any(|key| metadata::contains(key)) {
+        let before = metadata::read(store)?;
+        let after = metadata::patch(&before, updates)?;
+        Ok((before, after))
+    } else {
+        Ok((store.settings().map_err(|e| e.to_string())?, store.preview_settings(updates).map_err(|e| e.to_string())?))
+    }
+}
+pub(super) fn save(store: &WorkspaceStore, updates: &BTreeMap<String, SettingValue>) -> Result<(), String> {
+    if updates.keys().any(|key| metadata::contains(key)) {
+        let before = metadata::read(store)?;
+        let after = metadata::patch(&before, updates)?;
+        let entries = metadata::encode_changes(&before, &after);
+        store.save_metadata_preferences(&entries.iter().map(|(k,v)| (k.as_str(),v.as_str())).collect::<Vec<_>>()).map_err(|e|e.to_string())
+    } else { store.save_settings(updates).map_err(|e|e.to_string()) }
+}
+pub(super) fn workspace_values(store: &WorkspaceStore) -> Result<serde_json::Map<String, serde_json::Value>, String> {
+    metadata::read(store).map(values)
+}
+
 pub(super) fn runtime(state: &PaneApp) -> serde_json::Value {
     json!({
+        "font_family":fonts::family(),
+        "title_emoji_color":title_emoji::color(),
+        "compact_menu":compact_menu::enabled(),
+        "header_divider":header_divider::enabled(),
         "diagnostics_level":format!("{:?}", crate::diagnostics::level()).to_ascii_lowercase(),
         "search_visible":state.views.iter().any(|v| state.workspace.panel(v.id).is_some_and(Panel::is_search)),
         "preview_enabled":peek::settings().enabled,
@@ -58,9 +85,10 @@ pub(super) fn present(state: &Rc<RefCell<PaneApp>>) -> Result<(), String> {
         everything_settings::load(&s.store)?;
         search_hotkey::load(&s.store)?;
         let language_changed = crate::i18n::initialize(&s.store)?;
-        if language_changed {
-            fonts::load(&s.store)?;
-        }
+        fonts::load(&s.store)?;
+        title_emoji::load(&s.store)?;
+        compact_menu::load(&s.store)?;
+        header_divider::load(&s.store)?;
         for view in &s.views {
             if let Some(panel) = s.workspace.panel(view.id) {
                 let mut model = view.model.borrow_mut();

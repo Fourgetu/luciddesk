@@ -245,6 +245,7 @@ pub fn call_at(name: &str, request: &Request, timeout: Duration) -> io::Result<R
     write_frame(pipe.0, &serde_json::to_vec(request)?, deadline, None)?;
     let bytes = read_frame(pipe.0, deadline, None)?;
     write_all(pipe.0, &[1], deadline, None)?;
+    crate::validate_json(&bytes)?;
     let response: Response = serde_json::from_slice(&bytes)?;
     if response.request_id != request.request_id || response.protocol_version != crate::VERSION {
         return Err(io::Error::new(
@@ -330,7 +331,7 @@ impl Server {
                     let _ = (|| -> io::Result<()> {
                         verify_peer(pipe.0, false)?;
                         let bytes = read_frame(pipe.0, deadline, Some(stop))?;
-                        let response = match serde_json::from_slice::<Request>(&bytes) {
+                        let response = match crate::validate_json(&bytes).and_then(|()|serde_json::from_slice::<Request>(&bytes)) {
                             Ok(request) => handler(request),
                             Err(error) => {
                                 Response::failure("", "INVALID_REQUEST", error.to_string())
@@ -451,6 +452,28 @@ mod fault_tests {
             io::ErrorKind::TimedOut
         );
         assert!(start.elapsed() < Duration::from_secs(1));
+        drop(server);
+    }
+    #[test]
+    fn duplicate_nested_keys_never_reach_handler_and_server_recovers() {
+        let name=format!("{}-duplicates-{}",endpoint().unwrap(),crate::request_id());
+        let calls=std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let observed=calls.clone();
+        let server=Server::start_at(&name,move |r| {
+            observed.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
+            Response::success(&r.request_id,serde_json::json!({}),serde_json::json!({}))
+        }).unwrap();
+        let pipe=owned(unsafe {CreateFileW(wide(&name).as_ptr(),GENERIC_READ|GENERIC_WRITE,0,std::ptr::null(),OPEN_EXISTING,FILE_FLAG_OVERLAPPED,std::ptr::null_mut())}).unwrap();
+        let bytes=br#"{"protocol_version":1,"request_id":"duplicate-test","command":"plan.preview","plan":{"protocol_version":1,"base":{"instance_id":"i","state_version":"1","inventory_version":"1","topology_token":"1"},"operations":[{"op":"settings.update","values":{"search.enabled":true,"search.enabled":false}}]}}"#;
+        let deadline=Instant::now()+Duration::from_secs(2);
+        write_frame(pipe.0,bytes,deadline,None).unwrap();
+        let response:Response=serde_json::from_slice(&read_frame(pipe.0,deadline,None).unwrap()).unwrap();
+        assert_eq!(response.error.unwrap().code,"INVALID_REQUEST");
+        write_all(pipe.0,&[1],deadline,None).unwrap();
+        drop(pipe);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::Relaxed),0);
+        assert!(call_at(&name,&request(),Duration::from_secs(2)).unwrap().ok);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::Relaxed),1);
         drop(server);
     }
     #[test]

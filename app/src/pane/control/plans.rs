@@ -20,6 +20,7 @@ pub(super) struct Prepared {
     runtime_action: Option<Operation>,
 }
 struct Receipt {
+    desktop_membership: Option<Vec<String>>,
     runtime_action: Option<Operation>,
     id: String,
     signature: String,
@@ -164,7 +165,7 @@ fn prepare(
         let action=super::transient::prepare(workspace,&plan.operations[0]).map_err(invalid)?;
         return Ok(Prepared {
             token:luciddesk_api::request_id(),base:plan.base.clone(),expires:Instant::now()+TTL,
-            next:workspace.clone(),refs:HashMap::new(),diff:json!({"runtime_action":action,"persistence":"none"}),membership:false,applied:false,
+            next:workspace.clone(),refs:HashMap::new(),diff:json!({"runtime_action":action,"persistence":if matches!(action,Operation::StartupSet{..}){"operating_system"}else{"none"}}),membership:false,applied:false,
             settings:None,settings_changed:false,layout:None,folders:Vec::new(),folders_changed:false,runtime_action:Some(action),
         });
     }
@@ -182,8 +183,7 @@ fn prepare(
                 Wire::Text(v) => Stored::Text(v.clone()),
             })
         }).collect();
-        let before = store.settings().map_err(|e| invalid(e.to_string()))?;
-        let after = store.preview_settings(&updates).map_err(|e| invalid(e.to_string()))?;
+        let (before, after) = super::settings::preview(store, &updates).map_err(invalid)?;
         return Ok(Prepared {
             token: luciddesk_api::request_id(), base: plan.base.clone(), expires: Instant::now() + TTL,
             next: workspace.clone(), refs: HashMap::new(), membership: false, applied: false,
@@ -211,7 +211,7 @@ fn prepare(
     for operation in &plan.operations {
         match operation {
             Operation::FolderNavigate{..}|Operation::FolderBack{..}|Operation::FolderHome{..}|Operation::SearchQuery{..}|Operation::SearchRefresh{..}|Operation::SearchMore{..} => unreachable!("handled above"),
-            Operation::SettingsUpdate { .. } => unreachable!("handled above"),
+            Operation::StartupSet { .. } | Operation::SettingsUpdate { .. } => unreachable!("handled above"),
             Operation::FolderUpdate { pane_id, path, list_view, sort_column, descending, column_widths, visible_columns } => {
                 let target=id(pane_id)?;
                 let panel=next.panel(target).filter(|p|p.folder().is_some()).ok_or_else(||("NOT_FOUND".into(),"folder panel does not exist".into()))?;
@@ -468,20 +468,50 @@ fn prepare(
         runtime_action: None,
     })
 }
+fn receipt_pending(receipt:&Receipt)->bool {receipt.response.data.as_ref().is_some_and(|data|data["presentation_status"]=="pending")}
+fn result_is_failed(response:&Response)->bool {response.data.as_ref().is_some_and(|data|data["presentation_status"]=="failed")}
 impl Plans {
+    pub(super) fn system_result(&mut self, id: &str, data: serde_json::Value) -> Option<Response> {
+        let receipt = self.receipts.iter_mut().find(|r|r.id==id)?;
+        let was_pending=receipt_pending(receipt);
+        receipt.response.data = Some(data);
+        if was_pending && !receipt_pending(receipt) {receipt.expires=Instant::now()+Duration::from_secs(600);}
+        Some(receipt.response.clone())
+    }
+
     pub(super) fn take_runtime_action(&mut self,response:&Response)->Option<Operation> {
         self.receipts.iter_mut().find(|r|r.id==response.request_id)?.runtime_action.take()
+    }
+    pub(super) fn refresh_desktop(&mut self, state: &PaneApp) {
+        if !self.receipts.iter().any(|receipt|receipt.desktop_membership.is_some()) {return;}
+        let desired=hybrid::desired_membership(state);
+        let status=hybrid::membership_status(state);
+        for receipt in &mut self.receipts {
+            let Some(expected)=&receipt.desktop_membership else {continue;};
+            let (result,error)=if *expected!=desired {
+                ("superseded",Some("Desktop membership changed after this commit; inspect the current workspace"))
+            } else if status=="disconnected" {
+                ("failed",Some("Desktop component disconnected after commit; inspect state after reconnection"))
+            } else if status=="applied" {("applied",None)} else {continue;};
+            if let Some(data)=receipt.response.data.as_mut() {
+                data["presentation_status"]=json!(result);
+                if let Some(error)=error {data["presentation_error"]=json!(error);}
+            }
+            receipt.desktop_membership=None;
+            receipt.expires=Instant::now()+Duration::from_secs(600);
+        }
     }
     pub(super) fn presentation_result(&mut self, response: &mut Response, result: Result<(), String>) {
         let Some(data) = response.data.as_mut() else { return; };
         match result {
-            Ok(()) => data["presentation_status"] = json!("applied"),
+            Ok(()) => data["presentation_status"] = json!(if self.receipts.iter().any(|r|r.id==response.request_id && r.desktop_membership.is_some()) {"pending"} else {"applied"}),
             Err(error) => {
                 data["presentation_status"] = json!("failed");
                 data["presentation_error"] = json!(error);
             }
         }
         if let Some(receipt) = self.receipts.iter_mut().find(|r| r.id == response.request_id) {
+            if result_is_failed(response) {receipt.desktop_membership=None;}
             receipt.response = response.clone();
         }
     }
@@ -496,7 +526,7 @@ impl Plans {
         let fail = |code: &str, msg: &str| Response::failure(&request.request_id, code, msg);
         let now = Instant::now();
         self.pending.retain(|p| p.expires > now);
-        self.receipts.retain(|r| r.expires > now);
+        self.receipts.retain(|r| r.expires > now || receipt_pending(r));
         if request.command == "request.get" {
             return self.receipts.iter().find(|r|Some(&r.id)==request.id.as_ref()).map(|r|{
                 Response::success(&request.request_id,json!(context),json!({"result":r.response}))
@@ -559,9 +589,12 @@ impl Plans {
                     "desktop integration must be connected for item operations",
                 );
             }
+            if self.receipts.len() >= 1024 && self.receipts.iter().all(receipt_pending) {
+                return fail("BUSY", "all retained requests are still awaiting completion");
+            }
             if changed && plan.runtime_action.is_none() {
                 if let Some(updates) = &plan.settings {
-                    if let Err(error) = state.store.save_settings(updates) {
+                    if let Err(error) = super::settings::save(&state.store, updates) {
                         return fail("PERSISTENCE_ERROR", &error.to_string());
                     }
                 } else {
@@ -583,10 +616,11 @@ impl Plans {
                 json!(context),
                 json!({"changed":changed,"commit_status":if plan.runtime_action.is_some(){"not_persisted"}else if changed{"committed"}else{"unchanged"},"presentation_status":if changed || plan.settings.is_some(){"pending"}else{"applied"},"refs":plan.refs,"scope":if plan.runtime_action.is_some(){"runtime"}else if plan.settings.is_some(){"settings"}else{"workspace"}}),
             );
-            if self.receipts.len() == 1024 {
-                self.receipts.pop_front();
+            if self.receipts.len() >= 1024 {
+                if let Some(index)=self.receipts.iter().position(|receipt|!receipt_pending(receipt)) {self.receipts.remove(index);}
             }
             self.receipts.push_back(Receipt {
+                desktop_membership: (plan.membership && changed).then(||hybrid::desired_membership(state)),
                 runtime_action:plan.runtime_action.clone(),
                 id: request.request_id.clone(),
                 signature,
@@ -635,6 +669,71 @@ mod tests {
                 .into(),
         );
         req
+    }
+    #[test]
+    fn pending_receipts_survive_expiry_and_saturation_prevents_writes() {
+        let mut state=super::super::super::tests::test_state();
+        let mut snapshot=Snapshot::new();
+        for index in 0..1024 {
+            let id=format!("pending-{index}");
+            snapshot.plans.receipts.push_back(Receipt {
+                desktop_membership:None,runtime_action:None,signature:String::new(),
+                response:Response::success(&id,json!({}),json!({"presentation_status":"pending"})),
+                id,expires:Instant::now()-Duration::from_secs(1),
+            });
+        }
+        let mut lookup=request("request.get");lookup.id=Some("pending-0".into());
+        assert!(snapshot.respond(&mut state,&lookup).ok);
+        assert_eq!(snapshot.plans.receipts.len(),1024);
+        let plan=preview(&mut snapshot,&mut state,json!([{"op":"pane.update","pane_id":"1","title":"blocked at capacity"}]));
+        let revision=state.store.change_count();
+        let blocked=snapshot.respond(&mut state,&apply(&plan));
+        assert_eq!(blocked.error.unwrap().code,"BUSY");
+        assert_eq!(state.store.change_count(),revision);
+        assert_ne!(state.workspace.panel(PanelId::new(1)).unwrap().title(),"blocked at capacity");
+        snapshot.plans.receipts[0].response.data.as_mut().unwrap()["presentation_status"]=json!("applied");
+        assert!(snapshot.respond(&mut state,&apply(&plan)).ok);
+        assert_eq!(snapshot.plans.receipts.len(),1024);
+        assert!(!snapshot.plans.receipts.iter().any(|r|r.id=="pending-0"));
+    }
+    #[test]
+    fn desktop_confirmation_reports_disconnect_or_superseded_without_undoing_commit() {
+        let state=super::super::super::tests::test_state();
+        let expected=hybrid::desired_membership(&state);
+        for (membership,outcome) in [(expected,"failed"),(vec!["different desired membership".into()],"superseded")] {
+            let mut plans=Plans::default();
+            plans.receipts.push_back(Receipt {
+                desktop_membership:Some(membership),runtime_action:None,id:"receipt".into(),signature:String::new(),
+                response:Response::success("receipt",json!({}),json!({"commit_status":"committed","presentation_status":"pending"})),
+                expires:Instant::now()+TTL,
+            });
+            plans.refresh_desktop(&state);
+            let receipt=&plans.receipts[0];
+            assert_eq!(receipt.response.data.as_ref().unwrap()["commit_status"],"committed");
+            assert_eq!(receipt.response.data.as_ref().unwrap()["presentation_status"],outcome);
+            assert!(receipt.desktop_membership.is_none());
+        }
+    }
+    #[test]
+    fn startup_plans_retain_async_receipts_without_reexecuting() {
+        let mut state=super::super::super::tests::test_state();
+        let mut snapshot=Snapshot::new();
+        let before=state.store.change_count();
+        let invalid=preview(&mut snapshot,&mut state,json!([{"op":"startup.set","enabled":true,"expected_status":"other_location"}]));
+        assert!(!invalid.ok);
+        let mixed=preview(&mut snapshot,&mut state,json!([{"op":"startup.set","enabled":true,"expected_status":"off"},{"op":"pane.create","ref":"x","title":"no"}]));
+        assert!(!mixed.ok);
+        let plan=preview(&mut snapshot,&mut state,json!([{"op":"startup.set","enabled":true,"expected_status":"off"}]));
+        let request=apply(&plan);
+        let response=snapshot.respond(&mut state,&request);
+        assert!(matches!(snapshot.plans.take_runtime_action(&response),Some(Operation::StartupSet{enabled:true,..})));
+        assert!(snapshot.plans.take_runtime_action(&response).is_none());
+        let completed=json!({"scope":"system","operation_status":"completed","commit_status":"committed"});
+        snapshot.plans.system_result(&request.request_id,completed.clone()).unwrap();
+        let repeated=snapshot.respond(&mut state,&request);
+        assert_eq!(repeated.data,Some(completed));
+        assert!(snapshot.plans.take_runtime_action(&repeated).is_none());
+        assert_eq!(state.store.change_count(),before);
     }
     #[test]
     fn folder_plan_preview_is_pure_updates_are_atomic_and_removal_keeps_files() {

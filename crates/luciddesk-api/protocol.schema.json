@@ -34,6 +34,7 @@
             "capabilities",
             "workspace.get",
             "settings.get",
+            "font.list",
             "pane.list",
             "pane.get",
             "item.list",
@@ -42,7 +43,8 @@
             "request.get",
             "monitor.list",
             "folder.get",
-            "search.get"
+            "search.get",
+            "startup.get"
           ]
         },
         "id": {
@@ -882,6 +884,30 @@
                   "pane_id": {
                     "type": "string",
                     "pattern": "^[1-9][0-9]*$"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "op",
+                  "enabled",
+                  "expected_status"
+                ],
+                "properties": {
+                  "op": {
+                    "const": "startup.set"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "expected_status": {
+                    "enum": [
+                      "off",
+                      "enabled",
+                      "disabled_by_windows"
+                    ]
                   }
                 }
               }

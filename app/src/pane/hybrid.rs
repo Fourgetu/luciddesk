@@ -56,6 +56,19 @@ pub(super) struct Session {
 }
 
 struct OleApartment;
+/// Desired Explorer-hidden names, independent of image loading and submitted IPC.
+pub(super) fn desired_membership(s: &PaneApp) -> Vec<String> {
+    let mut names:Vec<_>=s.workspace.desktop_items().iter()
+        .filter(|item|matches!(item.placement(),DesktopPlacement::Pane{..}))
+        .map(|item|item.identity().activation_name().to_string_lossy().into_owned()).collect();
+    names.sort(); names.dedup(); names
+}
+pub(super) fn membership_status(s: &PaneApp) -> &'static str {
+    let Some(session)=&s.session else {return "disconnected";};
+    if !session.hook.is_alive() {return "disconnected";}
+    if session.menu_active.get() {return "deferred";}
+    if session.membership_pending.is_some() || session.published.borrow().as_ref()!=Some(&desired_membership(s)) {"pending"} else {"applied"}
+}
 pub(super) fn is_alive(session: &Session) -> bool {
     session.hook.is_alive()
 }

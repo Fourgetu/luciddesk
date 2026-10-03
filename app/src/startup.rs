@@ -22,6 +22,17 @@ pub(crate) enum Status {
 }
 
 impl Status {
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::Off => "off", Self::Enabled => "enabled", Self::DisabledByWindows => "disabled_by_windows",
+            Self::Unknown => "unknown", Self::OtherLocation => "other_location", Self::DisabledByUser => "disabled_by_user",
+            Self::DisabledByPolicy => "disabled_by_policy", Self::EnabledByPolicy => "enabled_by_policy",
+        }
+    }
+    pub fn from_code(code: &str) -> Option<Self> {
+        [Self::Off,Self::Enabled,Self::DisabledByWindows,Self::Unknown,Self::OtherLocation,Self::DisabledByUser,Self::DisabledByPolicy,Self::EnabledByPolicy].into_iter().find(|status|status.code()==code)
+    }
+
     pub fn registered(self) -> bool {
         matches!(
             self,
@@ -187,15 +198,29 @@ fn package_operation(enabled: Option<bool>) -> Result<Status, String> {
     result.map_err(|error| error.to_string())
 }
 
+// Serialize GUI and CLI workers, then re-check OS state immediately before writing.
+static OPERATION: std::sync::Mutex<()> = std::sync::Mutex::new(());
 fn operation(enabled: Option<bool>) -> Result<Status, String> {
+    operation_checked(enabled, None).map(|(_, after)| after)
+}
+pub(crate) fn operation_checked(enabled: Option<bool>, expected: Option<Status>) -> Result<(Status, Status), String> {
+    let _guard = OPERATION.lock().map_err(|_| "Startup operation lock unavailable")?;
     let exe = std::env::current_exe().map_err(|error| error.to_string())?;
-    if msix(&exe, packaged()?)? {
-        return package_operation(enabled);
-    }
-    if let Some(enabled) = enabled {
+    let package = msix(&exe, packaged()?)?;
+    let before = if package { package_operation(None)? } else { query(&CURRENT_USER, RUN, APPROVED, &exe)? };
+    validate_change(before, enabled, expected)?;
+    let Some(enabled) = enabled else {return Ok((before,before));};
+    if (enabled && before == Status::Enabled) || (!enabled && before == Status::Off) {return Ok((before,before));}
+    let after = if package {package_operation(Some(enabled))?} else {
         update(&CURRENT_USER, RUN, &exe, enabled)?;
-    }
-    query(&CURRENT_USER, RUN, APPROVED, &exe)
+        query(&CURRENT_USER, RUN, APPROVED, &exe)?
+    };
+    Ok((before,after))
+}
+fn validate_change(before: Status, enabled: Option<bool>, expected: Option<Status>) -> Result<(),String> {
+    if expected.is_some_and(|expected| expected != before) {return Err("Startup state changed; query and preview again".into());}
+    if enabled.is_some() && !before.editable() {return Err(before.message().into());}
+    Ok(())
 }
 
 pub(crate) struct Controller {
@@ -274,6 +299,9 @@ fn update(root: &Key, run: &str, exe: &Path, enabled: bool) -> Result<(), String
     {
         return Err(crate::i18n::text("startup-other-location").into());
     }
+    if enabled && previous.as_deref() == Some(expected.as_str()) {
+        return Ok(());
+    }
     if enabled {
         root.create(run)
             .and_then(|key| key.set_string(NAME, expected))
@@ -293,6 +321,18 @@ fn update(root: &Key, run: &str, exe: &Path, enabled: bool) -> Result<(), String
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn checked_changes_reject_stale_or_protected_state() {
+        for status in [Status::Unknown,Status::OtherLocation,Status::DisabledByUser,Status::DisabledByPolicy,Status::EnabledByPolicy] {
+            assert!(validate_change(status,Some(true),Some(status)).is_err());
+            assert!(validate_change(status,Some(false),Some(status)).is_err());
+            assert!(validate_change(status,None,None).is_ok());
+            assert_eq!(Status::from_code(status.code()),Some(status));
+        }
+        assert!(validate_change(Status::Enabled,Some(false),Some(Status::Off)).is_err());
+        assert!(validate_change(Status::Off,Some(true),Some(Status::Off)).is_ok());
+        assert!(validate_change(Status::DisabledByWindows,Some(false),Some(Status::DisabledByWindows)).is_ok());
+    }
     #[test]
     fn msix_requires_a_regular_marker_and_package_identity() {
         let directory = tempfile::tempdir().unwrap();

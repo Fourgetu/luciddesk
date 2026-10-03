@@ -5,6 +5,8 @@ mod geometry;
 mod tab_plan;
 mod folders;
 mod transient;
+mod font_catalog;
+mod startup;
 use super::*;
 use luciddesk_api::{Request, Response};
 use serde_json::json;
@@ -29,6 +31,8 @@ struct Snapshot {
     seen: Option<(Workspace, u64, String, String)>,
     version: u64,
     plans: plans::Plans,
+    fonts: font_catalog::Catalog,
+    startup: startup::Control,
 }
 impl Snapshot {
     fn new() -> Self {
@@ -39,6 +43,8 @@ impl Snapshot {
             seen: None,
             version: 0,
             plans: plans::Plans::default(),
+            fonts: font_catalog::Catalog::default(),
+            startup: startup::Control::default(),
         }
     }
     fn respond(&mut self, state: &mut PaneApp, request: &Request) -> Response {
@@ -60,6 +66,8 @@ impl Snapshot {
                 );
             }
         }
+        self.plans.refresh_desktop(state);
+        if let Some((id,data)) = self.startup.poll() {self.plans.system_result(&id,data);}
         let monitors = luciddesk_window::enumerate_monitors();
         let observed = (
             state.workspace.clone(),
@@ -86,6 +94,8 @@ impl Snapshot {
             return self.plans.handle(state, &base, &self.item_ids, request, &monitors);
         }
         let data = match request.command.as_str() {
+            "startup.get" => self.startup.query(),
+            "font.list" => self.fonts.query(),
             "monitor.list" => geometry::monitors(&monitors),
             "search.get" => {
                 let id=PanelId::new(request.id.as_ref().unwrap().parse().unwrap());
@@ -103,13 +113,17 @@ impl Snapshot {
                     Err(error) => return Response::failure(&request.request_id, "CAPABILITY_UNAVAILABLE", error.to_string()),
                 };
                 let values = settings::values(values);
-                json!({"scope":"application_config","values":values,"runtime":settings::runtime(state)})
+                let workspace_values = match settings::workspace_values(&state.store) {
+                    Ok(values) => values,
+                    Err(error) => return Response::failure(&request.request_id, "CAPABILITY_UNAVAILABLE", error),
+                };
+                json!({"scope":"application_config","values":values,"workspace_values":workspace_values,"runtime":settings::runtime(state)})
             }
             "status" => {
-                json!({"application_version":env!("CARGO_PKG_VERSION"), "data_dir":directory, "desktop_connected":state.session.as_ref().is_some_and(hybrid::is_alive), "read_only":false})
+                json!({"application_version":env!("CARGO_PKG_VERSION"), "data_dir":directory, "desktop_connected":state.session.as_ref().is_some_and(hybrid::is_alive), "desktop_sync_status":hybrid::membership_status(state), "read_only":false})
             }
             "capabilities" => {
-                json!({"commands":luciddesk_api::COMMANDS,"protocol_version":1,"max_frame_bytes":luciddesk_api::MAX_FRAME,"writes":true,"plans":true,"concurrency_tokens":true,"plan_operations":["folder.navigate","folder.back","folder.home","search.query","search.refresh","search.more","folder.create","folder.update","tab.merge","tab.select","tab.reorder","tab.detach","pane.geometry","settings.update","pane.create","pane.update","pane.remove","item.assign","item.release","item.reorder"],"pane_geometry":true,"item_ids":"opaque-instance-scoped","schema_version":1})
+                json!({"commands":luciddesk_api::COMMANDS,"protocol_version":1,"max_frame_bytes":luciddesk_api::MAX_FRAME,"writes":true,"plans":true,"concurrency_tokens":true,"plan_operations":luciddesk_api::OPERATIONS,"pane_geometry":true,"item_ids":"opaque-instance-scoped","schema_version":1})
             }
             command => {
                 let pane_values: Vec<_> = state.workspace.panels().iter().map(|panel| {
@@ -268,6 +282,10 @@ fn start_at(
                                 snapshot.respond(&mut state.borrow_mut(), &pending.request);
                             if pending.request.command=="plan.apply" {
                                 if let Some(action)=snapshot.plans.take_runtime_action(&response) {
+                                    if let luciddesk_api::Operation::StartupSet {enabled,expected_status} = action {
+                                        let data=snapshot.startup.apply(&response.request_id,enabled,&expected_status);
+                                        response=snapshot.plans.system_result(&response.request_id,data).unwrap();
+                                    } else {
                                     let prior=transient::fingerprint(&state.borrow());
                                     let result=transient::execute(&state,action);
                                     response.data.as_mut().unwrap()["changed"]=json!(prior!=transient::fingerprint(&state.borrow()));
@@ -277,6 +295,7 @@ fn start_at(
                                             snapshot.plans.presentation_result(&mut response,Ok(()));
                                         }
                                         Err(error)=>snapshot.plans.presentation_result(&mut response,Err(error)),
+                                    }
                                     }
                                 }
                             }
