@@ -53,7 +53,6 @@ pub(super) struct Session {
     retry_after: Option<Instant>,
     last_failure: Option<String>,
     pending_workspace_save: bool,
-    diagnostic_path: std::path::PathBuf,
 }
 
 struct OleApartment;
@@ -236,7 +235,7 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
     Ok(())
 }
 
-pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), String> {
+pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, _path: &Path) -> Result<(), String> {
     if luciddesk_explorer::conflicting_desktop_extension() {
         return Err(crate::i18n::text("ui-close-other-desktop-organizers-first").into());
     }
@@ -359,7 +358,6 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, path: &Path) -> Result<(), S
         retry_after: None,
         last_failure: None,
         pending_workspace_save: false,
-        diagnostic_path: path.with_extension("log"),
     };
     let mut s = state.borrow_mut();
     s.receiver = receiver;
@@ -751,19 +749,7 @@ pub(super) fn tick(s: &mut PaneApp) -> Result<(), String> {
         Err(error) => {
             let h = s.session.as_mut().unwrap();
             if h.last_failure.as_ref() != Some(&error) {
-                use std::io::Write;
                 crate::diagnostics::log(crate::diagnostics::Level::Warn, "pane.hybrid", &format!("Hybrid synchronization deferred: {error}"));
-                if let Ok(mut log) = std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&h.diagnostic_path)
-                {
-                    let _ = writeln!(
-                        log,
-                        "{:?} synchronization deferred: {error}",
-                        std::time::SystemTime::now()
-                    );
-                }
                 h.last_failure = Some(error);
             }
             // Sorting can invalidate the inventory while it is being read. Leave

@@ -4,6 +4,8 @@ mod config;
 #[cfg(test)]
 mod config_tests;
 mod desktop_items;
+mod folder_view;
+mod geometry;
 mod monitor_layout;
 mod recovery;
 mod schema;
@@ -69,6 +71,9 @@ impl WorkspaceStore {
         if let Some(id) = key.strip_prefix("panel_folder_sort:") {
             return Ok(self.connection.query_row("SELECT sort_column||':'||sort_direction FROM panel_folder_settings WHERE panel_id=?1",[id],|r|r.get(0)).optional()?);
         }
+        if let Some(value) = folder_view::read(&self.connection, key)? {
+            return Ok(Some(value));
+        }
         Ok(self
             .connection
             .query_row("SELECT value FROM metadata WHERE key=?1", [key], |row| {
@@ -95,6 +100,15 @@ impl WorkspaceStore {
             self.notify_change(previous);
             return Ok(());
         }
+        if folder_view::key(key).is_some() {
+            let tx = self.connection.unchecked_transaction()?;
+            if folder_view::write(&tx, key, value)? {
+                tx.execute("DELETE FROM metadata WHERE key=?1",[key])?;
+                tx.commit()?;
+                self.notify_change(previous);
+                return Ok(());
+            }
+        }
         self.connection.execute(
             "INSERT INTO metadata(key,value) VALUES (?1,?2)
              ON CONFLICT(key) DO UPDATE SET value=excluded.value
@@ -107,9 +121,9 @@ impl WorkspaceStore {
 
     /// Saves database-only preferences in one transaction and sends one notification.
     /// # Errors
-    /// Rejects TOML and structured folder-sort keys; rolls back the entire batch on error.
+    /// Rejects TOML and structured folder-setting keys; rolls back the entire batch on error.
     pub fn save_metadata_preferences(&self, updates: &[(&str, &str)]) -> Result<(), StoreError> {
-        if updates.iter().any(|(key, _)| config::KEYS.contains(key) || key.starts_with("panel_folder_sort:")) {
+        if updates.iter().any(|(key, _)| config::KEYS.contains(key) || key.starts_with("panel_folder_sort:") || folder_view::key(key).is_some()) {
             return Err(StoreError::InvalidData("batch requires metadata preferences".into()));
         }
         let previous = self.raw_change_count();
@@ -381,6 +395,7 @@ impl WorkspaceStore {
             }
             insert_panel(&transaction, panel, workspace.appearance())?;
         }
+        folder_view::absorb(&transaction)?;
         insert_desktop_items(&transaction, workspace.desktop_items())?;
         let live_panels: std::collections::HashSet<_> =
             workspace.panels().iter().map(|p| p.id().get()).collect();
@@ -434,6 +449,7 @@ fn initialize_schema(connection: &Connection) -> Result<(), StoreError> {
     }
     let transaction = connection.unchecked_transaction()?;
     transaction.execute_batch(schema::SCHEMA)?;
+    transaction.execute_batch(folder_view::SCHEMA)?;
     transaction.commit()?;
     Ok(())
 }

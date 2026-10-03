@@ -5,6 +5,7 @@ pub(super) fn validate_and_upgrade(connection: &Connection) -> Result<(), StoreE
     let transaction = connection.unchecked_transaction()?;
     let reference = Connection::open_in_memory()?;
     reference.execute_batch(SCHEMA)?;
+    reference.execute_batch(super::folder_view::SCHEMA)?;
     let definitions: Vec<(String, String)> = reference
         .prepare("SELECT name,sql FROM sqlite_schema WHERE sql IS NOT NULL")?
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
@@ -16,6 +17,7 @@ pub(super) fn validate_and_upgrade(connection: &Connection) -> Result<(), StoreE
     };
     let mut folder_upgrade = None;
     let mut layout_index = None;
+    let mut folder_view = None;
     for (name, expected) in definitions {
         let actual: Option<String> = connection
             .query_row(
@@ -27,6 +29,10 @@ pub(super) fn validate_and_upgrade(connection: &Connection) -> Result<(), StoreE
         let actual = actual.as_deref().map(normalize);
         let normalized_expected = normalize(&expected);
         if actual.as_deref() == Some(normalized_expected.as_str()) {
+            continue;
+        }
+        if name == "panel_folder_view" && actual.is_none() {
+            folder_view = Some(expected);
             continue;
         }
         if name == "monitor_layouts_panel" && actual.is_none() {
@@ -59,6 +65,10 @@ pub(super) fn validate_and_upgrade(connection: &Connection) -> Result<(), StoreE
     }
     if let Some(create) = layout_index {
         transaction.execute_batch(&create)?;
+    }
+    if let Some(create) = folder_view {
+        transaction.execute_batch(&create)?;
+        super::folder_view::absorb(&transaction)?;
     }
     transaction.commit()?;
     Ok(())

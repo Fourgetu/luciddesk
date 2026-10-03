@@ -944,6 +944,7 @@ pub(super) fn handle(
             if s.workspace.panel(id).is_none() {
                 return Ok(false);
             }
+            let previous = s.workspace.clone();
             let collapsed = s.views.iter().find(|v| v.id == id)
                 .map_or_else(|| s.workspace.panel(id).unwrap().collapsed(), |v| v.model.borrow().collapsed);
             if let Some(panel) = s.workspace.panel_mut(id) {
@@ -956,7 +957,16 @@ pub(super) fn handle(
                     rect
                 });
             }
-            save_state(&mut s, true)?;
+            s.workspace.sync_tab_windows();
+            let rectangles: Vec<_> = s.workspace.panels().iter().map(|p| (p.id(), p.rect())).collect();
+            let layout = display_layout::capture(&mut s);
+            if let Err(error) = s.store.save_panel_geometry(
+                &rectangles,
+                layout.as_ref().map(|(topology, entries)| (topology.as_str(), entries.as_slice())),
+            ) {
+                s.workspace = previous;
+                return Err(error.to_string());
+            }
         }
         Event::AutoHideCollapsed(collapsed) => {
             // Hover state belongs to the live window, never to the persisted panel.

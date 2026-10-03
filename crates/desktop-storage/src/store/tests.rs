@@ -358,7 +358,7 @@ fn size_sort_upgrades_existing_databases_and_survives_reopen() {
         let workspace = Workspace::from_panels(vec![panel]).unwrap();
         old.save_workspace(&workspace).unwrap();
         old.save_preference("panel_folder_sort:2", "2:desc").unwrap();
-        old.save_preference("panel_folder_columns:2", "0.4,0.2,0.3,0.1").unwrap();
+        old.connection.execute("INSERT INTO metadata VALUES (?1,?2)", ["panel_folder_columns:2", "0.4,0.2,0.3,0.1"]).unwrap();
         drop(old);
         let mut store = WorkspaceStore::open_database(&path).unwrap();
         assert_eq!(store.load_workspace().unwrap(), workspace);
@@ -375,7 +375,7 @@ fn size_sort_upgrades_existing_databases_and_survives_reopen() {
             assert!(store.save_preference("panel_folder_sort:2", value).is_err());
         }
         assert_eq!(store.preference("panel_folder_sort:2").unwrap().as_deref(), Some("3:desc"));
-        assert_eq!(store.preference("panel_folder_columns:2").unwrap().as_deref(), Some("0.4,0.2,0.3,0.1"));
+        assert_eq!(store.preference("panel_folder_columns:2").unwrap().as_deref(), Some("0.400000,0.200000,0.300000,0.100000"));
         store.save_workspace(&Workspace::new()).unwrap();
         assert_eq!(store.preference("panel_folder_sort:2").unwrap(), None);
     }
@@ -652,7 +652,7 @@ fn deleting_panel_cascades_layouts_and_cleans_only_its_preferences() {
         store.save_monitor_layout(topology, &[(id, rect)]).unwrap();
     }
     for key in ["panel_desktop_list:1", "panel_folder_columns:1", "panel_folder_visible_columns:1", "panel_folder_columns:11"] {
-        store.save_preference(key, "keep until removed").unwrap();
+        store.save_preference(key, match key { "panel_folder_columns:1"=>"0.4,0.2,0.3,0.1", "panel_folder_visible_columns:1"=>"15", _=>"keep until removed" }).unwrap();
     }
     store.save_workspace(&Workspace::new()).unwrap();
     for topology in ["single", "dual"] {
@@ -728,4 +728,45 @@ fn tab_selection_changes_only_tab_metadata_and_rejects_stale_selection() {
     assert_eq!(store.change_count(), before + 1);
     store.save_active_tab(two, one).unwrap();
     assert_eq!(store.load_workspace().unwrap(), workspace);
+}
+
+#[test]
+fn folder_view_is_structured_noop_safe_and_cascades() {
+    let mut store=WorkspaceStore::open_in_memory().unwrap();
+    let id=PanelId::new(1);let mut panel=Panel::new(id,"folder",RectDip::default());panel.set_folder(Some("C:/test".into()));
+    store.save_workspace(&Workspace::from_panels(vec![panel]).unwrap()).unwrap();
+    store.save_preference("panel_folder_columns:1","0.4,0.2,0.3,0.1").unwrap();
+    store.save_preference("panel_folder_visible_columns:1","7").unwrap();
+    let count=store.change_count();
+    store.save_preference("panel_folder_columns:1","0.400000,0.200000,0.300000,0.100000").unwrap();
+    store.save_preference("panel_folder_visible_columns:1","7").unwrap();
+    assert_eq!(store.change_count(),count);
+    assert!(store.save_preference("panel_folder_columns:1","NaN,0.2,0.3,0.1").is_err());
+    assert!(store.save_preference("panel_folder_visible_columns:1","2").is_err());
+    assert_eq!(store.connection.query_row("SELECT count(*) FROM metadata WHERE key LIKE 'panel_folder_%'",[],|r|r.get::<_,u64>(0)).unwrap(),0);
+    store.save_workspace(&Workspace::new()).unwrap();
+    assert_eq!(store.connection.query_row("SELECT count(*) FROM panel_folder_view",[],|r|r.get::<_,u64>(0)).unwrap(),0);
+}
+#[test]
+fn geometry_only_save_preserves_other_state_rolls_back_and_skips_disk_writes() {
+    let dir=tempfile::tempdir().unwrap();let path=dir.path().join("workspace.db");let mut store=WorkspaceStore::open(&path).unwrap();
+    let id=PanelId::new(1);let mut panel=Panel::new(id,"Search",RectDip::default());panel.set_search(true);
+    store.save_workspace(&Workspace::from_panels(vec![panel]).unwrap()).unwrap();
+    let rect=RectDip::new(10.0,20.0,400.0,200.0);let entries=[(id,rect)];
+    store.save_panel_geometry(&entries,Some(("single",&entries))).unwrap();
+    let count=store.change_count();let bytes=std::fs::read(&path).unwrap();let config=std::fs::read(dir.path().join("config.toml")).unwrap();
+    for _ in 0..20 {store.save_panel_geometry(&entries,Some(("single",&entries))).unwrap();}
+    assert_eq!(store.change_count(),count);assert_eq!(std::fs::read(&path).unwrap(),bytes);assert_eq!(std::fs::read(dir.path().join("config.toml")).unwrap(),config);
+    let bad=[(id,RectDip::new(99.0,99.0,500.0,300.0)),(PanelId::new(999),rect)];
+    assert!(store.save_panel_geometry(&bad,None).is_err());assert_eq!(store.change_count(),count);
+    let loaded=store.load_workspace().unwrap();assert_eq!(loaded.panel(id).unwrap().rect(),rect);assert!(loaded.panel(id).unwrap().is_search());assert_eq!(loaded.panel(id).unwrap().title(),"Search");
+}
+#[test]
+fn folder_view_survives_backup_restore() {
+    let dir=tempfile::tempdir().unwrap();let backup=dir.path().join("backup.db");let mut store=WorkspaceStore::open_in_memory().unwrap();
+    let mut panel=Panel::new(PanelId::new(1),"folder",RectDip::default());panel.set_folder(Some("C:/test".into()));
+    store.save_workspace(&Workspace::from_panels(vec![panel]).unwrap()).unwrap();
+    store.save_preference("panel_folder_visible_columns:1","3").unwrap();store.export_backup(&backup).unwrap();
+    store.save_preference("panel_folder_visible_columns:1","15").unwrap();store.restore_backup(&backup).unwrap();
+    assert_eq!(store.preference("panel_folder_visible_columns:1").unwrap().as_deref(),Some("3"));
 }

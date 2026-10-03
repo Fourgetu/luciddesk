@@ -45,6 +45,11 @@ struct Logger {
     path: PathBuf,
     level: Level,
     recent: VecDeque<Recent>,
+    window: Option<Instant>,
+    written: usize,
+    dropped: u64,
+    header: Option<String>,
+    retry_after: Option<Instant>,
 }
 impl Logger {
     fn new(database: &Path, level: Level) -> Self {
@@ -52,9 +57,35 @@ impl Logger {
             path: database.with_file_name("logs").join("diagnostic.log"),
             level,
             recent: VecDeque::new(),
+            window: None,
+            written: 0,
+            dropped: 0,
+            header: None,
+            retry_after: None,
         }
     }
     fn write(
+        &mut self,
+        level: Level,
+        component: &str,
+        message: &str,
+        now: Instant,
+    ) -> io::Result<()> {
+        if level > self.level || self.retry_after.is_some_and(|deadline| now < deadline) {
+            return Ok(());
+        }
+        match self.write_ready(level, component, message, now) {
+            Ok(()) => {
+                self.retry_after = None;
+                Ok(())
+            }
+            Err(error) => {
+                self.retry_after = Some(now + Duration::from_secs(5));
+                Err(error)
+            }
+        }
+    }
+    fn write_ready(
         &mut self,
         level: Level,
         component: &str,
@@ -73,11 +104,23 @@ impl Logger {
         let mut suppressed = 0;
         if let Some(index) = index {
             let recent = &mut self.recent[index];
-            if now.duration_since(recent.at) < Duration::from_secs(30) {
+            if now.saturating_duration_since(recent.at) < Duration::from_secs(30) {
                 recent.suppressed += 1;
                 return Ok(());
             }
             suppressed = recent.suppressed;
+        }
+        // Bound storms of distinct errors too; no timer or background flush.
+        if self
+            .window
+            .is_none_or(|start| now.saturating_duration_since(start) >= Duration::from_secs(30))
+        {
+            self.window = Some(now);
+            self.written = 0;
+        }
+        if self.written >= 64 {
+            self.dropped = self.dropped.saturating_add(1);
+            return Ok(());
         }
         let time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -85,11 +128,12 @@ impl Logger {
             .as_millis();
         // Debug escaping keeps each entry one line even for multiline or hostile messages.
         let entry = format!(
-            "timestamp_unix_ms={time} level={} pid={} version={} build={} component={component:?} suppressed={suppressed} message={message:?}\n",
+            "timestamp_unix_ms={time} level={} pid={} version={} build={} component={component:?} suppressed={suppressed} rate_limited={} message={message:?}\n",
             level.label(),
             std::process::id(),
             env!("CARGO_PKG_VERSION"),
-            env!("LUCIDDESK_BUILD_REVISION")
+            env!("LUCIDDESK_BUILD_REVISION"),
+            self.dropped
         );
         let parent = self.path.parent().unwrap();
         std::fs::create_dir_all(parent)?;
@@ -98,7 +142,9 @@ impl Logger {
             Err(e) if e.kind() == io::ErrorKind::NotFound => 0,
             Err(e) => return Err(e),
         };
-        let header = format!("# {:?}\n", super::report());
+        let header = self
+            .header
+            .get_or_insert_with(|| format!("# {:?}\n", super::report()));
         let rotate =
             length + entry.len() as u64 + if length == 0 { header.len() as u64 } else { 0 }
                 > 256 * 1024;
@@ -120,6 +166,8 @@ impl Logger {
         }
         file.write_all(entry.as_bytes())?;
         file.flush()?;
+        self.written += 1;
+        self.dropped = 0;
         if let Some(index) = index {
             self.recent.remove(index);
         }
@@ -138,15 +186,13 @@ impl Logger {
 }
 static LOGGER: OnceLock<Mutex<Logger>> = OnceLock::new();
 pub fn init_logging(database: &Path) {
-    LOGGER.get_or_init(|| {
-        Mutex::new(Logger::new(
-            database,
-            Level::Error,
-        ))
-    });
+    LOGGER.get_or_init(|| Mutex::new(Logger::new(database, Level::Error)));
 }
 pub fn level() -> Level {
-    LOGGER.get().and_then(|logger| logger.lock().ok().map(|logger| logger.level)).unwrap_or(Level::Error)
+    LOGGER
+        .get()
+        .and_then(|logger| logger.lock().ok().map(|logger| logger.level))
+        .unwrap_or(Level::Error)
 }
 pub fn set_level(level: Level) {
     if let Some(logger) = LOGGER.get() {
@@ -212,6 +258,64 @@ mod tests {
         assert!(!dir.path().join("workspace.db").exists());
         assert_eq!(Level::parse("typo"), Level::Error);
         assert_eq!(Level::parse(" DEBUG "), Level::Debug);
+    }
+    #[test]
+    fn failed_output_backs_off_then_recovers_on_next_event() {
+        let dir = tempfile::tempdir().unwrap();
+        let logs = dir.path().join("logs");
+        std::fs::write(&logs, "blocked").unwrap();
+        let mut logger = Logger::new(&dir.path().join("workspace.db"), Level::Error);
+        let now = Instant::now();
+        assert!(logger.write(Level::Error, "test", "failure", now).is_err());
+        std::fs::remove_file(&logs).unwrap();
+        logger
+            .write(
+                Level::Error,
+                "test",
+                "failure",
+                now + Duration::from_secs(1),
+            )
+            .unwrap();
+        assert!(!logs.exists());
+        logger
+            .write(
+                Level::Error,
+                "test",
+                "failure",
+                now + Duration::from_secs(6),
+            )
+            .unwrap();
+        assert!(logger.path.exists());
+    }
+    #[test]
+    fn distinct_error_storm_is_bounded_without_background_flush() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut logger = Logger::new(&dir.path().join("workspace.db"), Level::Error);
+        let now = Instant::now();
+        for i in 0..200 {
+            logger
+                .write(Level::Error, "storm", &format!("failure {i}"), now)
+                .unwrap();
+        }
+        let text = std::fs::read_to_string(&logger.path).unwrap();
+        assert_eq!(
+            text.lines().filter(|l| l.starts_with("timestamp_")).count(),
+            64
+        );
+        assert_eq!(logger.dropped, 136);
+        logger
+            .write(
+                Level::Error,
+                "storm",
+                "recovered window",
+                now + Duration::from_secs(31),
+            )
+            .unwrap();
+        assert!(
+            std::fs::read_to_string(&logger.path)
+                .unwrap()
+                .contains("rate_limited=136")
+        );
     }
     #[test]
     fn duplicate_errors_are_suppressed_and_files_rotate() {
