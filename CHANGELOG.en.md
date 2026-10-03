@@ -2,9 +2,23 @@
 
 [简体中文](CHANGELOG.md) · English
 
-Current version: **0.19.0**. Features and fixes by release.
+Current version: **0.19.1**. Features and fixes by release.
 
 Exit the app before upgrading a portable installation and preserve its `data` folder. See the [portable guide](docs/portable.md) (Chinese).
+
+## 0.19.1 · 2026-10-04
+
+### changed
+
+- Use an explicit EXE installer payload, omitting general guides, changelogs and maintenance scripts while retaining runtime components, CLI/Agent files, the license and build metadata.
+
+### docs
+
+- Update the Chinese and English feature illustrations with AI Agent integration, CLI + Skill, and the inspect, plan, preview and apply workflow.
+
+### ci
+
+- Validate the EXE installer file list and installation paths; reject wildcard inclusion, extra documentation and missing CLI/Agent files.
 
 <a id="v0190"></a>
 
@@ -25,7 +39,6 @@ Exit the app before upgrading a portable installation and preserve its `data` fo
 
 ### changed
 
-- Use an explicit EXE installer payload, omitting general guides, changelogs and maintenance scripts while retaining runtime components, CLI/Agent files, the license and build metadata.
 - Separate settings windows, panel events, native menus, input handling and task scheduling by responsibility.
 - Separate content measurement, fitting, snapping and arrangement algorithms behind a read-only layout context, preserving persistence and rollback in the control layer.
 - Expand CLI/Agent documentation, module boundaries and native window test isolation notes. Real-machine acceptance for multiple monitors, another Windows login session and an installed MSIX remains pending.
