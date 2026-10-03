@@ -20,7 +20,7 @@ Desktop panels · Folder panels · Everything search · Spacebar preview · Agen
 
 LucidDesk is a Windows desktop organizer built with Rust. Group icons into panels, browse your favorite folders, and find files with Everything. With the CLI and companion skill, agents can organize icons, adjust panel layouts, and manage folders and settings at your request—previewing changes before applying them to the desktop.
 
-![LucidDesk feature illustration: panel tabs, folder browsing and Everything search](docs/images/overview.en.svg)
+![LucidDesk feature illustration: panel tabs, folder browsing, Everything search and AI Agent integration](docs/images/overview.en.svg)
 
 <sub>Feature illustration · See actual screenshots below.</sub>
 

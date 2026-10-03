@@ -20,7 +20,7 @@
 
 LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。把零散图标收进面板，把常用目录放到桌面，再用 Everything 搜索快速找到文件。通过 CLI 与配套 Skill，还可以让 Agent 按你的要求整理图标、调整面板布局、管理文件夹和设置，先预览改动，再应用到桌面。
 
-![LucidDesk 功能示意：面板标签、文件夹浏览与 Everything 搜索](docs/images/overview.svg)
+![LucidDesk 功能示意：面板标签、文件夹浏览、Everything 搜索与 AI Agent 联动](docs/images/overview.svg)
 
 <sub>功能示意图 · 实际界面见下方截图</sub>
 
