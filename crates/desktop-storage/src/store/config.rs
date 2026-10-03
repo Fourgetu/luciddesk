@@ -542,7 +542,7 @@ impl WorkspaceStore {
     /// # Errors
     /// Reports read errors, unsupported versions and invalid configuration fields.
     pub fn reload_config(&self) -> Result<(), StoreError> {
-        let previous = self.change_count();
+        let previous = self.raw_change_count();
         if let Some(config) = &self.config {
             let mut config = config.borrow_mut();
             let mut next = ConfigFile::parse(

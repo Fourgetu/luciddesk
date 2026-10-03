@@ -226,9 +226,12 @@ impl WorkspaceStore {
             .map_err(|e| StoreError::InvalidData(e.to_string()))?;
         Ok(())
     }
-    /// Number of row changes made through this connection, used to avoid redundant snapshots.
+    /// Successful changes through the store API, excluding rolled-back writes.
     #[must_use]
     pub fn change_count(&self) -> u64 {
+        self.committed_changes.get()
+    }
+    pub(super) fn raw_change_count(&self) -> u64 {
         self.connection.total_changes() + self.config.as_ref().map_or(0, |c| c.borrow().changes)
     }
     /// Creates a consistent standalone database snapshot, including preferences.
@@ -336,6 +339,7 @@ impl WorkspaceStore {
             self.connection
                 .execute("DELETE FROM metadata WHERE key='pending_config'", [])?;
         }
+        self.committed_changes.set(self.committed_changes.get() + 1);
         self.emit_change();
         Ok(())
     }

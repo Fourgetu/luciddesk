@@ -351,7 +351,7 @@ fn size_sort_upgrades_existing_databases_and_survives_reopen() {
         connection.execute_batch(&schema).unwrap();
         // Seed through the old store directly so the upgrade is exercised with
         // real mappings, view options, and pre-existing sort values.
-        let mut old = WorkspaceStore { connection, config: None, on_change: None };
+        let mut old = WorkspaceStore { connection, config: None, on_change: None, committed_changes: std::cell::Cell::new(0) };
         let mut panel = Panel::new(PanelId::new(2), "Folder", RectDip::default());
         panel.set_folder(Some(std::path::PathBuf::from(r"C:\Downloads")));
         panel.set_list_view(false);
@@ -534,4 +534,198 @@ fn successful_changes_notify_without_notifying_for_noops_or_failed_writes() {
     let snapshot = store.backup_snapshot().unwrap();
     snapshot.save_preference("notification-test", "snapshot").unwrap();
     assert_eq!(count.load(Ordering::Relaxed), 1, "background copies must not notify the live store");
+}
+
+#[test]
+fn combined_geometry_save_is_one_commit_and_unchanged_save_is_read_only() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("workspace.db");
+    let mut store = WorkspaceStore::open(&path).unwrap();
+    let id = PanelId::new(1);
+    let mut workspace = Workspace::from_panels(vec![Panel::new(id,"Test",RectDip::default())]).unwrap();
+    store.save_workspace(&workspace).unwrap();
+    workspace = store.load_workspace().unwrap();
+    let observer = rusqlite::Connection::open(&path).unwrap();
+    let version = || observer.query_row("PRAGMA data_version", [], |row| row.get::<_,u64>(0)).unwrap();
+    let before = version();
+    let rect = RectDip::new(100.0,200.0,480.0,360.0);
+    workspace.panel_mut(id).unwrap().set_rect(rect);
+    store.save_workspace_with_layout(&workspace,Some(("single",&[(id,rect)]))).unwrap();
+    assert_eq!(version(),before+1);
+    let changed = store.change_count();
+    let bytes = std::fs::read(&path).unwrap();
+    let timestamp = std::fs::metadata(&path).unwrap().modified().unwrap();
+    store.save_workspace_with_layout(&workspace,Some(("single",&[(id,rect)]))).unwrap();
+    assert_eq!(version(),before+1);
+    assert_eq!(store.change_count(),changed);
+    assert_eq!(std::fs::read(&path).unwrap(),bytes);
+    assert_eq!(std::fs::metadata(&path).unwrap().modified().unwrap(),timestamp);
+    let original = store.load_workspace().unwrap();
+    workspace.panel_mut(id).unwrap().set_title("Should roll back");
+    assert!(store.save_workspace_with_layout(&workspace,Some(("single",&[(PanelId::new(999),rect)]))).is_err());
+    assert_eq!(store.load_workspace().unwrap(),original);
+    assert_eq!(store.monitor_layout("single").unwrap(),vec![(id,rect)]);
+    assert_eq!(version(),before+1);
+}
+
+#[test]
+fn sqlite_creation_leaves_existing_json_untouched() {
+    let directory = tempfile::tempdir().unwrap();
+    let json = directory.path().join("workspace.json");
+    std::fs::write(&json,b"existing JSON is preserved").unwrap();
+    let path = directory.path().join("workspace.db");
+    let store = WorkspaceStore::open(&path).unwrap();
+    assert!(store.load_workspace().unwrap().panels().is_empty());
+    assert!(std::fs::read(path).unwrap().starts_with(b"SQLite format 3\0"));
+    assert_eq!(std::fs::read(json).unwrap(),b"existing JSON is preserved");
+}
+
+
+#[test]
+fn legacy_layout_index_is_added_once_without_changing_rows() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("workspace.db");
+    let mut store = WorkspaceStore::open_database(&path).unwrap();
+    let id = PanelId::new(1);
+    let rect = RectDip::default();
+    let workspace = Workspace::from_panels(vec![Panel::new(id, "Keep", rect)]).unwrap();
+    store.save_workspace_with_layout(&workspace, Some(("dual", &[(id, rect)]))).unwrap();
+    store.connection.execute_batch("DROP INDEX monitor_layouts_panel").unwrap();
+    drop(store);
+    let store = WorkspaceStore::open_database(&path).unwrap();
+    assert_eq!(store.load_workspace().unwrap(), workspace);
+    assert_eq!(store.monitor_layout("dual").unwrap(), vec![(id, rect)]);
+    let columns: Vec<String> = store.connection.prepare("PRAGMA index_info(monitor_layouts_panel)").unwrap()
+        .query_map([], |r| r.get(2)).unwrap().collect::<Result<_, _>>().unwrap();
+    assert_eq!(columns, vec!["panel_id"]);
+    drop(store);
+    let bytes = std::fs::read(&path).unwrap();
+    let store = WorkspaceStore::open_database(&path).unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), bytes);
+    assert_eq!(store.change_count(), 0);
+}
+
+#[test]
+fn missing_layout_index_does_not_partially_upgrade_incompatible_schema() {
+    let connection = rusqlite::Connection::open_in_memory().unwrap();
+    connection.execute_batch(super::schema::SCHEMA).unwrap();
+    connection.execute_batch("DROP INDEX monitor_layouts_panel; DROP INDEX desktop_items_pane;").unwrap();
+    assert!(super::schema::validate_and_upgrade(&connection).is_err());
+    let count: i64 = connection.query_row("SELECT count(*) FROM sqlite_schema WHERE name='monitor_layouts_panel'", [], |r| r.get(0)).unwrap();
+    assert_eq!(count, 0);
+}
+
+#[test]
+fn unchanged_appearance_and_layout_do_not_write_or_notify() {
+    use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+    let mut store = WorkspaceStore::open_in_memory().unwrap();
+    let id = PanelId::new(1);
+    let rect = RectDip::default();
+    let mut workspace = Workspace::from_panels(vec![Panel::new(id, "Test", rect)]).unwrap();
+    workspace.set_appearance_defaults(desktop_core::PanelTheme::Dark, Backdrop::Mica);
+    store.save_workspace_with_layout(&workspace, Some(("single", &[(id, rect)]))).unwrap();
+    let changes = store.change_count();
+    let count = Arc::new(AtomicUsize::new(0));
+    let notified = count.clone();
+    store.set_change_callback(move || { notified.fetch_add(1, Ordering::Relaxed); });
+    for _ in 0..10 {
+        store.save_workspace_with_layout(&workspace, Some(("single", &[(id, rect)]))).unwrap();
+        store.save_monitor_layout("single", &[(id, rect)]).unwrap();
+    }
+    assert_eq!(store.change_count(), changes);
+    assert_eq!(count.load(Ordering::Relaxed), 0);
+    workspace.panel_mut(id).unwrap().set_title("Changed");
+    store.save_workspace(&workspace).unwrap();
+    assert_eq!(store.change_count(), changes + 1, "only the renamed panel should change");
+    assert_eq!(count.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn deleting_panel_cascades_layouts_and_cleans_only_its_preferences() {
+    let mut store = WorkspaceStore::open_in_memory().unwrap();
+    let id = PanelId::new(1);
+    let rect = RectDip::default();
+    let mut panel = Panel::new(id, "Folder", rect);
+    panel.set_folder(Some(std::path::PathBuf::from("C:/Example")));
+    store.save_workspace(&Workspace::from_panels(vec![panel]).unwrap()).unwrap();
+    for topology in ["single", "dual"] {
+        store.save_monitor_layout(topology, &[(id, rect)]).unwrap();
+    }
+    for key in ["panel_desktop_list:1", "panel_folder_columns:1", "panel_folder_visible_columns:1", "panel_folder_columns:11"] {
+        store.save_preference(key, "keep until removed").unwrap();
+    }
+    store.save_workspace(&Workspace::new()).unwrap();
+    for topology in ["single", "dual"] {
+        assert!(store.monitor_layout(topology).unwrap().is_empty());
+    }
+    for key in ["panel_desktop_list:1", "panel_folder_columns:1", "panel_folder_visible_columns:1", "panel_folder_sort:1"] {
+        assert_eq!(store.preference(key).unwrap(), None);
+    }
+    assert_eq!(store.preference("panel_folder_columns:11").unwrap().as_deref(), Some("keep until removed"));
+    assert_eq!(store.connection.query_row("SELECT count(*) FROM panel_folder_settings", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
+}
+
+
+#[test]
+fn failed_commit_does_not_advance_backup_revision() {
+    let mut store = WorkspaceStore::open_in_memory().unwrap();
+    let id = PanelId::new(1);
+    let rect = RectDip::default();
+    let mut workspace = Workspace::from_panels(vec![Panel::new(id, "Original", rect)]).unwrap();
+    store.save_workspace(&workspace).unwrap();
+    let before = store.change_count();
+    workspace.panel_mut(id).unwrap().set_title("Rolled back");
+    assert!(store.save_workspace_with_layout(&workspace, Some(("test", &[(PanelId::new(999), rect)]))).is_err());
+    assert_eq!(store.change_count(), before);
+    workspace.panel_mut(id).unwrap().set_title("Original");
+    store.save_workspace(&workspace).unwrap();
+    assert_eq!(store.change_count(), before, "a later no-op must not count rolled-back changes");
+    workspace.panel_mut(id).unwrap().set_title("Committed");
+    store.save_workspace(&workspace).unwrap();
+    assert_eq!(store.change_count(), before + 1);
+}
+
+#[test]
+fn metadata_batch_commits_once_and_rolls_back_as_a_unit() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("workspace.db");
+    let store = WorkspaceStore::open(&path).unwrap();
+    let observer = rusqlite::Connection::open(&path).unwrap();
+    let version = || observer.query_row("PRAGMA data_version", [], |r| r.get::<_, u64>(0)).unwrap();
+    let before = version();
+    store.save_metadata_preferences(&[("a", "one"), ("b", "two"), ("c", "three")]).unwrap();
+    assert_eq!(version(), before + 1);
+    let changes = store.change_count();
+    store.save_metadata_preferences(&[("a", "one"), ("b", "two")]).unwrap();
+    assert_eq!(version(), before + 1);
+    assert_eq!(store.change_count(), changes);
+    store.connection.execute_batch("CREATE TEMP TRIGGER reject_b BEFORE UPDATE ON metadata WHEN NEW.key='b' BEGIN SELECT RAISE(ABORT,'test failure'); END;").unwrap();
+    assert!(store.save_metadata_preferences(&[("a", "changed"), ("b", "changed")]).is_err());
+    assert_eq!(store.preference("a").unwrap().as_deref(), Some("one"));
+    assert_eq!(store.change_count(), changes);
+    assert_eq!(version(), before + 1);
+    assert!(store.save_metadata_preferences(&[("a", "changed"), ("language", "en-US")]).is_err());
+    assert_eq!(store.preference("a").unwrap().as_deref(), Some("one"));
+}
+
+#[test]
+fn tab_selection_changes_only_tab_metadata_and_rejects_stale_selection() {
+    let mut store = WorkspaceStore::open_in_memory().unwrap();
+    let one = PanelId::new(1);
+    let two = PanelId::new(2);
+    let mut workspace = Workspace::from_panels(vec![Panel::new(one, "One", RectDip::default()), Panel::new(two, "Two", RectDip::default())]).unwrap();
+    workspace.set_tab_groups(vec![desktop_core::PaneTabs { members: vec![one, two], active: one }]).unwrap();
+    store.save_workspace(&workspace).unwrap();
+    store.connection.execute_batch("CREATE TEMP TRIGGER no_panel_update BEFORE UPDATE ON panels BEGIN SELECT RAISE(ABORT,'unexpected panel update'); END;").unwrap();
+    let before = store.change_count();
+    store.save_active_tab(one, two).unwrap();
+    assert_eq!(store.change_count(), before + 1);
+    assert_eq!(store.load_workspace().unwrap().tab_groups()[0].active, two);
+    store.save_active_tab(two, two).unwrap();
+    assert_eq!(store.change_count(), before + 1);
+    assert!(store.save_active_tab(one, two).is_err());
+    assert!(store.save_active_tab(two, PanelId::new(999)).is_err());
+    assert_eq!(store.change_count(), before + 1);
+    store.save_active_tab(two, one).unwrap();
+    assert_eq!(store.load_workspace().unwrap(), workspace);
 }

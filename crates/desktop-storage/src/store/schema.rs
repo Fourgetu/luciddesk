@@ -15,6 +15,7 @@ pub(super) fn validate_and_upgrade(connection: &Connection) -> Result<(), StoreE
             .to_ascii_lowercase()
     };
     let mut folder_upgrade = None;
+    let mut layout_index = None;
     for (name, expected) in definitions {
         let actual: Option<String> = connection
             .query_row(
@@ -28,6 +29,10 @@ pub(super) fn validate_and_upgrade(connection: &Connection) -> Result<(), StoreE
         if actual.as_deref() == Some(normalized_expected.as_str()) {
             continue;
         }
+        if name == "monitor_layouts_panel" && actual.is_none() {
+            layout_index = Some(expected);
+            continue;
+        }
         if name == "panel_folder_settings"
             && actual.as_deref() == Some(normalized_expected
                 .replace("sort_columnbetween0and3", "sort_columnbetween0and2").as_str())
@@ -39,8 +44,8 @@ pub(super) fn validate_and_upgrade(connection: &Connection) -> Result<(), StoreE
             )));
         }
     }
-    // Upgrade only the known three-column constraint, after validating every
-    // table. Keep existing mappings and sort settings in the same transaction.
+    // Apply known upgrades only after validating every table and index.
+    // Keep existing mappings and sort settings in the same transaction.
     if let Some(create) = folder_upgrade {
         transaction.execute_batch(
             "ALTER TABLE panel_folder_settings RENAME TO panel_folder_settings_before_size;",
@@ -52,12 +57,15 @@ pub(super) fn validate_and_upgrade(connection: &Connection) -> Result<(), StoreE
              DROP TABLE panel_folder_settings_before_size;"
         )?;
     }
+    if let Some(create) = layout_index {
+        transaction.execute_batch(&create)?;
+    }
     transaction.commit()?;
     Ok(())
 }
 
 // Development schema: unrelated older structures remain unsupported. The known
-// folder size-sort constraint is upgraded above without resetting user data.
+// folder size-sort constraint and layout index are upgraded without resetting data.
 pub(super) const SCHEMA: &str = "
 CREATE TABLE metadata (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL);
 CREATE TABLE panels (
@@ -97,6 +105,7 @@ CREATE TABLE monitor_layouts (
     x REAL NOT NULL, y REAL NOT NULL, width REAL NOT NULL CHECK(width>0), height REAL NOT NULL CHECK(height>0),
     PRIMARY KEY(topology,panel_id)
 );
+CREATE INDEX monitor_layouts_panel ON monitor_layouts(panel_id);
 ";
 
 pub(super) fn parse_sort(raw: &str) -> Result<(i64, &str), StoreError> {

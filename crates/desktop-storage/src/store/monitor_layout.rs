@@ -12,33 +12,11 @@ impl WorkspaceStore {
         topology: &str,
         layout: &[(PanelId, RectDip)],
     ) -> Result<(), StoreError> {
-        let old = self.monitor_layout(topology)?;
-        if old.len() == layout.len() && old.iter().all(|entry| layout.contains(entry)) {
-            return Ok(());
-        }
+        let previous = self.raw_change_count();
         let tx = self.connection.transaction()?;
-        let live: std::collections::HashSet<_> = layout.iter().map(|(id, _)| *id).collect();
-        if live.len() != layout.len() {
-            return Err(StoreError::InvalidData("duplicate monitor panel id".into()));
-        }
-        for (id, _) in old {
-            if !live.contains(&id) {
-                tx.execute(
-                    "DELETE FROM monitor_layouts WHERE topology=?1 AND panel_id=?2",
-                    params![topology, id.get()],
-                )?;
-            }
-        }
-        for (id, r) in layout {
-            let id = i64::try_from(id.get())
-                .map_err(|_| StoreError::InvalidData("invalid panel id".into()))?;
-            tx.execute(
-                "INSERT INTO monitor_layouts VALUES (?1,?2,?3,?4,?5,?6) ON CONFLICT(topology,panel_id) DO UPDATE SET x=excluded.x,y=excluded.y,width=excluded.width,height=excluded.height WHERE (x,y,width,height) IS NOT (excluded.x,excluded.y,excluded.width,excluded.height)",
-                params![topology, id, r.x, r.y, r.width, r.height],
-            )?;
-        }
+        update(&tx, topology, layout)?;
         tx.commit()?;
-        self.emit_change();
+        self.notify_change(previous);
         Ok(())
     }
 
@@ -75,6 +53,46 @@ impl WorkspaceStore {
         })
         .collect()
     }
+}
+
+/// Shares the caller's transaction so geometry and workspace changes commit together.
+pub(super) fn update(
+    tx: &rusqlite::Transaction<'_>,
+    topology: &str,
+    layout: &[(PanelId, RectDip)],
+) -> Result<(), StoreError> {
+    let old: Vec<PanelId> = tx
+        .prepare("SELECT panel_id FROM monitor_layouts WHERE topology=?1")?
+        .query_map([topology], |row| Ok(PanelId::new(row.get(0)?)))?
+        .collect::<Result<_, _>>()?;
+    let live: std::collections::HashSet<_> = layout.iter().map(|(id, _)| *id).collect();
+    if live.len() != layout.len() {
+        return Err(StoreError::InvalidData("duplicate monitor panel id".into()));
+    }
+    for id in old {
+        if !live.contains(&id) {
+            tx.prepare_cached("DELETE FROM monitor_layouts WHERE topology=?1 AND panel_id=?2")?
+                .execute(params![topology, id.get()])?;
+        }
+    }
+    for (id, r) in layout {
+        if ![r.x, r.y, r.width, r.height]
+            .into_iter()
+            .all(f32::is_finite)
+            || r.width <= 0.0
+            || r.height <= 0.0
+        {
+            return Err(StoreError::InvalidData("invalid monitor geometry".into()));
+        }
+        let id = i64::try_from(id.get())
+            .map_err(|_| StoreError::InvalidData("invalid panel id".into()))?;
+        tx.prepare_cached(
+                "INSERT INTO monitor_layouts (topology,panel_id,x,y,width,height) VALUES (?1,?2,?3,?4,?5,?6) ON CONFLICT(topology,panel_id) DO UPDATE SET x=excluded.x,y=excluded.y,width=excluded.width,height=excluded.height WHERE (x,y,width,height) IS NOT (excluded.x,excluded.y,excluded.width,excluded.height)",
+            )?.execute(
+                params![topology, id, r.x, r.y, r.width, r.height],
+            )?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

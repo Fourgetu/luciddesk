@@ -39,7 +39,7 @@ pub(super) fn insert_desktop_items(
     transaction: &Transaction<'_>,
     items: &[DesktopItem],
 ) -> Result<(), StoreError> {
-    let mut statement = transaction.prepare("INSERT INTO desktop_items(
+    let mut statement = transaction.prepare_cached("INSERT INTO desktop_items(
                  identity_key, identity_kind, identity_value, volume_id, file_id, display_name,
                  placement_kind, monitor_id, x, y, pane_id, grid_column, grid_row
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) ON CONFLICT(identity_key) DO UPDATE SET identity_kind=excluded.identity_kind,identity_value=excluded.identity_value,volume_id=excluded.volume_id,file_id=excluded.file_id,display_name=excluded.display_name,placement_kind=excluded.placement_kind,monitor_id=excluded.monitor_id,x=excluded.x,y=excluded.y,pane_id=excluded.pane_id,grid_column=excluded.grid_column,grid_row=excluded.grid_row WHERE (identity_kind,identity_value,volume_id,file_id,display_name,placement_kind,monitor_id,x,y,pane_id,grid_column,grid_row) IS NOT (excluded.identity_kind,excluded.identity_value,excluded.volume_id,excluded.file_id,excluded.display_name,excluded.placement_kind,excluded.monitor_id,excluded.x,excluded.y,excluded.pane_id,excluded.grid_column,excluded.grid_row)")?;

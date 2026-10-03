@@ -145,3 +145,37 @@ mod tests {
         assert!(store.load_workspace().is_err());
     }
 }
+
+impl super::WorkspaceStore {
+    /// Persists only the active member of an existing tab group.
+    /// # Errors
+    /// Rejects stale selection or a target outside the saved group.
+    pub fn save_active_tab(&self, from: PanelId, to: PanelId) -> Result<(), StoreError> {
+        let previous = self.raw_change_count();
+        let tx = self.connection.unchecked_transaction()?;
+        let raw: String = tx.query_row("SELECT value FROM metadata WHERE key='pane_tabs_v1'", [], |r| r.get(0))?;
+        let invalid = || StoreError::InvalidData("saved tab group changed; reload before selecting".into());
+        let mut found = false;
+        let mut groups = Vec::new();
+        for group in raw.split(';') {
+            let (active, members) = group.split_once(':').ok_or_else(invalid)?;
+            let active = active.parse::<u64>().map_err(|_| invalid())?;
+            let ids = members.split(',').map(str::parse::<u64>).collect::<Result<Vec<_>, _>>().map_err(|_| invalid())?;
+            if ids.contains(&from.get()) {
+                if found || active != from.get() || !ids.contains(&to.get()) {
+                    return Err(invalid());
+                }
+                found = true;
+                groups.push(format!("{}:{members}", to.get()));
+            } else {
+                groups.push(group.to_owned());
+            }
+        }
+        if !found { return Err(invalid()); }
+        let value = groups.join(";");
+        tx.execute("UPDATE metadata SET value=?1 WHERE key='pane_tabs_v1' AND value IS NOT ?1", [&value])?;
+        tx.commit()?;
+        self.notify_change(previous);
+        Ok(())
+    }
+}

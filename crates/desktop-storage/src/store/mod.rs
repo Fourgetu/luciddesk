@@ -24,6 +24,7 @@ pub struct WorkspaceStore {
     connection: Connection,
     config: Option<std::cell::RefCell<config::ConfigFile>>,
     on_change: Option<Box<dyn Fn() + Send>>,
+    committed_changes: std::cell::Cell<u64>,
 }
 
 impl std::fmt::Debug for WorkspaceStore {
@@ -43,7 +44,9 @@ impl WorkspaceStore {
     }
 
     fn notify_change(&self, previous: u64) {
-        if self.change_count() != previous {
+        let changes = self.raw_change_count().saturating_sub(previous);
+        if changes != 0 {
+            self.committed_changes.set(self.committed_changes.get() + changes);
             self.emit_change();
         }
     }
@@ -78,7 +81,7 @@ impl WorkspaceStore {
     /// # Errors
     /// Returns an error if the database update fails.
     pub fn save_preference(&self, key: &str, value: &str) -> Result<(), StoreError> {
-        let previous = self.change_count();
+        let previous = self.raw_change_count();
         if config::KEYS.contains(&key)
             && let Some(config) = &self.config
         {
@@ -98,6 +101,28 @@ impl WorkspaceStore {
              WHERE metadata.value != excluded.value",
             params![key, value],
         )?;
+        self.notify_change(previous);
+        Ok(())
+    }
+
+    /// Saves database-only preferences in one transaction and sends one notification.
+    /// # Errors
+    /// Rejects TOML and structured folder-sort keys; rolls back the entire batch on error.
+    pub fn save_metadata_preferences(&self, updates: &[(&str, &str)]) -> Result<(), StoreError> {
+        if updates.iter().any(|(key, _)| config::KEYS.contains(key) || key.starts_with("panel_folder_sort:")) {
+            return Err(StoreError::InvalidData("batch requires metadata preferences".into()));
+        }
+        let previous = self.raw_change_count();
+        let transaction = self.connection.unchecked_transaction()?;
+        {
+            let mut statement = transaction.prepare_cached(
+                "INSERT INTO metadata(key,value) VALUES (?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE value IS NOT excluded.value",
+            )?;
+            for (key, value) in updates {
+                statement.execute(params![key, value])?;
+            }
+        }
+        transaction.commit()?;
         self.notify_change(previous);
         Ok(())
     }
@@ -136,6 +161,7 @@ impl WorkspaceStore {
             connection,
             config: None,
             on_change: None,
+            committed_changes: std::cell::Cell::new(0),
         })
     }
 
@@ -309,13 +335,26 @@ impl WorkspaceStore {
     /// # Errors
     /// Returns an error when serialization or commit fails.
     pub fn save_workspace(&mut self, workspace: &Workspace) -> Result<(), StoreError> {
-        let previous = self.change_count();
+        self.save_workspace_with_layout(workspace, None)
+    }
+
+    /// Saves workspace rows and optional display geometry in one SQLite transaction.
+    /// # Errors
+    /// Returns validation or database errors without committing partial layout changes.
+    pub fn save_workspace_with_layout(
+        &mut self,
+        workspace: &Workspace,
+        layout: Option<(&str, &[(PanelId, RectDip)])>,
+    ) -> Result<(), StoreError> {
+        let previous = self.raw_change_count();
         let transaction = self.connection.transaction()?;
         tabs::save(&transaction, workspace)?;
         if self.config.is_none() {
-            transaction.execute("DELETE FROM metadata WHERE key = 'appearance'", [])?;
+            if workspace.appearance().is_none() {
+                transaction.execute("DELETE FROM metadata WHERE key = 'appearance'", [])?;
+            }
             for (key, value) in workspace_preferences(workspace)? {
-                transaction.execute("INSERT INTO metadata(key,value) VALUES (?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE metadata.value IS NOT excluded.value",params![key,value])?;
+                transaction.prepare_cached("INSERT INTO metadata(key,value) VALUES (?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE metadata.value IS NOT excluded.value")?.execute(params![key,value])?;
             }
         }
         let live_items: std::collections::HashSet<_> = workspace
@@ -329,23 +368,19 @@ impl WorkspaceStore {
             .collect::<Result<_, _>>()?;
         for key in old_items {
             if !live_items.contains(&key) {
-                transaction.execute("DELETE FROM desktop_items WHERE identity_key=?1", [key])?;
+                transaction.prepare_cached("DELETE FROM desktop_items WHERE identity_key=?1")?.execute( [key])?;
             }
         }
 
         for panel in workspace.panels() {
             let key = format!("panel_desktop_list:{}", panel.id().get());
             if panel.folder().is_none() && !panel.is_search() && panel.list_view() {
-                transaction.execute("INSERT INTO metadata(key,value) VALUES (?1,'1') ON CONFLICT(key) DO UPDATE SET value='1' WHERE value != '1'", [&key])?;
+                transaction.prepare_cached("INSERT INTO metadata(key,value) VALUES (?1,'1') ON CONFLICT(key) DO UPDATE SET value='1' WHERE value != '1'")?.execute( [&key])?;
             } else {
-                transaction.execute("DELETE FROM metadata WHERE key=?1", [&key])?;
+                transaction.prepare_cached("DELETE FROM metadata WHERE key=?1")?.execute( [&key])?;
             }
             insert_panel(&transaction, panel, workspace.appearance())?;
         }
-        transaction.execute(
-            "DELETE FROM monitor_layouts WHERE panel_id NOT IN (SELECT id FROM panels)",
-            [],
-        )?;
         insert_desktop_items(&transaction, workspace.desktop_items())?;
         let live_panels: std::collections::HashSet<_> =
             workspace.panels().iter().map(|p| p.id().get()).collect();
@@ -355,10 +390,18 @@ impl WorkspaceStore {
             .collect::<Result<_, _>>()?;
         for id in old_panels {
             if !live_panels.contains(&id) {
-                transaction.execute("DELETE FROM monitor_layouts WHERE panel_id=?1", [id])?;
-                transaction.execute("DELETE FROM panels WHERE id=?1", [id])?;
-                transaction.execute("DELETE FROM metadata WHERE key=?1", [format!("panel_desktop_list:{id}")])?;
+                transaction.prepare_cached("DELETE FROM panels WHERE id=?1")?.execute( [id])?;
+                transaction.prepare_cached(
+                    "DELETE FROM metadata WHERE key IN (?1,?2,?3)",
+                )?.execute(params![
+                    format!("panel_desktop_list:{id}"),
+                    format!("panel_folder_columns:{id}"),
+                    format!("panel_folder_visible_columns:{id}"),
+                ])?;
             }
+        }
+        if let Some((topology, entries)) = layout {
+            monitor_layout::update(&transaction, topology, entries)?;
         }
         let previous_config = self.config.as_ref().map(|c| c.borrow().source.clone());
         if let Some(config) = &self.config {
@@ -405,11 +448,12 @@ fn insert_panel(
     let (backdrop_kind, opacity, color) = encode_backdrop(panel.backdrop());
     decode_backdrop(backdrop_kind, opacity, color)?;
     let rect = panel.rect();
-    transaction.execute(
+    transaction.prepare_cached(
         "INSERT INTO panels(
              id, title, x, y, width, height,
              collapsed, locked, backdrop_kind, opacity, color, theme, always_on_top, auto_hide, kind, inherit_theme, inherit_backdrop
          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17) ON CONFLICT(id) DO UPDATE SET title=excluded.title,x=excluded.x,y=excluded.y,width=excluded.width,height=excluded.height,collapsed=excluded.collapsed,locked=excluded.locked,backdrop_kind=excluded.backdrop_kind,opacity=excluded.opacity,color=excluded.color,theme=excluded.theme,always_on_top=excluded.always_on_top,auto_hide=excluded.auto_hide,kind=excluded.kind,inherit_theme=excluded.inherit_theme,inherit_backdrop=excluded.inherit_backdrop WHERE (title,x,y,width,height,collapsed,locked,backdrop_kind,opacity,color,theme,always_on_top,auto_hide,kind,inherit_theme,inherit_backdrop) IS NOT (excluded.title,excluded.x,excluded.y,excluded.width,excluded.height,excluded.collapsed,excluded.locked,excluded.backdrop_kind,excluded.opacity,excluded.color,excluded.theme,excluded.always_on_top,excluded.auto_hide,excluded.kind,excluded.inherit_theme,excluded.inherit_backdrop)",
+    )?.execute(
         params![
             id,
             panel.title(),
@@ -429,9 +473,9 @@ fn insert_panel(
         ],
     )?;
     if let Some(path) = panel.folder() {
-        transaction.execute("INSERT INTO panel_folder_settings(panel_id,path,view) VALUES (?1,?2,?3) ON CONFLICT(panel_id) DO UPDATE SET path=excluded.path,view=excluded.view WHERE path IS NOT excluded.path OR view IS NOT excluded.view",params![id,path.to_string_lossy(),if panel.list_view(){"list"}else{"icons"}])?;
+        transaction.prepare_cached("INSERT INTO panel_folder_settings(panel_id,path,view) VALUES (?1,?2,?3) ON CONFLICT(panel_id) DO UPDATE SET path=excluded.path,view=excluded.view WHERE path IS NOT excluded.path OR view IS NOT excluded.view")?.execute(params![id,path.to_string_lossy(),if panel.list_view(){"list"}else{"icons"}])?;
     } else {
-        transaction.execute("DELETE FROM panel_folder_settings WHERE panel_id=?1", [id])?;
+        transaction.prepare_cached("DELETE FROM panel_folder_settings WHERE panel_id=?1")?.execute( [id])?;
     }
     Ok(())
 }
