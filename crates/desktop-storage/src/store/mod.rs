@@ -4,6 +4,7 @@ mod config;
 #[cfg(test)]
 mod config_tests;
 mod desktop_items;
+mod monitor_layout;
 mod recovery;
 mod schema;
 mod tabs;
@@ -43,11 +44,11 @@ impl WorkspaceStore {
 
     fn notify_change(&self, previous: u64) {
         if self.change_count() != previous {
-            self.notify_restored();
+            self.emit_change();
         }
     }
 
-    fn notify_restored(&self) {
+    fn emit_change(&self) {
         if let Some(callback) = &self.on_change {
             callback();
         }
