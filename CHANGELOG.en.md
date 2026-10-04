@@ -6,6 +6,13 @@ Current version: **0.19.1**. Features and fixes by release.
 
 Exit the app before upgrading a portable installation and preserve its `data` folder. See the [portable guide](docs/portable.md) (Chinese).
 
+## Unreleased
+
+### fix
+
+- Reject missing CLI option values before they consume `--dry-run` or other options and inadvertently apply a change.
+- Unify recovery output for direct and shortcut plan submissions, retaining generated request IDs and complete replay arguments including the data directory.
+
 ## 0.19.1 · 2026-10-04
 
 ### changed

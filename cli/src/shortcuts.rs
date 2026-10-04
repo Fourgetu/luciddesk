@@ -120,7 +120,11 @@ pub(super) fn run(
     mut call: impl FnMut(&Request, Duration) -> Response,
 ) -> Response {
     let Some(operation) = &options.operation else {
-        return call(&options.request, options.timeout);
+        return if options.request.command == "plan.apply" {
+            submit(&options.request, options.timeout, &mut call)
+        } else {
+            call(&options.request, options.timeout)
+        };
     };
     let mut query = options.request.clone();
     query.request_id = luciddesk_api::request_id();
@@ -168,13 +172,33 @@ pub(super) fn run(
     let mut apply = options.request.clone();
     apply.command = "plan.apply".into();
     apply.token = Some(token.clone());
-    let mut response = call(&apply, options.timeout);
-    // Even a transport failure must leave enough information for exact recovery.
-    if response.data.is_none() {
-        response.data = Some(json!({}));
+    submit(&apply, options.timeout, &mut call)
+}
+
+// Direct and shortcut submissions share the same replay contract, even on timeout.
+fn submit(
+    request: &Request,
+    timeout: Duration,
+    call: &mut impl FnMut(&Request, Duration) -> Response,
+) -> Response {
+    let mut response = call(request, timeout);
+    let token = request.token.as_deref().expect("validated plan.apply token");
+    let mut retry_args = vec!["plan".to_owned(), "apply".into(), "--token".into(), token.into(),
+        "--request-id".into(), request.request_id.clone()];
+    let mut query_args = vec!["request".to_owned(), "get".into(), "--id".into(), request.request_id.clone()];
+    let mut common = vec!["--protocol-version".to_owned(), request.protocol_version.to_string(),
+        "--timeout-ms".into(), timeout.as_millis().to_string(), "--json".into()];
+    if let Some(directory) = &request.data_dir {
+        common.extend(["--data-dir".into(), directory.clone()]);
     }
-    response.data.as_mut().unwrap()["recovery"] =
-        json!({"plan_token":token,"request_id":apply.request_id,"command":"plan.apply"});
+    retry_args.extend(common.clone());
+    query_args.extend(common);
+    let data = response.data.get_or_insert_with(|| json!({}));
+    data["recovery"] = json!({
+        "command":"plan.apply", "plan_token":token, "request_id":request.request_id,
+        "protocol_version":request.protocol_version, "data_dir":request.data_dir,
+        "retry_args":retry_args, "query_args":query_args
+    });
     response
 }
 #[cfg(test)]
@@ -251,6 +275,45 @@ mod tests {
         let descending = parse_words(&["pane", "sort", "--id", "1", "--descending", "true"]);
         assert!(matches!(descending.operation, Some(Operation::Sort { descending: true, .. })));
         assert!(value("--descending", "yes").is_err());
+    }
+    #[test]
+    fn direct_and_shortcut_recovery_reconstruct_exact_request_with_directory() {
+        let directory = std::fs::canonicalize(std::env::current_dir().unwrap()).unwrap();
+        for shortcut in [false, true] {
+            for timed_out in [false, true] {
+                let mut options = if shortcut {
+                    parse_words(&["pane", "create", "--title", "test"])
+                } else {
+                    parse_words(&["plan", "apply", "--token", "token"])
+                };
+                options.request.data_dir = Some(directory.to_string_lossy().into_owned());
+                options.timeout = Duration::from_millis(1234);
+                let context = json!({"instance_id":"i","state_version":"1","inventory_version":"1","topology_token":"1"});
+                let mut submitted = None;
+                let response = run(&options, |request, _| {
+                    if request.command == "plan.apply" {
+                        submitted = Some(request.clone());
+                        if timed_out { return Response::failure(&request.request_id, "TIMEOUT", "injected"); }
+                        return Response::success(&request.request_id, context.clone(), json!({"commit_status":"committed"}));
+                    }
+                    Response::success(&request.request_id, context.clone(), json!({"plan_token":"token"}))
+                });
+                assert_eq!(response.exit_code(), if timed_out {8} else {0});
+                let data = response.data.unwrap();
+                if !timed_out { assert_eq!(data["commit_status"], "committed"); }
+                let recovery = &data["recovery"];
+                let parse_recovery = |field: &str| parse(recovery[field].as_array().unwrap().iter().map(|v| OsString::from(v.as_str().unwrap())).collect()).unwrap();
+                let replay = parse_recovery("retry_args");
+                assert_eq!(serde_json::to_value(&replay.request).unwrap(), serde_json::to_value(submitted.unwrap()).unwrap());
+                assert_eq!(replay.timeout, options.timeout);
+                assert!(replay.json);
+                let query = parse_recovery("query_args");
+                assert_eq!(query.request.command, "request.get");
+                assert_eq!(query.request.id.as_deref(), Some(options.request.request_id.as_str()));
+                assert_eq!(query.request.data_dir, options.request.data_dir);
+                assert_eq!(recovery["request_id"], options.request.request_id);
+            }
+        }
     }
     #[test]
     fn shortcut_preview_and_apply_use_same_context_and_preserve_recovery_after_timeout() {

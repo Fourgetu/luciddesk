@@ -9,6 +9,16 @@ struct Options {
     operation: Option<luciddesk_api::Operation>,
     dry_run: bool,
 }
+// Reject option-shaped values before they can consume safety/output flags.
+// Use JSON input for literal strings beginning with -- or equal to -h.
+fn option_value(args: &mut impl Iterator<Item = OsString>, flag: &str) -> Result<String, String> {
+    let value = args.next().ok_or_else(|| format!("{flag} requires a value"))?
+        .into_string().map_err(|_| "invalid Unicode option")?;
+    if value.starts_with("--") || value == "-h" {
+        return Err(format!("{flag} requires a value before {value}; use --input JSON for literal option-like strings"));
+    }
+    Ok(value)
+}
 fn parse(args: Vec<OsString>) -> Result<Options, String> {
     let mut request = Request {
         protocol_version: VERSION,
@@ -43,22 +53,14 @@ fn parse(args: Vec<OsString>) -> Result<Options, String> {
                 fields.insert("release_items".into(), serde_json::json!(true));
             }
             flag if shortcuts::flag(flag).is_some() => {
-                let value = args
-                    .next()
-                    .ok_or_else(|| format!("{flag} requires a value"))?
-                    .into_string()
-                    .map_err(|_| "invalid Unicode option")?;
+                let value = option_value(&mut args, &flag)?;
                 let (key, value) = shortcuts::value(flag, &value)?;
                 fields.insert(key, value);
             }
             "--unassigned" => request.unassigned = true,
             "--id" | "--pane" | "--data-dir" | "--timeout-ms" | "--protocol-version"
             | "--input" | "--token" | "--request-id" => {
-                let value = args
-                    .next()
-                    .ok_or_else(|| format!("{arg} requires a value"))?
-                    .into_string()
-                    .map_err(|_| "invalid Unicode option")?;
+                let value = option_value(&mut args, &arg)?;
                 match arg.as_str() {
                     "--input" => input = Some(value),
                     "--token" => request.token = Some(value),
@@ -271,6 +273,28 @@ mod tests {
             assert!(offline_output(&args(command)).is_none());
             assert!(parse(args(command)).is_err());
         }
+    }
+    #[test]
+    fn missing_values_cannot_consume_safety_or_output_options() {
+        for command in [
+            "pane create --title --dry-run --json",
+            "pane create --title test --request-id --dry-run",
+            "pane update --id --dry-run --title test",
+            "search query --id 1 --query --json",
+            "plan apply --token --request-id fixed",
+            "pane fit --id 1 --icon-columns --dry-run",
+        ] {
+            assert!(parse(args(command)).is_err(), "{command}");
+        }
+    }
+    #[test]
+    fn value_guard_preserves_negative_numbers_stdin_and_json_literals() {
+        let options = parse(args("pane geometry --id 1 --monitor m --x -10 --y -20 --width 300 --height 200 --dry-run")).unwrap();
+        assert!(options.dry_run);
+        assert!(matches!(options.operation, Some(luciddesk_api::Operation::Geometry { x, y, .. }) if x == -10.0 && y == -20.0));
+        assert_eq!(option_value(&mut args("-").into_iter(), "--input").unwrap(), "-");
+        let operation = shortcuts::operation("pane.create", None, None, Default::default(), Some(br#"{"title":"--dry-run"}"#.to_vec())).unwrap();
+        assert!(matches!(operation, luciddesk_api::Operation::Create {title,..} if title == "--dry-run"));
     }
     #[test]
     fn options_validate_commands_and_filters() {

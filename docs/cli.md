@@ -102,6 +102,18 @@ $requestId = [guid]::NewGuid().ToString()
 
 ## 超时和重试
 
+直接 `plan apply` 和快捷修改命令均返回 `data.recovery`，包括原 token、request ID、数据目录、协议版本，以及 `query_args` / `retry_args` 参数数组。省略 `--request-id` 时，自动生成的 ID 也会保留。非 JSON 错误输出会打印同一份恢复信息。先查询回执；需要重试时，将完整参数数组传给程序，不拼接成 shell 命令字符串，也不要遗漏原来的 `--data-dir`。
+
+```powershell
+$lookupArgs = [string[]]$result.data.recovery.query_args
+& $cli @lookupArgs
+# 确定需要原请求重试时：
+$retryArgs = [string[]]$result.data.recovery.retry_args
+& $cli @retryArgs
+```
+
+需要值的参数若遇到 `--...` 或 `-h` 会报告缺值，避免将 `--dry-run` 等选项当成标题。字面标题、搜索词等若采用这种形式，请通过 JSON `--input` 提供；负数坐标和 stdin 标记 `-` 仍可正常使用。
+
 应用时建议显式提供唯一 `--request-id` 并保留 token。相同请求 ID 和相同内容重试，返回原结果，不重复写入；同 ID 不同内容返回 `REQUEST_ID_REUSED`。同一 token 使用另一请求 ID 再应用返回 `PLAN_ALREADY_APPLIED`。
 
 完成结果只在当前主程序内存保留最多 10 分钟，回执总量最多 1024 条；未完成异步回执不会被淘汰，全部槽位占用时新提交在写入前返回 BUSY；不为请求回执增加数据库 I/O。超时先 `request get --id ...`，或在保留期限内使用完全相同的应用请求重试。`RESULT_UNKNOWN` 不代表未执行：主程序重启或结果被淘汰后，应检查工作区再决定下一步，不自动生成新 ID 重做。

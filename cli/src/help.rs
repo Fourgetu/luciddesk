@@ -27,7 +27,7 @@ fn document(topic: &str) -> Result<Value, String> {
     let command = topic.replace('.', " ");
     let arguments = match topic {
         "plan.preview" => " --input FILE|-",
-        "plan.apply" => " --token TOKEN --request-id ID",
+        "plan.apply" => " --token TOKEN [--request-id ID]",
         "pane.get" | "folder.get" | "search.get" | "request.get" => " --id ID",
         "item.list" => " [--pane ID | --unassigned]",
         _ if mutation => " [--input FILE|-] [FIELD_FLAGS] [--dry-run]",
