@@ -20,6 +20,10 @@ MSIX 桌面 DLL 的 `LocalState\DesktopComponent` 缓存由独立部署逻辑管
 
 ## 全局配置
 
+纯色默认值由 `luciddesk_core::Backdrop::solid_default` 统一提供：深色 `#202020`、浅色 `#F3F3F3`、不透明度 0.85。新配置创建时省略 `appearance.solid.color`，在界面首次选择纯色时按当前主题解析并保存实际颜色；显式保存的颜色始终保留，不能将旧默认值误当作未选择状态。恢复默认会按当前主题重新取值，普通主题切换不改写自定义颜色。手动把缺少颜色的配置改为 `material="solid"` 时，存储层仅能根据配置主题确定默认值（`light` 用浅色，`dark/system` 用深色），不查询 Windows 系统主题。
+
+CLI 设置接口显式写入缺省的纯色值时也要保存这个选择；之后相同值的重复写入仍不产生 I/O。相关回归位于 `config_tests::initial_solid_color_is_unselected_and_explicit_colors_are_preserved` 与设置侧的 `solid_defaults_follow_theme_until_a_color_is_saved`。
+
 根级字段 `language` 保存界面语言：`system`、`zh-CN`、`zh-TW`、`en-US`、`ja-JP`、`ko-KR`、`de-DE`、`ru-RU`。旧配置缺少该字段时默认 `system`，无效值报错；通过设置页修改后立即生效；手动编辑配置文件后使用“重新加载配置”或重启应用。
 
 `config.toml` 是下表所列偏好的持久化来源，界面和外部编辑器共用同一文件。字体、备份策略等未映射到 TOML 的偏好仍保存在数据库 `metadata`，不能将所有全局设置都视为 TOML 字段。示例见 [config.example.toml](../config.example.toml)。

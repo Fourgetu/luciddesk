@@ -2,9 +2,25 @@
 
 [简体中文](CHANGELOG.md) · English
 
-Current version: **0.20.0**. Features and fixes by release.
+Current version: **0.20.1**. Features and fixes by release.
 
 Exit the app before upgrading a portable installation and preserve its `data` folder. See the [portable guide](docs/portable.md) (Chinese).
+
+## 0.20.1 · 2026-10-04
+
+### fix
+
+- Unify default solid backgrounds to `#202020` for dark themes and `#F3F3F3` for light themes at 85% opacity. Initial selection, material previews and reset share the same defaults; existing custom colors remain unchanged.
+- Point Skill installation prompts directly to the complete packaged directory for the Agent to copy and verify, avoiding PowerShell encoding conversion and truncated JSON output during installation.
+
+### docs
+
+- Add progressively disclosed workflows for grouping icons, fitting and snapping panes, sorting, tabs, folders, search, settings and startup, including discovery, preview, apply and verification steps.
+
+### build
+
+- Validate versions, complete Skill files and hashes in standalone EXE/MSI packaging; add checks for missing references, MSI installation paths and release assets.
+- Keep CI output limited to EXE, regular ZIP, portable ZIP and their SHA256 files. MSI remains available through local packaging, with manifest checks that do not install anything.
 
 ## 0.20.0 · 2026-10-04
 
