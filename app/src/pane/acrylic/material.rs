@@ -74,7 +74,7 @@ impl Acrylic {
         match result {
             Ok(brush) => Ok(brush),
             Err(error) => {
-                crate::diagnostics::render_trace(format_args!(
+                crate::pane::render_debug::render_trace(format_args!(
                     "hwnd={:?} opaque fallback: {error}",
                     self.hwnd
                 ));

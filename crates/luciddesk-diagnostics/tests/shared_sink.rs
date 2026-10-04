@@ -27,7 +27,7 @@ fn host_and_library_share_filter_destination_metadata_and_cache() {
         .join()
         .unwrap();
     let text = std::fs::read_to_string(&path).unwrap();
-    assert!(text.contains("version=test-version build=test-revision"));
+    assert!(text.contains("version=\"test-version\" build=\"test-revision\""));
     assert!(text.contains("callback event"));
     assert!(text.contains("startup failure"));
     assert_eq!(REPORTS.load(Ordering::Relaxed), 1);

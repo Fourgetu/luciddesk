@@ -1,10 +1,14 @@
 //! Lazy, bounded diagnostic files. No heartbeat or database writes.
+mod format;
+mod trace;
+pub use trace::TraceFile;
+
 use std::{
     collections::VecDeque,
     io::{self, Write},
     path::{Path, PathBuf},
     sync::{Mutex, OnceLock},
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant},
 };
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
@@ -129,19 +133,14 @@ impl Logger {
             self.dropped = self.dropped.saturating_add(1);
             return Ok(());
         }
-        let time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis();
-        // Debug escaping keeps each entry one line even for multiline or hostile messages.
-        let entry = format!(
-            "timestamp_unix_ms={time} level={} pid={} version={} build={} component={component:?} suppressed={suppressed} rate_limited={} message={message:?}\n",
-            level.label(),
-            std::process::id(),
-            self.version,
-            self.build,
-            self.dropped
-        );
+        let mut entry = format::entry(level, &component, &message, &self.version, &self.build);
+        if suppressed != 0 {
+            entry.push_str(&format!(" suppressed={suppressed}"));
+        }
+        if self.dropped != 0 {
+            entry.push_str(&format!(" rate_limited={}", self.dropped));
+        }
+        entry.push('\n');
         let parent = self.path.parent().unwrap();
         std::fs::create_dir_all(parent)?;
         let length = match std::fs::metadata(&self.path) {
@@ -151,7 +150,7 @@ impl Logger {
         };
         let header = self
             .header
-            .get_or_insert_with(|| format!("# {:?}\n", (self.report)()));
+            .get_or_insert_with(|| format::header(&(self.report)()));
         let rotate =
             length + entry.len() as u64 + if length == 0 { header.len() as u64 } else { 0 }
                 > 256 * 1024;
@@ -252,7 +251,14 @@ pub fn log(level: Level, component: &str, message: &str) {
     if let Err(error) = try_log(level, component, message) {
         let _ = writeln!(
             std::io::stderr().lock(),
-            "ERROR diagnostics: {error}; component={component:?} original={message:?}"
+            "{}",
+            format::entry(
+                Level::Error,
+                "diagnostics",
+                &format!("{error}; component={component:?} original={message:?}"),
+                "unknown",
+                "unknown"
+            )
         );
     }
 }

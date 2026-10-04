@@ -224,7 +224,7 @@ pub(super) fn execute(context: Context<'_>, c: &Control) -> bool {
                 .store
                 .save_preference("log_level", &level.label().to_ascii_lowercase());
             match result {
-                Ok(()) => crate::diagnostics::set_level(*level),
+                Ok(()) => luciddesk_diagnostics::set_level(*level),
                 Err(error) => window::error(&error.to_string()),
             }
             invalidate = true;
@@ -245,10 +245,10 @@ pub(super) fn execute(context: Context<'_>, c: &Control) -> bool {
         Action::CopyDiagnostics => {
             let report = format!(
                 "{}Desktop: {}\r\n",
-                crate::diagnostics::report(),
+                crate::system_info::report(),
                 desktop_status
             );
-            match crate::diagnostics::copy(hwnd as isize, &report) {
+            match crate::clipboard::copy(hwnd as isize, &report) {
                 Ok(()) => {
                     *context.diagnostics_copied = true;
                     invalidate = true;

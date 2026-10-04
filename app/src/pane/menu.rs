@@ -327,7 +327,7 @@ fn show_level(
                                     fade = Some(animation);
                                 }
                                 Err(error) => {
-                                    crate::diagnostics::log(crate::diagnostics::Level::Warn, "pane.menu", &format!("Menu animation unavailable: {error}"));
+                                    luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Warn, "pane.menu", &format!("Menu animation unavailable: {error}"));
                                     fade_finished = true;
                                 }
                             }
@@ -339,7 +339,7 @@ fn show_level(
                             match fade.as_ref().unwrap().sample(started.elapsed()) {
                                 Ok(opacity) => opacity,
                                 Err(error) => {
-                                    crate::diagnostics::log(crate::diagnostics::Level::Error, "pane.menu", &format!("Menu animation failed: {error}"));
+                                    luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Error, "pane.menu", &format!("Menu animation failed: {error}"));
                                     fade_finished = true;
                                     1.0
                                 }
@@ -428,7 +428,7 @@ fn show_level(
                             let opacity = match fade.as_ref().unwrap().sample(started.elapsed()) {
                                 Ok(opacity) => opacity,
                                 Err(error) => {
-                                    crate::diagnostics::log(crate::diagnostics::Level::Error, "pane.menu", &format!("Menu animation failed: {error}"));
+                                    luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Error, "pane.menu", &format!("Menu animation failed: {error}"));
                                     1.0
                                 }
                             };

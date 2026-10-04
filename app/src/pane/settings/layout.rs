@@ -8,7 +8,7 @@ pub(super) fn general(s: &mut Scene, width: f32, status: crate::startup::Status,
         Action::Startup(!status.registered()));
     form.button(crate::i18n::text("startup-manage"), crate::i18n::text("startup-manage-description"),
         crate::i18n::text("startup-open-settings"), Action::ProjectLink("ms-settings:startupapps"));
-    use crate::diagnostics::{Level, level};
+    use luciddesk_diagnostics::{Level, level};
     form.section(crate::i18n::text("diagnostics-section"));
     form.choices(crate::i18n::text("diagnostics-level"), crate::i18n::text("diagnostics-level-description"),
         [Level::Error, Level::Warn, Level::Info, Level::Debug, Level::Trace].into_iter()
@@ -553,7 +553,7 @@ pub(super) fn about_updates(s: &mut Scene, width: f32, status: &str, copied: boo
         ],
     );
     form.section(crate::i18n::text("ui-status"));
-    form.info(crate::i18n::text("ui-operating-system"), &format!("{} · {}", crate::diagnostics::system().summary(), std::env::consts::ARCH));
+    form.info(crate::i18n::text("ui-operating-system"), &format!("{} · {}", crate::system_info::system().summary(), std::env::consts::ARCH));
     form.actions(
         crate::i18n::text("ui-desktop-connection"),
         status,

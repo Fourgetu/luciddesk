@@ -235,16 +235,16 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
     let control = control::start(&state)?;
     // Settings are opened only by an explicit user action, including offline startup.
     windows_window::run();
-    crate::diagnostics::render_trace(format_args!("shutdown: stop supervisor"));
+    crate::pane::render_debug::render_trace(format_args!("shutdown: stop supervisor"));
     drop(control);
     drop(supervisor);
     drop(tray);
     // DETACH restores Explorer's Shell view and can synchronously call back
     // into our windows. Do not hold PaneApp's RefMut across native teardown.
     let session = state.borrow_mut().session.take();
-    crate::diagnostics::render_trace(format_args!("shutdown: detach Explorer begin"));
+    crate::pane::render_debug::render_trace(format_args!("shutdown: detach Explorer begin"));
     drop(session);
-    crate::diagnostics::render_trace(format_args!("shutdown: detach Explorer returned"));
+    crate::pane::render_debug::render_trace(format_args!("shutdown: detach Explorer returned"));
     Ok(())
 }
 
@@ -282,7 +282,7 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, _path: &Path) -> Result<(), 
                 notify.set(true);
                 work_ready.notify();
                 if luciddesk_diagnostics::enabled(luciddesk_diagnostics::Level::Debug) {
-                    crate::diagnostics::log(crate::diagnostics::Level::Debug, "pane.hybrid", &format!("icon-notify event={:x}", lparam));
+                    luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Debug, "pane.hybrid", &format!("icon-notify event={:x}", lparam));
                 }
                 icon_notify
                     .borrow_mut()
@@ -291,7 +291,7 @@ pub(super) fn connect(state: &Rc<RefCell<PaneApp>>, _path: &Path) -> Result<(), 
             } else if message == RECYCLE_CHANGE_MESSAGE {
                 work_ready.notify();
                 if luciddesk_diagnostics::enabled(luciddesk_diagnostics::Level::Debug) {
-                    crate::diagnostics::log(crate::diagnostics::Level::Debug, "pane.hybrid", &format!("recycle-notify event={:x}", lparam));
+                    luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Debug, "pane.hybrid", &format!("recycle-notify event={:x}", lparam));
                 }
                 icon_notify
                     .borrow_mut()
@@ -491,10 +491,10 @@ pub(super) fn register_drop(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result
                 if let Err(error) = save_placement(&mut s) {
                     s.workspace = old;
                     let restored = sync(&mut s);
-                    crate::diagnostics::render_trace(format_args!(
+                    crate::pane::render_debug::render_trace(format_args!(
                         "collection rollback: save={error}; restored={}", restored.is_ok()
                     ));
-                    crate::diagnostics::log(crate::diagnostics::Level::Error, "pane.hybrid", &format!("Desktop collection rejected: {error}"));
+                    luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Error, "pane.hybrid", &format!("Desktop collection rejected: {error}"));
                 }
                 refresh_views(&mut s);
             })
@@ -627,7 +627,7 @@ pub(super) fn sync(s: &mut PaneApp) -> Result<(), String> {
             Ok(true) => {
                 h.membership_pending = None;
                 h.audit.invalidate();
-                crate::diagnostics::render_trace(format_args!(
+                crate::pane::render_debug::render_trace(format_args!(
                     "membership confirmed elapsed={}ms", started.elapsed().as_millis()
                 ));
             }
@@ -654,7 +654,7 @@ pub(super) fn sync(s: &mut PaneApp) -> Result<(), String> {
         h.hook.submit_hidden(names)?;
         h.audit.membership_changed();
         h.membership_pending = Some(Instant::now());
-        crate::diagnostics::render_trace(format_args!("membership submitted count={}", names.len()));
+        crate::pane::render_debug::render_trace(format_args!("membership submitted count={}", names.len()));
         Ok(())
     }) {
         // A failed immediate rollback may meet the same busy Explorer. Ensure
@@ -762,7 +762,7 @@ pub(super) fn tick(s: &mut PaneApp) -> Result<(), String> {
         Err(error) => {
             let h = s.session.as_mut().unwrap();
             if h.last_failure.as_ref() != Some(&error) {
-                crate::diagnostics::log(crate::diagnostics::Level::Warn, "pane.hybrid", &format!("Hybrid synchronization deferred: {error}"));
+                luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Warn, "pane.hybrid", &format!("Hybrid synchronization deferred: {error}"));
                 h.last_failure = Some(error);
             }
             // Sorting can invalidate the inventory while it is being read. Leave

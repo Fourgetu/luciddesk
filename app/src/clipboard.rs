@@ -1,4 +1,4 @@
-//! Copies a diagnostic report to the Windows clipboard.
+//! Copies Unicode text to the Windows clipboard.
 pub fn copy(owner: isize, text: &str) -> windows::core::Result<()> {
     use windows::Win32::{
         Foundation::*,

@@ -58,7 +58,7 @@ pub fn show_many(
 }
 
 fn record_presenter(host: isize) {
-    if crate::diagnostics::level() < crate::diagnostics::Level::Debug {
+    if luciddesk_diagnostics::level() < luciddesk_diagnostics::Level::Debug {
         return;
     }
     use windows_sys::Win32::UI::WindowsAndMessaging::GetPropW;
@@ -84,8 +84,8 @@ fn record_presenter(host: isize) {
             GetPropW(host as _, key.as_ptr()) as usize as u32
         })
     };
-    crate::diagnostics::log(
-        crate::diagnostics::Level::Debug,
+    luciddesk_diagnostics::log(
+        luciddesk_diagnostics::Level::Debug,
         "shell.menu",
         &format!(
             "host={host:x} presenter={mode} initialization_hresult=0x{error:08X} prepare_called={} prepare_hresult=0x{:08X} ready_called={} ready={} show={}",

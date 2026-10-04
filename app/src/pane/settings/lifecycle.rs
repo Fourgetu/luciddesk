@@ -10,7 +10,7 @@ pub(super) fn report_close_errors(errors: Vec<String>, report: impl FnOnce(&str)
     let message = errors.join("\n");
     let pending = message.clone();
     if !window::defer_action(move || report(&pending)) {
-        crate::diagnostics::log(crate::diagnostics::Level::Error, "settings.close", &message);
+        luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Error, "settings.close", &message);
     }
 }
 

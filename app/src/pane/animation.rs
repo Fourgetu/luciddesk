@@ -128,7 +128,7 @@ impl Motion {
         match result {
             Ok(value) => value,
             Err(error) => {
-                crate::diagnostics::log(crate::diagnostics::Level::Warn, "pane.animation", &format!("Animation unavailable: {error}"));
+                luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Warn, "pane.animation", &format!("Animation unavailable: {error}"));
                 *self = Self::settled(to, now);
                 to
             }
@@ -169,7 +169,7 @@ impl Fold {
         duration: Duration,
     ) -> Self {
         let progress = Motion::transition(0.0, 1.0, started, duration).unwrap_or_else(|error| {
-            crate::diagnostics::log(crate::diagnostics::Level::Warn, "pane.animation", &format!("Fold animation unavailable: {error}"));
+            luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Warn, "pane.animation", &format!("Fold animation unavailable: {error}"));
             Motion::settled(1.0, started)
         });
         Self {

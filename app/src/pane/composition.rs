@@ -45,7 +45,7 @@ impl Surface {
         if self.opacity.get() == opacity {
             return Ok(());
         }
-        crate::diagnostics::render_trace(format_args!("hwnd={:?} opacity {} -> {opacity}", self.hwnd, self.opacity.get()));
+        crate::pane::render_debug::render_trace(format_args!("hwnd={:?} opacity {} -> {opacity}", self.hwnd, self.opacity.get()));
         if let Some(layer) = &self.layer {
             canvas_result(layer.opacity(opacity))?;
         }
@@ -92,7 +92,7 @@ impl Surface {
     }
 
     pub fn new_pane(hwnd: HWND) -> Result<Self> {
-        let mut surface = if crate::diagnostics::shared_pane_tree() {
+        let mut surface = if crate::pane::render_debug::shared_pane_tree() {
             Self::create(hwnd, 1.0, gpu_device()?, true)?
         } else {
             Self::new(hwnd)?
@@ -150,7 +150,7 @@ impl Surface {
                     Ok(material) => Some(material),
                     Err(error) => {
                         luciddesk_diagnostics::emit!(luciddesk_diagnostics::Level::Warn, "pane.composition", "Shared composition unavailable: {error}");
-                        crate::diagnostics::render_trace(format_args!("hwnd={hwnd:?} shared composition failed: {error}"));
+                        crate::pane::render_debug::render_trace(format_args!("hwnd={hwnd:?} shared composition failed: {error}"));
                         None
                     }
                 }
@@ -162,7 +162,7 @@ impl Surface {
             } else {
                 Some(create_layer(hwnd, &dxgi, &native_swap, initial_opacity)?)
             };
-            crate::diagnostics::render_trace(format_args!("hwnd={hwnd:?} surface created shared={} opacity={initial_opacity}", acrylic.is_some()));
+            crate::pane::render_debug::render_trace(format_args!("hwnd={hwnd:?} surface created shared={} opacity={initial_opacity}", acrylic.is_some()));
             let margins = MARGINS {
                 cxLeftWidth: -1,
                 cxRightWidth: -1,
@@ -240,7 +240,7 @@ impl Surface {
             let _ = acrylic.visible(false);
         }
         self.material = Some(material);
-        crate::diagnostics::render_trace(format_args!("hwnd={hwnd:?} material={material:?} dark={} composition_material={}", self.dark, self.native));
+        crate::pane::render_debug::render_trace(format_args!("hwnd={hwnd:?} material={material:?} dark={} composition_material={}", self.dark, self.native));
     }
 
     fn resize(&mut self, width: u32, height: u32) -> Result<()> {
@@ -323,7 +323,7 @@ impl Surface {
         // for every pane's vertical blank; a full queue retries the latest state.
         let result = unsafe { self.present.Present(0, DXGI_PRESENT_DO_NOT_WAIT) };
         if result.is_err() {
-            crate::diagnostics::render_trace(format_args!("hwnd={:?} Present={result:?}", self.hwnd));
+            crate::pane::render_debug::render_trace(format_args!("hwnd={:?} Present={result:?}", self.hwnd));
         }
         if result == DXGI_ERROR_WAS_STILL_DRAWING {
             self.schedule_retry(16)?;
@@ -404,7 +404,7 @@ unsafe extern "system" fn retry_present(
 }
 impl Drop for Surface {
     fn drop(&mut self) {
-        crate::diagnostics::render_trace(format_args!("hwnd={:?} surface dropped", self.hwnd));
+        crate::pane::render_debug::render_trace(format_args!("hwnd={:?} surface dropped", self.hwnd));
         unsafe {
             windows_sys::Win32::UI::WindowsAndMessaging::KillTimer(self.hwnd.0, PRESENT_RETRY);
         }
@@ -450,13 +450,13 @@ pub(super) mod animation_tests {
             .create().unwrap();
         let hwnd = HWND(window.hwnd().cast());
         let mut surface = Surface::new_pane(hwnd).unwrap();
-        assert_eq!(surface.layer.is_none(), crate::diagnostics::shared_pane_tree());
+        assert_eq!(surface.layer.is_none(), crate::pane::render_debug::shared_pane_tree());
         surface.material(hwnd, Backdrop::Acrylic);
         surface.present(240, 160, &[255; 240 * 160 * 4]).unwrap();
         assert!(surface.native);
         surface.opacity(0.75).unwrap();
         assert_eq!(surface.acrylic.as_ref().unwrap().opacity_value().unwrap(), 0.75);
-        if crate::diagnostics::shared_pane_tree() {
+        if crate::pane::render_debug::shared_pane_tree() {
             surface.acrylic.as_ref().unwrap().assert_content_visible();
         }
     }

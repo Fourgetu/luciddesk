@@ -143,9 +143,22 @@ cargo test -p luciddesk-storage --lib --locked --offline -- --test-threads=1
 
 桌面组件首次连接失败或运行中断开时，显示独立警告，不自动打开设置。每次连续故障只提示一次、记录一次；后台重试不会重复写日志。连接恢复产生 INFO 事件（默认过滤），再次断开时开始新一轮提示。
 
-日志由 `app/src/diagnostics/` 模块统一管理，位于数据目录 `logs/diagnostic.log`；轮转文件为 `diagnostic.previous.log`。默认仅记录 ERROR，连接恢复为 INFO，默认不写入。在“设置 → 常规 → 诊断日志”选择 ERROR/WARN/INFO/DEBUG/TRACE，立即生效并保存到 `config.toml` 的 `[diagnostics].level`；缺省为 error，非法配置拒绝加载。启动、重载配置及恢复备份时同步级别，环境变量不再覆盖设置。被级别过滤的消息不会创建目录或访问日志文件。
+日志由 `crates/luciddesk-diagnostics` 独立库统一管理，位于数据目录 `logs/diagnostic.log`；轮转文件为 `diagnostic.previous.log`。默认仅记录 ERROR，连接恢复为 INFO，默认不写入。在“设置 → 常规 → 诊断日志”选择 ERROR/WARN/INFO/DEBUG/TRACE，立即生效并保存到 `config.toml` 的 `[diagnostics].level`；缺省为 error，非法配置拒绝加载。启动、重载配置及恢复备份时同步级别，环境变量不再覆盖设置。被级别过滤的消息不会创建目录或访问日志文件。
 
 日志包含 Unix 毫秒时间、级别、进程号、组件、错误详情及重复抑制数量；文件头包含版本、构建和系统信息。单条消息最多 16384 个字符，多行消息转义为单行；单文件 256 KiB，保留一份轮转文件。同组件、级别和消息在 30 秒内不重复落盘，后续再次出现时记录此前抑制数量；内存最多保留 64 个抑制条目，无后台刷新任务。桌面组件弹窗仍按连续故障去重。
+
+日志采用 `luciddesk-log-v1` 单行格式：
+
+```text
+# format=luciddesk-log-v1 report="LucidDesk ...\r\nWindows ..."
+timestamp_unix_ms=1791072000000 level=ERROR component="desktop.connection" message="系统找不到指定的文件。" pid=1234 version="0.19.1" build="example"
+```
+
+组件与消息前置；所有文本字段均转义，版本、构建和组件各最多 128 字符，报告与消息各最多 16384 字符。`suppressed`、`rate_limited` 仅在非零时追加。旧文件不会为了格式升级重写，追加的新记录使用新格式，轮转后文件头更新；读取工具需兼容旧记录。stderr 兜底也使用同一格式。
+
+渲染支持日志通过诊断库 `TraceFile` 写入，使用相同格式并附加 `elapsed_ms`。它仍由 `LUCIDDESK_RENDER_TRACE` 显式启用，独立于普通日志等级，每次启动覆盖指定文件，最多 4000 条事件（另有一行报告头）；默认不创建、不写入。没有后台刷新。
+
+源码出口检查：主程序和库的普通运行日志均接入诊断库；渲染支持日志也由库负责写入。剩余测试、基准和独立诊断示例的控制台输出、构建脚本 Cargo 指令、CLI 协议输出保留，不作为应用文件日志。QuickLook 的管道写入属于 IPC，不是日志。
 
 日志写入失败在 stderr 报告，桌面组件提示也会说明失败。诊断不修改数据库或 TOML；首次连接成功、正常查询和 INFO 恢复事件默认不创建日志。此前的 desktop-component.log 不自动删除。
 
@@ -153,6 +166,8 @@ cargo test -p luciddesk-storage --lib --locked --offline -- --test-threads=1
 #### 默认 ERROR 级别的交互测量
 
 2026-10-04 在独立测试进程、临时数据目录运行真实面板和设置窗口，测量 35005 ms、677 次采样、68 次自动收起/展开，并投递鼠标移动与滚轮消息。测量前主动写入一条 ERROR 标记，日志由始至终为 298 字节，文件内容和修改时间均不变。
+
+统一日志格式后复测：35025 ms、684 次采样、69 次自动收起/展开，日志保持 320 字节，文件内容和修改时间均不变。
 
 这是隔离 UI 路径的文件测量，不包含完整 Explorer 会话、真实错误场景或系统级磁盘跟踪。真实 ERROR 仍会写入；同一错误的限流策略也不意味着错误期间完全不写日志。
 
@@ -177,7 +192,7 @@ cargo test -p luciddesk --bin luciddesk --locked --offline normal_interactions_d
 
 ### 独立诊断接口
 
-`crates/luciddesk-diagnostics` 为独立、仅依赖标准库的日志核心，无数据库、GUI 或 Shell 依赖。主程序在确定数据目录后调用 `initialize`，注入应用版本、构建标识和惰性报告函数；初始化本身不创建日志文件。`app/src/diagnostics` 保留系统报告、剪贴板、显式渲染实验及桌面连接提示等应用适配。
+`crates/luciddesk-diagnostics` 为独立、仅依赖标准库的日志核心，无数据库、GUI 或 Shell 依赖。主程序在确定数据目录后调用 `initialize`，注入应用版本、构建标识和惰性报告函数；初始化本身不创建日志文件。应用直接调用日志库；`app/src/system_info.rs` 提供系统报告，`app/src/clipboard.rs` 负责复制文本，`app/src/pane/render/debug.rs` 保留显式启用的渲染实验并调用诊断库的 `TraceFile`，桌面连接日志及提示归属 `pane/runtime.rs`。
 
 主程序和静态链接的底层库共用同一个进程级日志实例。底层库不得自行初始化或选择文件路径；通过 `luciddesk_diagnostics::emit!(Level::Trace, "shell.menu", "...", ...)` 发出事件，等级过滤发生在格式化参数求值之前。设置中的等级修改即时作用于所有接入模块。未初始化时仅允许 Error 走不抛出 panic 的 stderr 兜底，不自行创建默认目录。不同进程/DLL 不假定共享 Rust 静态变量；Explorer 内当前没有正式运行的直接日志出口，其测试输出不接入应用文件日志。
 

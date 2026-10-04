@@ -15,7 +15,7 @@ const ICON_GLYPHS: &[u32] = &[
 pub(super) fn icon_family() -> &'static str {
     static ICON_FAMILY: std::sync::LazyLock<&'static str> = std::sync::LazyLock::new(|| {
         let family = choose_icon_family(|name| icon_coverage(name).unwrap_or(false));
-        crate::diagnostics::render_trace(format_args!("icon_font={family}"));
+        crate::pane::render_debug::render_trace(format_args!("icon_font={family}"));
         family
     });
     *ICON_FAMILY

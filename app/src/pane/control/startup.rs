@@ -78,7 +78,7 @@ impl Control {
             }
         };
         if let Some(error) = &self.error {
-            crate::diagnostics::log(crate::diagnostics::Level::Error, "cli.startup", error);
+            luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Error, "cli.startup", error);
         }
         pending.id.map(|id| {
             let data = result(

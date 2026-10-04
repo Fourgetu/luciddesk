@@ -282,7 +282,7 @@ impl Controller {
                 if self.report_error {
                     Some(error)
                 } else {
-                    crate::diagnostics::log(crate::diagnostics::Level::Error, "startup", &format!("Startup status: {error}"));
+                    luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Error, "startup", &format!("Startup status: {error}"));
                     None
                 }
             }

@@ -48,7 +48,7 @@ impl HostBackdrop {
     pub(super) fn enable(hwnd: HWND) -> Result<Self> {
         match unsafe { set_attribute(hwnd, DWMWA_USE_HOSTBACKDROPBRUSH, &1i32) } {
             Ok(()) => {
-                crate::diagnostics::render_trace(format_args!("hwnd={hwnd:?} host_backdrop=public"));
+                crate::pane::render_debug::render_trace(format_args!("hwnd={hwnd:?} host_backdrop=public"));
                 Ok(Self { hwnd, legacy: None })
             }
             Err(error) if matches!(error.code(), E_INVALIDARG | E_NOTIMPL) => {
@@ -64,7 +64,7 @@ impl HostBackdrop {
             legacy: Some(set),
         };
         if policy.set_legacy(5) {
-            crate::diagnostics::render_trace(format_args!("hwnd={hwnd:?} host_backdrop=legacy_accent"));
+            crate::pane::render_debug::render_trace(format_args!("hwnd={hwnd:?} host_backdrop=legacy_accent"));
             // ACCENT_ENABLE_HOSTBACKDROP
             Ok(policy)
         } else {

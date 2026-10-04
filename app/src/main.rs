@@ -2,7 +2,8 @@
 
 mod app_icon;
 mod desktop_component;
-mod diagnostics;
+mod clipboard;
+mod system_info;
 mod i18n;
 mod pane;
 mod tray;
@@ -42,17 +43,26 @@ fn main() -> Result<(), String> {
     let Some(_instance) = Instance::acquire(!startup)? else {
         return Ok(());
     };
-    let _ = diagnostics::system();
-    diagnostics::render_trace(format_args!("startup"));
+    let _ = system_info::system();
+    pane::render_debug::render_trace(format_args!("startup"));
     let path = database_path()?;
-    diagnostics::init_logging(&path);
+    init_logging(&path);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     pane::run(&path, title).inspect_err(|error| {
-        diagnostics::log(diagnostics::Level::Error, "app.startup", error);
+        luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Error, "app.startup", error);
         luciddesk_window::show_error(error);
     })
+}
+
+fn init_logging(database: &std::path::Path) {
+    luciddesk_diagnostics::initialize(
+        database,
+        env!("CARGO_PKG_VERSION"),
+        env!("LUCIDDESK_BUILD_REVISION"),
+        system_info::report,
+    );
 }
 
 struct Instance(windows_sys::Win32::Foundation::HANDLE);

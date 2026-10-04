@@ -51,7 +51,7 @@ pub(super) fn runtime(state: &PaneApp) -> serde_json::Value {
         "title_emoji_color":title_emoji::color(),
         "compact_menu":compact_menu::enabled(),
         "header_divider":header_divider::enabled(),
-        "diagnostics_level":format!("{:?}", crate::diagnostics::level()).to_ascii_lowercase(),
+        "diagnostics_level":format!("{:?}", luciddesk_diagnostics::level()).to_ascii_lowercase(),
         "search_visible":state.views.iter().any(|v| state.workspace.panel(v.id).is_some_and(Panel::is_search)),
         "preview_enabled":peek::settings().enabled,
         "search_shortcut_status":search_hotkey::status(),

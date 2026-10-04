@@ -140,7 +140,7 @@ fn reconcile_committed(
         ("save", saved),
     ] {
         if let Err(error) = result {
-            crate::diagnostics::log(crate::diagnostics::Level::Error, "pane.hybrid.rename_transaction", &format!("Rename committed; {stage} recovery pending: {error}"));
+            luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Error, "pane.hybrid.rename_transaction", &format!("Rename committed; {stage} recovery pending: {error}"));
         }
     }
 }

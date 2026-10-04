@@ -20,12 +20,12 @@ pub(super) struct GraphicsLifetime;
 
 impl Drop for GraphicsLifetime {
     fn drop(&mut self) {
-        crate::diagnostics::render_trace(format_args!("shutdown: graphics caches begin"));
+        crate::pane::render_debug::render_trace(format_args!("shutdown: graphics caches begin"));
         super::acrylic::clear_thread_cache();
         luciddesk_graphics::clear_thread_cache();
         let device = DEVICE.with(|slot| slot.borrow_mut().take());
         drop(device);
-        crate::diagnostics::render_trace(format_args!("shutdown: graphics caches released"));
+        crate::pane::render_debug::render_trace(format_args!("shutdown: graphics caches released"));
     }
 }
 
@@ -46,7 +46,7 @@ pub fn gpu_device() -> Result<windows_canvas::GpuDevice> {
             canvas_result(windows_canvas::GpuDevice::new_warp())?
         } else {
             canvas_result(windows_canvas::GpuDevice::new().or_else(|error| {
-                crate::diagnostics::log(crate::diagnostics::Level::Warn, "pane.native_graphics", &format!("Hardware rendering unavailable, using WARP: {error}"));
+                luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Warn, "pane.native_graphics", &format!("Hardware rendering unavailable, using WARP: {error}"));
                 windows_canvas::GpuDevice::new_warp()
             }))?
         };

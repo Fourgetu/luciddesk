@@ -49,6 +49,20 @@ impl ConnectionNotice {
     }
 }
 
+fn desktop_connection_log(database: &std::path::Path, error: Option<&str>) -> std::io::Result<PathBuf> {
+    crate::init_logging(database);
+    luciddesk_diagnostics::try_log(
+        if error.is_some() {
+            luciddesk_diagnostics::Level::Error
+        } else {
+            luciddesk_diagnostics::Level::Info
+        },
+        "desktop.connection",
+        error.unwrap_or("connection recovered"),
+    )?;
+    luciddesk_diagnostics::path().ok_or_else(|| std::io::Error::other("diagnostics not initialized"))
+}
+
 fn notify_connection(state: &Rc<RefCell<PaneApp>>) {
     let (path, error, generation) = {
         let mut s = state.borrow_mut();
@@ -56,9 +70,9 @@ fn notify_connection(state: &Rc<RefCell<PaneApp>>) {
         if !runtime.notice.transition(runtime.desktop_error.is_some()) { return; }
         (runtime.path.clone(), runtime.desktop_error.clone(), runtime.notice.generation)
     };
-    let logged = crate::diagnostics::desktop_connection_log(&path, error.as_deref());
+    let logged = desktop_connection_log(&path, error.as_deref());
     let Some(error) = error else {
-        if let Err(error) = logged { crate::diagnostics::log(crate::diagnostics::Level::Error, "desktop.connection", &format!("Desktop connection log: {error}")); }
+        if let Err(error) = logged { luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Error, "desktop.connection", &format!("Desktop connection log: {error}")); }
         return;
     };
     let log = match logged {
@@ -396,7 +410,7 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
                                     // A font preference read failure must not swallow the
                                     // notification after the active language has changed.
                                     if let Err(error) = fonts::load(&s.store) {
-                                        crate::diagnostics::log(crate::diagnostics::Level::Error, "pane.runtime", &format!("Language font refresh: {error}"));
+                                        luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Error, "pane.runtime", &format!("Language font refresh: {error}"));
                                     }
                                 }
                                 changed
@@ -414,7 +428,7 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
                             }
                             Ok(())
                         })();
-                        if let Err(error) = result { crate::diagnostics::log(crate::diagnostics::Level::Error, "pane.runtime", &format!("Language refresh: {error}")); }
+                        if let Err(error) = result { luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Error, "pane.runtime", &format!("Language refresh: {error}")); }
                     }
 
                     let folder_renames = {
@@ -431,14 +445,14 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
                         let folder_renames = folder::poll(&mut s);
                         if s.session.is_some() {
                             if let Err(error) = hybrid::tick(&mut s) {
-                                crate::diagnostics::log(crate::diagnostics::Level::Error, "pane.runtime", &format!("Desktop synchronization: {error}"));
+                                luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Error, "pane.runtime", &format!("Desktop synchronization: {error}"));
                             }
                         }
                         folder_renames
                     };
                     for (id, identity) in folder_renames {
                         if let Err(message) = events::handle(&state, id, Event::RenameItem(identity)) {
-                            crate::diagnostics::log(crate::diagnostics::Level::Error, "pane.runtime", &format!("New folder item rename: {message}"));
+                            luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Error, "pane.runtime", &format!("New folder item rename: {message}"));
                         }
                     }
                     let previous = {
@@ -447,7 +461,7 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
                     };
                     let managed = state.borrow().runtime.is_some();
                     if managed && let Err(error) = maintain(&state, false) {
-                        crate::diagnostics::log(crate::diagnostics::Level::Error, "pane.runtime", &format!("Runtime recovery: {error}"));
+                        luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Error, "pane.runtime", &format!("Runtime recovery: {error}"));
                     }
                     let s = state.borrow();
                     let search_present = s.views.iter()

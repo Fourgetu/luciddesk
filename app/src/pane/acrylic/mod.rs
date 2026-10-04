@@ -116,7 +116,7 @@ impl Acrylic {
             // Rendering tests control policy explicitly, independent of the
             // test machine's current transparency or battery-saver setting.
             effects_override: std::cell::Cell::new(Some(true)),
-            disable_backdrop: crate::diagnostics::disable_backdrop(),
+            disable_backdrop: crate::pane::render_debug::disable_backdrop(),
             material_brush: RefCell::new(None),
             host_backdrop: RefCell::new(None),
             #[cfg(test)]

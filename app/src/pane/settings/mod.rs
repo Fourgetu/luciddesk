@@ -50,7 +50,7 @@ use windows_sys::Win32::UI::Controls::WM_MOUSELEAVE;
 #[derive(Clone)]
 enum Action {
     Startup(bool),
-    LogLevel(crate::diagnostics::Level),
+    LogLevel(luciddesk_diagnostics::Level),
     Font(String),
     FontSearch,
     FolderDefaults(folder::Defaults),

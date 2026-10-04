@@ -307,7 +307,7 @@ fn start_at(
                                     if response.data.as_ref().is_some_and(|data| data["scope"] == "settings") {
                                         let result = settings::present(&state);
                                         if let Err(error) = &result {
-                                            crate::diagnostics::log(crate::diagnostics::Level::Error, "cli.settings", error);
+                                            luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Error, "cli.settings", error);
                                         }
                                         snapshot.plans.presentation_result(&mut response, result);
                                     } else {
@@ -315,7 +315,7 @@ fn start_at(
                                         let geometry_result = geometry::present(&state, before);
                                         let result = view_result.and(geometry_result);
                                         if let Err(error) = &result {
-                                            crate::diagnostics::log(crate::diagnostics::Level::Error, "cli.presentation", error);
+                                            luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Error, "cli.presentation", error);
                                         }
                                         snapshot.plans.presentation_result(&mut response, result);
                                     }

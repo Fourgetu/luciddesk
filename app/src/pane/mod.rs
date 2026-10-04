@@ -39,6 +39,7 @@ mod show_hotkey;
 
 // Rendering and shared visual resources.
 mod render;
+pub(crate) use render::debug as render_debug;
 mod assets;
 mod image_pool;
 mod scaled_icons;
@@ -342,7 +343,7 @@ fn create_view(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result<(), String> 
                         unsafe { windows_sys::Win32::UI::WindowsAndMessaging::SendMessageW(hwnd, visibility::RESTORE, 0, 0); }
                     }
                 }
-                crate::diagnostics::log(crate::diagnostics::Level::Error, "pane.mod", &format!("{error}"));
+                luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Error, "pane.mod", &format!("{error}"));
                 window::error(&error);
                 false
             }
@@ -567,6 +568,6 @@ mod tests;
 
 fn load_log_level(store: &WorkspaceStore) -> Result<(), String> {
     let value = store.preference("log_level").map_err(|e| e.to_string())?.unwrap_or_else(|| "error".into());
-    crate::diagnostics::set_level(crate::diagnostics::Level::parse(&value));
+    luciddesk_diagnostics::set_level(luciddesk_diagnostics::Level::parse(&value));
     Ok(())
 }

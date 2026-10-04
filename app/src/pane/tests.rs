@@ -1977,8 +1977,8 @@ fn normal_interactions_do_not_write_diagnostic_log() {
     let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("workspace.db");
-    crate::diagnostics::init_logging(&path);
-    crate::diagnostics::set_level(crate::diagnostics::Level::Error);
+    crate::init_logging(&path);
+    luciddesk_diagnostics::set_level(luciddesk_diagnostics::Level::Error);
     let mut app = test_state();
     app.store = WorkspaceStore::open(&path).unwrap();
     app.store.save_workspace(&app.workspace).unwrap();
@@ -1987,7 +1987,7 @@ fn normal_interactions_do_not_write_diagnostic_log() {
     create_view(&state,id).unwrap();
     handle(&state,id,Event::ToggleAutoHide).unwrap();
     settings::show(&state,id).unwrap();
-    crate::diagnostics::log(crate::diagnostics::Level::Error,"measurement","baseline marker before measurement");
+    luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Error,"measurement","baseline marker before measurement");
     let log = dir.path().join("logs/diagnostic.log");
     let bytes = std::fs::read(&log).unwrap();
     let modified = std::fs::metadata(&log).unwrap().modified().unwrap();

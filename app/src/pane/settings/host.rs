@@ -570,7 +570,7 @@ pub(in crate::pane) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result
                         })();
                         if let Err(e) = result {
                             surface = None;
-                            crate::diagnostics::log(crate::diagnostics::Level::Error, "pane.settings", &format!("Settings paint: {e}"));
+                            luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Error, "pane.settings", &format!("Settings paint: {e}"));
                         }
                     }
                 }

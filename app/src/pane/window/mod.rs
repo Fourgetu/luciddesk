@@ -106,7 +106,7 @@ pub(super) fn raise_among_peers(hwnd: HWND) {
                 previous == after
             };
             if !in_place {
-                crate::diagnostics::render_trace(format_args!("hwnd={hwnd:?} raise among peers after={after:?} previous={previous:?}"));
+                crate::pane::render_debug::render_trace(format_args!("hwnd={hwnd:?} raise among peers after={after:?} previous={previous:?}"));
                 SetWindowPos(hwnd, after, 0, 0, 0, 0,
                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
             }
@@ -171,12 +171,12 @@ pub(super) unsafe extern "system" fn borderless_proc(
     _data: usize,
 ) -> isize {
     if matches!(message, WM_ACTIVATE | WM_NCACTIVATE | WM_LBUTTONDOWN | WM_NCLBUTTONDOWN | WM_ENTERSIZEMOVE | WM_EXITSIZEMOVE) {
-        crate::diagnostics::render_trace(format_args!("hwnd={hwnd:?} message={message:#x} wparam={wparam:#x}"));
+        crate::pane::render_debug::render_trace(format_args!("hwnd={hwnd:?} message={message:#x} wparam={wparam:#x}"));
     }
     if message == WM_WINDOWPOSCHANGING && lparam != 0 {
         let flags = unsafe { (*(lparam as *const WINDOWPOS)).flags };
         if flags & (SWP_SHOWWINDOW | SWP_HIDEWINDOW) != 0 {
-            crate::diagnostics::render_trace(format_args!("hwnd={hwnd:?} windowpos flags={flags:#x} visible={}", unsafe { IsWindowVisible(hwnd) }));
+            crate::pane::render_debug::render_trace(format_args!("hwnd={hwnd:?} windowpos flags={flags:#x} visible={}", unsafe { IsWindowVisible(hwnd) }));
         }
     }
     if message == RUN_POSTED_ACTION {
@@ -234,7 +234,7 @@ pub(super) unsafe extern "system" fn borderless_proc(
                     // its existing position instead of repeatedly sinking it.
                     position.flags |= SWP_NOZORDER;
                 }
-                crate::diagnostics::render_trace(format_args!("hwnd={hwnd:?} desktop windowpos after={:?} flags={:#x}", position.hwndInsertAfter, position.flags));
+                crate::pane::render_debug::render_trace(format_args!("hwnd={hwnd:?} desktop windowpos after={:?} flags={:#x}", position.hwndInsertAfter, position.flags));
             }
         }
         if message == WM_NCDESTROY {
@@ -740,7 +740,7 @@ where
                         })();
                         if let Err(error) = result {
                             if !paint_error {
-                                crate::diagnostics::log(crate::diagnostics::Level::Error, "pane.window", &format!("面板渲染失败：{error}"));
+                                luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Error, "pane.window", &format!("面板渲染失败：{error}"));
                             }
                             paint_error = true;
                             {

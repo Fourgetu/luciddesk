@@ -36,7 +36,8 @@ app/
     ├── main.rs                # 参数、单实例、身份和数据目录
     ├── desktop_component.rs   # 包标记与桌面 DLL 部署
     ├── app_icon.rs            # 应用图标资源访问
-    ├── diagnostics.rs         # 诊断入口
+    ├── system_info.rs         # 系统信息与诊断报告
+    ├── clipboard.rs           # Unicode 文本剪贴板
     ├── i18n.rs                # 语言解析、资源与格式化
     ├── tray.rs                # 托盘入口与生命周期
     ├── window_visibility.rs   # 窗口可见性辅助

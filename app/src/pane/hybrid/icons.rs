@@ -270,7 +270,7 @@ fn refresh_changed_icons(s: &mut PaneApp) -> bool {
                     });
                 }
                 Err(error) => {
-                    crate::diagnostics::log(crate::diagnostics::Level::Error, "pane.hybrid.icons", &format!("Icon refresh worker failed: {error}"));
+                    luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Error, "pane.hybrid.icons", &format!("Icon refresh worker failed: {error}"));
                     retry_refresh(h, recovery);
                 }
             }
@@ -364,7 +364,7 @@ fn load_icon_batch(requests: Vec<ShellIdentity>, size: i32) -> Vec<(String, asse
                         .filter_map(|identity| match assets::load(&identity, size) {
                             Ok(image) => Some((identity.persistent_key(), image)),
                             Err(error) => {
-                                crate::diagnostics::log(crate::diagnostics::Level::Error, "pane.hybrid.icons", &format!("Pane icon load failed: {error}"));
+                                luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Error, "pane.hybrid.icons", &format!("Pane icon load failed: {error}"));
                                 None
                             }
                         })

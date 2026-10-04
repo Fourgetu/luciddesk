@@ -1408,7 +1408,7 @@ pub(super) fn create(
                         match Drawing::new(hwnd) {
                             Ok(value) => drawing = Some(value),
                             Err(error) => {
-                                crate::diagnostics::log(crate::diagnostics::Level::Error, "pane.search.mod", &format!("{error}"));
+                                luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Error, "pane.search.mod", &format!("{error}"));
                                 return Some(0);
                             }
                         }
@@ -1418,7 +1418,7 @@ pub(super) fn create(
                             .paint(hwnd, &model.borrow(), &state)
                             .and_then(|()| drawing.surface.end_frame().map_err(|e| e.to_string()))
                         {
-                            crate::diagnostics::log(crate::diagnostics::Level::Error, "pane.search.mod", &format!("{error}"));
+                            luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Error, "pane.search.mod", &format!("{error}"));
                         }
                     }
                     return Some(0);
