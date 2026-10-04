@@ -19,6 +19,11 @@ use std::{
     time::{Duration, Instant},
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
+pub(super) fn enabled(store: &WorkspaceStore) -> bool {
+    // Preferences are cached in memory; requests do not read configuration files.
+    store.preference("cli_enabled").is_ok_and(|value| value.as_deref() != Some("false"))
+}
+
 const READY: u32 = WM_APP + 0x4c3;
 struct Pending {
     request: Request,
@@ -50,6 +55,9 @@ impl Snapshot {
     }
     fn respond(&mut self, state: &mut PaneApp, request: &Request) -> Response {
         let fail = |code, message| Response::failure(&request.request_id, code, message);
+        if !enabled(&state.store) {
+            return fail("ACCESS_DENIED", "CLI control is disabled. Enable it in Settings > General > Agent & CLI.");
+        }
         if request.protocol_version != luciddesk_api::VERSION {
             return fail("PROTOCOL_MISMATCH", "supported protocol version is 1");
         }
@@ -341,6 +349,30 @@ fn start_at(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn disabled_cli_rejects_all_requests_without_reading_or_mutating_workspace() {
+        let mut state = super::super::tests::test_state();
+        let mut snapshot = Snapshot::new();
+        assert!(enabled(&state.store));
+        state.store.save_preference("cli_enabled", "false").unwrap();
+        let changes = state.store.change_count();
+        for command in luciddesk_api::COMMANDS {
+            let request: Request = serde_json::from_value(json!({
+                "protocol_version":1, "request_id":"disabled", "command":command
+            })).unwrap();
+            let response = snapshot.respond(&mut state, &request);
+            assert_eq!(response.error.unwrap().code, "ACCESS_DENIED", "{command}");
+        }
+        assert_eq!(state.store.change_count(), changes);
+        assert!(snapshot.seen.is_none());
+        assert_eq!(snapshot.version, 0);
+        state.store.save_preference("cli_enabled", "true").unwrap();
+        let request: Request = serde_json::from_value(json!({
+            "protocol_version":1, "request_id":"enabled", "command":"status"
+        })).unwrap();
+        assert!(snapshot.respond(&mut state, &request).ok);
+    }
+
     #[test]
     fn queries_preserve_database_and_config_and_reject_invalid_requests() {
         let dir = tempfile::tempdir().unwrap();

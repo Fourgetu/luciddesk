@@ -50,6 +50,8 @@ use windows_sys::Win32::UI::Controls::WM_MOUSELEAVE;
 #[derive(Clone)]
 enum Action {
     Startup(bool),
+    CliEnabled(bool),
+    CopySkillPrompt,
     LogLevel(luciddesk_diagnostics::Level),
     Font(String),
     FontSearch,
@@ -130,6 +132,7 @@ use super::animation::Motion as ToggleMotion;
 mod painter;
 use painter::Painter;
 
+mod agent;
 mod actions;
 mod host;
 pub(super) use host::show;

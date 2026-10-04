@@ -302,3 +302,9 @@ luciddesk-cli pane snap --id 7 --target 4 --side bottom --align start --dry-run 
 `pane sort --id ID --dry-run --json` 按显示名称自然升序预览，例如“文件2”在“文件10”之前；`--descending true` 为降序。对应操作为 `{"op":"pane.sort","pane_id":"ID","descending":false}`，方向默认为升序。同名项使用稳定身份消除歧义。
 
 排序只改变指定普通面板内部顺序，不改变文件、面板位置或其他标签页，不扫描文件元数据，也不启用持续自动排序。锁定面板须先解锁；文件夹使用 folder.update 排序。复用 preview/apply、冲突保护及回执，顺序已满足时不写数据库。任意自定义顺序继续使用 `item reorder --pane ID --input FILE`，文件为完整当前成员 ID 数组；查询后按 placement.row/column 核对顺序。
+
+## CLI 控制开关与 Skill 安装
+
+“设置 → 常规 → Agent 与 CLI”提供“允许 CLI 控制”开关，默认开启，保存为 `config.toml` 的 `[cli].enabled`。关闭后立即拒绝所有在线查询、计划预览和提交，返回 `ACCESS_DENIED`（退出码 9）；管道保留以返回明确的禁用提示。已经提交的操作不会因此回滚。重新启用请使用设置界面；离线 `help`、`schema`、`skill show` 不受影响。
+
+同一区域可复制 SKILL 安装提示词，包含当前安装位置对应的 CLI 路径。将提示词发送给 Agent，由其通过离线 `skill show` 获取技能内容并安装到自身支持的位置。复制按钮不自动安装、不修改桌面。

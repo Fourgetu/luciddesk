@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) fn general(s: &mut Scene, width: f32, status: crate::startup::Status, busy: bool) {
+pub(super) fn general(s: &mut Scene, width: f32, status: crate::startup::Status, busy: bool, cli_enabled: bool, skill_prompt_copied: bool) {
     let mut form = SettingsForm::new(s, width, crate::i18n::text("startup-description"));
     form.section(crate::i18n::text("startup-section"));
     form.toggle_enabled(crate::i18n::text("startup-title"), if busy { crate::i18n::text("startup-working") } else { status.message() }, status.registered(),
@@ -8,6 +8,11 @@ pub(super) fn general(s: &mut Scene, width: f32, status: crate::startup::Status,
         Action::Startup(!status.registered()));
     form.button(crate::i18n::text("startup-manage"), crate::i18n::text("startup-manage-description"),
         crate::i18n::text("startup-open-settings"), Action::ProjectLink("ms-settings:startupapps"));
+    form.section(crate::i18n::text("agent-section"));
+    form.toggle(crate::i18n::text("agent-cli-title"), crate::i18n::text("agent-cli-description"),
+        cli_enabled, Action::CliEnabled(!cli_enabled));
+    form.button(crate::i18n::text("agent-skill-title"), crate::i18n::text("agent-skill-description"),
+        crate::i18n::text(if skill_prompt_copied { "ui-copied" } else { "ui-copy" }), Action::CopySkillPrompt);
     use luciddesk_diagnostics::{Level, level};
     form.section(crate::i18n::text("diagnostics-section"));
     form.choices(crate::i18n::text("diagnostics-level"), crate::i18n::text("diagnostics-level-description"),

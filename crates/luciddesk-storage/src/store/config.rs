@@ -10,6 +10,7 @@ use toml_edit::{DocumentMut, Item, value};
 pub(super) const KEYS: &[&str] = &[
     "language",
     "log_level",
+    "cli_enabled",
     "appearance",
     "pane_options",
     "solid_style",
@@ -25,6 +26,9 @@ pub(super) const KEYS: &[&str] = &[
 const DEFAULTS: &str = r##"# LucidDesk global settings. Reload from Settings after editing.
 config_version = 1
 language = "system"
+
+[cli]
+enabled = true
 
 [diagnostics]
 level = "error"
@@ -189,7 +193,8 @@ pub(super) fn decode(doc: &DocumentMut) -> Result<BTreeMap<String, String>, Stor
     }
     // A scalar in place of a table is an error, not a missing configuration section.
     for path in [
-        &["diagnostics"][..],
+        &["cli"][..],
+        &["diagnostics"],
         &["appearance"],
         &["panel_defaults"],
         &["search"],
@@ -233,6 +238,7 @@ pub(super) fn decode(doc: &DocumentMut) -> Result<BTreeMap<String, String>, Stor
     let log_level = s(&["diagnostics", "level"])?;
     validate_log_level(&log_level)?;
     map.insert("log_level".into(), log_level);
+    map.insert("cli_enabled".into(), b(&["cli", "enabled"])?.to_string());
     for material in ["acrylic", "mica"] {
         let strength = n(&["appearance", material, "strength"], 100.0)?;
         if strength.fract() != 0.0 {
@@ -330,6 +336,7 @@ fn update(doc: &mut DocumentMut, key: &str, raw: &str) -> Result<(), StoreError>
     let f = |s: &str| s.parse::<f64>().map_err(io);
     let flag = |s: &str| s.parse::<bool>().map_err(io);
     match key {
+        "cli_enabled" => { set(doc, &["cli", "enabled"], value(flag(raw)?)); }
         "log_level" => { validate_log_level(raw)?; set(doc, &["diagnostics", "level"], value(raw)); }
         "language" => { validate_language(raw)?; set(doc, &["language"], value(raw)); }
         "pane_options" if (3..=5).contains(&parts.len()) || parts.len() == 6 => {

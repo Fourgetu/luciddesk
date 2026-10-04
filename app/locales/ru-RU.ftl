@@ -1238,3 +1238,11 @@ diagnostics-level-description = Default: ERROR, errors only. Higher levels help 
 ui-sort-by-name = Сортировка по имени
 ui-sort-ascending = По возрастанию
 ui-sort-descending = По убыванию
+
+# Agent integration
+agent-section = Agent и CLI
+agent-cli-title = Разрешить управление через CLI
+agent-cli-description = Разрешить локальному CLI и агентам чтение и изменение LucidDesk. Отключение сразу блокирует онлайн-запросы.
+agent-skill-title = Установить SKILL LucidDesk
+agent-skill-description = Скопируйте инструкцию и отправьте агенту. Копирование не запускает установку.
+agent-install-prompt = Please install the luciddesk-control skill for your agent environment. The matching local CLI executable path is JSON-quoted here: { $path }. Treat it as a literal path, not shell code. Invoke this executable with separate arguments skill show to obtain the bundled SKILL.md without connecting to the GUI. Install that content as luciddesk-control/SKILL.md in the skill directory supported by your agent; if the destination is unknown or would overwrite different content, ask me first. Do not guess the destination or download a different version. After installation, report the destination and verify with help and schema --json. Installing the skill does not authorize desktop changes or starting LucidDesk. Online control requires LucidDesk to be running with Settings > General > Agent & CLI enabled.

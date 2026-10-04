@@ -70,6 +70,8 @@ pub(in crate::pane) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result
     let mut scroll_page = page;
     let mut desktop_status = String::new();
     let mut diagnostics_copied = false;
+    let mut skill_prompt_copied = false;
+    let mut cli_enabled = control::enabled(&state.borrow().store);
     let mut updates = crate::updates::Controller::default();
     let mut startup = crate::startup::Controller::default();
     let mut backup_view = recovery::View::default();
@@ -384,6 +386,9 @@ pub(in crate::pane) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result
                     panels = state.workspace.panels().to_vec();
                     snapshot_changed = true;
                 }
+                let fresh_cli = control::enabled(&state.store);
+                snapshot_changed |= cli_enabled != fresh_cli;
+                cli_enabled = fresh_cli;
                 search_visible = state.views.iter().any(|v| state.workspace.panel(v.id).is_some_and(Panel::is_search));
                 desktop_status = runtime::status(&state);
                 let fresh = recovery::view(&state);
@@ -451,7 +456,7 @@ pub(in crate::pane) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result
                 if page == 12 {
                     layout::language(&mut body, w, &chosen_language);
                 }
-                if page == 13 { layout::general(&mut body, w, startup.status(), startup.busy()); }
+                if page == 13 { layout::general(&mut body, w, startup.status(), startup.busy(), cli_enabled, skill_prompt_copied); }
                 if page == 1 { layout::show_panels_shortcut(&mut body, w, show_panels_enabled, show_panels_shortcut); }
                 if page == 11 { layout::fonts_status(&mut body, w, &font_choices, if !fonts_loaded { Some("font-loading") } else if font_load_failed { Some("font-load-failed") } else { None }); }
                 if page == 8 { layout::folder_defaults(&mut body, w, folder_defaults, folder_entry_mode); }
@@ -896,6 +901,7 @@ pub(in crate::pane) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result
                     style_input: &mut style_input,
                     startup: &mut startup,
                     diagnostics_copied: &mut diagnostics_copied,
+                    skill_prompt_copied: &mut skill_prompt_copied,
                     updates: &mut updates,
                     recording_show_panels: &mut recording_show_panels,
                     recording_search: &mut recording_search,

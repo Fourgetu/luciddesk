@@ -1132,7 +1132,7 @@ fn all_languages_layout_and_render_without_control_overflow() {
                     6 | 10 => layout::backup_page(&mut body, width, &recovery::View::default(), recovery::Policy::default(), page == 10),
                     11 => layout::fonts(&mut body, width, &fonts::installed(), 0),
                     12 => layout::language(&mut body, width, "system"),
-                    13 => layout::general(&mut body, width, crate::startup::Status::DisabledByWindows, false),
+                    13 => layout::general(&mut body, width, crate::startup::Status::DisabledByWindows, false, true, false),
                     _ => {},
                 }
                 let mut scene = with_titlebar(body, width, false);

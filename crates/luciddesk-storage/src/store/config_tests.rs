@@ -420,3 +420,22 @@ fn named_settings_preserve_comments_extensions_and_external_changes() {
     assert!(!store.settings().unwrap().contains_key("extension.private"));
     assert!(WorkspaceStore::open_in_memory().unwrap().settings().is_err());
 }
+
+#[test]
+fn cli_control_defaults_persists_and_skips_repeated_writes() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("workspace.db");
+    let store = super::WorkspaceStore::open(&path).unwrap();
+    assert_eq!(store.preference("cli_enabled").unwrap().as_deref(), Some("true"));
+    store.save_preference("cli_enabled", "false").unwrap();
+    let config = std::fs::read(dir.path().join("config.toml")).unwrap();
+    let changes = store.change_count();
+    store.save_preference("cli_enabled", "false").unwrap();
+    assert_eq!(store.change_count(), changes);
+    assert_eq!(std::fs::read(dir.path().join("config.toml")).unwrap(), config);
+    assert_eq!(super::WorkspaceStore::open(&path).unwrap().preference("cli_enabled").unwrap().as_deref(), Some("false"));
+    assert!(store.save_preference("cli_enabled", "yes").is_err());
+    let update = [("cli.enabled".into(), crate::SettingValue::Boolean(true))].into_iter().collect();
+    store.save_settings(&update).unwrap();
+    assert_eq!(store.preference("cli_enabled").unwrap().as_deref(), Some("true"));
+}

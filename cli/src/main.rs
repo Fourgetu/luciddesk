@@ -225,6 +225,7 @@ fn main() {
     } else if let Some(error) = &response.error {
         eprintln!("{}: {}", error.code, error.message);
         match error.code.as_str() {
+            "ACCESS_DENIED" => eprintln!("Check local access permissions and enable CLI control in LucidDesk Settings > General > Agent & CLI."),
             "APP_NOT_RUNNING" => eprintln!("Start the matching LucidDesk GUI in this Windows session, then run status --json."),
             "CONFLICT" => eprintln!("Query workspace get again, then preview a new plan."),
             "TIMEOUT" | "RESULT_UNKNOWN" => eprintln!("Check request get --id ORIGINAL_ID and current state before retrying a change."),

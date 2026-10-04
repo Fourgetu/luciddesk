@@ -23,6 +23,7 @@ pub(super) struct Context<'a> {
     pub style_input: &'a mut Option<(bool, String)>,
     pub startup: &'a mut crate::startup::Controller,
     pub diagnostics_copied: &'a mut bool,
+    pub skill_prompt_copied: &'a mut bool,
     pub updates: &'a mut crate::updates::Controller,
     pub recording_show_panels: &'a mut bool,
     pub recording_search: &'a mut bool,
@@ -217,6 +218,20 @@ pub(super) fn execute(context: Context<'_>, c: &Control) -> bool {
             if let Err(error) = handle(&state, selected, Event::Material(value)) {
                 window::error(&error);
             }
+        }
+        Action::CliEnabled(enabled) => {
+            let result = state.borrow().store.save_preference("cli_enabled", &enabled.to_string());
+            if let Err(error) = result { window::error(&error.to_string()); }
+            invalidate = true;
+        }
+        Action::CopySkillPrompt => {
+            let result = agent::installation_prompt().and_then(|prompt|
+                crate::clipboard::copy(hwnd as isize, &prompt).map_err(|e| e.to_string()));
+            match result {
+                Ok(()) => *context.skill_prompt_copied = true,
+                Err(error) => window::error(&error),
+            }
+            invalidate = true;
         }
         Action::LogLevel(level) => {
             let result = state

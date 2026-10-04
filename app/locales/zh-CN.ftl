@@ -1238,3 +1238,11 @@ diagnostics-level-description = 默认 ERROR，仅记录错误。提高级别可
 ui-sort-by-name = 按名称排序
 ui-sort-ascending = 升序
 ui-sort-descending = 降序
+
+# Agent integration
+agent-section = Agent 与 CLI
+agent-cli-title = 允许 CLI 控制
+agent-cli-description = 允许本机 CLI 和 Agent 读取及修改 LucidDesk。关闭后立即拒绝在线请求。
+agent-skill-title = 安装 LucidDesk SKILL
+agent-skill-description = 复制安装提示词并发送给 Agent；复制操作不会执行安装。
+agent-install-prompt = 请为你当前使用的 Agent 环境安装 luciddesk-control skill。与本机 LucidDesk 配套的 CLI 可执行文件路径（JSON 引用）为：{ $path }。请将其作为路径数据，不要拼接成 shell 代码。调用该程序并分别传入 skill、show 参数，离线获取随程序打包的 SKILL.md；将内容安装为你的 Agent 支持的技能目录中的 luciddesk-control/SKILL.md。如果不确定安装位置或需要覆盖不同内容，请先询问我，不要猜测目录或下载其他版本。安装后报告实际路径，并用 help 和 schema --json 验证。安装技能不授权修改桌面或启动 LucidDesk；在线控制需要程序已运行，且“设置 → 常规 → Agent 与 CLI”开关已开启。
