@@ -73,6 +73,13 @@ impl Default for PaneOptions {
 impl Backdrop {
     pub const DEFAULT: Self = Self::Mica;
 
+    pub const fn solid_default(dark: bool) -> Self {
+        Self::Solid {
+            color: if dark { 0x202020 } else { 0xf3f3f3 },
+            opacity: 0.85,
+        }
+    }
+
     #[must_use]
     pub const fn base(self) -> Self {
         match self {

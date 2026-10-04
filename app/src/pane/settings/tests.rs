@@ -1,6 +1,19 @@
 use super::*;
 
 #[test]
+fn solid_defaults_follow_theme_until_a_color_is_saved() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = luciddesk_storage::WorkspaceStore::open(&dir.path().join("workspace.db")).unwrap();
+    for (dark, color) in [(true, 0x202020), (false, 0xf3f3f3)] {
+        assert_eq!(solid_style(&store, dark), Backdrop::Solid { color, opacity: 0.85 });
+    }
+    store.save_preference("solid_style", "1193046|0.5").unwrap();
+    for dark in [false, true] {
+        assert_eq!(solid_style(&store, dark), Backdrop::Solid { color: 0x123456, opacity: 0.5 });
+    }
+}
+
+#[test]
 fn changing_font_releases_app_before_editor_destruction() {
     let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
     let state = Rc::new(RefCell::new(super::super::tests::test_state()));

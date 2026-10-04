@@ -263,14 +263,7 @@ fn scene_with_mica(
         let solid = if matches!(appearance.1, Backdrop::Solid { .. }) {
             appearance.1
         } else {
-            Backdrop::Solid {
-                color: if theme::is_dark(appearance.0) {
-                    0x181b20
-                } else {
-                    0xf5f6f8
-                },
-                opacity: 0.85,
-            }
+            Backdrop::solid_default(theme::is_dark(appearance.0))
         };
         form.choices(
             crate::i18n::text("ui-window-material"),

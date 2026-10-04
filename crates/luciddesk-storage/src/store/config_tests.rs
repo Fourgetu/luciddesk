@@ -8,6 +8,28 @@ fn open() -> (tempfile::TempDir, WorkspaceStore) {
 }
 
 #[test]
+fn initial_solid_color_is_unselected_and_explicit_colors_are_preserved() {
+    let (dir, store) = open();
+    assert_eq!(store.preference("solid_style").unwrap(), None);
+    let patch = std::collections::BTreeMap::from([(
+        "appearance.solid.color".into(), SettingValue::Text("#202020".into()),
+    )]);
+    store.save_settings(&patch).unwrap();
+    assert!(store.preference("solid_style").unwrap().is_some());
+    let before = store.change_count();
+    store.save_settings(&patch).unwrap();
+    assert_eq!(store.change_count(), before);
+    store.save_preference("solid_style", "2373195|0.85").unwrap(); // Former default #24364B.
+    drop(store);
+    let reopened = WorkspaceStore::open(&dir.path().join("workspace.db")).unwrap();
+    assert_eq!(reopened.preference("solid_style").unwrap().as_deref(), Some("2373195|0.85"));
+    for (theme, color) in [("dark", 0x202020), ("light", 0xf3f3f3)] {
+        let doc = format!("config_version=1\n[appearance]\ntheme='{theme}'\nmaterial='solid'\n").parse().unwrap();
+        assert_eq!(config::decode(&doc).unwrap()["solid_style"], format!("{color}|0.85"));
+    }
+}
+
+#[test]
 fn icon_grid_settings_round_trip_and_reject_invalid_dimensions() {
     let (dir, store) = open();
     let options = luciddesk_core::PaneOptions {

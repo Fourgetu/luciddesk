@@ -40,10 +40,7 @@ pub(super) fn solid_style(store: &luciddesk_storage::WorkspaceStore, dark: bool)
             }
         }
     }
-    Backdrop::Solid {
-        color: if dark { 0x181b20 } else { 0xf5f6f8 },
-        opacity: 0.85,
-    }
+    Backdrop::solid_default(dark)
 }
 
 pub(super) fn edited_solid(backdrop: Backdrop, percentage: bool, text: &str) -> Option<Backdrop> {

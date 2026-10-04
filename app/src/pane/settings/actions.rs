@@ -205,10 +205,7 @@ pub(super) fn execute(context: Context<'_>, c: &Control) -> bool {
             }
         }
         Action::SolidReset => {
-            let value = Backdrop::Solid {
-                color: if dark { 0x181b20 } else { 0xf5f6f8 },
-                opacity: 0.85,
-            };
+            let value = Backdrop::solid_default(dark);
             if let Err(error) = handle(&state, selected, Event::Material(value)) {
                 window::error(&error);
             }

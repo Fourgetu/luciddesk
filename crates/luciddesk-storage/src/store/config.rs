@@ -47,7 +47,7 @@ strength = 50
 opacity = 0.86
 
 [appearance.solid]
-color = "#24364B"
+color = "#202020"
 opacity = 0.85
 
 [panel_defaults]
@@ -249,16 +249,27 @@ pub(super) fn decode(doc: &DocumentMut) -> Result<BTreeMap<String, String>, Stor
             strength.to_string(),
         );
     }
+    let explicit_color = get(doc, &["appearance", "solid", "color"]).is_some();
     let raw_color = s(&["appearance", "solid", "color"])?;
-    let color = raw_color
+    let mut color = raw_color
         .strip_prefix('#')
         .filter(|v| v.len() == 6)
         .and_then(|v| u32::from_str_radix(v, 16).ok())
         .ok_or_else(|| error("appearance.solid.color must be #RRGGBB"))?;
     let opacity = n(&["appearance", "solid", "opacity"], 1.0)?;
-    map.insert("solid_style".into(), format!("{color}|{opacity}"));
+    if !explicit_color {
+        if let luciddesk_core::Backdrop::Solid { color: default, .. } =
+            luciddesk_core::Backdrop::solid_default(theme != "light")
+        {
+            color = default;
+        }
+    }
     let translucent = n(&["appearance", "translucent", "opacity"], 1.0)?;
     let material = s(&["appearance", "material"])?;
+    // Unselected defaults must not override the live system theme on first selection.
+    if explicit_color || material == "solid" {
+        map.insert("solid_style".into(), format!("{color}|{opacity}"));
+    }
     let appearance = match material.as_str() {
         "acrylic" | "mica" => format!(
             "{theme}|{material}_tuned|{}|",
@@ -509,6 +520,12 @@ fn settings(doc: &DocumentMut) -> BTreeMap<String, SettingValue> {
     let defaults: DocumentMut = DEFAULTS.parse().unwrap();
     let mut result = BTreeMap::new();
     visit(doc, defaults.as_table(), "", &mut result);
+    if get(doc, &["appearance", "solid", "color"]).is_none() {
+        let dark = get(doc, &["appearance", "theme"]).and_then(Item::as_str) != Some("light");
+        if let luciddesk_core::Backdrop::Solid { color, .. } = luciddesk_core::Backdrop::solid_default(dark) {
+            result.insert("appearance.solid.color".into(), SettingValue::Text(format!("#{color:06X}")));
+        }
+    }
     result
 }
 fn patch_settings(doc: &DocumentMut, updates: &BTreeMap<String, SettingValue>) -> Result<DocumentMut, StoreError> {
@@ -522,7 +539,10 @@ fn patch_settings(doc: &DocumentMut, updates: &BTreeMap<String, SettingValue>) -
         if matches!(proposed, SettingValue::Number(v) if !v.is_finite()) {
             return Err(error(format!("non-finite setting: {path}")));
         }
-        if old != proposed { set(&mut next, &path.split('.').collect::<Vec<_>>(), proposed.item()); }
+        let parts: Vec<_> = path.split('.').collect();
+        if old != proposed || (path == "appearance.solid.color" && get(doc, &parts).is_none()) {
+            set(&mut next, &parts, proposed.item());
+        }
     }
     decode(&next)?;
     Ok(next)
@@ -634,7 +654,9 @@ impl WorkspaceStore {
         let config = match std::fs::read_to_string(path) {
             Ok(source) => ConfigFile::parse(path.to_owned(), source)?,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                let config = ConfigFile::parse(path.to_owned(), DEFAULTS.to_owned())?;
+                let mut defaults: DocumentMut = DEFAULTS.parse().unwrap();
+                defaults["appearance"]["solid"].as_table_mut().unwrap().remove("color");
+                let config = ConfigFile::parse(path.to_owned(), defaults.to_string())?;
                 // Never overwrite a file created by another process while creating the initial config.
                 let mut file =
                     tempfile::NamedTempFile::new_in(path.parent().unwrap()).map_err(io)?;
