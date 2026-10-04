@@ -2,9 +2,26 @@
 
 [简体中文](CHANGELOG.md) · English
 
-Current version: **0.20.1**. Features and fixes by release.
+Current version: **0.20.2**. Features and fixes by release.
 
 Exit the app before upgrading a portable installation and preserve its `data` folder. See the [portable guide](docs/portable.md) (Chinese).
+
+## 0.20.2 · 2026-10-05
+
+### fix
+
+- Share sizing calculations between CLI content fitting and manual resizing, using rendered icon order and the last row's label height. Tab groups fit all members and retain whole icon columns.
+- Preserve fitted small panel sizes through window updates, database saves and reloads instead of expanding them to the initial default minimum.
+- Share edge positioning between CLI and drag snapping, using live window bounds and target-monitor DPI with a fixed 5-physical-pixel gap. Reject stale layout plans when window bounds or collapse state change after preview.
+
+### docs
+
+- Refine progressive Skill workflows: group and sort first, fit anchors, snap dependent panels, then verify. Clarify the default folder list view, asynchronous loading and conflict recovery.
+- Document shared layout calculations, size persistence, WinGet manifest maintenance and the scope of installation checks.
+
+### build
+
+- Include the submitted 0.20.1 WinGet manifests and silent installation test records. Future manifests must be updated separately after the official EXE is published.
 
 ## 0.20.1 · 2026-10-04
 

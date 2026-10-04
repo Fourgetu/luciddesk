@@ -12,7 +12,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Build CI](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml/badge.svg)](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml)
-[![版本](https://img.shields.io/badge/version-0.20.1-087EA4?style=flat-square)](CHANGELOG.md)
+[![版本](https://img.shields.io/badge/version-0.20.2-087EA4?style=flat-square)](CHANGELOG.md)
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square)](#系统与兼容性)
 [![架构](https://img.shields.io/badge/arch-x64-475569?style=flat-square)](docs/portable.md)
 
@@ -127,7 +127,7 @@ LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。把零散图标�
 
 **Agent 工作流程：查询 → 生成计划 → 预览差异 → 应用 → 核对结果。** CLI 提供 JSON 输出、协议查询和请求回执；预览不保存修改，状态冲突时重新查询，超时后通过回执确认执行结果。快捷修改命令加 `--dry-run` 只预览，省略时会预览后立即应用。
 
-Skill 提供图标分组整理、按行适配与吸附、文件夹浏览、搜索及设置等常见流程，Agent 按任务读取对应参考文档，先核对预览再验证结果。
+Skill 提供图标分组整理、按行适配与吸附、文件夹浏览、搜索及设置等常见流程，Agent 按任务读取对应参考文档。整理时先分组和排序，再按每行图标数适配面板，最后按指定方向吸附并验证；布局位置由你的要求决定。CLI 与手动操作共用尺寸和边缘吸附计算，吸附保持固定 5 物理像素间距。
 
 CLI 以 Agent 调用为主：`help RESOURCE COMMAND --json` 提供参数与行为说明，`next_step` 提供后续动作和参数数组；待生效或不确定提交应查询原回执，避免重复修改。主程序和 CLI 使用相同发布版本，控制协议单独版本化。
 

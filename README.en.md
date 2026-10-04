@@ -12,7 +12,7 @@ Desktop panels · Folder panels · Everything search · Spacebar preview · Agen
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Build CI](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml/badge.svg)](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml)
-[![Version](https://img.shields.io/badge/version-0.20.1-087EA4?style=flat-square)](CHANGELOG.en.md)
+[![Version](https://img.shields.io/badge/version-0.20.2-087EA4?style=flat-square)](CHANGELOG.en.md)
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square)](#compatibility)
 [![Architecture](https://img.shields.io/badge/arch-x64-475569?style=flat-square)](docs/portable.md)
 
@@ -127,6 +127,8 @@ Start with read-only queries from the application directory:
 **Agent workflow: query → create a plan → preview differences → apply → verify.** The CLI provides JSON output, schema discovery and request receipts. Previews do not persist changes; query again after a state conflict, and use receipts to check execution after a timeout. Add `--dry-run` to shortcut mutations to preview only; without it, the CLI previews and immediately applies the change.
 
 The Skill includes common workflows for grouping icons, fitting and snapping panes, browsing folders, searching and changing settings. Agents read the relevant reference for the task, review previews and verify results.
+
+For desktop organization, group and sort icons first, fit panels to the requested column count, then snap and verify them in the requested positions. CLI fitting and manual resizing share size calculations; CLI and drag snapping share edge positioning with a fixed 5-physical-pixel gap.
 
 The CLI primarily serves Agents: `help RESOURCE COMMAND --json` describes arguments and behavior, while `next_step` supplies follow-up actions and argument arrays. Query the original receipt for pending or uncertain submissions to avoid duplicate changes. The GUI and CLI share a release version; the control protocol is versioned separately.
 
