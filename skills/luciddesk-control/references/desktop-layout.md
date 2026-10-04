@@ -1,12 +1,10 @@
-## Common workflows
+# Desktop organization and layout
 
-Commands below use illustrative numeric pane IDs and opaque item IDs. Replace them with live query results. Mutation examples preview only; apply the reviewed token via `next_step.args`, then verify before continuing a dependent step.
+## Group icons, then size and place panes
 
-### Inspect or organize desktop icons
-
-Use `pane list --json` for panels, `item list --unassigned --json` for free desktop items, and `item list --pane 1 --json` for one panel. Do not query folder contents through `item list`.
-
-For “group my icons into Work and Games”, query `workspace get --json`, classify only the intended items by their display names/paths, and build one plan using its fresh context. Example `operations` (not a complete plan):
+1. Query `workspace get --json` when organizing several panes; for a small change use `pane list`, `item list --unassigned` or `item list --pane ID`, with `--json`. Folder entries are not desktop item IDs.
+2. Classify only the requested items by names/paths. Reuse suitable panes, preserve unrelated membership, and leave ambiguous items unchanged or clarify their destination.
+3. Batch membership changes using [Plans and recovery](plans-and-recovery.md). For example, this is an `operations` array, not a complete plan:
 
 ```json
 [
@@ -17,45 +15,49 @@ For “group my icons into Work and Games”, query `workspace get --json`, clas
 ]
 ```
 
-Reuse suitable existing panes instead of creating duplicates. Leave ambiguous items unchanged or clarify their destination. Read [Plans and recovery](plans-and-recovery.md) to submit the plan. After applying, resolve created pane IDs from `refs` and verify membership; fit/place those actual IDs in a subsequent plan if requested. Do not assume any preferred desktop side.
+4. Apply once and verify membership/effect completion. Resolve new IDs from `refs` before planning their layout; fitting/snapping requires actual pane IDs.
+5. If requested, sort/reorder first, fit next, then place. For known IDs these operations can share a plan. Fit each anchor before snapping its dependents; later operations use earlier planned geometry.
+6. Verify actual bounds, membership and order. Report unresolved/unchanged ambiguous items; do not keep resizing after the requested layout is satisfied.
 
-### Fit, snap, sort or rename a pane
+## Choose the operation
 
-| User intent | Preview command | Verify after apply |
+Mutation examples preview only. Apply the reviewed token using `next_step.args` before a dependent query/action.
+
+| Intent | Preview command | Verify |
 | --- | --- | --- |
-| Six icons per row, height fits content | `pane fit --id 1 --icon-columns 6 --dry-run --json` | `pane get --id 1 --json`: layout and actual bounds |
-| Place pane 1 below pane 2, left-aligned | `pane snap --id 1 --target 2 --side bottom --align start --dry-run --json` | Both bounds, fixed snap gap, anchor unchanged |
-| Sort icons by name | `pane sort --id 1 --dry-run --json` | Item placement row/column order |
-| Rename a pane | `pane update --id 1 --title Work --dry-run --json` | Pane title, membership unchanged |
-| Move desktop items to an existing pane | `item assign --pane 1 --ids ITEM_A,ITEM_B --dry-run --json` | Destination membership |
-| Return selected icons to the desktop | `item release --ids ITEM_A,ITEM_B --dry-run --json` | Items have desktop placement; files remain intact |
-| Merge pane 1 into pane 2 as tabs | `tab merge --id 1 --into 2 --dry-run --json` | Workspace tab membership and active pane |
+| Six icons per row, tight content height | `pane fit --id 1 --icon-columns 6 --dry-run --json` | `pane get`: `content_layout`, `geometry`, `window_bounds_px` |
+| Fit and place below pane 2, left-aligned | `pane snap --id 1 --target 2 --side bottom --align start --icon-columns 6 --dry-run --json` | Source size, shared gap, unchanged anchor |
+| Keep size and place beside a pane | Same `pane snap`, omit `--icon-columns` | Source DIP size and relative position |
+| Natural name order | `pane sort --id 1 --dry-run --json` | Items sorted by placement row/column; use `--descending true` to reverse |
+| Rename | `pane update --id 1 --title Work --dry-run --json` | Title, unchanged membership |
+| Assign selected icons | `item assign --pane 1 --ids ITEM_A,ITEM_B --dry-run --json` | Destination membership and presentation completion |
+| Return icons to desktop | `item release --ids ITEM_A,ITEM_B --dry-run --json` | Desktop placement; real files unchanged |
+| Combine panes as tabs | `tab merge --id 1 --into 2 --dry-run --json` | Group members and retained target active tab |
 
-For “fit then snap”, optional `--icon-columns 6` on `pane snap` does both in one operation. Check the restrictions below before planning.
+For an explicitly requested top-right column layout, query `monitor list --json`, then use `pane arrange --input FILE_OR_DASH --dry-run --json` with:
 
-## Desktop panels, icons, and tabs
+```json
+{"monitor_id":"ID_FROM_QUERY","columns":[["LEFT_TOP_ID","LEFT_NEXT_ID"],["RIGHT_TOP_ID"]],"icon_columns":6}
+```
 
-Omitted update fields remain unchanged; `null` is not a reset. Explicitly unlock a locked pane before changing protected content or layout. Window options affect all members of a tab group; title changes affect the target pane only. Manual collapse is persistent, while effective auto-hide collapse is transient.
+Columns run left-to-right; panes within them run top-to-bottom. **Arrange places against the top/right work-area edges.** For another location, preserve/place an anchor and snap dependents, or use explicit geometry. Do not choose right-side placement for an unspecified organization request.
 
-`item.assign`, `item.release`, and `item.reorder` operate only on desktop item IDs. Reorder requires the complete current membership exactly once. Verify order by `placement.row`, then `placement.column`, not response array order. Assignment/release require desktop integration. Their receipts may remain pending while images load or Explorer confirms visibility; inspect `status.desktop_sync_status` if delayed. An open native menu can defer synchronization.
+## Fit and snap semantics
 
-`pane.remove` removes one content pane. Nonempty desktop panes require `release_items:true`; release and removal return icons without moving or deleting their real files.
+- Query `content_layout` instead of calculating sizes from source or guessed grid formulas. Fit uses the same row measurement as manual resizing: icon scale, wrapped labels, padding and the last row's actual content. A tab window fits the tallest member, not merely the member with most items. Single panes may be narrower than the initial default; tabs/list views can require more width. Check returned columns rather than claiming an impossible exact count.
+- Fit preserves position where possible and moves inward only to remain on-screen. Insufficient space is an error: adjust columns/grouping within the request and preview again. Do not shrink icon scale, hide items or cap visible rows without user intent.
+- Snap uses the GUI's fixed gap (currently **5 physical pixels**), not DIP or icon-grid spacing. There is no per-action gap parameter. `side` is left/right/top/bottom; `align` is start/center/end (default start), meaning top/center/bottom beside a pane, or left/center/right above/below it.
+- Snap prefers visible window bounds; earlier geometry in the same plan takes precedence. Across monitors it preserves DIP size unless fitting was requested. The anchor stays fixed and may be locked; the moving pane must be unlocked. Both must actually be expanded, including effective auto-hide state. Do not disable auto-hide or change locks just to work around a failure without task authorization.
+- Preview/apply returns `CONFLICT` if observed window bounds or collapse state changes. Query again and preview from current state; an old token is not a fresh measurement. For uncertain submissions use receipt recovery, not another layout command.
+- Snap/arrange reject out-of-bounds placement and overlap with other panes. List each tab window once; it cannot snap to itself. Loaded folders are supported; search panes have dynamic height and cannot be fit or used as snap targets/sources.
+- Snap/arrange place windows once; they do not bind future movement. `panel_defaults.snap` controls proximity snapping during manual dragging. Explicit CLI snapping does not require enabling that setting.
 
-Use `pane sort --id ID --dry-run --json` to sort one ordinary panel by display name using Windows natural ordering (for example, item2 before item10). Add `--descending true` to reverse it. This is a one-time order change, with deterministic ties, no file metadata scans and no persistent auto-sort rule. Only the specified pane changes, including within tabs; locked panes are rejected. For a user-defined sequence, use `item reorder --pane ID --input FILE_OR_DASH` with the complete current item-ID array. Verify by placement row/column. Repeating an already satisfied sort is a no-op with no database save. Folder ordering uses folder.update instead.
+Use `window_bounds_px` for visual verification and physical gaps; `geometry` is saved expanded layout. Do not compare raw DIP values to pixels. Auto-hide can make visible height differ from saved height. For explicit `pane.geometry`, use the queried monitor ID and work-area-relative DIP; the full rectangle must fit. Minimums follow manual content sizing (`minimum_size_dip` for desktop panes); search retains 260 × 160 DIP. Re-query after topology changes.
 
-Ordinary desktop panes support `tab.merge` (`pane_id`, `into_pane_id`), `tab.select` (`pane_id`), `tab.reorder` (`pane_id`, complete `pane_ids`), and `tab.detach` (`pane_id`). Merge appends the entire source group and retains target active tab/window options. Selection is allowed while locked. Detach preserves bounds. Folder and search panes do not support tabs.
+## Membership and tabs
 
-## Content fit and snapped layout
+IDs are authoritative. `item.reorder` needs the complete current item-ID array; verify order by `placement.row`, then `placement.column`, not response array order. Name sorting is a one-time natural order change, only for the named pane, with no auto-sort rule. Folder sorting uses `folder.update`. An already satisfied sort/fit is a no-op.
 
-Use `pane get` / `pane list` to inspect `content_layout`: supported kind, item count, icon columns, cell size, required content height, and native snap gap. Use these public fields rather than source code or guessed pixel formulas. Choose placement from the user’s request and monitor work area; do not assume a right-side layout for general organization tasks.
+Assignment/release requires desktop integration; receipts can stay pending while images load or Explorer confirms visibility. Inspect `status.desktop_sync_status`; an open native menu can defer synchronization. Removing a nonempty desktop pane requires `release_items:true`; releasing/removing never moves or deletes real files.
 
-- To fit one desktop panel: `pane fit --id ID --icon-columns 6 --dry-run --json`. The app uses its renderer's grid, current scale and all tab members' contents to size the shared window. It preserves position where possible, moving inward only when needed to fit the monitor.
-- For an explicitly requested top-right column layout: query `monitor list`, then `pane arrange --input FILE_OR_DASH --dry-run --json`. Input is `{"monitor_id":"ID_FROM_QUERY","columns":[["LEFT_TOP_ID","LEFT_NEXT_ID"],["RIGHT_TOP_ID","RIGHT_NEXT_ID"]],"icon_columns":6}`. Columns are ordered left-to-right, panels top-to-bottom. The app fits each panel and uses the GUI's physical snap gap between panels and at the top/right edges. No manual coordinate calculations are required.
-- To snap one panel beside another: `pane snap --id MOVING_ID --target ANCHOR_ID --side left|right|top|bottom --align start|center|end --dry-run --json`. Alignment is vertical (top/center/bottom) for left/right, horizontal (left/center/right) for top/bottom. Start is the default. The fixed gap is shared with GUI snapping; there is no per-operation gap parameter. Optional `--icon-columns N` fits icon-view content and snaps in the same transaction; omit it to preserve size, including for folder panels.
-- Relative snapping moves the source window (including its tabs), leaving the anchor fixed even if locked. Expand both windows first. Search panels have dynamic height and are not supported as source or anchor. The destination must fit the anchor's monitor and avoid other panes; failure leaves layout unchanged. In a batch, later snaps see geometry from earlier operations. This positions windows once; it does not bind their future movement.
-- Start with a column count suitable for the requested area and an icon-column count such as 6; inspect preview geometry. If space is insufficient, adjust the grouping or icon columns and preview again. Do not reduce icon scale or hide items without user intent.
-- Locked/collapsed panels require explicit unlock/expand first. List each shared tab window once. Arrangement rejects overlap with unselected panes; include the intended peers or move them first. Loaded folder panels also support fitting and arrangement. List-view folders preserve width and fit rows; use folder.fit for a bounded viewport. Search content fitting is not supported; retain its dimensions and use explicit geometry instead.
-
-Verify actual window bounds and unchanged membership. `pane arrange` sets a layout, not a permanent attachment between windows. `panel_defaults.snap` controls subsequent manual dragging; enable it through settings if requested.
-
-For explicit geometry, use `pane.geometry` with the queried monitor ID and work-area-relative DIP. The minimum is 260 × 160 DIP; the full expanded rectangle must fit. Geometry affects all tab members and supports desktop/folder/search panes. Re-query after topology changes; live collapsed/search height may differ from saved expanded height.
+Ordinary panes support `tab.merge`, `tab.select`, `tab.reorder` (complete `pane_ids`) and `tab.detach`. Merge appends the source group and retains target active tab/window options. Selection is allowed while locked; detach retains bounds. Folder/search panes cannot join tabs. Window changes affect the shared group, while titles and item order belong to individual panes. Omitted update fields stay unchanged; `null` does not reset them.
