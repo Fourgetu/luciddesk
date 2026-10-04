@@ -10,6 +10,26 @@ pub(super) struct Drawing {
     icon: windows_canvas::TextFormat,
     placeholder: windows_canvas::TextFormat,
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deferred_search_frame_keeps_pending_redraw_until_it_is_painted() {
+        let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
+        let window = windows_window::Window::new("Search frame retry").size(320, 200)
+            .style(WS_POPUP).ex_style(WS_EX_NOREDIRECTIONBITMAP).create().unwrap();
+        let hwnd = window.hwnd().cast();
+        let mut drawing = Drawing::new(hwnd).unwrap();
+        let model = crate::pane::tests::test_model("Search");
+        let search = Search::new();
+        drawing.surface.defer_frame_for_test(Duration::from_secs(5));
+        assert!(!drawing.paint(hwnd, &model, &search).unwrap());
+        assert!(drawing.surface.try_begin_frame(320, 200).unwrap().is_none());
+        drawing.surface.defer_frame_for_test(Duration::ZERO);
+        assert!(drawing.paint(hwnd, &model, &search).unwrap());
+    }
+}
 impl Drawing {
     pub(super) fn new(hwnd: HWND) -> Result<Self, String> {
         use windows_canvas::{ParagraphAlignment, TextFormat, WordWrapping};
@@ -48,7 +68,7 @@ impl Drawing {
         hwnd: HWND,
         model: &GroupModel,
         state: &Search,
-    ) -> Result<(), String> {
+    ) -> Result<bool, String> {
         use crate::pane::native_graphics::canvas_result;
         let family = crate::pane::fonts::family();
         if family != self.family || self.language != crate::i18n::language() {
@@ -92,7 +112,7 @@ impl Drawing {
             .try_begin_frame(r.right.max(1) as u32, r.bottom.max(1) as u32)
             .map_err(|e| e.to_string())?
         else {
-            return Ok(());
+            return Ok(false);
         };
         let native = self.surface.native;
         let w = r.right as f32 / s;
@@ -328,6 +348,7 @@ impl Drawing {
             target.finish()
         })
         .map_err(|e| e.to_string())?;
-        Ok(())
+        self.surface.end_frame().map_err(|e| e.to_string())?;
+        Ok(true)
     }
 }

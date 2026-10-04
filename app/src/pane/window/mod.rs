@@ -274,7 +274,7 @@ where
     let mut auto_hide = super::auto_hide::AutoHide::default();
     let mut tab_press: Option<(luciddesk_core::PanelId, POINT)> = None;
     let menu_active = Rc::new(std::cell::Cell::new(false));
-    let mut paint_error = false;
+    let mut paint_recovery = super::composition::PaintRecovery::default();
     let model_init = Rc::clone(&model);
     let inspect = std::env::var_os("LUCIDDESK_INSPECT").is_some();
     let window_title = format!("LucidDesk — {}", model.borrow().title);
@@ -707,9 +707,9 @@ where
                         let s = scale(hwnd);
                         let radius = model.borrow().options.corner_radius;
                         drag_clipped.update(hwnd, r.right, r.bottom, radius, s);
-                        let result = (|| {
+                        paint_recovery.paint(hwnd, &mut surface, "pane.window", |surface| {
                             if surface.is_none() {
-                                surface = Some(Surface::new_pane(
+                                *surface = Some(Surface::new_pane(
                                     windows::Win32::Foundation::HWND(hwnd),
                                 )?);
                             }
@@ -727,7 +727,7 @@ where
                             let Some(target) =
                                 surface.try_begin_frame(r.right as u32, r.bottom as u32)?
                             else {
-                                return Ok(());
+                                return Ok::<_, windows::core::Error>(false);
                             };
                             renderer.paint(
                                 &target,
@@ -736,19 +736,9 @@ where
                                 s,
                                 &model.borrow(),
                             )?;
-                            surface.end_frame()
-                        })();
-                        if let Err(error) = result {
-                            if !paint_error {
-                                luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Error, "pane.window", &format!("面板渲染失败：{error}"));
-                            }
-                            paint_error = true;
-                            {
-                                event(Event::Exit);
-                            }
-                        } else {
-                            paint_error = false;
-                        }
+                            surface.end_frame()?;
+                            Ok(true)
+                        });
                     }
                     Some(0)
                 }

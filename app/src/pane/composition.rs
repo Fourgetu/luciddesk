@@ -9,6 +9,9 @@ use windows::Win32::Graphics::Dxgi::*;
 use windows::core::{Error, Interface, Result};
 use windows_canvas::{GpuDevice, ID2D1DeviceContext, SwapChain};
 
+mod recovery;
+pub(super) use recovery::PaintRecovery;
+
 pub struct Surface {
     retry_at: std::cell::Cell<Option<std::time::Instant>>,
     hwnd: HWND,
@@ -30,6 +33,11 @@ pub struct Surface {
 }
 
 impl Surface {
+    #[cfg(test)]
+    pub(super) fn defer_frame_for_test(&self, duration: std::time::Duration) {
+        self.retry_at.set(Some(std::time::Instant::now() + duration));
+    }
+
     #[cfg(test)]
     pub fn current_opacity(&self) -> f32 {
         self.opacity.get()

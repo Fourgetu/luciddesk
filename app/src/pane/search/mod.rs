@@ -838,6 +838,7 @@ pub(super) fn create(
     let editor: Rc<RefCell<Option<Editor>>> = Rc::new(RefCell::new(None));
     let input = Rc::clone(&editor);
     let mut drawing: Option<Drawing> = None;
+    let mut paint_recovery = super::composition::PaintRecovery::default();
     let mut visibility = super::visibility::Transition::default();
     let mut state = Search::new();
     let mailbox = Rc::new(RefCell::new(control::Mailbox::default()));
@@ -1404,23 +1405,12 @@ pub(super) fn create(
                         BeginPaint(hwnd, &raw mut ps);
                         EndPaint(hwnd, &ps);
                     }
-                    if drawing.is_none() {
-                        match Drawing::new(hwnd) {
-                            Ok(value) => drawing = Some(value),
-                            Err(error) => {
-                                luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Error, "pane.search.mod", &format!("{error}"));
-                                return Some(0);
-                            }
+                    paint_recovery.paint(hwnd, &mut drawing, "pane.search", |drawing| {
+                        if drawing.is_none() {
+                            *drawing = Some(Drawing::new(hwnd)?);
                         }
-                    }
-                    if let Some(drawing) = drawing.as_mut() {
-                        if let Err(error) = drawing
-                            .paint(hwnd, &model.borrow(), &state)
-                            .and_then(|()| drawing.surface.end_frame().map_err(|e| e.to_string()))
-                        {
-                            luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Error, "pane.search.mod", &format!("{error}"));
-                        }
-                    }
+                        drawing.as_mut().unwrap().paint(hwnd, &model.borrow(), &state)
+                    });
                     return Some(0);
                 }
                 _ => {}

@@ -49,6 +49,7 @@ pub(in crate::pane) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result
     let mut painter_language = crate::i18n::language();
     let mut painter = Painter::new().map_err(|e| e.to_string())?;
     let mut surface: Option<composition::Surface> = None;
+    let mut paint_recovery = composition::PaintRecovery::default();
     let mut reveal: Option<PendingReveal> = None;
     // Navigation belongs to this window, not the saved workspace or connection state.
     let mut page = 0;
@@ -543,9 +544,9 @@ pub(in crate::pane) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result
                         EndPaint(hwnd, &raw const ps);
                     }
                     if bounds.right > 0 && bounds.bottom > 0 {
-                        let result = (|| -> windows::core::Result<()> {
+                        paint_recovery.paint(hwnd, &mut surface, "pane.settings", |surface| -> windows::core::Result<bool> {
                             if surface.is_none() {
-                                surface = Some(composition::Surface::new_settings(
+                                *surface = Some(composition::Surface::new_settings(
                                     windows::Win32::Foundation::HWND(hwnd),
                                 )?);
                                 composition::Surface::disable_window_shadow(
@@ -557,7 +558,7 @@ pub(in crate::pane) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result
                             surface.material(windows::Win32::Foundation::HWND(hwnd), settings_backdrop(appearance.1, dark));
                             let Some(target) =
                                 surface.try_begin_frame(bounds.right as u32, bounds.bottom as u32)? else {
-                                    return Ok(());
+                                    return Ok(false);
                                 };
                             painter.paint(
                                 &target,
@@ -571,12 +572,9 @@ pub(in crate::pane) fn show(state: &Rc<RefCell<PaneApp>>, id: PanelId) -> Result
                                 if keyboard_focus { focus } else { None },
                                 &positions,
                             )?;
-                            surface.end_frame()
-                        })();
-                        if let Err(e) = result {
-                            surface = None;
-                            luciddesk_diagnostics::log(luciddesk_diagnostics::Level::Error, "pane.settings", &format!("Settings paint: {e}"));
-                        }
+                            surface.end_frame()?;
+                            Ok(true)
+                        });
                     }
                 }
                 WM_TIMER if wp == TOGGLE_TIMER => {}
