@@ -129,7 +129,7 @@ LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。把零散图标�
 
 CLI 以 Agent 调用为主：`help RESOURCE COMMAND --json` 提供参数与行为说明，`next_step` 提供后续动作和参数数组；待生效或不确定提交应查询原回执，避免重复修改。主程序和 CLI 使用相同发布版本，控制协议单独版本化。
 
-Skill 使用渐进式披露：[SKILL.md](skills/luciddesk-control/SKILL.md) 保留通用流程，布局、文件夹、搜索、设置及恢复规则按任务读取。安装时用 `skill show --json` 导出完整技能包并保存全部 `data.files`，或整体复制 `skills/luciddesk-control/`；纯文本 `skill show` 只显示入口。不同面板类型支持的操作有所区别，完整说明见 [CLI 使用说明](docs/cli.md)，近期变化见[更新记录](CHANGELOG.md)。
+Skill 使用渐进式披露：[SKILL.md](skills/luciddesk-control/SKILL.md) 保留通用流程，布局、文件夹、搜索、设置及恢复规则按任务读取。安装时将设置中的安装提示词交给 Agent，直接复制安装包内的完整 `skills/luciddesk-control/` 目录；CLI 导出保留用于兼容和发现，纯文本 `skill show` 只显示入口。不同面板类型支持的操作有所区别，完整说明见 [CLI 使用说明](docs/cli.md)，近期变化见[更新记录](CHANGELOG.md)。
 
 <a id="升级与备份"></a>
 

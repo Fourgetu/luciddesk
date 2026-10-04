@@ -14,7 +14,7 @@ CLI 和主程序保持相同发布版本；控制协议版本另行维护。CLI 
 
 `config.toml` 的 `[cli].enabled` 默认 `true`，在“设置 → 常规 → Agent 与 CLI”中修改并立即生效。主程序控制层在处理在线请求前统一检查开关，包括只读查询；关闭时返回 `ACCESS_DENIED`。管道仍保留以提供明确错误，不通过客户端缓存推测服务是否禁用。离线 `help`、`schema --json`、`skill show` 不经过此开关。
 
-`settings/agent.rs` 生成包含当前 EXE 同目录 CLI 路径的安装提示词，由通用剪贴板模块复制；不启动 CLI、不安装 Skill。提示词要求通过 `skill show --json` 获取完整技能包，保存全部相对路径并检查目标路径不越界。
+`settings/agent.rs` 生成指向当前 EXE 所在目录下 `skills/luciddesk-control/` 的安装提示词，由通用剪贴板模块复制。Agent 根据自身环境确定安装位置，复制完整目录并验证文件；不依赖 CLI JSON 导出、编码转换或输出预览。复制按钮不启动 CLI、不安装 Skill。
 
 ## 后续动作与渐进式 Skill
 

@@ -1,3 +1,20 @@
+## Common workflows
+
+### Enable snapping while dragging or adjust diagnostics
+
+Query `settings get --json` and use only returned keys. For “enable snapping when I drag panels”, write this plain settings map to a UTF-8 file without BOM:
+
+```json
+{"panel_defaults.snap":true}
+```
+
+Run `settings update --input settings.json --dry-run --json`, review the diff, apply `next_step.args`, and query settings again. This enables drag snapping; positioning panes now uses `pane snap`. For a requested log-level change, the same workflow accepts `{"diagnostics.level":"debug"}`; restore the previous value when the requested diagnostic session ends. Do not enable diagnostic logging for ordinary organization tasks.
+
+### Change font or login startup
+
+- Font: query `font list --json`, wait for ready results, then pass `{"font.family":"EXACT_RETURNED_FAMILY"}` through `settings update --input font.json --dry-run --json`. Apply and check `runtime.font_family`; do not mix font/workspace preferences with TOML settings in the same update.
+- Startup: query `startup get --json`, ensure `editable:true` and no pending/error state, then use `startup set --enabled true --expected-status OBSERVED_STATUS --dry-run --json`. Replace `OBSERVED_STATUS` with the returned status. Apply within the user's request and poll the original receipt to terminal `operation_status`, then verify `startup get`. To disable, use `false` with a fresh observed status.
+
 ## Settings and fonts
 
 Read `settings get --json`. `values` holds loaded TOML configuration and `workspace_values` holds database preferences. Submit typed dotted fields in a `settings.update` operation's `values` map. It must be the sole operation, and must not mix the two persistence domains. Omitted fields are preserved; disk edits not yet reloaded are not reflected in this query.

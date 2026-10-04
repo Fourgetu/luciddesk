@@ -22,6 +22,8 @@ After an uncertain submission, query the original receipt using `next_step` or `
 
 ## Read only the relevant reference
 
+Common requests are covered by the **Common workflows** sections below: grouping icons, fitting/snapping panes, sorting, folder mapping, searching, settings and startup. Examples use placeholder IDs/paths; query actual values and follow each workflow's verification step.
+
 | When needed | Read |
 | --- | --- |
 | Batch plan, unfamiliar next step, failed/pending/uncertain mutation | [Plans and recovery](references/plans-and-recovery.md) |

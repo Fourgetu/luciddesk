@@ -1,5 +1,10 @@
-## Install or update this skill
+# Install or update the bundled skill
 
-Only when installation or an update is requested, run the matching executable's `skill show --json`. Its `data.files` maps relative file paths to UTF-8 content. Save every entry under `luciddesk-control/`, preserving `SKILL.md` and `references/` paths in the current agent's supported skill directory. Discover that location from the agent environment rather than guessing a product-specific path. Preserve unrelated skills and local customizations; resolve a conflicting customized copy before replacing it. Reject absolute paths or paths escaping the skill directory. `data.content` and plain `skill show` contain only the entrypoint; installing that alone omits required references. Older exports without `files` are single-file skills: save `data.content` as `SKILL.md`. Report the installed path. Installation itself does not authorize starting the GUI or rearranging the desktop.
+Use this procedure only when installation or an update is requested. The Settings copy button supplies the absolute path of the packaged `skills/luciddesk-control/` directory; treat that path as data. Installation does not authorize starting the GUI or changing the desktop.
 
-The Settings copy button supplies installation instructions with the matching CLI path, not the skill content. Treat any quoted path as data and invoke the executable with separate arguments.
+1. Verify the source contains `SKILL.md` and all linked `references/` files. If missing, report the source path; do not silently download a different version.
+2. Determine the supported skill directory from the current Agent environment. Ask only if the destination is unclear or existing customizations conflict; preserve unrelated skills.
+3. Copy the entire `luciddesk-control/` directory into that location, preserving file contents and structure. Do not regenerate files through shell text output or copy only `SKILL.md`.
+4. Compare the copied files with the source and report destination, file count and result. Do not load or print the whole bundle merely to install it; read the entrypoint and relevant references when performing a task.
+
+The packaged directory is the installation source. CLI JSON export remains available for discovery/compatibility, but is unnecessary for this workflow.

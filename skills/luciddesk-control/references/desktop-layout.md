@@ -1,3 +1,38 @@
+## Common workflows
+
+Commands below use illustrative numeric pane IDs and opaque item IDs. Replace them with live query results. Mutation examples preview only; apply the reviewed token via `next_step.args`, then verify before continuing a dependent step.
+
+### Inspect or organize desktop icons
+
+Use `pane list --json` for panels, `item list --unassigned --json` for free desktop items, and `item list --pane 1 --json` for one panel. Do not query folder contents through `item list`.
+
+For “group my icons into Work and Games”, query `workspace get --json`, classify only the intended items by their display names/paths, and build one plan using its fresh context. Example `operations` (not a complete plan):
+
+```json
+[
+  {"op":"pane.create","ref":"work","title":"Work"},
+  {"op":"item.assign","pane_ref":"work","item_ids":["WORK_ITEM_ID"]},
+  {"op":"pane.create","ref":"games","title":"Games"},
+  {"op":"item.assign","pane_ref":"games","item_ids":["GAME_ITEM_ID"]}
+]
+```
+
+Reuse suitable existing panes instead of creating duplicates. Leave ambiguous items unchanged or clarify their destination. Read [Plans and recovery](plans-and-recovery.md) to submit the plan. After applying, resolve created pane IDs from `refs` and verify membership; fit/place those actual IDs in a subsequent plan if requested. Do not assume any preferred desktop side.
+
+### Fit, snap, sort or rename a pane
+
+| User intent | Preview command | Verify after apply |
+| --- | --- | --- |
+| Six icons per row, height fits content | `pane fit --id 1 --icon-columns 6 --dry-run --json` | `pane get --id 1 --json`: layout and actual bounds |
+| Place pane 1 below pane 2, left-aligned | `pane snap --id 1 --target 2 --side bottom --align start --dry-run --json` | Both bounds, fixed snap gap, anchor unchanged |
+| Sort icons by name | `pane sort --id 1 --dry-run --json` | Item placement row/column order |
+| Rename a pane | `pane update --id 1 --title Work --dry-run --json` | Pane title, membership unchanged |
+| Move desktop items to an existing pane | `item assign --pane 1 --ids ITEM_A,ITEM_B --dry-run --json` | Destination membership |
+| Return selected icons to the desktop | `item release --ids ITEM_A,ITEM_B --dry-run --json` | Items have desktop placement; files remain intact |
+| Merge pane 1 into pane 2 as tabs | `tab merge --id 1 --into 2 --dry-run --json` | Workspace tab membership and active pane |
+
+For “fit then snap”, optional `--icon-columns 6` on `pane snap` does both in one operation. Check the restrictions below before planning.
+
 ## Desktop panels, icons, and tabs
 
 Omitted update fields remain unchanged; `null` is not a reset. Explicitly unlock a locked pane before changing protected content or layout. Window options affect all members of a tab group; title changes affect the target pane only. Manual collapse is persistent, while effective auto-hide collapse is transient.

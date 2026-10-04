@@ -1,3 +1,21 @@
+## Common workflows
+
+Replace IDs, paths and queries with the intended live targets. Preview commands do not execute: apply the reviewed token through `next_step.args` before dependent steps.
+
+### Show a folder and fit its window
+
+1. Preview `folder create --title Projects --path C:\Projects --dry-run --json` using an existing absolute directory. Apply and obtain the new pane ID from `refs`.
+2. Query `folder get --id 1 --json` with that ID until loaded and error-free. Do not fit a newly created mapping before its snapshot is ready.
+3. Preview `folder fit --id 1 --icon-columns 4 --max-rows 5 --dry-run --json`, apply, and verify geometry and contents. This limits visible rows, not the directory's entries. For list view omit `--icon-columns`.
+
+For “refresh this folder”, preview `folder refresh --id 1 --dry-run --json`, apply once, then poll `folder get` to completion. For “open a subfolder”, use `folder navigate --id 1 --path C:\Projects\Demo --dry-run --json`; `folder back` and `folder home` return to the previous or mapped directory. Navigation is transient; changing the saved mapping uses `folder update`.
+
+### Find PDF files
+
+1. Query `pane list --json` for an existing search pane and `search get --id 1 --json` for its state. Check search is enabled; do not use a desktop/folder pane ID or create a normal pane as a substitute.
+2. Preview `search query --id 1 --query *.pdf --dry-run --json` and apply. Retain the returned generation.
+3. Poll `search get --id 1 --json` until that generation is complete; do not report stale entries during replacement. For more results, check `has_more` before previewing/applying `search more --id 1 --dry-run --json`.
+
 ## Folder panels and search
 
 For window snapping or arrangement, also read [Desktop and layout](desktop-layout.md); basic folder/search queries do not need it.

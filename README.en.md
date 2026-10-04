@@ -128,7 +128,7 @@ Start with read-only queries from the application directory:
 
 The CLI primarily serves Agents: `help RESOURCE COMMAND --json` describes arguments and behavior, while `next_step` supplies follow-up actions and argument arrays. Query the original receipt for pending or uncertain submissions to avoid duplicate changes. The GUI and CLI share a release version; the control protocol is versioned separately.
 
-The Skill uses progressive disclosure: [SKILL.md](skills/luciddesk-control/SKILL.md) covers the common workflow, with layout, folder, search, settings and recovery references read as needed. Install the full bundle from `skill show --json` by saving every `data.files` entry, or copy the entire `skills/luciddesk-control/` directory; plain `skill show` prints only the entrypoint. Supported operations vary by panel type. See the [CLI guide](docs/cli.md) (Chinese) and [changelog](CHANGELOG.en.md).
+The Skill uses progressive disclosure: [SKILL.md](skills/luciddesk-control/SKILL.md) covers the common workflow, with layout, folder, search, settings and recovery references read as needed. Give the installation prompt from Settings to your Agent to copy the packaged `skills/luciddesk-control/` directory in full. CLI export remains available for compatibility and discovery; plain `skill show` prints only the entrypoint. Supported operations vary by panel type. See the [CLI guide](docs/cli.md) (Chinese) and [changelog](CHANGELOG.en.md).
 
 <a id="upgrading-and-backups"></a>
 

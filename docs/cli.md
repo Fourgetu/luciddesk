@@ -341,4 +341,4 @@ luciddesk-cli pane snap --id 7 --target 4 --side bottom --align start --dry-run 
 
 “设置 → 常规 → Agent 与 CLI”提供“允许 CLI 控制”开关，默认开启，保存为 `config.toml` 的 `[cli].enabled`。关闭后立即拒绝所有在线查询、计划预览和提交，返回 `ACCESS_DENIED`（退出码 9）；管道保留以返回明确的禁用提示。已经提交的操作不会因此回滚。重新启用请使用设置界面；离线 `help`、`schema`、`skill show` 不受影响。
 
-同一区域可复制 SKILL 安装提示词，包含当前安装位置对应的 CLI 路径。将提示词发送给 Agent，由其通过离线 `skill show --json` 获取完整技能包并安装到自身支持的位置。复制按钮不自动安装、不修改桌面。
+同一区域可复制 SKILL 安装提示词，包含安装目录中的 `skills/luciddesk-control/` 绝对路径。Agent 根据自身环境确定技能安装位置，直接复制整个目录（含 `SKILL.md` 和 `references/`），核对文件内容后报告路径与数量。不调用 CLI 导出 JSON，不通过文本重定向重新生成文件，从而避免编码和长输出截断问题。源目录缺失时应报告，不自动下载其他版本。复制按钮只复制提示词，不自动安装、不修改桌面。
