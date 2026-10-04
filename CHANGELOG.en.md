@@ -2,16 +2,37 @@
 
 [简体中文](CHANGELOG.md) · English
 
-Current version: **0.19.1**. Features and fixes by release.
+Current version: **0.20.0**. Features and fixes by release.
 
 Exit the app before upgrading a portable installation and preserve its `data` folder. See the [portable guide](docs/portable.md) (Chinese).
 
-## Unreleased
+## 0.20.0 · 2026-10-04
+
+### feat
+
+- Split the Skill into a compact entrypoint and task-specific references; export the complete multi-file bundle offline and include references in installation prompts and release packages.
+- Add structured next-step hints for Agents: apply arguments after preview, receipt queries for pending or uncertain submissions, and state inspection for conflicts or unknown results. JSON help now describes the output contract.
+- Improve help for users and Agents with command descriptions, relevant preview examples, value ranges and required fields, plus structured behavior flags, field metadata and example argument arrays.
+- Add a CLI control switch in Settings, enabled by default. Disabling it rejects online queries and mutations while offline help, schema discovery and Skill export remain available.
+- Add a copyable Skill installation prompt with the CLI path matching the running app and installation steps for an Agent.
 
 ### fix
 
 - Reject missing CLI option values before they consume `--dry-run` or other options and inadvertently apply a change.
 - Unify recovery output for direct and shortcut plan submissions, retaining generated request IDs and complete replay arguments including the data directory.
+- Release failed graphics resources and automatically retry up to three times for desktop panes, folder panes, search and Settings, instead of exiting the entire app or repeatedly using invalid resources.
+- Fix search submitting an old frame after rendering was deferred, which could cancel a pending redraw.
+
+### perf
+
+- Reuse base brushes in desktop and folder panes, search and Settings; update colors and rebuild resources when the graphics context changes. Cache the Settings app icon texture and release it when leaving the relevant page.
+- Skip selection measurements for items that are neither selected nor hovered; avoid resizing unchanged title layouts and skip emoji analysis for plain text.
+- Reduce repeated sorting, temporary allocations and monitor lookups in pane sorting and layout queries while preserving no-op write avoidance.
+
+### changed
+
+- Consolidate diagnostics in the independent library and unify application, lower-level module and explicitly enabled rendering trace formats. ERROR remains the default; normal interactions do not add continuous log writes.
+- Group pane module entry points by responsibility, separate folder and rendering tests, and expand CLI/Skill discovery, installation, capability lookup and error recovery guidance.
 
 ## 0.19.1 · 2026-10-04
 

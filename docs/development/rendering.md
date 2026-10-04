@@ -7,12 +7,14 @@
 | 入口 | 职责 |
 | --- | --- |
 | `app/src/pane/render/mod.rs` | 面板内容、图标、文字与局部绘制资源 |
+| `app/src/pane/canvas/brushes.rs` | 按绘制上下文复用固定数量的基础画刷 |
+| `app/src/pane/composition/recovery.rs` | 普通/文件夹、搜索与设置窗口的有限失败重试 |
 | `app/src/pane/canvas.rs` | 绘制作用域、裁剪、文字回退与离屏读回 |
 | `app/src/pane/composition.rs` | 窗口 Surface、交换链、尺寸调整与呈现重试 |
 | `app/src/pane/native_graphics.rs` | 设备缓存、绑定转换与图形资源退出顺序 |
 | `crates/luciddesk-graphics/src/layer.rs` | DirectComposition 设备缓存与内容层 |
 | `app/src/pane/acrylic/mod.rs` | WinRT 材质视觉树及合成提交 |
-| `app/src/pane/settings/mod.rs` | 设置窗口首帧显示与材质编辑 |
+| `app/src/pane/settings/host.rs`、`settings/painter.rs` | 设置窗口首帧、绘制及材质编辑 |
 | `app/src/pane/scaled_icons.rs` | 线程内 CPU 图标缩放缓存 |
 
 ## 绘制边界
@@ -36,7 +38,7 @@
 1. 状态变化使窗口失效，窗口消息处理读取当前模型并请求绘制。
 2. `Surface::try_begin_frame` 检查呈现重试期限；允许绘制时调整交换链尺寸并返回绘制上下文，等待期间返回 `None`。
 3. `canvas::draw` 按 DPI 设置上下文，调用 `BeginDraw`，绘制内容并通过 `DrawPass::finish` 结束绘制。
-4. `Surface::end_frame` 调用 `Present` 提交交换链，由 Windows 合成显示。
+4. 只有本次实际绘制成功，才调用 `Surface::end_frame` 提交交换链，由 Windows 合成显示；`try_begin_frame` 返回 `None` 时不可调用它，否则可能取消尚待执行的刷新。搜索窗口的 `Drawing::paint` 内部完成提交，并用布尔值区分已绘制和暂缓绘制。
 
 `finish` 会清空裁剪栈并传播 `EndDraw` 错误。绘制中途返回错误时，`Drop` 同样清理裁剪和结束绘制，但析构中的 `EndDraw` 错误不会再次返回。因此，正常路径应显式调用 `finish`；结束绘制与成功呈现是两个不同步骤。
 
@@ -50,7 +52,9 @@
 
 UI 线程复用 D3D/D2D 设备，同一 DXGI 设备还复用 DirectComposition 设备，各窗口保留独立交换链与视觉树。合成设备缓存保留 COM 身份引用；图形设备变化时替换缓存，已有窗口仍持有自己的引用。
 
-`gpu_device()` 复用缓存前检查设备移除状态，失效时重新创建设备。这个检查不等于所有现存 Surface 都会自动恢复；修改设备恢复逻辑时，需要同时验证窗口资源的重建和错误路径。
+`gpu_device()` 复用缓存前检查设备移除状态，失效时重新创建设备。普通/文件夹、搜索和设置窗口通过 `PaintRecovery` 处理绘制错误：释放当前 Surface 或 Drawing，在 100、250、1000 ms 后最多自动重试三次。窗口错误不再直接触发全程序退出；重试用尽后停止自动调度，后续外部重绘仍可尝试恢复。菜单不走这个窗口恢复封装。
+
+恢复定时器与呈现背压定时器使用不同 ID，避免 Surface 析构取消恢复任务；提前到达时重新安排剩余等待。实际绘制并成功返回后重置失败次数，暂缓绘制不重置。每段连续失败首次记录 ERROR，正常绘制不启动恢复定时器或增加日志；这不是驱动设备重置已通过实机验收的保证。
 
 图形资源按“窗口与渲染器 → 图形线程缓存 → OLE/COM apartment”的顺序释放。`GraphicsLifetime` 显式清理缓存，不依赖进程退出时的 TLS 析构；见[启动与退出](architecture.md#退出与异常终止)。
 
@@ -58,6 +62,9 @@ UI 线程复用 D3D/D2D 设备，同一 DXGI 设备还复用 DirectComposition �
 
 ## 资源、刷新与软件回退
 
+- `canvas::Brushes<N>` 为每个渲染器保存固定画刷数组：普通/文件夹面板 9 项、搜索 8 项、设置 15 项。相同上下文复用画刷，颜色变化时仅调用 `set_color`；上下文变化时释放并重建。不以动画颜色为键累积缓存，动态局部画刷仍按需创建。
+- 设置页应用图标每个上下文只上传一次，重复绘制与主题切换复用位图；离开含图标的页面时释放，下次显示或更换上下文时重新上传。材质预览继续使用独立缓存。
+- 只有选中或悬停的图标计算选区；命中测试仍按实际选区计算。标题保持既有省略号滞回规则，尺寸不变时不重设布局，普通文本跳过 emoji 集群分析，emoji 对齐不变。
 - 图标 GPU 纹理仅保留视口及相邻一行，滚动过的大目录不会一直累积已上传图标；原始 Shell 图标像素仍由数据层管理。选中状态纹理缓存仍限制为 64 项。
 - `scaled_icons.rs` 在每个绘图线程内共享纯 CPU 缩放缓存，最多 128 项、2 MiB 像素缓冲容量，按最近使用淘汰。缓存键包含源图像对象和目标物理尺寸，只弱引用源图像；源被替换后不会命中旧结果。清理失效源发生在后续插入时，缓存总量始终受限。同尺寸直接共享原 Arc，其他尺寸保持 WIC 原有插值和预乘透明度处理；不跨绘图上下文共享 COM 位图，也不扩大 GPU 纹理驻留范围。
 - 硬件 D3D 设备创建失败时自动尝试 WARP。启动前设置 `LUCIDDESK_RENDERER=warp` 可强制验证软件路径；移除此环境变量并重启恢复默认模式。该入口不写入用户配置，不提供运行中无缝热切换保证。
@@ -108,25 +115,36 @@ UI 线程复用 D3D/D2D 设备，同一 DXGI 设备还复用 DirectComposition �
 
 在已准备好构建环境的 Windows 终端中运行以下针对性测试，环境配置见[构建与验证](build.md)。涉及 HWND、COM、D3D 或 WIC 的测试应在可用的 Windows 桌面环境中执行。
 
+以下测试分开启动进程，避免 HWND/COM 生命周期跨测试干扰。扩展检查时先用 `-- --list` 核对名称，再逐项执行；整组串行通过不能由单项通过推断。
+
 ```powershell
-# 绘制作用域、文字边界和裁剪失败恢复
-cargo test -p luciddesk --bin luciddesk pane::canvas::tests --locked --offline -- --test-threads=1
+# 画刷复用、变色像素和上下文切换
+cargo test -p luciddesk --bin luciddesk palette_reuses_brushes_recolors_pixels_and_rebuilds_for_a_new_context --locked --offline -- --test-threads=1
 
-# 材质、尺寸变化、呈现重试和淡入
-cargo test -p luciddesk --bin luciddesk pane::composition::tests --locked --offline -- --test-threads=1
+# 错误恢复上限与失效资源释放
+cargo test -p luciddesk --bin luciddesk failed_resources_are_dropped_and_retries_stop_until_external_redraw --locked --offline -- --test-threads=1
+cargo test -p luciddesk --bin luciddesk early_callback_preserves_wakeup_and_deferred_frames_do_not_reset_recovery --locked --offline -- --test-threads=1
 
-# 缩放缓存复用、淘汰和像素一致性
-cargo test -p luciddesk --bin luciddesk pane::scaled_icons::tests --locked --offline
+# 搜索背压与设置图标上传复用
+cargo test -p luciddesk --bin luciddesk deferred_search_frame_keeps_pending_redraw_until_it_is_painted --locked --offline -- --test-threads=1
+cargo test -p luciddesk --bin luciddesk settings_icon_upload_is_reused_and_released_when_not_visible --locked --offline -- --test-threads=1
 
-# 图形缓存先于 COM apartment 和进程退出释放
+# WARP 交换链尺寸变化与重绘唤醒；退出资源顺序
+cargo test -p luciddesk --bin luciddesk warp_surface_draws_resizes_and_defers_without_losing_the_wakeup --locked --offline -- --test-threads=1
 cargo test -p luciddesk --bin luciddesk graphics_caches_release_before_apartment_and_process_exit --locked --offline -- --test-threads=1
 
-# 单独执行：会显示四个 GPU 窗口，默认测试跳过此项
+# 手动基准，无 CI 耗时阈值；离屏目标，不做逐帧 CPU 读回
+cargo test -p luciddesk --bin luciddesk warm_pane_draw_latency --locked --offline -- --ignored --test-threads=1 --nocapture
+
+# 单独执行：会显示四个 GPU 窗口，默认跳过
 cargo test -p luciddesk --bin luciddesk multi_window_render_latency --locked --offline -- --ignored --test-threads=1 --nocapture
 ```
 
+`warm_pane_draw_latency` 使用 640×480 目标、48 个共享图标、网格和列表视图，每种视图预热 20 帧后采样 300 帧并改变悬停项。记录 p50/p95，比较时保持硬件、渲染路径、编译配置、DPI 和后台负载一致，前后版本交替多轮执行。测量包括 CPU 绘制命令准备与提交，不是 GPU 时间戳或整机占用；Debug 结果不能当作 Release 性能承诺。
+
 手动检查以下场景：
 
+- 在可控环境验证真实设备丢失后的重建、重试停止与外部交互恢复；模拟错误测试不能替代驱动重置。
 - 在不同 DPI 的显示器之间移动窗口，检查文字、图标、裁剪和圆角是否正确。
 - 连续滚动大目录、调整窗口尺寸并停止操作，确认最终状态完整显示，没有持续空转刷新。
 - 打开设置及菜单，观察首帧、淡入末帧和材质切换；关闭系统动画后再次检查。

@@ -8,6 +8,7 @@
 | --- | --- |
 | `Cargo.toml`、`Cargo.lock` | 主 workspace 成员、共享依赖和依赖锁定 |
 | `rust-toolchain.toml`、`.cargo/` | Rust 工具链与 Cargo 构建配置 |
+| `cli/`、`skills/` | 控制台命令、离线帮助和随包分发的 Agent 操作指南 |
 | `app/` | 主程序、窗口交互、内嵌资源及应用测试 |
 | `crates/` | 领域模型、存储与 Windows 平台能力 |
 | `installer/` | Inno EXE 脚本、MSI 定义、安装检查、安装标记与许可文本 |
@@ -19,7 +20,9 @@
 
 根目录的双语 README 面向使用者，CONTRIBUTING 面向贡献者，CHANGELOG 保存发布历史，PRIVACY 说明隐私政策。专题实现文档通过[开发文档导航](README.md)进入，避免在根目录重复维护技术说明。
 
-主 workspace 包含 `app` 和六个 `desktop-*` crate。部分工具有自己的 `Cargo.toml`、`Cargo.lock` 和独立 workspace，例如 `tools/windows-bindings/`；根目录构建不会自动构建这些工具。
+主 workspace 包含 `app`、`cli` 和九个 `luciddesk-*` 库 crate。部分工具有自己的 `Cargo.toml`、`Cargo.lock` 和独立 workspace，例如 `tools/windows-bindings/`；根目录构建不会自动构建这些工具。
+
+CLI 的 `main.rs` 负责参数和输出，`shortcuts.rs` 复用预览/提交流程，`next_step.rs` 生成结构化后续指引，`help.rs` 与 `help/topics.rs` 负责离线发现，`skill.rs` 内嵌完整技能包。`skills/luciddesk-control/SKILL.md` 是入口，详细规则按任务放入 `references/`；维护与分发约束见 [CLI 与 Agent](cli-agent.md)。
 
 ## 应用功能目录
 
@@ -45,27 +48,27 @@ app/
     └── pane/
         ├── mod.rs             # 应用状态与功能入口
         ├── model.rs           # 窗口模型
-        ├── events.rs          # 操作分派
-        ├── hybrid.rs          # 运行入口、Hook 会话与桌面同步
-        ├── hybrid/            # 清单、图标、审计与改名事务
+        ├── events/mod.rs      # 操作分派
+        ├── hybrid/            # mod.rs 运行入口；清单、图标、审计与改名事务
         ├── runtime.rs         # 通知、截止时间与故障重连
         ├── display_layout.rs  # 显示器布局
         ├── recovery.rs        # 备份、导入和恢复
-        ├── folder.rs          # 文件夹来源入口
-        ├── folder/            # 导航策略、视图偏好与图像
+        ├── folder/            # mod.rs 文件夹入口；导航、视图偏好、图像及测试
         ├── search/            # 搜索窗口、Everything 与快捷键
         ├── drag_drop/         # OLE 拖放、预览与临时描述
-        ├── settings.rs        # 设置窗口入口
-        ├── settings/          # 设置布局及测试
-        ├── window.rs          # 面板窗口入口
-        ├── window/            # 窗口交互子模块
-        ├── render.rs          # 面板绘制
+        ├── settings/          # mod.rs 入口；host、painter、布局、Agent 设置及测试
+        ├── window/            # mod.rs 窗口入口；输入、菜单、调度及测试
+        ├── control/           # CLI 控制、计划、布局与回执
+        ├── render/            # mod.rs 面板绘制；tests.rs、bench.rs
+        ├── canvas.rs          # 绘制作用域、文字与离屏读回
+        ├── canvas/brushes.rs  # 固定数量的 GPU 画刷复用
+        ├── composition.rs     # Surface、交换链与呈现背压
+        ├── composition/recovery.rs # 窗口绘制失败的有限重试
         ├── native_graphics.rs # 图形绑定转换与生命周期
         ├── scaled_icons.rs    # CPU 缩放图像缓存
         ├── assets.rs          # 图像资源入口
         ├── assets/            # 图像资源辅助模块
-        ├── acrylic.rs         # 材质视觉树与窗口接口
-        ├── acrylic/           # 合成运行时、画刷回退、效果与兼容层
+        ├── acrylic/           # mod.rs 材质入口；运行时、画刷回退与兼容层
         └── tests.rs           # 面板集成回归
 ```
 
@@ -94,6 +97,8 @@ rg -n 'mod |pub.*use ' app/src/pane/mod.rs
 
 | Crate | 实现入口与内部组织 |
 | --- | --- |
+| `luciddesk-api` | 本地控制协议、操作和响应模型；供主程序与 CLI 共用 |
+| `luciddesk-diagnostics` | 日志等级、单行格式、限流、轮转与显式渲染追踪 |
 | `luciddesk-core` | `src/lib.rs` 重导出领域类型；身份、坐标、外观、项目、面板与工作区分别维护 |
 | `luciddesk-storage` | `src/store/` 管理配置、数据库、编解码、标签、显示器布局与恢复；公共错误位于 `src/error.rs` |
 | `luciddesk-shell` | `src/` 按身份、桌面查询、通知、激活、COM/OLE、文件操作和菜单划分 |

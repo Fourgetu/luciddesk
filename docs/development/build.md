@@ -215,7 +215,7 @@ Release 包含 EXE 安装包、普通 ZIP、便携 ZIP 及各自的 SHA256 文�
 
 项目在 `0.x` 阶段采用以下约定：新增功能递增次版本并将修订号归零；只有兼容修复时递增修订号。破坏兼容性的变更在 `0.x` 阶段递增次版本并明确记录迁移要求；稳定的兼容性承诺从 `1.0.0` 开始。进入 `1.x` 后，破坏兼容的变更递增主版本。参见 [Semantic Versioning 2.0.0](https://semver.org/lang/zh-CN/)。
 
-已有版本记录和 Git 标签不追溯重编号。尚未发布的变更先记录在双语 Changelog 的“未发布 / Unreleased”章节，确定版本后移入对应版本章节。发布时同步 `Cargo.lock`、双语 README 徽章和双语 Changelog；CI 验证版本一致性，发布标签必须为 `<应用版本>` 或 `v<应用版本>`。
+已有版本记录和 Git 标签不追溯重编号。尚未发布的变更先记录在双语 Changelog 的“未发布 / Unreleased”章节，确定版本后移入对应版本章节。发布时同步 `cli/Cargo.toml`、`Cargo.lock`、双语 README 徽章和双语 Changelog；GUI 与 CLI 版本必须一致，内部库继续使用各自版本。CI 验证版本一致性，发布标签必须为 `<应用版本>` 或 `v<应用版本>`。
 
 CI 的语言资源和发布说明检查在 Linux 上与 Windows 构建并行。Cargo 依赖缓存覆盖 `target/ci-tests` 和 `target/production`，缓存按 Rust、Cargo 配置、编译环境变量和 Windows 工具链隔离；不缓存发布包或测试临时目录。CI 的 dev/test 构建使用 `line-tables-only` 调试信息，保留回溯文件名和行号，省去类型和变量信息；本地仍使用完整调试信息，release 配置不变。同一分支的新运行会取消旧构建，标签构建不自动取消。产物上传使用零级压缩，避免再次压缩 ZIP 和 EXE。
 

@@ -18,6 +18,7 @@
 | 构建、打包或发布 | [构建与验证](build.md) → [包验收与兼容边界](validation.md)；MSIX 另见[打包与运行](../msix.md) |
 | 图标收纳、释放或 Explorer 恢复 | [成员过滤](hybrid-desktop.md) → [选择与刷新时序](selection-latency.md) → [后台调度](event-driven-runtime.md) |
 | 菜单、重命名、选择或焦点异常 | [菜单与重命名](pane-item-rename.md) → [面板层级](pane-drag-order.md) → [选择时序](selection-latency.md) |
+| CLI、Agent 或 Skill | [CLI 接口设计](cli-agent.md) → [用户命令指南](../cli.md) → [Pane 模块边界](pane-structure.md) |
 | 绘制、材质、首帧或资源占用 | [绘图与绑定](rendering.md) → [背景材质](mica-materials.md) → [图标内存管理](memory-optimization.md) |
 | 标签切换、排序或窗口合并 | [普通面板标签页](pane-tabs.md) → [面板层级](pane-drag-order.md) → [存储](storage.md) |
 | 设置页、语言或字体布局 | [设置组件](settings-components.md) → [多语言](localization.md) → [绘图](rendering.md) |
@@ -32,6 +33,8 @@
 | --- | --- |
 | [构建与验证](build.md) | 环境准备、构建命令、工具链、打包、CI、发布与版本编号 |
 | [架构说明](architecture.md) | 模块和进程职责、启动流程、通信及退出恢复 |
+| [Pane 模块边界](pane-structure.md) | 面板子模块、状态所有权、重入与布局边界 |
+| [CLI 与 Agent](cli-agent.md) | 本地通信、控制开关、计划提交与技能安装入口 |
 | [目录结构](structure.md) | 源码目录、功能归属、工具与新增文件约定 |
 | [Rust API 与资源生命周期约定](rust-api-review.md) | 所有权、COM 线程、重入、错误与 unsafe 边界 |
 | [验证与兼容边界](validation.md) | 检查层次、实机流程、包验收、平台限制与结果记录 |
@@ -52,7 +55,7 @@
 
 | 文档 | 内容 |
 | --- | --- |
-| [绘图与绑定](rendering.md) | 绘制、呈现重试、设备资源、绑定转换与首帧 |
+| [绘图与绑定](rendering.md) | 绘制、呈现背压、失败恢复、资源复用、绑定转换与首帧 |
 | [背景材质与主题](mica-materials.md) | 材质参数、主题、系统策略及回退 |
 | [图标内存管理](memory-optimization.md) | 像素共享、CPU/GPU 缓存预算及回收 |
 | [设置页公共组件](settings-components.md) | 场景与 Action、动态布局、滚动、字体搜索和测试 |

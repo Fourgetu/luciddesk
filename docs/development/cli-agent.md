@@ -4,6 +4,26 @@
 
 当前支持普通面板、文件夹、搜索、标签、显示器几何、应用设置、字体候选和开机启动控制。单项命令复用计划预览/提交；回执及缓存驻留内存。具体字段、异步结果、限制和示例以 [CLI 使用](../cli.md) 为准。下文同时记录设计约束与实现取舍，不将剩余验收项视为已完成。
 
+## 以 Agent 为主的 CLI 入口
+
+CLI 和主程序保持相同发布版本；控制协议版本另行维护。CLI 主要供 Agent 调用，用户通常通过主程序或自然语言交给 Agent 操作。Agent 通过 `help ... --json` 读取 `help_version`、行为标记、字段 schema、参数数组及 `output_contract`，避免从自然语言或 shell 字符串反推调用。文本 HELP 保留总览、资源组和叶命令层级，便于人工排查。
+
+帮助命令目录来自 `luciddesk_api::COMMANDS/OPERATIONS`，字段与必填约束来自内置协议，参数别名复用 `shortcuts::flag`；用途和示例在 `cli/src/help/topics.rs` 维护。增加命令时必须补充用途与示例，并通过覆盖性和示例解析测试。离线帮助不连接应用、不读取输入文件、不执行修改；JSON 原有字段保持兼容，新增字段是可选消费的信息。具体接口见 [CLI 使用](../cli.md)。
+
+## CLI 控制与 Skill 安装入口
+
+`config.toml` 的 `[cli].enabled` 默认 `true`，在“设置 → 常规 → Agent 与 CLI”中修改并立即生效。主程序控制层在处理在线请求前统一检查开关，包括只读查询；关闭时返回 `ACCESS_DENIED`。管道仍保留以提供明确错误，不通过客户端缓存推测服务是否禁用。离线 `help`、`schema --json`、`skill show` 不经过此开关。
+
+`settings/agent.rs` 生成包含当前 EXE 同目录 CLI 路径的安装提示词，由通用剪贴板模块复制；不启动 CLI、不安装 Skill。提示词要求通过 `skill show --json` 获取完整技能包，保存全部相对路径并检查目标路径不越界。
+
+## 后续动作与渐进式 Skill
+
+`cli/src/next_step.rs` 在客户端追加可选的 `data.next_step`，不更改服务端状态或退出码。预览提供 `review_then_apply` 的精确参数；不确定提交和待生效结果提示查询原回执；冲突、失败或未知结果提示读取状态。`request get` 的内层结果位于 `data.result`，下一步提示仍在外层 `data.next_step`。不能将外层 `ok:true` 当作原操作完成，不能据提示自动重试不确定修改。已有 `data.recovery` 保持精确重放参数。
+
+`skills/luciddesk-control/SKILL.md` 是简短入口，`references/` 按计划恢复、桌面布局、文件夹搜索、设置启动和安装分组。一般快捷操作不必加载全部参考资料；参数和枚举优先查对应 HELP，避免复制协议或把所有文档注入上下文。
+
+`cli/src/skill.rs` 内嵌完整技能包。JSON 导出保持 `name/format/content`，新增 `bundle_version:1`、`entrypoint` 和 `files`（相对路径到 UTF-8 内容的映射）。`content` 与纯文本导出只包含入口；安装时需保存全部文件，运行任务时再按需读取。新增或重命名 references 时同步更新内嵌清单、EXE 安装清单和安装器测试；分发脚本会收集参考文档，`test-agent-package.ps1` 核对每个导出文件的内容、清单和哈希。
+
 ## 1. 设计决定
 
 - 增加控制台程序 `luciddesk-cli.exe`，保留 `luciddesk.exe` 的 GUI 子系统和现有启动参数。

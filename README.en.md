@@ -12,7 +12,7 @@ Desktop panels · Folder panels · Everything search · Spacebar preview · Agen
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Build CI](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml/badge.svg)](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml)
-[![Version](https://img.shields.io/badge/version-0.19.1-087EA4?style=flat-square)](CHANGELOG.en.md)
+[![Version](https://img.shields.io/badge/version-0.20.0-087EA4?style=flat-square)](CHANGELOG.en.md)
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square)](#compatibility)
 [![Architecture](https://img.shields.io/badge/arch-x64-475569?style=flat-square)](docs/portable.md)
 
@@ -113,6 +113,8 @@ An optional **Show all panels** global shortcut is available in **Settings → P
 | Folders and search | Manage folder mappings, views and sorting; navigate and refresh directories; submit searches, refresh results and load more |
 | Settings and system | Query and change supported application settings, discover available fonts, and inspect or configure startup |
 
+Use **Settings → General → Agent & CLI** to enable or disable CLI control; it is enabled by default. Copy the Skill installation prompt and give it to your Agent to install the guide matching the running app. Copying the prompt does not run an installer. When CLI control is disabled, online queries and mutations are rejected; offline help, schema discovery and Skill export remain available.
+
 Start with read-only queries from the application directory:
 
 ```powershell
@@ -124,7 +126,9 @@ Start with read-only queries from the application directory:
 
 **Agent workflow: query → create a plan → preview differences → apply → verify.** The CLI provides JSON output, schema discovery and request receipts. Previews do not persist changes; query again after a state conflict, and use receipts to check execution after a timeout. Add `--dry-run` to shortcut mutations to preview only; without it, the CLI previews and immediately applies the change.
 
-Agents can read the built-in guide with `skill show` or use the repository's [SKILL.md](skills/luciddesk-control/SKILL.md). Supported operations vary by panel type. See the [CLI guide](docs/cli.md) (Chinese) for commands, scope and recovery, and the [changelog](CHANGELOG.en.md#v0190) for recent additions.
+The CLI primarily serves Agents: `help RESOURCE COMMAND --json` describes arguments and behavior, while `next_step` supplies follow-up actions and argument arrays. Query the original receipt for pending or uncertain submissions to avoid duplicate changes. The GUI and CLI share a release version; the control protocol is versioned separately.
+
+The Skill uses progressive disclosure: [SKILL.md](skills/luciddesk-control/SKILL.md) covers the common workflow, with layout, folder, search, settings and recovery references read as needed. Install the full bundle from `skill show --json` by saving every `data.files` entry, or copy the entire `skills/luciddesk-control/` directory; plain `skill show` prints only the entrypoint. Supported operations vary by panel type. See the [CLI guide](docs/cli.md) (Chinese) and [changelog](CHANGELOG.en.md).
 
 <a id="upgrading-and-backups"></a>
 

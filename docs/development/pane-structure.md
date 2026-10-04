@@ -21,11 +21,13 @@
 | `control/content_layout/snapping.rs` | 相对面板吸附、对齐及碰撞校验 |
 | `control/content_layout/arrangement.rs` | 多列排列、共享窗口去重及工作区容量校验 |
 | `control/content_layout/tests.rs` | 布局与无写入回归测试，保留原测试模块路径 |
+| `composition/recovery.rs` | 绘制失败时释放窗口资源、有限延迟重试及错误去重 |
+| `canvas/brushes.rs` | 固定画刷数组复用，颜色更新及图形上下文失效重建 |
 | `settings/` | 设置窗口、操作、外观转换、字体编辑框与生命周期 |
 
 ## 目录约定
 
-包含多个实现文件的模块统一使用 `<module>/mod.rs` 作为入口，入口与子模块放在同一目录，不使用 `#[path]` 维持分散的文件布局。`pane/mod.rs` 按应用状态、内容配置、窗口交互、渲染资源分组声明模块；独立且没有子模块的小文件保留在顶层。
+窗口和业务模块包含多个实现文件时使用 `<module>/mod.rs` 作为入口，入口与子模块放在同一目录，不使用 `#[path]` 维持分散的文件布局。`canvas.rs` 与 `composition.rs` 保留共享图形入口，专用的画刷和恢复帮助模块放在同名目录内。`pane/mod.rs` 按应用状态、内容配置、窗口交互、渲染资源分组声明模块；独立且没有子模块的小文件保留在顶层。
 
 ```text
 pane/

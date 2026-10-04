@@ -12,7 +12,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Build CI](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml/badge.svg)](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml)
-[![版本](https://img.shields.io/badge/version-0.19.1-087EA4?style=flat-square)](CHANGELOG.md)
+[![版本](https://img.shields.io/badge/version-0.20.0-087EA4?style=flat-square)](CHANGELOG.md)
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square)](#系统与兼容性)
 [![架构](https://img.shields.io/badge/arch-x64-475569?style=flat-square)](docs/portable.md)
 
@@ -114,6 +114,8 @@ LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。把零散图标�
 | 文件夹与搜索 | 管理文件夹映射、视图和排序，浏览与刷新目录；提交搜索、刷新结果和加载下一页 |
 | 设置与系统 | 查询和修改支持的应用设置，查找可用字体，查询与设置开机启动 |
 
+在“设置 → 常规 → Agent 与 CLI”中可开关 CLI 控制，默认启用。复制 Skill 安装提示词后交给 Agent，可安装与当前程序配套的操作指南；复制本身不会执行安装。关闭 CLI 控制后，在线查询与修改均被拒绝，离线帮助、协议和 Skill 导出仍可使用。
+
 在程序目录中从只读查询开始：
 
 ```powershell
@@ -125,7 +127,9 @@ LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。把零散图标�
 
 **Agent 工作流程：查询 → 生成计划 → 预览差异 → 应用 → 核对结果。** CLI 提供 JSON 输出、协议查询和请求回执；预览不保存修改，状态冲突时重新查询，超时后通过回执确认执行结果。快捷修改命令加 `--dry-run` 只预览，省略时会预览后立即应用。
 
-Agent 可通过 `skill show` 读取内置操作指南，或使用仓库中的 [SKILL.md](skills/luciddesk-control/SKILL.md)。不同面板类型支持的操作有所区别，完整命令、适用范围和恢复流程见 [CLI 使用说明](docs/cli.md)；近期新增能力见[更新记录](CHANGELOG.md#v0190)。
+CLI 以 Agent 调用为主：`help RESOURCE COMMAND --json` 提供参数与行为说明，`next_step` 提供后续动作和参数数组；待生效或不确定提交应查询原回执，避免重复修改。主程序和 CLI 使用相同发布版本，控制协议单独版本化。
+
+Skill 使用渐进式披露：[SKILL.md](skills/luciddesk-control/SKILL.md) 保留通用流程，布局、文件夹、搜索、设置及恢复规则按任务读取。安装时用 `skill show --json` 导出完整技能包并保存全部 `data.files`，或整体复制 `skills/luciddesk-control/`；纯文本 `skill show` 只显示入口。不同面板类型支持的操作有所区别，完整说明见 [CLI 使用说明](docs/cli.md)，近期变化见[更新记录](CHANGELOG.md)。
 
 <a id="升级与备份"></a>
 
