@@ -7,12 +7,12 @@ pub(super) fn valid(widths: [f32; 4]) -> bool {
 }
 
 pub(super) fn decode(value: &str) -> Option<[f32; 4]> {
-    let values: Vec<f32> = value
-        .split(',')
-        .map(str::parse)
-        .collect::<Result<_, _>>()
-        .ok()?;
-    let widths: [f32; 4] = values.try_into().ok()?;
+    let mut values = value.split(',');
+    let mut widths = [0.0; 4];
+    for width in &mut widths {
+        *width = values.next()?.parse().ok()?;
+    }
+    if values.next().is_some() { return None; }
     valid(widths).then_some(widths)
 }
 

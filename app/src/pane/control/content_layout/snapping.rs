@@ -33,10 +33,7 @@ pub(super) fn expand(
         }
     }
     let anchor = current(w, target, positions, monitors)?;
-    let description = geometry::describe(anchor, monitors);
-    let m = monitors
-        .iter()
-        .find(|m| Some(m.id.as_str()) == description["monitor_id"].as_str())
+    let m = geometry::nearest_monitor(anchor, monitors)
         .ok_or("target monitor unavailable")?;
     let scale = m.dpi as f32 / 96.0;
     let (width, height) = if let Some(columns) = icon_columns {

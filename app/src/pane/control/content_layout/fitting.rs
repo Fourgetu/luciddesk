@@ -12,8 +12,8 @@ pub(super) fn expand(
         monitors,
         folders,
     } = *context;
-    let mut result = Vec::new();
-    let p = w.panel(parse(pane_id)?).ok_or("panel does not exist")?;
+    let id = parse(pane_id)?;
+    let p = w.panel(id).ok_or("panel does not exist")?;
     let (columns, max_rows) = match op {
         Operation::Fit { icon_columns, .. } => (*icon_columns, None),
         Operation::FolderFit {
@@ -30,7 +30,7 @@ pub(super) fn expand(
                 );
             }
             (
-                icon_columns.unwrap_or(
+                icon_columns.unwrap_or_else(||
                     ((p.rect().width - layout::PADDING * 2.0) / metrics(w).cell_width)
                         .floor()
                         .clamp(1.0, 64.0) as u32,
@@ -40,12 +40,8 @@ pub(super) fn expand(
         }
         _ => unreachable!(),
     };
-    let id = parse(pane_id)?;
     let old = current(w, id, positions, monitors)?;
-    let description = geometry::describe(old, monitors);
-    let m = monitors
-        .iter()
-        .find(|m| Some(m.id.as_str()) == description["monitor_id"].as_str())
+    let m = geometry::nearest_monitor(old, monitors)
         .ok_or("no monitor available")?;
     let (width, height) = pixel_size(w, id, columns, m.dpi as f32 / 96.0, folders, max_rows)?;
     if width > m.work_area.width as f32 || height > m.work_area.height as f32 {
@@ -55,6 +51,5 @@ pub(super) fn expand(
     }
     let x = (old.x - m.work_area.x as f32).clamp(0.0, m.work_area.width as f32 - width);
     let y = (old.y - m.work_area.y as f32).clamp(0.0, m.work_area.height as f32 - height);
-    result.push(wire(id, m, x, y, width, height));
-    Ok(result)
+    Ok(vec![wire(id, m, x, y, width, height)])
 }

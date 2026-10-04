@@ -78,15 +78,18 @@ pub(super) fn query(
     });
     describe(px, monitors)
 }
-pub(super) fn describe(px: RectDip, monitors: &[MonitorDescriptor]) -> serde_json::Value {
-    let monitor = monitors.iter().min_by_key(|m| {
+pub(super) fn nearest_monitor(px: RectDip, monitors: &[MonitorDescriptor]) -> Option<&MonitorDescriptor> {
+    monitors.iter().min_by_key(|m| {
         let w = m.work_area;
         let x = px.x + px.width / 2.0;
         let y = px.y + px.height / 2.0;
         let dx = x - x.clamp(w.x as f32, (w.x + w.width) as f32);
         let dy = y - y.clamp(w.y as f32, (w.y + w.height) as f32);
         (dx * dx + dy * dy) as u64
-    });
+    })
+}
+pub(super) fn describe(px: RectDip, monitors: &[MonitorDescriptor]) -> serde_json::Value {
+    let monitor = nearest_monitor(px, monitors);
     let Some(m) = monitor else {
         return serde_json::Value::Null;
     };

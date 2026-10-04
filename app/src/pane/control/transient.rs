@@ -73,7 +73,7 @@ pub(super) fn fingerprint(s: &PaneApp) -> String {
     let mut folders: Vec<_> = s
         .folders
         .iter()
-        .map(|(id, source)| (id.get(), source.navigation_context(), source.items.len(), source.loading, source.status.clone()))
+        .map(|(id, source)| (id.get(), source.navigation_context(), source.items.len(), source.loading, &source.status))
         .collect();
     folders.sort();
     let searches: Vec<_> = s
