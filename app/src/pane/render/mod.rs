@@ -72,6 +72,7 @@ pub struct Renderer {
     icons: windows_canvas::TextFormat,
     navigation_icons: windows_canvas::TextFormat,
     target: Option<(u32, u32, Option<canvas::Offscreen>, ID2D1DeviceContext)>,
+    brushes: std::cell::RefCell<canvas::Brushes<9>>,
     images: HashMap<usize, ImageBitmap>,
     states: HashMap<(u32, u32, u32, i32), windows_canvas::Bitmap>,
 }
@@ -274,6 +275,7 @@ impl Renderer {
                 .with_paragraph_alignment(ParagraphAlignment::Center)
                 .with_word_wrapping(WordWrapping::NoWrap),
             target: None,
+            brushes: Default::default(),
             images: HashMap::new(),
             states: HashMap::new(),
         })
@@ -397,12 +399,12 @@ impl Renderer {
             || pixels < cached.width_pixels
             || available_pixels >= cached.width_pixels + 4.0
         {
+            if cached.width_pixels != pixels || cached.scale != scale {
+                cached.layout.set_max_size(pixels / scale, HEADER);
+            }
             cached.width_pixels = pixels;
             cached.scale = scale;
         }
-        cached
-            .layout
-            .set_max_size(cached.width_pixels / scale, HEADER);
         Ok(cached.layout.clone())
     }
 
@@ -438,6 +440,8 @@ impl Renderer {
                 / scale;
         {
             let (_, _, _, target) = self.target.as_ref().unwrap();
+            let context = target;
+            let mut brushes = self.brushes.borrow_mut();
             canvas::draw(target, scale, |target| {
                 let (w, h) = (width as f32 / scale, height as f32 / scale);
                 let contrast = super::theme::panel_contrast(
@@ -457,27 +461,19 @@ impl Renderer {
                 };
                 let base = contrast.base();
                 let ink = contrast.ink();
-                let background = canvas_result(
-                    target.create_solid_brush(
+                let [background, outline, white, dim, placeholder_fill, placeholder_edge, selection, hover, inactive] =
+                    canvas_result(brushes.get(context, &target, [
                         if !model.native_material { super::theme::mica_fallback(model.backdrop, model.dark) } else { None }
-                            .unwrap_or(ColorF::new(base, base, base, opacity))),
-                )?;
-                let outline = canvas_result(
-                    target
-                        .create_solid_brush(super::theme::panel_border(model.dark, model.backdrop)),
-                )?;
-                let white =
-                    canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 1.0)))?;
-                let dim =
-                    canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.85)))?;
-                let placeholder_fill = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.08)))?;
-                let placeholder_edge = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.48)))?;
-                let selection =
-                    canvas_result(target.create_solid_brush(ColorF::new(0.55, 0.75, 1.0, 0.25)))?;
-                let hover =
-                    canvas_result(target.create_solid_brush(ColorF::new(0.7, 0.85, 1.0, 0.12)))?;
-                let inactive =
-                    canvas_result(target.create_solid_brush(ColorF::new(0.75, 0.8, 0.85, 0.16)))?;
+                            .unwrap_or(ColorF::new(base, base, base, opacity)),
+                        super::theme::panel_border(model.dark, model.backdrop),
+                        ColorF::new(ink, ink, ink, 1.0),
+                        ColorF::new(ink, ink, ink, 0.85),
+                        ColorF::new(ink, ink, ink, 0.08),
+                        ColorF::new(ink, ink, ink, 0.48),
+                        ColorF::new(0.55, 0.75, 1.0, 0.25),
+                        ColorF::new(0.7, 0.85, 1.0, 0.12),
+                        ColorF::new(0.75, 0.8, 0.85, 0.16),
+                    ]))?;
                 target.clear(ColorF::new(0.0, 0.0, 0.0, 0.0));
                 let rounded = RoundedRect {
                     rect: Rect::from_xywh(0.5, 0.5, w - 1.0, h - 1.0),
@@ -485,7 +481,7 @@ impl Renderer {
                     radius_y: model.options.corner_radius,
                 };
                 {
-                    target.fill_rounded_rect(&rounded, &background);
+                    target.fill_rounded_rect(&rounded, background);
                     if model.options.border {
                         // One physical pixel, fully inside the client bounds at every DPI.
                         let stroke = 1.0 / scale;
@@ -495,18 +491,18 @@ impl Renderer {
                             rect: Rect::from_xywh(inset, inset, w - stroke, h - stroke),
                             radius_x: radius,
                             radius_y: radius,
-                        }, &outline, stroke);
+                        }, outline, stroke);
                     }
                     if show_icon && model.tabs.len() < 2 && model.merge_preview.is_empty() {
                         target.clipped_icon(
                             "\u{e8b7}",
                             &self.icons,
                             &Rect::from_xywh(group_left, 0.0, 18.0, HEADER),
-                            &white,
+                            white,
                         );
                     }
                     if model.tabs.len() < 2 && model.merge_preview.is_empty() {
-                        target.clipped_color_layout(&model.title, &title, group_left + icon_width, canvas::text_ink_center_offset(&title)?, &white)?;
+                        target.clipped_color_layout(&model.title, &title, group_left + icon_width, canvas::text_ink_center_offset(&title)?, white)?;
                     }
                     for button in 0..if !model.merge_preview.is_empty() { 0 } else if model.folder.is_some() { 4 } else { 2 } {
                         let top = super::layout::HEADER_INSET;
@@ -599,7 +595,7 @@ impl Renderer {
                     }
                     let text = model.tabs.iter().find(|(tab, _)| *tab == id).map_or("", |(_, title)| title.as_str());
                     target.clipped_color_text(text, &self.tab_title, &Rect::from_xywh(rect.left + 10.0, rect.top, (bounds.width - 20.0).max(1.0), bounds.height),
-                        if id == model.active_tab { &white } else { &dim })?;
+                        if id == model.active_tab { white } else { dim })?;
                 }
                 for (text, incoming, active, bounds) in super::tabs::merge_strip(model, w) {
                     let rect = Rect::from_xywh(bounds.x, bounds.y, bounds.width, bounds.height);
@@ -625,7 +621,7 @@ impl Renderer {
                         }
                     }
                     target.clipped_color_text(&text, &self.tab_title, &Rect::from_xywh(rect.left + 10.0, rect.top,
-                        (bounds.width - 20.0).max(1.0), bounds.height), if active || incoming { &white } else { &dim })?;
+                        (bounds.width - 20.0).max(1.0), bounds.height), if active || incoming { white } else { dim })?;
                 }
                 if super::header_divider::enabled() && !model.collapsed && h > model.content_header() + 1.0 {
                     let divider = canvas_result(target.create_solid_brush(super::theme::panel_divider(model.dark, model.backdrop)))?;
@@ -650,7 +646,7 @@ impl Renderer {
                                     grid.content_top - super::layout::LIST_HEADER + 6.0,
                                     1.0, super::layout::LIST_HEADER - 12.0,
                                 ),
-                                &hover,
+                                hover,
                             );
                         }
                         for (column, name) in [crate::i18n::text("ui-name"), crate::i18n::text("ui-type"), crate::i18n::text("ui-modified"), crate::i18n::text("ui-size")].iter().enumerate()
@@ -669,7 +665,7 @@ impl Renderer {
                                     left, top, text_width,
                                     super::layout::LIST_HEADER,
                                 ),
-                                &dim,
+                                dim,
                             );
                             if sorted {
                                 target.clipped_icon(
@@ -679,7 +675,7 @@ impl Renderer {
                                         left + self.column_label_widths[column].min(text_width) + 4.0,
                                         top, 14.0, super::layout::LIST_HEADER,
                                     ),
-                                    &dim,
+                                    dim,
                                 );
                             }
                         }
@@ -690,7 +686,7 @@ impl Renderer {
                                 grid.cell_width,
                                 1.0,
                             ),
-                            &hover,
+                            hover,
                         );
                     }
                     for index in grid.visible_indices(model.scroll, HEADER, h, model.items.len()) {
@@ -702,11 +698,11 @@ impl Renderer {
                         if y + grid.cell_height <= { HEADER } || y >= h {
                             continue;
                         }
-                        let bounds = model.selection_bounds(grid, index, scale);
-                        let selection_height = bounds.height;
-                        let selection_width = bounds.width;
-                        let selection_x = bounds.x;
                         if model.selection.contains(&index) || model.hovered_item == Some(index) {
+                            let bounds = model.selection_bounds(grid, index, scale);
+                            let selection_height = bounds.height;
+                            let selection_width = bounds.width;
+                            let selection_x = bounds.x;
                             let state = if model.selection.contains(&index) {
                                 if !model.focused {
                                     5
@@ -765,9 +761,9 @@ impl Renderer {
                                         radius_y: 0.0,
                                     },
                                     if model.selection.contains(&index) {
-                                        if model.focused { &selection } else { &inactive }
+                                        if model.focused { selection } else { inactive }
                                     } else {
-                                        &hover
+                                        hover
                                     },
                                 );
                             }
@@ -831,7 +827,7 @@ impl Renderer {
                             draw_placeholder(&target,
                                 Rect::from_xywh((left * scale).round() / scale, (top * scale).round() / scale,
                                     grid.icon_size, grid.icon_size),
-                                item.details.folder, &placeholder_fill, &placeholder_edge);
+                                item.details.folder, placeholder_fill, placeholder_edge);
 
                         }
 
@@ -859,7 +855,7 @@ impl Renderer {
                                         (columns[column + 1] - columns[column] - inset - 8.0).max(1.0),
                                         grid.cell_height,
                                     ),
-                                    if column == 0 { &white } else { &dim },
+                                    if column == 0 { white } else { dim },
                                 );
                             }
                             continue;
@@ -880,7 +876,7 @@ impl Renderer {
                             ((y + grid.icon_size + crate::pane::layout::LABEL_OFFSET) * scale)
                                 .round()
                                 / scale,
-                            &white,
+                            white,
                         );
                         continue;
                     }
@@ -902,7 +898,7 @@ impl Renderer {
                             text,
                             &self.labels,
                             &Rect::from_xywh(20.0, 0.0, (w - 40.0).max(1.0), h),
-                            &dim,
+                            dim,
                         );
                     }
                     target.pop_clip();

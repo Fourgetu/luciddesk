@@ -7,6 +7,9 @@ use windows::Win32::Graphics::Direct2D::{
 use windows::core::Result;
 use windows_canvas as c;
 
+mod brushes;
+pub(super) use brushes::Brushes;
+
 /// Canvas does not expose ellipsis trimming; keep this native operation at the boundary.
 pub fn ellipsis(format: &c::TextFormat) -> Result<()> {
     ellipsis_delimiter(format, 0)
@@ -110,6 +113,13 @@ impl DrawPass<'_> {
         let metrics = layout.metrics();
         self.push_clip(&c::Rect::from_xywh(x, y, metrics.layout_width, metrics.layout_height));
         unsafe {
+            // Plain titles need no UTF-16 buffers, cluster metrics or emoji probes.
+            if !text.chars().any(emoji_character) {
+                self.native.DrawTextLayout(windows_numerics::Vector2::new(x, y), &native_layout,
+                    &native_brush, text_options);
+                self.pop_clip();
+                return Ok(());
+            }
             // Keep shaping and trimming in one layout. Only move complete emoji
             // clusters, including joined sequences, within their original columns.
             let wide: Vec<_> = text.encode_utf16().collect();
@@ -263,10 +273,12 @@ impl DrawPass<'_> {
 }
 
 fn emoji_cluster(wide: &[u16]) -> bool {
-    let characters: Vec<_> = char::decode_utf16(wide.iter().copied()).filter_map(std::result::Result::ok).collect();
-    !characters.contains(&'\u{fe0e}') && characters.iter().any(|ch| {
-        matches!(*ch as u32, 0x1f000..=0x1faff | 0x2600..=0x27bf | 0x20e3)
-    })
+    !wide.contains(&0xfe0e)
+        && char::decode_utf16(wide.iter().copied()).filter_map(std::result::Result::ok).any(emoji_character)
+}
+
+fn emoji_character(ch: char) -> bool {
+    matches!(ch as u32, 0x1f000..=0x1faff | 0x2600..=0x27bf | 0x20e3)
 }
 impl Drop for DrawPass<'_> {
     fn drop(&mut self) {

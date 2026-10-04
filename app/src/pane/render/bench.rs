@@ -5,6 +5,40 @@ use std::time::Instant;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 #[test]
+#[ignore = "Manual GPU benchmark; timings are not CI assertions"]
+fn warm_pane_draw_latency() {
+    let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
+    let _graphics = crate::pane::native_graphics::GraphicsLifetime;
+    let device = crate::pane::native_graphics::gpu_device().unwrap();
+    let surface = crate::pane::canvas::Offscreen::new(&device, 640, 480).unwrap();
+    let mut renderer = Renderer::new().unwrap();
+    let mut model = crate::pane::tests::test_model("Desktop resources");
+    let image = std::sync::Arc::new(crate::pane::assets::Pixels {
+        width: 32, height: 32, data: [60, 100, 180, 255].repeat(32 * 32),
+    });
+    model.items = (0..48).map(|i| crate::pane::Item {
+        details: Default::default(),
+        identity: luciddesk_core::ShellIdentity::Namespace { parsing_name: format!("test:{i}") },
+        label: format!("Document {i}"), image: Some(image.clone()),
+    }).collect();
+    for list in [false, true] {
+        model.list_view = list;
+        for _ in 0..20 {
+            renderer.paint(&surface.target, 640, 480, 1.0, &model).unwrap();
+        }
+        let mut times = Vec::new();
+        for frame in 0..300 {
+            model.hovered_item = Some(frame % 12);
+            let start = Instant::now();
+            renderer.paint(&surface.target, 640, 480, 1.0, &model).unwrap();
+            times.push(start.elapsed().as_micros());
+        }
+        times.sort_unstable();
+        println!("list={list} draw_p50_us={} draw_p95_us={}", times[150], times[285]);
+    }
+}
+
+#[test]
 #[ignore = "Shows four GPU windows; run alone on an interactive desktop"]
 fn multi_window_render_latency() {
     let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();

@@ -2,6 +2,7 @@
 use super::*;
 
 pub(super) struct Drawing {
+    brushes: crate::pane::canvas::Brushes<8>,
     family: String,
     language: &'static str,
     pub(super) surface: crate::pane::composition::Surface,
@@ -10,6 +11,7 @@ pub(super) struct Drawing {
     icon: windows_canvas::TextFormat,
     placeholder: windows_canvas::TextFormat,
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -44,6 +46,7 @@ impl Drawing {
         crate::pane::canvas::ellipsis_delimiter(&name, '.' as u32).map_err(|e| e.to_string())?;
         crate::pane::canvas::ellipsis_delimiter(&path, '\\' as u32).map_err(|e| e.to_string())?;
         Ok(Self {
+            brushes: Default::default(),
             family: crate::pane::fonts::family(),
             language: crate::i18n::language(),
             surface: crate::pane::composition::Surface::new_pane(windows::Win32::Foundation::HWND(
@@ -117,6 +120,7 @@ impl Drawing {
         let native = self.surface.native;
         let w = r.right as f32 / s;
         let h = r.bottom as f32 / s;
+        let context = &target;
         crate::pane::canvas::draw(&target, s, |target| {
             target.clear(ColorF::new(0.0, 0.0, 0.0, 0.0));
             let contrast = crate::pane::theme::panel_contrast(
@@ -127,47 +131,23 @@ impl Drawing {
             );
             let ink = contrast.ink();
             let base = contrast.base();
-            let background = canvas_result(target.create_solid_brush(ColorF::new(
-                base,
-                base,
-                base,
-                if !native {
-                    1.0
-                } else if model.options.text_protection {
-                    contrast.scrim
-                } else {
-                    0.0
-                },
-            )))?;
-            let text = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 1.0)))?;
-            let dim = canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.66)))?;
-            let line = canvas_result(target.create_solid_brush(
-                crate::pane::theme::panel_divider(model.dark, model.backdrop),
-            ))?;
-            let outline =
-                canvas_result(target.create_solid_brush(crate::pane::theme::panel_border(
-                    model.dark,
-                    model.backdrop,
-                )))?;
-            let selected = canvas_result(target.create_solid_brush(ColorF::new(
-                0.30,
-                0.58,
-                0.88,
-                if model.dark { 0.24 } else { 0.13 },
-            )))?;
-            let hovered =
-                canvas_result(target.create_solid_brush(ColorF::new(ink, ink, ink, 0.06)))?;
-            let accent = canvas_result(target.create_solid_brush(if model.dark {
-                ColorF::new(0.48, 0.74, 1.0, 1.0)
-            } else {
-                ColorF::new(0.0, 0.40, 0.76, 1.0)
-            }))?;
+            let [background, text, dim, line, outline, selected, hovered, accent] =
+                canvas_result(self.brushes.get(context, &target, [
+                    ColorF::new(base, base, base, if !native { 1.0 } else if model.options.text_protection { contrast.scrim } else { 0.0 }),
+                    ColorF::new(ink, ink, ink, 1.0),
+                    ColorF::new(ink, ink, ink, 0.66),
+                    crate::pane::theme::panel_divider(model.dark, model.backdrop),
+                    crate::pane::theme::panel_border(model.dark, model.backdrop),
+                    ColorF::new(0.30, 0.58, 0.88, if model.dark { 0.24 } else { 0.13 }),
+                    ColorF::new(ink, ink, ink, 0.06),
+                    if model.dark { ColorF::new(0.48, 0.74, 1.0, 1.0) } else { ColorF::new(0.0, 0.40, 0.76, 1.0) },
+                ]))?;
             let shape = RoundedRect {
                 rect: Rect::from_xywh(0.5, 0.5, w - 1.0, h - 1.0),
                 radius_x: model.options.corner_radius,
                 radius_y: model.options.corner_radius,
             };
-            target.fill_rounded_rect(&shape, &background);
+            target.fill_rounded_rect(&shape, background);
             if model.options.border {
                 let stroke = 1.0 / s;
                 let inset = stroke * 0.5;
@@ -178,7 +158,7 @@ impl Drawing {
                         radius_x: radius,
                         radius_y: radius,
                     },
-                    &outline,
+                    outline,
                     stroke,
                 );
             }
@@ -186,14 +166,14 @@ impl Drawing {
                 "\u{e721}",
                 &self.icon,
                 &Rect::from_xywh(12.0, 0.0, 28.0, TOP),
-                &dim,
+                dim,
             );
             if unsafe { GetWindowTextLengthW(edit(hwnd)) } == 0 {
                 target.clipped_text(
                     crate::i18n::text("ui-search-local-files"),
                     &self.placeholder,
                     &Rect::from_xywh(44.0, 0.0, (w - 90.0).max(0.0), TOP),
-                    &dim,
+                    dim,
                 );
             }
             if unsafe { GetWindowTextLengthW(edit(hwnd)) } > 0 {
@@ -201,11 +181,11 @@ impl Drawing {
                     if state.busy { "\u{e916}" } else { "\u{e711}" },
                     &self.icon,
                     &Rect::from_xywh((w - 44.0).max(0.0), 10.0, 32.0, TOP - 20.0),
-                    &dim,
+                    dim,
                 );
             }
             if !state.query.is_empty() {
-                target.fill_rect(&Rect::from_xywh(12.0, TOP, w - 24.0, 1.0), &line);
+                target.fill_rect(&Rect::from_xywh(12.0, TOP, w - 24.0, 1.0), line);
                 if state.entries.is_empty() {
                     let title = if state.failed {
                         crate::i18n::text("ui-search-unavailable")
@@ -225,13 +205,13 @@ impl Drawing {
                         title,
                         &self.name,
                         &Rect::from_xywh(18.0, TOP + 10.0, (w - 36.0).max(0.0), 24.0),
-                        &text,
+                        text,
                     );
                     target.clipped_text(
                         detail,
                         &self.path,
                         &Rect::from_xywh(18.0, TOP + 36.0, (w - 36.0).max(0.0), 20.0),
-                        &dim,
+                        dim,
                     );
                     if state.failed {
                         for (x, width, label) in [
@@ -248,13 +228,13 @@ impl Drawing {
                                     radius_x: 5.0,
                                     radius_y: 5.0,
                                 },
-                                &hovered,
+                                hovered,
                             );
                             target.clipped_text(
                                 label,
                                 &self.path,
                                 &Rect::from_xywh(x + 8.0, TOP + 60.0, width - 16.0, 28.0),
-                                &accent,
+                                accent,
                             );
                         }
                     }
@@ -275,9 +255,9 @@ impl Drawing {
                                 radius_y: 4.0,
                             },
                             if state.selection.contains(&row) {
-                                &selected
+                                selected
                             } else {
-                                &hovered
+                                hovered
                             },
                         );
                         if state.focused == Some(row) && state.selection.contains(&row) {
@@ -287,7 +267,7 @@ impl Drawing {
                                     radius_x: 1.5,
                                     radius_y: 1.5,
                                 },
-                                &accent,
+                                accent,
                             );
                         }
                     }
@@ -302,29 +282,29 @@ impl Drawing {
                         if entry.folder { "\u{e8b7}" } else { "\u{e8a5}" },
                         &self.icon,
                         &Rect::from_xywh(16.0, y, 20.0, ROW - 2.0),
-                        &dim,
+                        dim,
                     );
                     target.clipped_text(
                         &name,
                         &self.name,
                         &Rect::from_xywh(46.0, y + 2.0, (w - 64.0).max(0.0), 22.0),
-                        if state.replacing { &dim } else { &text },
+                        if state.replacing { dim } else { text },
                     );
                     target.clipped_text(
                         &path,
                         &self.path,
                         &Rect::from_xywh(46.0, y + 24.0, (w - 64.0).max(0.0), 18.0),
-                        &dim,
+                        dim,
                     );
                 }
                 if !state.entries.is_empty() {
                     let y = h - FOOTER;
-                    target.fill_rect(&Rect::from_xywh(12.0, y, (w - 24.0).max(0.0), 1.0), &line);
+                    target.fill_rect(&Rect::from_xywh(12.0, y, (w - 24.0).max(0.0), 1.0), line);
                     target.clipped_text(
                         &state.footer(),
                         &self.path,
                         &Rect::from_xywh(16.0, y + 1.0, (w - 32.0).max(0.0), FOOTER - 2.0),
-                        &dim,
+                        dim,
                     );
                 }
                 if state.entries.len() > state.visible_rows {
@@ -341,7 +321,7 @@ impl Drawing {
                             radius_x: 1.0,
                             radius_y: 1.0,
                         },
-                        &dim,
+                        dim,
                     );
                 }
             }
