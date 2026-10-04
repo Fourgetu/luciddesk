@@ -7,7 +7,7 @@
 | 文件 | 职责 |
 | --- | --- |
 | `app/src/tray.rs` | 图标注册、隐藏窗口、回调分派、菜单条目与释放 |
-| `app/src/pane/hybrid.rs` | 创建 Tray，读取当前外观与搜索设置，执行 Action |
+| `app/src/pane/hybrid/mod.rs` | 创建 Tray，读取当前外观与搜索设置，执行 Action |
 | `app/src/pane/menu.rs` | 共用 Composition 菜单、键盘交互与工作区定位 |
 | `app/src/app_icon.rs` | 从程序资源加载图标并管理 HICON 所有权 |
 

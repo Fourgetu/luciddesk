@@ -4,53 +4,59 @@
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss
 )]
-mod fonts;
-mod header_divider;
-mod compact_menu;
-mod title_emoji;
-mod marquee;
-mod acrylic;
-mod animation;
-mod visibility;
-mod assets;
-mod image_pool;
-mod canvas;
-mod columns;
-mod composition;
-mod display_layout;
-mod drag_drop;
+// Application state and native desktop integration.
+mod hybrid;
+mod runtime;
+mod control;
 mod events;
+mod recovery;
+mod display_layout;
+mod wake;
+
+// Panel content and configuration.
 mod folder;
 mod folder_context;
-mod hybrid;
-mod keyboard;
-mod label;
-mod layout;
-pub(crate) mod menu;
-mod native_graphics;
-mod peek;
-mod recovery;
-mod rename;
-mod render;
-#[cfg(test)]
-mod render_bench;
-mod runtime;
-mod quick_reveal;
-mod show_hotkey;
-mod auto_hide;
-mod control;
-mod tabs;
-mod scaled_icons;
-mod scrollbar;
 mod search;
 mod settings;
-use events::handle;
-mod shell_menu;
-mod snap;
+mod tabs;
 mod sorting;
-mod theme;
-mod wake;
+
+// Window interaction.
 mod window;
+mod drag_drop;
+mod keyboard;
+mod rename;
+mod peek;
+mod marquee;
+mod columns;
+mod layout;
+mod scrollbar;
+mod snap;
+mod auto_hide;
+mod visibility;
+mod quick_reveal;
+mod show_hotkey;
+
+// Rendering and shared visual resources.
+mod render;
+mod assets;
+mod image_pool;
+mod scaled_icons;
+mod canvas;
+mod native_graphics;
+mod composition;
+mod acrylic;
+mod animation;
+mod theme;
+mod fonts;
+mod label;
+mod title_emoji;
+mod header_divider;
+mod compact_menu;
+mod shell_menu;
+
+pub(crate) mod menu;
+use events::handle;
 pub use hybrid::run;
 
 use luciddesk_core::{

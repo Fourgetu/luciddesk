@@ -8,7 +8,7 @@
 | --- | --- |
 | `app/src/pane/runtime.rs` | 监控窗口、通知消费、重连与最近期限选择 |
 | `app/src/pane/wake.rs` | 后台结果和变化通知的 UI 唤醒 |
-| `app/src/pane/hybrid.rs` | 桌面同步、在途确认及图标相关期限 |
+| `app/src/pane/hybrid/mod.rs` | 桌面同步、在途确认及图标相关期限 |
 | `app/src/pane/hybrid/audit_schedule.rs` | 清单审计退避和通知失效状态 |
 | `app/src/pane/display_layout.rs`、`recovery.rs` | 显示布局稳定窗口、备份期限 |
 | `app/src/pane/auto_hide.rs` | 鼠标状态转换的延迟确认 |

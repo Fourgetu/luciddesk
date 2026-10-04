@@ -6,10 +6,10 @@
 
 | 入口 | 职责 |
 | --- | --- |
-| `app/src/pane/window.rs` | `set_layer`、`raise_among_peers`、`raise_once` 和 `borderless_proc` |
+| `app/src/pane/window/mod.rs` | `set_layer`、`raise_among_peers`、`raise_once` 和 `borderless_proc` |
 | `app/src/pane/search/mod.rs` | 搜索窗口、原生 EDIT 的定位、层级同步与输入处理 |
 | `app/src/pane/search/hotkey.rs` | 全局搜索快捷键激活入口 |
-| `app/src/pane/hybrid.rs` | 托盘动作与面板显示操作 |
+| `app/src/pane/hybrid/mod.rs` | 托盘动作与面板显示操作 |
 
 普通分组和文件夹面板共用 `window::create`，使用 Shell owner；搜索面板使用独立窗口，并复用无边框处理和层级设置。搜索 EDIT 是由搜索窗口拥有的独立 popup，不是随父窗口自动排列的 child 控件。
 

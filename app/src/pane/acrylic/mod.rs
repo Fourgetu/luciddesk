@@ -1,12 +1,8 @@
 //! Host backdrop composition has no window-activation policy. Windows still controls
 //! backdrop transparency through accessibility settings and power policy.
-#[path = "acrylic/effects.rs"]
 mod effects;
-#[path = "acrylic/host.rs"]
 mod host;
-#[path = "acrylic/runtime.rs"]
 mod runtime;
-#[path = "acrylic/material.rs"]
 mod material;
 use runtime::Runtime;
 
@@ -254,5 +250,4 @@ pub(super) fn material_colors(material: luciddesk_core::Backdrop, dark: bool) ->
 }
 
 #[cfg(test)]
-#[path = "acrylic/tests.rs"]
 mod tests;

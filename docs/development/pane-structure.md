@@ -4,13 +4,13 @@
 
 | 入口 / 子模块 | 职责 |
 | --- | --- |
-| `events.rs` | 分发事件；先完成无需长期持有应用状态的交互，再进入面板状态修改 |
+| `events/mod.rs` | 分发事件；先完成无需长期持有应用状态的交互，再进入面板状态修改 |
 | `events/appearance.rs` | 外观预览、选项保存与失败回滚 |
 | `events/lifecycle.rs` | 面板创建、搜索启用、关闭与窗口销毁 |
 | `events/panel.rs` | 单面板状态、几何及项目移动 |
 | `events/shell.rs` | 复制 Shell 操作所需数据，延迟执行文件操作 |
 | `events/tab_events.rs` | 标签命令，复用现有 `tabs` 业务实现 |
-| `window.rs` | 原生窗口创建与消息顺序协调 |
+| `window/mod.rs` | 原生窗口创建与消息顺序协调 |
 | `window/context_menu.rs` | 菜单内容路由与事件提交 |
 | `window/input.rs` | 指针、命中、网格、滚动条与拖动预览计算 |
 | `window/scheduling.rs` | 延迟回调队列、执行和取消 |
@@ -22,6 +22,30 @@
 | `control/content_layout/arrangement.rs` | 多列排列、共享窗口去重及工作区容量校验 |
 | `control/content_layout/tests.rs` | 布局与无写入回归测试，保留原测试模块路径 |
 | `settings/` | 设置窗口、操作、外观转换、字体编辑框与生命周期 |
+
+## 目录约定
+
+包含多个实现文件的模块统一使用 `<module>/mod.rs` 作为入口，入口与子模块放在同一目录，不使用 `#[path]` 维持分散的文件布局。`pane/mod.rs` 按应用状态、内容配置、窗口交互、渲染资源分组声明模块；独立且没有子模块的小文件保留在顶层。
+
+```text
+pane/
+├── mod.rs              # 组合入口与共享状态
+├── acrylic/mod.rs      # 材质入口，与 effects、host、runtime 等实现相邻
+├── control/mod.rs      # CLI 控制入口，与计划及布局实现相邻
+├── events/mod.rs       # UI 事件分发
+├── folder/
+│   ├── mod.rs          # 文件夹面板入口
+│   └── tests.rs        # 文件夹回归测试
+├── hybrid/mod.rs       # 桌面同步与后台调度入口
+├── render/
+│   ├── mod.rs          # Renderer 实现
+│   ├── tests.rs        # 绘制回归测试
+│   └── bench.rs        # 忽略的绘制性能测试
+├── settings/mod.rs     # 设置组合入口
+└── window/mod.rs       # 原生窗口入口
+```
+
+其余既有子模块省略。此次归组保留 Rust 模块路径和可见性，文件夹与渲染回归测试名称不变；渲染基准测试路径从 `pane::render_bench::` 调整为 `pane::render::bench::`。运行测试应按 Rust 模块路径筛选，而不是按文件名推断。
 
 ## 所有权约束
 
@@ -39,7 +63,7 @@
 
 ## 后续拆分原则
 
-500 行以上的文件、100 行以上的函数作为人工检查信号，不设机械截断。按完整职责提取，避免把大闭包搬到另一个文件后宣称复杂度已经消失。`window.rs` 的原生消息协调、`render.rs` 和 `search/mod.rs` 仍是后续重点；其消息顺序和渲染状态需要各自验证。
+500 行以上的文件、100 行以上的函数作为人工检查信号，不设机械截断。按完整职责提取，避免把大闭包搬到另一个文件后宣称复杂度已经消失。`window/mod.rs` 的原生消息协调、`render/mod.rs` 和 `search/mod.rs` 仍是后续重点；其消息顺序和渲染状态需要各自验证。
 
 涉及窗口层级、焦点和桌面全局状态的测试应关闭运行中的 Debug 后串行运行，完成后恢复应用。只读数据及纯布局测试可并行。专门标记为 ignored 的交互 / GDI 测试按各自说明单独执行，不能把未运行项计为通过。
 

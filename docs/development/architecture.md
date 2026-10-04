@@ -44,12 +44,12 @@ Explorer 继续负责未收纳图标的绘制、排列、命中和原生交互�
 | --- | --- |
 | `app/src/main.rs` | 安装器预检、DPI/COM、AppUserModelID、单实例、参数与数据路径 |
 | `app/src/desktop_component.rs` | DLL 路径选择、MSIX 缓存部署、校验与旧缓存清理 |
-| `app/src/pane/hybrid.rs` | 应用运行入口、Hook 会话、桌面输入及同步顺序 |
+| `app/src/pane/hybrid/mod.rs` | 应用运行入口、Hook 会话、桌面输入及同步顺序 |
 | `app/src/pane/hybrid/` | 清单审计、身份合并、图标加载、改名事务与缓存回收 |
-| `app/src/pane/mod.rs`、`model.rs`、`events.rs` | 工作区与视图状态、操作分派和保存 |
+| `app/src/pane/mod.rs`、`model.rs`、`events/mod.rs` | 工作区与视图状态、操作分派和保存 |
 | `app/src/pane/runtime.rs`、`display_layout.rs`、`recovery.rs` | 重连、窗口恢复、显示布局、备份与恢复 |
-| `app/src/pane/folder/`、`folder.rs`、`search/` | 文件夹来源、目录监听、Everything 查询及搜索快捷键 |
-| `app/src/pane/window.rs`、`render.rs`、`settings.rs`、`settings/` | 窗口、绘图、设置布局与输入 |
+| `app/src/pane/folder/`、`folder/mod.rs`、`search/` | 文件夹来源、目录监听、Everything 查询及搜索快捷键 |
+| `app/src/pane/window/mod.rs`、`render/mod.rs`、`settings/mod.rs`、`settings/` | 窗口、绘图、设置布局与输入 |
 | `app/src/pane/drag_drop/`、`tray.rs`、`i18n.rs` | 分别负责拖放、托盘和本地化 |
 | `luciddesk-core` | Shell 身份、坐标、面板与工作区模型 |
 | `luciddesk-storage` | 配置与数据库读取、编解码和事务式保存 |

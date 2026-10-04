@@ -6,13 +6,13 @@
 
 | 入口 | 职责 |
 | --- | --- |
-| `app/src/pane/render.rs` | 面板内容、图标、文字与局部绘制资源 |
+| `app/src/pane/render/mod.rs` | 面板内容、图标、文字与局部绘制资源 |
 | `app/src/pane/canvas.rs` | 绘制作用域、裁剪、文字回退与离屏读回 |
 | `app/src/pane/composition.rs` | 窗口 Surface、交换链、尺寸调整与呈现重试 |
 | `app/src/pane/native_graphics.rs` | 设备缓存、绑定转换与图形资源退出顺序 |
 | `crates/luciddesk-graphics/src/layer.rs` | DirectComposition 设备缓存与内容层 |
-| `app/src/pane/acrylic.rs` | WinRT 材质视觉树及合成提交 |
-| `app/src/pane/settings.rs` | 设置窗口首帧显示与材质编辑 |
+| `app/src/pane/acrylic/mod.rs` | WinRT 材质视觉树及合成提交 |
+| `app/src/pane/settings/mod.rs` | 设置窗口首帧显示与材质编辑 |
 | `app/src/pane/scaled_icons.rs` | 线程内 CPU 图标缩放缓存 |
 
 ## 绘制边界

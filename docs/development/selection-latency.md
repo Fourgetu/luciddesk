@@ -6,7 +6,7 @@
 
 | 入口 | 职责 |
 | --- | --- |
-| `app/src/pane/hybrid.rs` | 输入排序、清单消费、持久化与过滤发布 |
+| `app/src/pane/hybrid/mod.rs` | 输入排序、清单消费、持久化与过滤发布 |
 | `app/src/pane/hybrid/audit.rs` | 常驻 STA 工作者、单个在途请求及断线重建 |
 | `app/src/pane/hybrid/audit_schedule.rs` | 审计退避与变化通知保留 |
 | `app/src/pane/hybrid/inventory.rs` | 成员修订键、完整快照和独立来源合并 |

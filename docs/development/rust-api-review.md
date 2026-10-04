@@ -33,7 +33,7 @@
 
 ## 正常退出与异常终止
 
-主 UI 入口 `app/src/pane/hybrid.rs::run` 当前使用内部 `OleApartment` 守卫；Shell 工作者和相关测试使用 `luciddesk_shell::ShellApartment`。两者都要求依赖 OLE 的资源先释放，但它们不是同一个类型。
+主 UI 入口 `app/src/pane/hybrid/mod.rs::run` 当前使用内部 `OleApartment` 守卫；Shell 工作者和相关测试使用 `luciddesk_shell::ShellApartment`。两者都要求依赖 OLE 的资源先释放，但它们不是同一个类型。
 
 主 UI 作用域按“OLE 守卫 → `GraphicsLifetime` → 应用状态及窗口”的顺序声明，退出时按相反顺序释放。图形缓存通过显式清理入口释放，不留到进程退出时的线程局部析构。清理时先从 `RefCell` 取出对象、结束借用，再执行可能重入的原生释放操作。细节见[绘图与绑定](rendering.md)。
 

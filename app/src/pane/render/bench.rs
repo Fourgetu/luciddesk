@@ -1,5 +1,6 @@
 //! Interactive, repeatable measurements; no timing thresholds in CI.
-use super::{composition::Surface, menu::Entry, render::Renderer};
+use super::Renderer;
+use crate::pane::{composition::Surface, menu::Entry};
 use std::time::Instant;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 

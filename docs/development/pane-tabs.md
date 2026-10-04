@@ -8,11 +8,11 @@
 | --- | --- |
 | `crates/luciddesk-core/src/workspace.rs` | 标签组成员、活动 ID 和共享窗口状态约束 |
 | `app/src/pane/tabs.rs` | 切换、关闭、排序、分离、合并及标题栏几何 |
-| `app/src/pane/window.rs`、`render.rs` | 输入、原生移动循环和标签绘制 |
+| `app/src/pane/window/mod.rs`、`render/mod.rs` | 输入、原生移动循环和标签绘制 |
 | `app/src/pane/rename.rs` | 标签标题内联编辑 |
 | `crates/luciddesk-storage/src/store/tabs.rs` | `pane_tabs_v1` 编解码、校验及兼容读取 |
 
-表中的 `render.rs` 位于 `app/src/pane/`。
+表中的 `render/mod.rs` 位于 `app/src/pane/`。
 
 ## 身份与状态归属
 

@@ -6,7 +6,7 @@
 
 | 文件 | 职责 |
 | --- | --- |
-| `app/src/pane/settings.rs` | 窗口消息、Action 分派、焦点、编辑、滚动及场景刷新 |
+| `app/src/pane/settings/mod.rs` | 窗口消息、Action 分派、焦点、编辑、滚动及场景刷新 |
 | `app/src/pane/settings/layout.rs` | 导航与各页布局，将当前值绑定为组件和 Action |
 | `app/src/pane/settings/components.rs` | Tokens、Palette、SettingsForm、文字测量、视口与裁剪 |
 | `app/src/pane/settings/controls.rs` | 控件种类、Scene 控件构造、滑块几何与公共选项菜单 |
