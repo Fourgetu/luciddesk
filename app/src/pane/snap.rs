@@ -1,6 +1,26 @@
 pub const GAP_PX: i32 = 5;
 use windows_sys::Win32::Foundation::RECT;
 
+/// Integer-pixel origins shared by proximity snapping and explicit CLI placement.
+pub struct AxisTargets {
+    pub before: i32,
+    pub after: i32,
+    pub start: i32,
+    pub center: i32,
+    pub end: i32,
+}
+impl AxisTargets {
+    pub fn new(start: i32, end: i32, extent: i32, gap: i32) -> Self {
+        Self {
+            before: start - extent - gap,
+            after: end + gap,
+            start,
+            center: start + ((end - start - extent) as f32 / 2.0).round() as i32,
+            end: end - extent,
+        }
+    }
+}
+
 /// Derive each proposal from the original pointer offset, never from a snapped frame.
 pub struct DragOrigin {
     bounds: RECT,
@@ -37,11 +57,12 @@ pub fn snap(rect: &mut RECT, peers: &[RECT], work: Option<&RECT>, gap: i32, thre
     }
     for peer in peers {
         if rect.top < peer.bottom + gap + threshold && rect.bottom > peer.top - gap - threshold {
-            horizontal.extend([peer.right + gap - rect.left, peer.left - gap - rect.right]);
+            let targets = AxisTargets::new(peer.left, peer.right, rect.right - rect.left, gap);
+            horizontal.extend([targets.after - rect.left, targets.before - rect.left]);
             if (rect.top - peer.bottom).abs() <= gap + threshold
                 || (rect.bottom - peer.top).abs() <= gap + threshold
             {
-                horizontal.extend([peer.left - rect.left, peer.right - rect.right]);
+                horizontal.extend([targets.start - rect.left, targets.end - rect.left]);
             }
         }
     }
@@ -54,11 +75,12 @@ pub fn snap(rect: &mut RECT, peers: &[RECT], work: Option<&RECT>, gap: i32, thre
     }
     for peer in peers {
         if rect.left < peer.right + gap + threshold && rect.right > peer.left - gap - threshold {
-            vertical.extend([peer.bottom + gap - rect.top, peer.top - gap - rect.bottom]);
+            let targets = AxisTargets::new(peer.top, peer.bottom, rect.bottom - rect.top, gap);
+            vertical.extend([targets.after - rect.top, targets.before - rect.top]);
             if (rect.left - peer.right).abs() <= gap + threshold
                 || (rect.right - peer.left).abs() <= gap + threshold
             {
-                vertical.extend([peer.top - rect.top, peer.bottom - rect.bottom]);
+                vertical.extend([targets.start - rect.top, targets.end - rect.top]);
             }
         }
     }

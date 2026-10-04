@@ -28,7 +28,7 @@ pub struct Panel {
 }
 
 impl Panel {
-    /// Creates a desktop pane, enforcing the same minimum size as [`Self::set_rect`].
+    /// Creates a desktop pane, using the initial pane minimum size.
     #[must_use]
     pub fn new(id: PanelId, title: impl Into<String>, rect: RectDip) -> Self {
         Self {
@@ -166,7 +166,7 @@ impl Panel {
     }
 
     pub fn set_rect(&mut self, rect: RectDip) {
-        self.rect = RectDip::new(rect.x, rect.y, rect.width, rect.height);
+        self.rect = RectDip::from_bounds(rect.x, rect.y, rect.width, rect.height);
     }
 
     pub const fn set_collapsed(&mut self, collapsed: bool) {

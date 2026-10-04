@@ -109,7 +109,7 @@ pub(super) fn initialize(s: &mut PaneApp, monitors: Vec<MonitorDescriptor>) -> R
             .get(&id)
             .or_else(|| runtime.layouts.positions.get(&id))
             .copied()
-            .unwrap_or(RectDip::new(
+            .unwrap_or(RectDip::from_bounds(
                 old.x * primary_scale,
                 old.y * primary_scale,
                 old.width * primary_scale,
@@ -117,7 +117,7 @@ pub(super) fn initialize(s: &mut PaneApp, monitors: Vec<MonitorDescriptor>) -> R
             ));
         let physical = fit(physical, &monitors);
         let scale = monitor_scale(physical, &monitors);
-        panel.set_rect(RectDip::new(
+        panel.set_rect(RectDip::from_bounds(
             physical.x / scale,
             physical.y / scale,
             physical.width / scale,
@@ -192,7 +192,7 @@ pub(super) fn capture(s: &mut PaneApp) -> Option<(String, Vec<(PanelId, RectDip)
         let panel = s.workspace.panel(view.id).unwrap();
         runtime.layouts.positions.insert(
             view.id,
-            RectDip::new(
+            RectDip::from_bounds(
                 r.left as f32,
                 r.top as f32,
                 (r.right - r.left) as f32,

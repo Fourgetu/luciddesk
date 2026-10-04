@@ -788,3 +788,19 @@ fn workspace_and_folder_preferences_commit_together_and_rollback_invalid_batches
     store.save_workspace_with_folder_preferences(&workspace,None,&[(PanelId::new(1),valid)]).unwrap();
     assert_eq!(store.change_count(),count);
 }
+
+#[test]
+fn measured_small_panel_bounds_survive_database_roundtrip() {
+    let mut store = WorkspaceStore::open_in_memory().unwrap();
+    let mut workspace = Workspace::new();
+    let id = PanelId::new(1);
+    let mut panel = Panel::new(id, "Single icon", RectDip::default());
+    let measured = RectDip::from_bounds(-100.0, 40.0, 112.0, 135.0);
+    panel.set_rect(measured);
+    workspace.add_panel(panel).unwrap();
+    store.save_workspace(&workspace).unwrap();
+    assert_eq!(store.load_workspace().unwrap().panel(id).unwrap().rect(), measured);
+    let count = store.change_count();
+    store.save_workspace(&store.load_workspace().unwrap()).unwrap();
+    assert_eq!(store.change_count(), count);
+}

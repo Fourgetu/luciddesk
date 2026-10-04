@@ -158,7 +158,7 @@ impl GroupModel {
     }
     pub(super) fn resize_cell(&self) -> (f32, f32) {
         if self.is_list() {
-            return (396.0, layout::LIST_ROW);
+            return (layout::LIST_CELL_WIDTH, layout::LIST_ROW);
         }
         let grid = self.icon_grid(0.0, 0.0);
         (grid.cell_width, grid.cell_height)
@@ -166,13 +166,8 @@ impl GroupModel {
 
     fn row_content(&self, grid: layout::Grid, row: usize) -> f32 {
         let start = row * grid.columns;
-        self.items[start..(start + grid.columns).min(self.items.len())].iter()
-            .map(|item| theme::selection_height(
-                grid.icon_size,
-                label::scaled_content_height(&item.label, grid.cell_width.round() as u32, 96, grid.text_scale),
-                grid.cell_height,
-            ))
-            .fold(grid.icon_size + layout::LABEL_OFFSET + 1.0, f32::max)
+        layout::icon_row_height(grid,
+            self.items[start..(start + grid.columns).min(self.items.len())].iter().map(|item| item.label.as_str()))
     }
 
     pub(super) fn row_contents(&self, grid: layout::Grid) -> Vec<f32> {

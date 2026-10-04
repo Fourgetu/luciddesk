@@ -39,33 +39,27 @@ pub(super) fn expand(
     let (width, height) = if let Some(columns) = icon_columns {
         pixel_size(w, id, *columns, scale, folders, None)?
     } else {
-        let r = w.panel(id).unwrap().rect();
-        ((r.width * scale).round(), (r.height * scale).round())
+        let r = current(w, id, positions, monitors)?;
+        let source_scale = geometry::nearest_monitor(r, monitors)
+            .ok_or("source monitor unavailable")?.dpi as f32 / 96.0;
+        ((r.width / source_scale * scale).round(), (r.height / source_scale * scale).round())
     };
-    let gap = snap::GAP_PX as f32;
-    let offset = |available: f32, extent: f32| match align {
-        SnapAlign::Start => 0.0,
-        SnapAlign::Center => ((available - extent) / 2.0).round(),
-        SnapAlign::End => available - extent,
+    let horizontal = snap::AxisTargets::new(anchor.x.round() as i32,
+        (anchor.x + anchor.width).round() as i32, width as i32, snap::GAP_PX);
+    let vertical = snap::AxisTargets::new(anchor.y.round() as i32,
+        (anchor.y + anchor.height).round() as i32, height as i32, snap::GAP_PX);
+    let aligned = |targets: &snap::AxisTargets| match align {
+        SnapAlign::Start => targets.start,
+        SnapAlign::Center => targets.center,
+        SnapAlign::End => targets.end,
     };
     let (x, y) = match side {
-        SnapSide::Left => (
-            anchor.x - width - gap,
-            anchor.y + offset(anchor.height, height),
-        ),
-        SnapSide::Right => (
-            anchor.x + anchor.width + gap,
-            anchor.y + offset(anchor.height, height),
-        ),
-        SnapSide::Top => (
-            anchor.x + offset(anchor.width, width),
-            anchor.y - height - gap,
-        ),
-        SnapSide::Bottom => (
-            anchor.x + offset(anchor.width, width),
-            anchor.y + anchor.height + gap,
-        ),
+        SnapSide::Left => (horizontal.before, aligned(&vertical)),
+        SnapSide::Right => (horizontal.after, aligned(&vertical)),
+        SnapSide::Top => (aligned(&horizontal), vertical.before),
+        SnapSide::Bottom => (aligned(&horizontal), vertical.after),
     };
+    let (x, y) = (x as f32, y as f32);
     let placed = RectDip {
         x,
         y,

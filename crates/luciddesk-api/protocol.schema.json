@@ -595,11 +595,11 @@
                   },
                   "width": {
                     "type": "number",
-                    "minimum": 260
+                    "exclusiveMinimum": 0
                   },
                   "height": {
                     "type": "number",
-                    "minimum": 160
+                    "exclusiveMinimum": 0
                   }
                 }
               },

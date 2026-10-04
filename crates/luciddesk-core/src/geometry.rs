@@ -38,6 +38,12 @@ impl RectDip {
     pub const MIN_WIDTH: f32 = 260.0;
     pub const MIN_HEIGHT: f32 = 160.0;
 
+    /// Preserve measured/restored bounds; content-dependent minimums belong to the view.
+    #[must_use]
+    pub fn from_bounds(x: f32, y: f32, width: f32, height: f32) -> Self {
+        Self { x, y, width: width.max(1.0), height: height.max(1.0) }
+    }
+
     #[must_use]
     pub fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
         Self {

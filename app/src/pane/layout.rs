@@ -17,6 +17,7 @@ pub const HEADER: f32 = 40.0;
 pub const HEADER_INSET: f32 = 6.0;
 pub const LIST_HEADER: f32 = 28.0;
 pub const LIST_ROW: f32 = 32.0;
+pub const LIST_CELL_WIDTH: f32 = 396.0;
 
 /// Relative boundaries for name, type, modified date, size, and the right edge.
 pub fn list_columns(width: f32) -> [f32; 5] {
@@ -321,6 +322,26 @@ mod resize_tests {
             assert_eq!(r.bottom, (HEADER * scale).ceil() as i32);
         }
     }
+}
+
+/// Row bounds shared by manual resizing and control-plan fitting (logical DPI).
+pub fn icon_row_height<'a>(grid: Grid, labels: impl Iterator<Item = &'a str>) -> f32 {
+    labels.map(|text| super::theme::selection_height(
+        grid.icon_size,
+        super::label::scaled_content_height(text, grid.cell_width.round() as u32, 96, grid.text_scale),
+        grid.cell_height,
+    )).fold(grid.icon_size + LABEL_OFFSET + 1.0, f32::max)
+}
+
+pub fn pane_minimum(cell: (f32, f32), collapsed: bool, tabbed: bool, first_row: Option<f32>) -> (f32, f32) {
+    ((cell.0 + PADDING * 2.0).max(if tabbed { luciddesk_core::RectDip::MIN_WIDTH } else { 0.0 }),
+     if collapsed { HEADER } else { HEADER + PADDING * 2.0 + first_row.unwrap_or(cell.1) })
+}
+
+pub fn icon_width(columns: usize, grid: Grid, tabbed: bool) -> f32 {
+    let minimum = pane_minimum((grid.cell_width, grid.cell_height), false, tabbed, None).0;
+    let columns = columns.max(((minimum - PADDING * 2.0) / grid.cell_width).ceil() as usize);
+    PADDING * 2.0 + columns as f32 * grid.cell_width
 }
 
 pub fn pane_content_height(rows: usize, step: f32, content: &[f32]) -> f32 {

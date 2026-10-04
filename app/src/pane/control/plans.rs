@@ -15,6 +15,7 @@ pub(super) struct Prepared {
     settings: Option<std::collections::BTreeMap<String, luciddesk_storage::SettingValue>>,
     settings_changed: bool,
     layout: Option<(String, Vec<(PanelId, RectDip)>)>,
+    layout_observation: Option<super::geometry::LayoutObservation>,
     folders: Vec<(PanelId, luciddesk_storage::FolderPreferences)>,
     folders_changed: bool,
     runtime_action: Option<Operation>,
@@ -154,6 +155,7 @@ fn prepare(
     ids: &HashMap<String, String>,
     monitors: &[luciddesk_window::MonitorDescriptor],
     folder_content: &super::content_layout::FolderSnapshots,
+    observed: &super::geometry::LayoutObservation,
 ) -> Result<Prepared, (String, String)> {
     if plan.protocol_version != 1 {
         return Err(("PROTOCOL_MISMATCH".into(), "plan protocol must be 1".into()));
@@ -167,7 +169,7 @@ fn prepare(
         return Ok(Prepared {
             token:luciddesk_api::request_id(),base:plan.base.clone(),expires:Instant::now()+TTL,
             next:workspace.clone(),refs:HashMap::new(),diff:json!({"runtime_action":action,"persistence":if matches!(action,Operation::StartupSet{..}){"operating_system"}else{"none"}}),membership:false,applied:false,
-            settings:None,settings_changed:false,layout:None,folders:Vec::new(),folders_changed:false,runtime_action:Some(action),
+            settings:None,settings_changed:false,layout:None,layout_observation:None,folders:Vec::new(),folders_changed:false,runtime_action:Some(action),
         });
     }
     if plan.operations.iter().any(|op| matches!(op, Operation::SettingsUpdate { .. })) {
@@ -192,6 +194,7 @@ fn prepare(
             diff: json!({"before":super::settings::values(before),"after":super::settings::values(after)}),
             settings: Some(updates),
             layout: None,
+            layout_observation: None,
             folders: Vec::new(),
             folders_changed: false,
             runtime_action: None,
@@ -223,7 +226,14 @@ fn prepare(
                     let panel = next.panel(id(raw)?).ok_or_else(|| ("NOT_FOUND".into(), "panel does not exist".into()))?;
                     if panel.locked() { return Err(("PANE_LOCKED".into(), "explicitly unlock the panel first".into())); }
                 }
-                let expanded = super::content_layout::expand_with_folders(&next, store, operation, monitors, &geometry, folder_content).map_err(invalid)?;
+                if let Operation::Snap { pane_id, target_pane_id, .. } = operation {
+                    if [id(pane_id)?, id(target_pane_id)?].iter().any(|id| observed.collapsed.contains(id)) {
+                        return Err(invalid("reveal both panels before snapping; an auto-hidden panel is currently collapsed"));
+                    }
+                }
+                let mut positions = observed.positions.clone();
+                positions.extend(geometry.iter().map(|(id, bounds)| (*id, *bounds)));
+                let expanded = super::content_layout::expand_with_folders(&next, store, operation, monitors, &positions, folder_content).map_err(invalid)?;
                 for op in expanded.into_iter().rev() { operations.push_front(op); }
             }
             Operation::FolderRefresh{..}|Operation::FolderNavigate{..}|Operation::FolderBack{..}|Operation::FolderHome{..}|Operation::SearchQuery{..}|Operation::SearchRefresh{..}|Operation::SearchMore{..} => unreachable!("handled above"),
@@ -259,6 +269,10 @@ fn prepare(
                 if panel.locked() { return Err(("PANE_LOCKED".into(), "explicitly unlock the panel first".into())); }
                 let monitor = monitors.iter().find(|m| m.id.as_str() == monitor_id)
                     .ok_or_else(|| invalid("unknown monitor ID; query monitor list again"))?;
+                let minimum = super::content_layout::minimum(&next, target, *width, folder_content);
+                if *width + 0.01 < minimum.0 || *height + 0.01 < minimum.1 {
+                    return Err(invalid(format!("geometry must be at least {} x {} DIP for this panel", minimum.0, minimum.1)));
+                }
                 let (stored, physical) = super::geometry::convert(monitor, RectDip { x:*x,y:*y,width:*width,height:*height }).map_err(invalid)?;
                 let members = next.tab_group(target).map_or_else(||vec![target],|g|g.members.clone());
                 for member in members {
@@ -473,6 +487,7 @@ fn prepare(
         Some((topology,positions.into_iter().collect()))
     };
     Ok(Prepared {
+        layout_observation: layout.as_ref().map(|_| observed.clone()),
         token: luciddesk_api::request_id(),
         base: plan.base.clone(),
         expires: Instant::now() + TTL,
@@ -558,7 +573,7 @@ impl Plans {
             if plan.base != *context {
                 return fail("CONFLICT", "workspace changed; query and preview again");
             }
-            match prepare(&state.workspace, &state.store, plan, ids, monitors, &super::content_layout::snapshots(state)) {
+            match prepare(&state.workspace, &state.store, plan, ids, monitors, &super::content_layout::snapshots(state), &super::geometry::observe_layout(state)) {
                 Err((code, message)) => fail(&code, &message),
                 Ok(plan) => {
                     let response = Response::success(
@@ -602,6 +617,9 @@ impl Plans {
             }
             if plan.base != *context {
                 return fail("CONFLICT", "workspace changed; preview again");
+            }
+            if plan.layout_observation.as_ref().is_some_and(|before| *before != super::geometry::observe_layout(state)) {
+                return fail("CONFLICT", "visible panel bounds changed; preview again");
             }
             let changed = plan.runtime_action.is_some() || plan.settings_changed || plan.folders_changed || plan.next != state.workspace;
             if changed && plan.membership && !state.session.as_ref().is_some_and(hybrid::is_alive) {
@@ -720,12 +738,14 @@ mod tests {
         state.store.save_workspace(&state.workspace).unwrap();
         let mut snapshot=Snapshot::new();
         let count=state.store.change_count();
-        let op=json!({"op":"pane.fit","pane_id":"1","icon_columns":6});
+        let op=json!({"op":"pane.fit","pane_id":"1","icon_columns":1});
         let p=preview(&mut snapshot,&mut state,json!([op.clone()]));
         assert!(p.ok,"{p:?}");
         assert_eq!(state.store.change_count(),count);
         assert!(p.data.as_ref().unwrap()["diff"]["geometry"]["1"].is_object());
         assert!(snapshot.respond(&mut state,&apply(&p)).ok);
+        assert_eq!(state.workspace.panel(PanelId::new(1)).unwrap().rect().width, 112.0);
+        assert_eq!(state.store.load_workspace().unwrap().panel(PanelId::new(1)).unwrap().rect(), state.workspace.panel(PanelId::new(1)).unwrap().rect());
         let committed=state.store.change_count();assert!(committed>count);
         let repeated=preview(&mut snapshot,&mut state,json!([op.clone()]));
         assert_eq!(repeated.data.as_ref().unwrap()["changed"],false);
@@ -733,6 +753,26 @@ mod tests {
         assert_eq!(state.store.change_count(),committed);
         state.workspace.panel_mut(PanelId::new(1)).unwrap().set_locked(true);
         assert_eq!(preview(&mut snapshot,&mut state,json!([op])).error.unwrap().code,"PANE_LOCKED");
+    }
+
+    #[test]
+    fn snap_rejects_auto_hidden_windows_and_stale_native_preview() {
+        let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
+        let state = Rc::new(RefCell::new(super::super::super::tests::test_state()));
+        create_view(&state, PanelId::new(1)).unwrap();
+        let model = state.borrow().views[0].model.clone();
+        let mut snapshot = Snapshot::new();
+        let geometry = json!({"op":"pane.fit","pane_id":"1","icon_columns":4});
+        let p = preview(&mut snapshot, &mut state.borrow_mut(), json!([geometry]));
+        assert!(p.ok, "{p:?}");
+        let before = state.borrow().store.change_count();
+        model.borrow_mut().collapsed = true;
+        let response = snapshot.respond(&mut state.borrow_mut(), &apply(&p));
+        assert_eq!(response.error.unwrap().code, "CONFLICT");
+        assert_eq!(state.borrow().store.change_count(), before);
+        let p = preview(&mut snapshot, &mut state.borrow_mut(), json!([{"op":"pane.snap","pane_id":"2","target_pane_id":"1","side":"right","align":"start"}]));
+        assert!(!p.ok);
+        assert!(p.error.unwrap().message.contains("reveal both panels"));
     }
 
     #[test]
@@ -1244,7 +1284,7 @@ mod tests {
         let data = snapshot.respond(&mut state, &request("workspace.get"));
         let items = &data.data.as_ref().unwrap()["items"];
         let plan:Plan=serde_json::from_value(json!({"protocol_version":1,"base":data.context,"operations":[{"op":"pane.create","ref":"new","title":"new"},{"op":"item.assign","pane_ref":"new","item_ids":[items[0]["id"]]}]})).unwrap();
-        let prepared = prepare(&state.workspace, &state.store, &plan, &snapshot.item_ids, &luciddesk_window::enumerate_monitors(), &super::content_layout::snapshots(&state)).unwrap();
+        let prepared = prepare(&state.workspace, &state.store, &plan, &snapshot.item_ids, &luciddesk_window::enumerate_monitors(), &super::content_layout::snapshots(&state), &super::geometry::observe_layout(&state)).unwrap();
         assert_eq!(
             prepared.next.desktop_items()[2],
             original.desktop_items()[2]

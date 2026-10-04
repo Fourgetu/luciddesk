@@ -12,7 +12,7 @@ mod tests;
 
 #[cfg(test)]
 use measurement::{FolderSnapshot, size};
-pub(super) use measurement::{FolderSnapshots, live_query, snapshots};
+pub(super) use measurement::{FolderSnapshots, live_query, snapshots, minimum};
 use measurement::{members, metrics, pixel_size};
 
 struct LayoutContext<'a> {
@@ -50,7 +50,8 @@ fn current(
         return Ok(*r);
     }
     let r = w.panel(id).ok_or("panel does not exist")?.rect();
-    let scale = monitors.first().ok_or("no monitor available")?.dpi as f32 / 96.0;
+    let scale = monitors.iter().find(|m| m.primary).or_else(|| monitors.first())
+        .ok_or("no monitor available")?.dpi as f32 / 96.0;
     Ok(RectDip {
         x: r.x * scale,
         y: r.y * scale,

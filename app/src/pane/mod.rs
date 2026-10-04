@@ -239,8 +239,19 @@ fn items_for(state: &PaneApp, id: PanelId) -> Vec<Item> {
             .map(|source| source.items.clone())
             .unwrap_or_default();
     }
-    let mut items: Vec<_> = state
-        .workspace
+    ordered_desktop_items(&state.workspace, id)
+        .into_iter()
+        .map(|item| Item {
+            details: Default::default(),
+            identity: item.identity().clone(),
+            label: item.display_name().to_string(),
+            image: state.images.get(&item.identity().persistent_key()).cloned(),
+        })
+        .collect()
+}
+
+fn ordered_desktop_items(workspace: &Workspace, id: PanelId) -> Vec<&luciddesk_core::DesktopItem> {
+    let mut items: Vec<_> = workspace
         .desktop_items()
         .iter()
         .filter_map(|item| {
@@ -252,15 +263,7 @@ fn items_for(state: &PaneApp, id: PanelId) -> Vec<Item> {
         })
         .collect();
     items.sort_by_key(|(position, _)| *position);
-    items
-        .into_iter()
-        .map(|(_, item)| Item {
-            details: Default::default(),
-            identity: item.identity().clone(),
-            label: item.display_name().to_string(),
-            image: state.images.get(&item.identity().persistent_key()).cloned(),
-        })
-        .collect()
+    items.into_iter().map(|(_, item)| item).collect()
 }
 
 fn create_model(state: &PaneApp, id: PanelId) -> Result<GroupModel, String> {

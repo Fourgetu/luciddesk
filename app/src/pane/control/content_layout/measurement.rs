@@ -4,7 +4,7 @@ use super::*;
 #[derive(Clone, Debug)]
 pub(in crate::pane::control) struct FolderSnapshot {
     pub(super) root: std::path::PathBuf,
-    pub(super) count: usize,
+    pub(super) labels: Vec<String>,
     pub(super) ready: bool,
 }
 pub(in crate::pane::control) type FolderSnapshots = HashMap<PanelId, FolderSnapshot>;
@@ -18,7 +18,7 @@ pub(in crate::pane::control) fn snapshots(state: &PaneApp) -> FolderSnapshots {
                 *id,
                 FolderSnapshot {
                     root,
-                    count: source.items.len(),
+                    labels: source.items.iter().map(|item| item.label.clone()).collect(),
                     ready: !source.loading && source.status.is_none(),
                 },
             ))
@@ -37,7 +37,7 @@ fn folder_count(w: &Workspace, id: PanelId, folders: &FolderSnapshots) -> Result
             "folder mapping changed; apply it and wait for the new snapshot before fitting".into(),
         );
     }
-    Ok(source.count)
+    Ok(source.labels.len())
 }
 pub(in crate::pane::control) fn live_query(state: &PaneApp, id: PanelId) -> serde_json::Value {
     let panel = state.workspace.panel(id).unwrap();
@@ -55,12 +55,8 @@ pub(in crate::pane::control) fn live_query(state: &PaneApp, id: PanelId) -> serd
             .max(1.0) as usize
     };
     let rows = n.div_ceil(columns);
-    let height = if panel.list_view() {
-        layout::HEADER + layout::LIST_HEADER + layout::PADDING + rows as f32 * layout::LIST_ROW
-    } else {
-        layout::HEADER + layout::PADDING * 2.0 + rows as f32 * metrics(&state.workspace).cell_height
-    };
-    json!({"supported":true,"ready":ready,"view":if panel.list_view(){"list"}else{"icons"},"item_count":n,"icon_columns":if panel.list_view(){serde_json::Value::Null}else{json!(columns)},"content_rows":rows,"current_path":source.map(|s|&s.path),"required_height_dip":if ready{json!(height.max(RectDip::MIN_HEIGHT))}else{serde_json::Value::Null},"gap_px":snap::GAP_PX})
+    let height = content_height(&state.workspace, id, columns, &snapshots(state), None).ok();
+    json!({"supported":true,"ready":ready,"view":if panel.list_view(){"list"}else{"icons"},"item_count":n,"icon_columns":if panel.list_view(){serde_json::Value::Null}else{json!(columns)},"content_rows":rows,"current_path":source.map(|s|&s.path),"required_height_dip":if ready{json!(height)}else{serde_json::Value::Null},"gap_px":snap::GAP_PX})
 }
 
 pub(super) fn members(w: &Workspace, id: PanelId) -> Vec<PanelId> {
@@ -113,40 +109,58 @@ pub(super) fn size_with_folders(
         return Err("max_rows must be 1..10000".into());
     }
     let panel = w.panel(id).unwrap();
-    if panel.folder().is_some() && panel.list_view() {
-        let rows = folder_count(w, id, folders)?.min(max_rows.map_or(usize::MAX, |n| n as usize));
-        return Ok((
-            panel.rect().width,
-            (layout::HEADER
-                + layout::LIST_HEADER
-                + layout::PADDING
-                + rows as f32 * layout::LIST_ROW)
-                .max(RectDip::MIN_HEIGHT),
-        ));
+    let g = metrics(w);
+    let group = members(w, id);
+    let list_minimum = if group.iter().any(|member| w.panel(*member).unwrap().list_view()) {
+        layout::pane_minimum((layout::LIST_CELL_WIDTH, layout::LIST_ROW), false, false, None).0
+    } else { 0.0 };
+    let width = if panel.list_view() {
+        panel.rect().width.max(list_minimum)
+    } else {
+        let columns = (columns as usize).max(((list_minimum - layout::PADDING * 2.0) / g.cell_width).ceil().max(0.0) as usize);
+        layout::icon_width(columns, g, group.len() > 1)
+    };
+    let actual = ((width - layout::PADDING * 2.0) / g.cell_width).floor().max(1.0) as usize;
+    let height = members(w, id).into_iter().try_fold(0.0_f32, |height, member| {
+        content_height(w, member, actual, folders, max_rows).map(|value| height.max(value))
+    })?;
+    Ok((width, height))
+}
+
+fn labels<'a>(w: &'a Workspace, id: PanelId, folders: &'a FolderSnapshots) -> Result<Vec<&'a str>, String> {
+    if w.panel(id).unwrap().folder().is_some() {
+        folder_count(w, id, folders)?;
+        Ok(folders[&id].labels.iter().map(String::as_str).collect())
+    } else {
+        Ok(super::super::super::ordered_desktop_items(w, id).into_iter().map(|item| item.display_name()).collect())
+    }
+}
+pub(super) fn content_height(w: &Workspace, id: PanelId, columns: usize, folders: &FolderSnapshots, max_rows: Option<u32>) -> Result<f32, String> {
+    let panel = w.panel(id).unwrap();
+    let names = labels(w, id, folders)?;
+    if panel.list_view() {
+        let rows = names.len().min(max_rows.map_or(usize::MAX, |n| n as usize)).max(1);
+        return Ok(layout::HEADER + if panel.folder().is_some() { layout::LIST_HEADER + layout::PADDING } else { layout::PADDING * 2.0 } + rows as f32 * layout::LIST_ROW);
     }
     let g = metrics(w);
-    let width = (layout::PADDING * 2.0 + columns as f32 * g.cell_width).max(RectDip::MIN_WIDTH);
-    let actual = ((width - layout::PADDING * 2.0) / g.cell_width)
-        .floor()
-        .max(1.0) as usize;
-    let n = if panel.folder().is_some() {
-        folder_count(w, id, folders)?
-    } else {
-        members(w, id)
-            .into_iter()
-            .map(|id| count(w, id))
-            .max()
-            .unwrap_or(0)
-    };
-    let rows = n
-        .div_ceil(actual)
-        .min(max_rows.map_or(usize::MAX, |n| n as usize));
-    Ok((
-        width,
-        (layout::HEADER + layout::PADDING * 2.0 + rows as f32 * g.cell_height)
-            .max(RectDip::MIN_HEIGHT),
-    ))
+    let rows: Vec<_> = names.chunks(columns).take(max_rows.map_or(usize::MAX, |n| n as usize))
+        .map(|row| layout::icon_row_height(g, row.iter().copied())).collect();
+    Ok(layout::pane_content_height(rows.len().max(1), g.cell_height, &rows))
 }
+
+pub(in crate::pane::control) fn minimum(w: &Workspace, id: PanelId, width: f32, folders: &FolderSnapshots) -> (f32, f32) {
+    let panel = w.panel(id).unwrap();
+    if panel.is_search() { return (RectDip::MIN_WIDTH, RectDip::MIN_HEIGHT); }
+    let g = metrics(w);
+    let columns = ((width - layout::PADDING * 2.0) / g.cell_width).floor().max(1.0) as usize;
+    let cell = if panel.list_view() { (layout::LIST_CELL_WIDTH, layout::LIST_ROW) } else { (g.cell_width, g.cell_height) };
+    let first = if panel.list_view() { Some(layout::LIST_ROW) } else {
+        labels(w, id, folders).ok().filter(|names| !names.is_empty())
+            .map(|names| layout::icon_row_height(g, names.iter().take(columns).copied()))
+    };
+    layout::pane_minimum(cell, false, members(w, id).len() > 1, first)
+}
+
 pub(in crate::pane::control) fn query(w: &Workspace, id: PanelId) -> serde_json::Value {
     let p = w.panel(id).unwrap();
     if p.is_search() || p.folder().is_some() {
@@ -162,10 +176,11 @@ pub(in crate::pane::control) fn query(w: &Workspace, id: PanelId) -> serde_json:
         .map(|id| count(w, id))
         .max()
         .unwrap_or(0);
+    let minimum = minimum(w, id, p.rect().width, &HashMap::new());
     json!({"supported":true,"item_count":n,"window_item_count":window_count,"icon_columns":columns,"content_rows":n.div_ceil(columns),
         "cell_dip":{"width":g.cell_width,"height":g.cell_height},"icon_size_dip":g.icon_size,
-        "minimum_size_dip":{"width":RectDip::MIN_WIDTH,"height":RectDip::MIN_HEIGHT},"gap_px":snap::GAP_PX,
-        "required_height_dip":(layout::HEADER+layout::PADDING*2.0+window_count.div_ceil(columns) as f32*g.cell_height).max(RectDip::MIN_HEIGHT)})
+        "minimum_size_dip":{"width":minimum.0,"height":minimum.1},"gap_px":snap::GAP_PX,
+        "required_height_dip":members(w,id).into_iter().filter_map(|member|content_height(w,member,columns,&HashMap::new(),None).ok()).fold(0.0,f32::max)})
 }
 pub(super) fn pixel_size(
     w: &Workspace,

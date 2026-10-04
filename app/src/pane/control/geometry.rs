@@ -18,12 +18,12 @@ pub(super) fn convert(m: &MonitorDescriptor, r: RectDip) -> Result<(RectDip, Rec
         || scale <= 0.0
         || r.x < 0.0
         || r.y < 0.0
-        || r.width < RectDip::MIN_WIDTH
-        || r.height < RectDip::MIN_HEIGHT
+        || r.width <= 0.0
+        || r.height <= 0.0
         || (r.x + r.width) * scale > m.work_area.width as f32 + 0.01
         || (r.y + r.height) * scale > m.work_area.height as f32 + 0.01
     {
-        return Err("geometry must fit the monitor work area and be at least 260 x 160 DIP".into());
+        return Err("geometry must have positive dimensions and fit the monitor work area".into());
     }
     let px = RectDip {
         x: m.work_area.x as f32 + (r.x * scale).round(),
@@ -44,6 +44,29 @@ pub(super) fn convert(m: &MonitorDescriptor, r: RectDip) -> Result<(RectDip, Rec
     };
     Ok((stored, px))
 }
+/// Read-only native snapshot. Tab members share the same visible window bounds.
+#[derive(Clone, Default, PartialEq)]
+pub(super) struct LayoutObservation {
+    pub positions: HashMap<PanelId, RectDip>,
+    pub collapsed: std::collections::HashSet<PanelId>,
+}
+pub(super) fn observe_layout(state: &PaneApp) -> LayoutObservation {
+    let mut observed = LayoutObservation::default();
+    for view in &state.views {
+        let hwnd = view.window.hwnd().cast();
+        let mut r = RECT::default();
+        if unsafe { IsWindowVisible(hwnd) == 0 || GetWindowRect(hwnd, &raw mut r) == 0 } { continue; }
+        let bounds = RectDip::from_bounds(r.left as f32, r.top as f32,
+            (r.right - r.left) as f32, (r.bottom - r.top) as f32);
+        let members = state.workspace.tab_group(view.id).map_or_else(|| vec![view.id], |g| g.members.clone());
+        for id in members {
+            observed.positions.insert(id, bounds);
+            if view.model.borrow().collapsed { observed.collapsed.insert(id); }
+        }
+    }
+    observed
+}
+
 pub(super) fn window_bounds(s: &PaneApp, id: PanelId) -> serde_json::Value {
     let active = s.workspace.tab_group(id).map_or(id, |g| g.active);
     let Some(view) = s.views.iter().find(|v| v.id == active) else {
@@ -191,7 +214,7 @@ mod tests {
             RectDip {
                 x: 0.0,
                 y: 0.0,
-                width: 10.0,
+                width: 0.0,
                 height: 360.0,
             },
             RectDip::new(1200.0, 0.0, 480.0, 360.0),

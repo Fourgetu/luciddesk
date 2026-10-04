@@ -198,7 +198,7 @@ impl WorkspaceStore {
             Ok(PersistedPanel {
                 id: raw_id,
                 title: row.get(1)?,
-                rect: RectDip::new(row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?),
+                rect: RectDip::from_bounds(row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?),
                 collapsed: row.get(6)?,
                 locked: row.get(7)?,
                 backdrop_kind,
@@ -537,6 +537,7 @@ impl PersistedPanel {
         let backdrop = decode_backdrop(&self.backdrop_kind, self.opacity, self.color)?;
 
         let mut panel = Panel::new(PanelId::new(id), self.title, self.rect);
+        panel.set_rect(self.rect);
         panel.set_collapsed(self.collapsed);
         panel.set_locked(self.locked);
         panel.set_backdrop(backdrop);

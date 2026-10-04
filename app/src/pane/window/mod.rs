@@ -630,17 +630,13 @@ where
                     let m = model.borrow();
                     let cell = m.resize_cell();
                     let s = scale(hwnd);
-                    info.ptMinTrackSize.x =
-                        ((cell.0 + super::layout::PADDING * 2.0).max(if m.tabs.len() > 1 { luciddesk_core::RectDip::MIN_WIDTH } else { 0.0 }) * s).ceil() as i32;
-                    info.ptMinTrackSize.y = ((if m.collapsed {
-                        HEADER
-                    } else {
-                        let rows = { m.row_contents(grid(hwnd, &m)) };
-                        m.content_header()
-                            + super::layout::PADDING * 2.0
-                            + rows.get(m.scroll).copied().unwrap_or(cell.1)
-                    }) * s)
-                        .ceil() as i32;
+                    let first_row = if m.collapsed { None } else {
+                        m.row_contents(grid(hwnd, &m)).get(m.scroll).copied()
+                    };
+                    let (width, height) = super::layout::pane_minimum(
+                        cell, m.collapsed, m.tabs.len() > 1, first_row);
+                    info.ptMinTrackSize.x = (width * s).ceil() as i32;
+                    info.ptMinTrackSize.y = (height * s).ceil() as i32;
                     Some(0)
                 }
                 WM_SIZING => {
@@ -785,7 +781,7 @@ where
                         GetWindowRect(hwnd, &raw mut r);
                     }
                     let s = scale(hwnd);
-                    event(Event::Geometry(RectDip::new(
+                    event(Event::Geometry(RectDip::from_bounds(
                         r.left as f32 / s,
                         r.top as f32 / s,
                         (r.right - r.left) as f32 / s,
