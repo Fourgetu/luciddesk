@@ -136,9 +136,7 @@ try {
             $setupRoot = Join-Path $repoRoot "target\installers\$version-$revisionLabel-$stamp"
             $setups = @()
             if ($InstallerFormat -in @('Exe', 'Both')) {
-                & $InnoCompiler /Q "/DAppVersion=$version" "/DSourcePath=$stage" "/DOutputPath=$setupRoot" "/DInstallerCompression=$($ExeCompression.ToLowerInvariant())" (Join-Path $repoRoot 'installer/LucidDesk.iss')
-                if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed.' }
-                $setups += Join-Path $setupRoot "LucidDesk-$version-windows-x64-setup.exe"
+                $setups += & (Join-Path $PSScriptRoot 'build-exe.ps1') -SourcePath $stage -OutputPath $setupRoot -Version $version -InnoCompiler $InnoCompiler -Compression $ExeCompression
             }
             if ($InstallerFormat -in @('Msi', 'Both')) {
                 $setups += & (Join-Path $PSScriptRoot 'build-msi.ps1') -SourcePath $stage -OutputPath $setupRoot -Version $version

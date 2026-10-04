@@ -17,6 +17,8 @@ jobs:
         run: python3 -m unittest discover -s tools -p "test_installer_payload.py"
       - name: Check language resources
         run: python3 tools/check-locales.py
+      - name: Test release assets with optional MSI
+        run: python3 -m unittest discover -s tools -p "test_refresh_release.py"
   build:
     runs-on: windows-2025-vs2026
     concurrency:
@@ -59,7 +61,7 @@ jobs:
           env-vars: CARGO CC CFLAGS CXX CMAKE RUST LUCIDDESK_WINDOWS_BUILD_ENVIRONMENT
           cache-bin: false
       - name: Test app rules and WARP emoji rendering
-        run: cargo test -p luciddesk --bin luciddesk --locked -- i18n::tests pane::marquee::tests pane::title_emoji::tests updates::tests --test-threads=1 --skip marquee_window_messages_commit_cancel_and_ignore_mapped_folders
+        run: cargo test -p luciddesk --bin luciddesk --locked -- i18n::tests pane::settings::agent::tests pane::marquee::tests pane::title_emoji::tests updates::tests --test-threads=1 --skip marquee_window_messages_commit_cancel_and_ignore_mapped_folders
       - name: Compile all targets
         run: cargo check --workspace --all-targets --locked
       - name: Test CLI commands and control protocol
@@ -74,6 +76,8 @@ jobs:
         run: cargo test -p luciddesk --test canvas_compat --locked -- --test-threads=1
       - name: Test workspace documentation examples
         run: cargo test --workspace --doc --locked
+      - name: Verify complete Skill directory in MSI payload
+        run: python -m unittest discover -s tools -p "test_msi_payload.py"
       - name: Cache Inno Setup compiler
         uses: actions/cache@v5
         with:
@@ -82,9 +86,9 @@ jobs:
       - name: Prepare Inno Setup compiler
         shell: pwsh
         run: ./tools/ensure-inno.ps1
-      - name: Package installer and ZIPs
+      - name: Package EXE and ZIPs with complete Skills
         shell: pwsh
-        run: ./tools/package.ps1 -All
+        run: ./tools/package.ps1 -All -InstallerFormat Exe
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: LucidDesk-windows-x64

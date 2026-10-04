@@ -28,9 +28,9 @@ foreach ($required in @('luciddesk.exe', 'luciddesk_explorer.dll', 'build.json',
     if (-not (Test-Path -LiteralPath (Join-Path $SourcePath $required) -PathType Leaf)) { throw "Missing payload: $required" }
 }
 if (-not $TestFixture) {
-    foreach ($required in @('luciddesk-cli.exe', 'cli.md', 'protocol.schema.json', 'skills/luciddesk-control/SKILL.md')) {
-        if (-not (Test-Path -LiteralPath (Join-Path $SourcePath $required) -PathType Leaf)) { throw "Missing Agent payload: $required" }
-    }
+    $build = Get-Content -LiteralPath (Join-Path $SourcePath 'build.json') -Raw | ConvertFrom-Json
+    if ($build.version -ne $Version) { throw 'MSI version must match the staged build.' }
+    $null = & (Join-Path $PSScriptRoot 'test-agent-package.ps1') -Directory $SourcePath
 }
 $OutputPath = [IO.Path]::GetFullPath($OutputPath)
 New-Item -ItemType Directory -Force -Path $OutputPath | Out-Null
@@ -74,4 +74,5 @@ $output = Join-Path $OutputPath "LucidDesk-$Version-windows-x64.msi"
     -cabcache (Join-Path $cache 'cabinets') -pdbtype none `
     -d "AppVersion=$Version" -d "ProductName=$ProductName" -d "UpgradeCode=$UpgradeCode" -d "RepoRoot=$repo" -d "ActionsDll=$actions" -o $output | Out-Host
 if ($LASTEXITCODE -ne 0) { throw 'MSI compilation failed.' }
+if (-not (Test-Path -LiteralPath $output -PathType Leaf)) { throw 'WiX did not produce the installer.' }
 Write-Output $output

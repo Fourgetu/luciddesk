@@ -9,12 +9,9 @@ PAYLOAD = {
     "luciddesk.exe", "luciddesk_explorer.dll", "luciddesk-cli.exe",
     "skills/luciddesk-control/SKILL.md", "cli.md", "protocol.schema.json",
     "LICENSE", "build.json", "installed",
-    "skills/luciddesk-control/references/desktop-layout.md",
-    "skills/luciddesk-control/references/folder-search.md",
-    "skills/luciddesk-control/references/installation.md",
-    "skills/luciddesk-control/references/plans-and-recovery.md",
-    "skills/luciddesk-control/references/settings-startup.md",
 }
+PAYLOAD.update(path.relative_to(ROOT).as_posix()
+               for path in (ROOT / 'skills/luciddesk-control').rglob('*') if path.is_file())
 
 
 def validate(script):
@@ -63,6 +60,14 @@ class InstallerPayloadTests(unittest.TestCase):
                                if not line.startswith('Source: "{#SourcePath}\\luciddesk-cli.exe"')))
         with self.assertRaises(ValueError):
             validate(self.script.replace('DestDir: "{app}\\skills\\luciddesk-control"', 'DestDir: "{app}"'))
+
+    def test_rejects_each_missing_skill_reference(self):
+        for path in sorted(PAYLOAD):
+            if '/references/' not in path:
+                continue
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                validate('\n'.join(line for line in self.script.splitlines()
+                                   if path.replace('/', '\\') not in line))
 
 
 if __name__ == '__main__':

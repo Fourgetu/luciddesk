@@ -98,11 +98,15 @@ cargo build -p luciddesk -p luciddesk-explorer --locked --offline --target-dir t
 .\tools\package.ps1 -All -Offline
 ```
 
-`-InnoCompiler <ISCC.exe>` 可指定已有的 Inno 编译器。未传 `-Installer` 或 `-All` 时仍只生成 ZIP。`-All` 在一次构建后生成普通 ZIP、便携 ZIP、EXE 及各自 SHA256，CI 使用此模式。需要同时生成 MSI 时使用 `-All -InstallerFormat Both`。
+`-InnoCompiler <ISCC.exe>` 可指定已有的 Inno 编译器。未传 `-Installer` 或 `-All` 时仍只生成 ZIP。`-All` 默认生成普通 ZIP、便携 ZIP、EXE 及各自 SHA256。CI 显式使用 `-All -InstallerFormat Exe`，只准备 Inno Setup，不生成 MSI。本地需要同时生成 MSI 时使用 `-All -InstallerFormat Both` 并先准备 WiX。
+
+EXE 由 `tools/build-exe.ps1` 编译，MSI 由 `tools/build-msi.ps1` 编译。两个生产入口均核对传入版本与 `build.json`，并验证完整 Skill 文件、清单哈希及内嵌导出的一致性；安装后的目录固定为 `skills/luciddesk-control/`。独立打包使用同样检查，MSI 隔离测试产品仍可使用 `-TestFixture`。
+
+CI 的 `test_installer_payload.py` 将 EXE 清单与技能源目录比较，新增参考文件时缺项即失败；Windows 上 `test_msi_payload.py` 生成 WiX 清单并验证所有 Skill 文件的安装位置和内容，无需安装到系统。`test_refresh_release.py` 覆盖带/不带 MSI 的附件校验及损坏 MSI 的拒绝。
 
 EXE 默认采用 `lzma2/fast` 固实压缩，以较小的体积增量缩短打包时间。需要更小的安装包时使用 `-ExeCompression Max`，也可选择 `Normal`。CI 按准备脚本版本缓存 Inno 编译器。
 
-默认 CI 不准备 WiX、不构建或测试 MSI；需要验证 MSI 时手动运行下方安装器测试命令。MSI 构建在 `target/msi-cache` 中复用 WiX CAB 压缩缓存和安装检查 DLL；DLL 按源码、构建脚本、工具链及测试模式隔离，并校验文件哈希。MSI 仍执行默认校验，不生成未发布的 `.wixpdb`。
+默认 CI 不准备 WiX、不生成或安装 MSI，只检查 WiX 文件清单；需要验证真实 MSI 安装时手动运行下方安装器测试命令。MSI 构建在 `target/msi-cache` 中复用 WiX CAB 压缩缓存和安装检查 DLL；DLL 按源码、构建脚本、工具链及测试模式隔离，并校验文件哈希。MSI 仍执行默认校验，不生成未发布的 `.wixpdb`。
 
 产物位于 `target/installers/版本-修订-时间戳`。`installer/LucidDesk.iss` 定义 EXE 安装流程；`installer/LucidDesk.wxs` 定义 MSI 文件、快捷方式和升级规则，`msi-actions.cpp` 检查进程退出及组件占用。安装范围、静默参数和旧版迁移见[安装版说明](../installer.md)。应用与快捷方式使用固定 AppUserModelID `Yuchen95.LucidDesk`；MSI 升级身份由固定 UpgradeCode 管理。
 
@@ -200,11 +204,11 @@ cargo build -p luciddesk-shell --example filter_backend_probe --locked
 
 Build CI 在推送标签或 `codex/ci-compare-*` 比较分支时运行，不限定 `v` 前缀；普通分支推送和 PR 不触发，手动启动用于比较构建产物，仅上传 Actions 附件，不发布 Release。发布标签支持 `<版本>` 和 `v<版本>`（例如 `0.14.0` 或 `v0.14.0`）。公开仓库 `Yuch3nE/luciddesk` 核对标签与应用 Cargo 版本，完成检查与普通包、便携包及安装包打包，再发布对应 GitHub Release；其他标签会在版本校验阶段报错。同步本地仓库时需要一并同步标签；已触发的运行可在 Actions 页面重新运行。
 
-Release 包含 EXE 安装包、普通 ZIP、便携 ZIP 及各自的 SHA256 文件，均附带中英文更新记录。发布任务先验证校验值；正文从标签对应源码中的 `CHANGELOG.md` 和 `CHANGELOG.en.md` 分别提取匹配版本章节，按中文、英文顺序合并，中间使用分隔线，不添加语言大标题，只显示一次版本标题与日期。新增功能和问题修复分别放在 `feat`、`fix` 分类下，更新说明聚焦应用行为；保留完整内容，并将相对链接转换为该标签下的 GitHub 链接。任一语言的章节缺失、重复或为空时中止发布；构建阶段会运行双语提取测试。重跑时同步更新正文与同名附件。发布权限仅授予独立的 Release 任务。
+CI Release 包含 EXE、普通 ZIP、便携 ZIP 及各自的 SHA256，共六个附件；Release 正文提供中英文更新记录。发布任务先验证校验值；正文从标签对应源码中的 `CHANGELOG.md` 和 `CHANGELOG.en.md` 分别提取匹配版本章节，按中文、英文顺序合并，中间使用分隔线，不添加语言大标题，只显示一次版本标题与日期。新增功能和问题修复分别放在 `feat`、`fix` 分类下，更新说明聚焦应用行为；保留完整内容，并将相对链接转换为该标签下的 GitHub 链接。任一语言的章节缺失、重复或为空时中止发布；构建阶段会运行双语提取测试。重跑时同步更新正文与同名附件。发布权限仅授予独立的 Release 任务。
 
 推送到 `main` 的更新记录或生成器改动会触发 `Sync release notes`，只同步当前应用版本已存在的 Release 正文，支持带或不带 `v` 的标签。这个任务不编译程序，不创建或移动标签，也不替换附件；修改旧版本说明时需同步对应版本的 Release 正文。
 
-需要用已验证的 CI 包替换现有 Release 附件时，手动运行 `Refresh release packages`，填写现有版本标签、成功的 Build CI 运行 ID 和完整源码提交 SHA。流程核对构建来源、包内版本与提交、三个包及二进制的校验值，再上传六个附件并核对 GitHub 返回的摘要；上传成功后清理旧名称的普通 ZIP，在正文注明实际构建提交。它不重新编译，也不移动标签。
+需要用已验证的 CI 包替换现有 Release 附件时，手动运行 `Refresh release packages`，填写现有版本标签、成功的 Build CI 运行 ID 和完整源码提交 SHA。流程核对构建来源、包内版本与提交、各个包及二进制的校验值，再上传对应附件（当前 CI 为三包六附件；校验器也兼容带 MSI 的四包八附件）并核对 GitHub 返回的摘要；上传成功后清理旧名称的普通 ZIP，在正文注明实际构建提交。它不重新编译，也不移动标签。
 
 也可修改 `.github/release-refresh.json` 中的同名字段并推送到 `main`，触发同一刷新流程；只改流程或其他代码不会触发这条发布请求。
 
