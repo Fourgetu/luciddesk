@@ -78,6 +78,11 @@ Source: "{#SourcePath}\luciddesk.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourcePath}\luciddesk_explorer.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourcePath}\luciddesk-cli.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourcePath}\skills\luciddesk-control\SKILL.md"; DestDir: "{app}\skills\luciddesk-control"; Flags: ignoreversion
+Source: "{#SourcePath}\skills\luciddesk-control\references\desktop-layout.md"; DestDir: "{app}\skills\luciddesk-control\references"; Flags: ignoreversion
+Source: "{#SourcePath}\skills\luciddesk-control\references\folder-search.md"; DestDir: "{app}\skills\luciddesk-control\references"; Flags: ignoreversion
+Source: "{#SourcePath}\skills\luciddesk-control\references\installation.md"; DestDir: "{app}\skills\luciddesk-control\references"; Flags: ignoreversion
+Source: "{#SourcePath}\skills\luciddesk-control\references\plans-and-recovery.md"; DestDir: "{app}\skills\luciddesk-control\references"; Flags: ignoreversion
+Source: "{#SourcePath}\skills\luciddesk-control\references\settings-startup.md"; DestDir: "{app}\skills\luciddesk-control\references"; Flags: ignoreversion
 Source: "{#SourcePath}\cli.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourcePath}\protocol.schema.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourcePath}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion

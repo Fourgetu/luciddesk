@@ -9,6 +9,11 @@ PAYLOAD = {
     "luciddesk.exe", "luciddesk_explorer.dll", "luciddesk-cli.exe",
     "skills/luciddesk-control/SKILL.md", "cli.md", "protocol.schema.json",
     "LICENSE", "build.json", "installed",
+    "skills/luciddesk-control/references/desktop-layout.md",
+    "skills/luciddesk-control/references/folder-search.md",
+    "skills/luciddesk-control/references/installation.md",
+    "skills/luciddesk-control/references/plans-and-recovery.md",
+    "skills/luciddesk-control/references/settings-startup.md",
 }
 
 

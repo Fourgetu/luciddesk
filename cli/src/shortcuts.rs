@@ -117,6 +117,15 @@ pub(super) fn operation(
 }
 pub(super) fn run(
     options: &Options,
+    call: impl FnMut(&Request, Duration) -> Response,
+) -> Response {
+    let mut response = execute(options, call);
+    crate::next_step::attach(&mut response, &options.request, options.timeout);
+    response
+}
+
+fn execute(
+    options: &Options,
     mut call: impl FnMut(&Request, Duration) -> Response,
 ) -> Response {
     let Some(operation) = &options.operation else {
@@ -348,12 +357,14 @@ mod tests {
             if dry_run {
                 assert_eq!(commands, vec!["workspace.get", "plan.preview"]);
                 assert!(response.ok);
+                assert_eq!(response.data.as_ref().unwrap()["next_step"]["action"], "review_then_apply");
             } else {
                 assert_eq!(
                     commands,
                     vec!["workspace.get", "plan.preview", "plan.apply"]
                 );
                 assert_eq!(response.exit_code(), 8);
+                assert_eq!(response.data.as_ref().unwrap()["next_step"]["action"], "query_receipt");
                 assert_eq!(response.data.unwrap()["recovery"]["plan_token"], "token");
             }
         }

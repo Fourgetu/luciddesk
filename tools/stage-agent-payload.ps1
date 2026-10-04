@@ -11,6 +11,10 @@ $payload = [ordered]@{
     'crates/luciddesk-api/protocol.schema.json' = 'protocol.schema.json'
     'skills/luciddesk-control/SKILL.md' = 'skills/luciddesk-control/SKILL.md'
 }
+Get-ChildItem -LiteralPath (Join-Path $SourceRoot 'skills/luciddesk-control/references') -File -Filter '*.md' | Sort-Object Name | ForEach-Object {
+    $relative = "skills/luciddesk-control/references/$($_.Name)"
+    $payload[$relative] = $relative
+}
 foreach ($entry in $payload.GetEnumerator()) {
     $source = Join-Path $SourceRoot $entry.Key
     if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Missing Agent payload: $source" }

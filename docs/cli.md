@@ -15,7 +15,23 @@ luciddesk-cli folder fit -h
 luciddesk-cli help pane snap --json
 ```
 
-总览列出命令，资源组列出子命令，具体修改命令显示可用参数、必需字段及 JSON 约束。字段说明来自内置协议；复杂字段用 `--input` 提供。`help ... --json` 返回标准响应信封，`data` 含 `usage`、`commands`，修改命令还包含 `field_flags` 和 `operation_schema`，适合 Agent 读取。在线实际支持范围仍以 `capabilities --json` 为准。
+总览按资源组列出命令及用途，资源组列出子命令，具体命令显示在线/离线模式、读取/预览/执行行为、参数取值和必需字段。示例随命令变化，快捷修改示例默认带 `--dry-run`；示例中的 ID 与路径需要替换为实时查询结果。字段说明来自内置协议；复杂字段用 `--input` 提供。`help ... --json` 返回标准响应信封，`data` 含 `usage`、`commands`，修改命令还包含 `field_flags` 和 `operation_schema`，适合 Agent 读取。在线实际支持范围仍以 `capabilities --json` 为准。
+
+CLI 与主程序继续使用同一发布版本，帮助标题显示 CLI 版本和独立的控制协议版本。`--version` 查看版本，不连接主程序。
+
+面向 Agent，JSON 帮助保留原有字段并提供以下结构化信息，无需解析终端文本：
+
+| 字段 | 用途 |
+| --- | --- |
+| `help_version`、`cli_version`、`protocol_version` | 帮助格式、CLI 发布版及控制协议版本 |
+| `command_args`、`command_details`、`groups` | 叶命令参数、带说明的命令清单及总览资源组 |
+| `requires_app`、`mutates_workspace`、`supports_dry_run` | 是否需要主程序、默认是否改变状态、是否支持只预览；资源组前两项为 null，应继续查询叶命令 |
+| `default_effect` | `read`、`preview`、`apply`、`preview_then_apply` 或 `group` |
+| `fields`、`required_fields` | 字段名、参数别名、取值 schema、必填项与是否只能通过 JSON 输入；创建命令的 `ref` 默认由 CLI 填充 |
+| `example_args` | 可直接传给可执行文件的参数数组；与 `examples` 文本对应，仍需替换示例 ID 和路径 |
+| `schema_args` | 获取完整协议的参数；`operation_schema` 与字段中的引用按该协议解析 |
+
+字段只描述当前 CLI 的语法，不保证运行中的应用支持该操作。Agent 应先读取帮助，再查询 `capabilities` 与工作区；修改后核对回执和最终状态。
 
 帮助只接受命令主题和可选的 `--json`，不要同时传入 `--input` 或修改参数。无参数、`--help` 和 `-h` 均显示总览。参数错误保留 `INVALID_REQUEST` 和原退出码，并提示帮助入口；普通文本模式下，连接失败、状态冲突和超时另附下一步操作建议。
 
@@ -35,6 +51,24 @@ cargo build -p luciddesk -p luciddesk-cli -p luciddesk-explorer --locked --offli
 ```
 
 普通输出为格式化 JSON 数据，`--json` 输出单行 JSON 响应信封，适合脚本；错误码同时反映在退出码中。`schema` 是离线本地命令，直接输出协议信封 JSON Schema。`--help`、`--version` 也不需要主程序。
+
+CLI 主要面向 Agent。调用时应始终显式传 `--json`，按 JSON 字段处理结果，不解析普通提示或错误消息文本。`help --json` 的 `output_contract` 描述输出约定；新增字段应按向前兼容原则处理。
+
+需要后续操作时，CLI 在 `data.next_step` 提供指引（普通查询或已生效结果可能没有此字段）：
+
+| `action` | 含义 |
+| --- | --- |
+| `review_then_apply` | 预览未执行；核对 diff 后，可使用 `args` 提交 |
+| `query_receipt` | 提交结果不确定或仍等待生效；使用 `args` 查询原请求回执 |
+| `refresh_and_preview` | 工作区冲突或计划过期；先按 `args` 读取工作区，再重新生成计划 |
+| `inspect_state` | 回执未知、展示失败或已被覆盖；先检查当前工作区，不能直接重复修改 |
+| `read_help` | 参数错误；按 `args` 读取结构化帮助 |
+| `start_matching_app` / `check_access_and_cli_setting` | 需要启动匹配主程序，或检查访问权限和 CLI 开关 |
+| `inspect_error` | 检查原始错误码及具体条件后决定下一步 |
+
+`args` 是不含可执行文件的参数数组，可直接传给进程调用接口，无需拼接 shell 字符串；在线指引保留数据目录、协议版本和超时设置。没有 `args` 时需要人工或环境处理。`automatic_retry:false` 表示不能仅根据这条指引自动重试原修改；允许执行只读的回执查询。预览的提交参数含新的固定请求 ID，若提交不确定，应保留整组参数，不能再次生成 ID 重复提交。
+
+`ok:true` 和退出码 0 只表示请求成功；仍需检查 `commit_status`、`presentation_status`，系统操作还需检查 `operation_status`。`request get` 的原回执在 `data.result` 内。`next_step` 只是 CLI 的辅助指引，不覆盖原始状态；已有 `data.recovery` 的精确查询与重试参数保持不变。
 
 `--data-dir <现有目录>` 只核对主程序的数据目录，不切换或创建工作区。`--timeout-ms` 范围 1–60000，默认 10000；服务端查询等待 UI 最多 5 秒，整个连接 I/O 最多 10 秒。只有一个服务端连接同时执行，繁忙时客户端在自己的超时期限内等待。
 
@@ -250,7 +284,7 @@ Agent 可以先使用 `--dry-run --json` 查看差异，再按既有用户授权
 
 ## 获取配套 Skill
 
-`luciddesk-cli skill show --json` 离线返回 `data.content`，与当前 CLI 构建使用同一份技能源文件。包内还提供 `skills/luciddesk-control/SKILL.md`，可复制到 Agent 配置的技能目录，已有同名文件时请先比较内容。CLI、Skill 和协议 schema 随普通 ZIP、便携包及安装包分发；不自动更改 PATH 或 Agent 设置。
+`luciddesk-cli skill show --json` 离线返回完整技能包：`data.files` 为相对路径到 UTF-8 内容的映射，`bundle_version:1`，入口为 `SKILL.md`。安装时保存全部文件并保留 `references/` 目录，拒绝越出技能目录的路径。兼容字段 `data.content` 和纯文本 `skill show` 仅返回入口。包内提供完整 `skills/luciddesk-control/`，可整体复制到 Agent 配置的技能目录，已有同名文件时请先比较内容。入口按任务链接 references，运行任务时只读取所需文件；不要把安装导出的全部内容每次都加载进上下文。CLI、Skill 和协议 schema 随普通 ZIP、便携包及安装包分发；不自动更改 PATH 或 Agent 设置。
 
 
 ### 桌面呈现确认与重启恢复
@@ -307,4 +341,4 @@ luciddesk-cli pane snap --id 7 --target 4 --side bottom --align start --dry-run 
 
 “设置 → 常规 → Agent 与 CLI”提供“允许 CLI 控制”开关，默认开启，保存为 `config.toml` 的 `[cli].enabled`。关闭后立即拒绝所有在线查询、计划预览和提交，返回 `ACCESS_DENIED`（退出码 9）；管道保留以返回明确的禁用提示。已经提交的操作不会因此回滚。重新启用请使用设置界面；离线 `help`、`schema`、`skill show` 不受影响。
 
-同一区域可复制 SKILL 安装提示词，包含当前安装位置对应的 CLI 路径。将提示词发送给 Agent，由其通过离线 `skill show` 获取技能内容并安装到自身支持的位置。复制按钮不自动安装、不修改桌面。
+同一区域可复制 SKILL 安装提示词，包含当前安装位置对应的 CLI 路径。将提示词发送给 Agent，由其通过离线 `skill show --json` 获取完整技能包并安装到自身支持的位置。复制按钮不自动安装、不修改桌面。

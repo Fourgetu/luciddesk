@@ -17,6 +17,15 @@ $embedded = (& $cli skill show --json) | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0 -or -not $embedded.ok) { throw 'Offline skill discovery failed' }
 $skill = [IO.File]::ReadAllText((Join-Path $Directory 'skills/luciddesk-control/SKILL.md'))
 if ($embedded.data.content -cne $skill) { throw 'Embedded and distributed Skills differ' }
+if ($embedded.data.bundle_version -ne 1 -or -not $embedded.data.files) { throw 'Missing Skill bundle' }
+foreach ($file in $embedded.data.files.PSObject.Properties) {
+    $relative = "skills/luciddesk-control/$($file.Name)"
+    $entry = @($build.files | Where-Object file -eq $relative)
+    if ($entry.Count -ne 1) { throw "Missing or duplicate Skill manifest entry: $relative" }
+    $path = Join-Path $Directory $relative
+    if ([IO.File]::ReadAllText($path) -cne $file.Value) { throw "Skill bundle content mismatch: $relative" }
+    if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne $entry[0].sha256) { throw "Skill bundle hash mismatch: $relative" }
+}
 $schema = (& $cli schema --json) -join "`n"
 if ($LASTEXITCODE -ne 0) { throw 'Offline schema discovery failed' }
 $packagedSchema = [IO.File]::ReadAllText((Join-Path $Directory 'protocol.schema.json'))

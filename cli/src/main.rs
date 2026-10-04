@@ -1,4 +1,6 @@
 mod help;
+mod next_step;
+mod skill;
 mod shortcuts;
 use luciddesk_api::{Request, Response, VERSION};
 use std::{ffi::OsString, time::Duration};
@@ -168,16 +170,15 @@ fn offline_output(args: &[OsString]) -> Option<String> {
     if words != [&OsString::from("skill"), &OsString::from("show")] {
         return None;
     }
-    const SKILL: &str = include_str!("../../skills/luciddesk-control/SKILL.md");
     Some(if json_count == 1 {
         let response = Response::success(
             "offline",
             serde_json::Value::Null,
-            serde_json::json!({"name":"luciddesk-control","format":"markdown","content":SKILL}),
+            skill::bundle(),
         );
         serde_json::to_string(&response).expect("skill serialization")
     } else {
-        SKILL.into()
+        skill::ENTRYPOINT.into()
     })
 }
 fn main() {
@@ -186,7 +187,7 @@ fn main() {
         match output {
             Ok(text) => println!("{text}"),
             Err(message) => {
-                let response = Response::failure("", "INVALID_REQUEST", message);
+                let response = next_step::invalid_input(message);
                 if args.iter().any(|a| a == "--json") {
                     println!("{}", serde_json::to_string(&response).unwrap());
                 } else {
@@ -210,7 +211,7 @@ fn main() {
     }
     let wants_json = args.iter().any(|a| a == "--json");
     let (response, json) = match parse(args) {
-        Err(error) => (Response::failure("", "INVALID_REQUEST", format!("{error}. Run 'luciddesk-cli help' or 'luciddesk-cli help RESOURCE COMMAND' for usage.")), wants_json),
+        Err(error) => (next_step::invalid_input(format!("{error}. Run 'luciddesk-cli help' or 'luciddesk-cli help RESOURCE COMMAND' for usage.")), wants_json),
         Ok(options) => {
             let response = shortcuts::run(&options, call);
             (response, options.json)

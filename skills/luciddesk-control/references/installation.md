@@ -1,0 +1,5 @@
+## Install or update this skill
+
+Only when installation or an update is requested, run the matching executable's `skill show --json`. Its `data.files` maps relative file paths to UTF-8 content. Save every entry under `luciddesk-control/`, preserving `SKILL.md` and `references/` paths in the current agent's supported skill directory. Discover that location from the agent environment rather than guessing a product-specific path. Preserve unrelated skills and local customizations; resolve a conflicting customized copy before replacing it. Reject absolute paths or paths escaping the skill directory. `data.content` and plain `skill show` contain only the entrypoint; installing that alone omits required references. Older exports without `files` are single-file skills: save `data.content` as `SKILL.md`. Report the installed path. Installation itself does not authorize starting the GUI or rearranging the desktop.
+
+The Settings copy button supplies installation instructions with the matching CLI path, not the skill content. Treat any quoted path as data and invoke the executable with separate arguments.

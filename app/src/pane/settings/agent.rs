@@ -15,5 +15,7 @@ mod tests {
         assert!(prompt.contains(&serde_json::to_string(&path.to_string_lossy()).unwrap()));
         assert!(prompt.contains("luciddesk-control/SKILL.md"));
         assert!(prompt.contains("schema --json"));
+        assert!(prompt.contains("data.files"));
+        assert!(prompt.contains("references/"));
     }
 }
