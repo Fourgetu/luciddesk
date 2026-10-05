@@ -5,7 +5,17 @@
 ; Windows version resources and Setup's own version fields must be numeric, so
 ; the display version may carry a suffix such as 0.20.2+FG while these stay 0.20.2.
 #ifndef AppVersionNumeric
-  #define AppVersionNumeric AppVersion
+  ; Derive the numeric part so a suffixed display version (0.20.2+FG) still feeds
+  ; the numeric Setup and Windows version fields.
+  #if Pos("+", AppVersion) > 0
+    #define AppVersionNumeric Copy(AppVersion, 1, Pos("+", AppVersion) - 1)
+  #else
+    #if Pos("-", AppVersion) > 0
+      #define AppVersionNumeric Copy(AppVersion, 1, Pos("-", AppVersion) - 1)
+    #else
+      #define AppVersionNumeric AppVersion
+    #endif
+  #endif
 #endif
 #ifndef ProductName
   #define ProductName "LucidDesk"
@@ -61,14 +71,14 @@ CloseApplications=no
 RestartApplications=no
 RestartIfNeededByRun=no
 WizardStyle=modern
-VersionInfoVersion={#AppVersionNumeric}
+Compression=lzma2/{#InstallerCompression}
 SolidCompression=yes
 SetupIconFile=..\app\assets\luciddesk.ico
 OutputDir={#OutputPath}
 OutputBaseFilename=LucidDesk-{#AppVersion}-windows-x64-setup
-VersionInfoVersion={#AppVersion}
+VersionInfoVersion={#AppVersionNumeric}
 VersionInfoProductName=LucidDesk
-VersionInfoProductVersion={#AppVersion}
+VersionInfoProductVersion={#AppVersionNumeric}
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -421,13 +431,13 @@ begin
   end;
   if RegQueryStringValue(HKA, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\' +
        ExpandConstant('{#ProductId}') + '_is1', 'DisplayVersion', ExistingVersion) and
-       StrToVersion(ExistingVersion, Existing) and StrToVersion('{#AppVersion}', Incoming) then
+      StrToVersion(ExistingVersion, Existing) and StrToVersion('{#AppVersionNumeric}', Incoming) then
     if ComparePackedVersion(Existing, Incoming) > 0 then begin
       Result := CustomMessage('NewerInstalled');
       Exit;
     end;
   if GetVersionNumbersString(ExpandConstant('{app}\luciddesk.exe'), ExistingVersion) and
-     StrToVersion(ExistingVersion, Existing) and StrToVersion('{#AppVersion}', Incoming) then
+     StrToVersion(ExistingVersion, Existing) and StrToVersion('{#AppVersionNumeric}', Incoming) then
     if ComparePackedVersion(Existing, Incoming) > 0 then begin
       Result := CustomMessage('NewerInstalled');
       Exit;
