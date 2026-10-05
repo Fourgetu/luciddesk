@@ -156,6 +156,25 @@ pub fn panel_contrast(
     mode: luciddesk_core::PanelText,
     native: bool,
 ) -> PanelContrast {
+    panel_contrast_behind(backdrop, dark, mode, native, None)
+}
+
+/// [`panel_contrast`] with the measured luminance of the desktop behind the
+/// pane.
+///
+/// A flat color the user made (nearly) transparent contributes almost nothing
+/// to what is on screen, so judging its text against the color itself picks the
+/// wrong ink as soon as the desktop is lighter or darker than it. Composing the
+/// color with the measured desktop first keeps the text readable in both
+/// directions. The protection scrim still uses the worst case, so enabling text
+/// protection keeps behaving exactly as before.
+pub fn panel_contrast_behind(
+    backdrop: luciddesk_core::Backdrop,
+    dark: bool,
+    mode: luciddesk_core::PanelText,
+    native: bool,
+    behind: Option<f32>,
+) -> PanelContrast {
     use luciddesk_core::{Backdrop, PanelText};
     let forced = match mode {
         PanelText::Auto => None,
@@ -201,7 +220,22 @@ pub fn panel_contrast(
             [base; 3],
         )
     };
-    let light = forced.unwrap_or_else(|| luminance(nominal) < 0.179);
+    // Composing the flat color with the desktop it is worn over, rather than
+    // judging the color on its own, is what keeps the ink readable once the
+    // user turns the color transparent.
+    let judged = match (backdrop, behind) {
+        (Backdrop::Solid { color, opacity }, Some(behind)) => {
+            let plate = luminance([
+                (color >> 16 & 255) as f32 / 255.0,
+                (color >> 8 & 255) as f32 / 255.0,
+                (color & 255) as f32 / 255.0,
+            ]);
+            let alpha = opacity.clamp(0.0, 1.0);
+            plate * alpha + behind * (1.0 - alpha)
+        }
+        _ => luminance(nominal),
+    };
+    let light = forced.unwrap_or_else(|| judged < 0.179);
     let worst = if light { high } else { low };
     let contrast = |alpha: f32| {
         let background =
@@ -421,6 +455,49 @@ mod tests {
             assert_eq!(forced.light_text, !dark);
             assert!(forced.scrim > 0.0);
         }
+    }
+
+    /// A flat color the user turned transparent shows the desktop, so the ink
+    /// must follow the desktop and not the color that is barely painted.
+    #[test]
+    fn transparent_solid_color_judges_text_against_the_desktop() {
+        use luciddesk_core::{Backdrop, PanelText};
+        let light_color = Backdrop::Solid {
+            color: 0xf3f3f3,
+            opacity: 0.0,
+        };
+        let dark_color = Backdrop::Solid {
+            color: 0x202020,
+            opacity: 0.0,
+        };
+        // Light theme, so the theme's own judgement would be dark ink for both.
+        for (backdrop, behind, light) in [
+            (light_color, 0.0, true),
+            (light_color, 1.0, false),
+            (dark_color, 0.0, true),
+            (dark_color, 1.0, false),
+        ] {
+            let style = panel_contrast_behind(backdrop, false, PanelText::Auto, true, Some(behind));
+            assert_eq!(style.light_text, light, "{backdrop:?} behind={behind}");
+        }
+        // Without a measurement the color itself decides, as it always has.
+        assert!(!panel_contrast_behind(light_color, false, PanelText::Auto, true, None).light_text);
+        // A manual override still wins over the measured desktop.
+        assert!(
+            panel_contrast_behind(light_color, false, PanelText::Light, true, Some(1.0)).light_text
+        );
+        assert!(
+            !panel_contrast_behind(light_color, false, PanelText::Dark, true, Some(0.0)).light_text
+        );
+        // An opaque color hides the desktop, so the measurement cannot matter.
+        let opaque = Backdrop::Solid {
+            color: 0xf3f3f3,
+            opacity: 1.0,
+        };
+        assert_eq!(
+            panel_contrast_behind(opaque, false, PanelText::Auto, true, Some(0.0)).light_text,
+            panel_contrast_behind(opaque, false, PanelText::Auto, true, None).light_text
+        );
     }
 
     #[test]

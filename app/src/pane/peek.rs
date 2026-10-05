@@ -137,7 +137,7 @@ pub(super) fn modifier_bits(m: &Modifiers) -> u8 {
         | (u8::from(m.windows) << 3)
 }
 pub(super) fn valid_shortcut(key: u16, bits: u8) -> bool {
-    if bits > 7
+    if bits > 15
         || !(key == VK_SPACE
             || (0x30..=0x39).contains(&key)
             || (0x41..=0x5a).contains(&key)
@@ -152,7 +152,7 @@ pub(super) fn valid_shortcut(key: u16, bits: u8) -> bool {
         ctrl: bits & 1 != 0,
         shift: bits & 2 != 0,
         alt: bits & 4 != 0,
-        windows: false,
+        windows: bits & 8 != 0,
     };
     keyboard::command(key, &mods, false).is_none()
 }
@@ -174,6 +174,9 @@ pub(super) fn shortcut_label(s: &Settings) -> String {
     }
     if s.modifiers & 4 != 0 {
         parts.push("Alt".to_owned());
+    }
+    if s.modifiers & 8 != 0 {
+        parts.push("Win".to_owned());
     }
     parts.push(match s.key {
         VK_SPACE => "Space".into(),

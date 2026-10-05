@@ -150,6 +150,7 @@ fn shortcut(raw: &str, search: bool) -> Result<(u16, u8), StoreError> {
             "ctrl" => 1,
             "shift" => 2,
             "alt" => 4,
+            "win" => 8,
             _ => return Err(error("invalid shortcut modifier")),
         };
         if bits & bit != 0 {
@@ -157,8 +158,12 @@ fn shortcut(raw: &str, search: bool) -> Result<(u16, u8), StoreError> {
         }
         bits |= bit;
     }
-    if (bits & 4 != 0 && matches!(key, 32 | 115)) || (search && (bits & 5 == 0 || key == 123)) {
-        return Err(error("shortcut is reserved or missing Ctrl/Alt"));
+    // A Win-only combination is served by the listen-only keyboard hook, so it
+    // counts as a valid modifier alongside Ctrl and Alt.
+    if (bits & 4 != 0 && matches!(key, 32 | 115))
+        || (search && (bits & 0xd == 0 || key == 123))
+    {
+        return Err(error("shortcut is reserved or missing Ctrl/Alt/Win"));
     }
     if (bits == 1 && matches!(key, 32 | 65 | 67 | 86 | 88))
         || (bits == 0 && matches!(key, 113 | 116))
@@ -172,7 +177,7 @@ fn shortcut_label(key: &str, bits: &str) -> Result<String, StoreError> {
     let key: u16 = key.parse().map_err(io)?;
     let bits: u8 = bits.parse().map_err(io)?;
     let mut parts = Vec::new();
-    for (bit, name) in [(1, "Ctrl"), (2, "Shift"), (4, "Alt")] {
+    for (bit, name) in [(1, "Ctrl"), (2, "Shift"), (4, "Alt"), (8, "Win")] {
         if bits & bit != 0 {
             parts.push(name.to_owned());
         }

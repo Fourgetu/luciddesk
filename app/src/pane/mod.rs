@@ -35,7 +35,10 @@ mod snap;
 mod auto_hide;
 mod visibility;
 mod quick_reveal;
+mod reveal_guard;
 mod show_hotkey;
+mod key_hook;
+mod backdrop_sample;
 
 // Rendering and shared visual resources.
 mod render;
@@ -296,6 +299,7 @@ fn create_model(state: &PaneApp, id: PanelId) -> Result<GroupModel, String> {
         pressed_button: None,
         backdrop: panel.backdrop(),
         native_material: false,
+        behind: None,
         title: panel.title().to_string(),
         items,
         icon_size: layout::DESKTOP_ICON_SIZE,

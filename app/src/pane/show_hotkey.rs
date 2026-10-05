@@ -22,7 +22,7 @@ pub(super) fn save(store: &WorkspaceStore, value: Shortcut) -> Result<(), String
 pub(super) fn status() -> String { STATUS.with(|s| s.borrow().clone()) }
 pub(super) fn update_status(value: String) { STATUS.with(|s| *s.borrow_mut() = value); }
 pub(super) fn activate(state: &Rc<RefCell<PaneApp>>) {
-    if enabled(&state.borrow().store) { quick_reveal::show_all(state); }
+    if enabled(&state.borrow().store) { quick_reveal::toggle(state); }
 }
 
 #[cfg(test)]

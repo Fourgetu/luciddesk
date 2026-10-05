@@ -30,6 +30,9 @@ pub struct GroupModel {
     pub pressed_button: Option<usize>,
     pub backdrop: luciddesk_core::Backdrop,
     pub native_material: bool,
+    /// Measured luminance of the desktop behind the pane, when its flat color is
+    /// too transparent to establish a background of its own. See [`super::backdrop_sample`].
+    pub behind: Option<f32>,
     pub title: String,
     pub items: Vec<Item>,
     pub icon_size: f32,

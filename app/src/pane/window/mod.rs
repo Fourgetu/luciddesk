@@ -5,6 +5,7 @@
 )]
 use super::{
     Event, GroupModel,
+    backdrop_sample,
     composition::Surface,
     layout::{Grid, HEADER},
     render::Renderer,
@@ -139,6 +140,20 @@ pub fn set_layer(hwnd: HWND, always_on_top: bool) {
     }
 }
 
+/// Returns a pane to the bottom of the desktop band, the position `create`
+/// establishes. Unlike `set_layer`, the desktop property is cleared for the whole
+/// move: with it set, `borderless_proc` rewrites `HWND_BOTTOM` into "just above
+/// the other panes", which leaves the band stranded above ordinary windows once
+/// it has been revealed.
+pub(super) fn sink_to_desktop(hwnd: HWND) {
+    unsafe {
+        RemovePropW(hwnd, DESKTOP_LAYER);
+        SetWindowPos(hwnd, HWND_BOTTOM, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+        SetPropW(hwnd, DESKTOP_LAYER, 1usize as _);
+    }
+}
+
 // Shell menus pump messages while open. Keep auto-hide and repeated menu requests
 // suspended until that nested interaction returns, including error paths.
 struct MenuActivity(Rc<std::cell::Cell<bool>>, HWND);
@@ -245,6 +260,15 @@ pub(super) unsafe extern "system" fn borderless_proc(
     }
 }
 
+/// Timer that re-reads the desktop behind a pane whose flat color is too
+/// transparent to establish a background of its own.
+const BACKDROP_TIMER: usize = 6;
+/// First measurement, delayed until the new material has been presented.
+const BACKDROP_SETTLE_MS: u32 = 150;
+/// Later measurements, for windows moving over or away from the pane. Reading a
+/// screen pixel is not free, so this stays a deliberately slow cadence.
+const BACKDROP_REFRESH_MS: u32 = 1_500;
+
 #[allow(clippy::too_many_lines)]
 pub fn create<F>(
     bounds: RectDip,
@@ -273,6 +297,10 @@ where
     let mut move_origin: Option<super::snap::DragOrigin> = None;
     let mut auto_hide = super::auto_hide::AutoHide::default();
     let mut tab_press: Option<(luciddesk_core::PanelId, POINT)> = None;
+    // The material the current desktop sample was taken for, and whether the
+    // refresh timer is running. See `backdrop_sample`.
+    let mut behind_inputs: Option<(luciddesk_core::Backdrop, bool)> = None;
+    let mut behind_timer = false;
     let menu_active = Rc::new(std::cell::Cell::new(false));
     let mut paint_recovery = super::composition::PaintRecovery::default();
     let model_init = Rc::clone(&model);
@@ -546,6 +574,24 @@ where
                     Some(0)
                 }
                 WM_TIMER if wparam == 3 => Some(0),
+                WM_TIMER if wparam == BACKDROP_TIMER => {
+                    let inputs = {
+                        let m = model.borrow();
+                        (m.backdrop, m.native_material)
+                    };
+                    if backdrop_sample::needed(inputs.0, inputs.1) {
+                        let fresh = backdrop_sample::behind(hwnd, scale(hwnd));
+                        if fresh != model.borrow().behind {
+                            model.borrow_mut().behind = fresh;
+                            invalidate(hwnd);
+                        }
+                        unsafe { SetTimer(hwnd, BACKDROP_TIMER, BACKDROP_REFRESH_MS, None); }
+                    } else {
+                        behind_timer = false;
+                        unsafe { KillTimer(hwnd, BACKDROP_TIMER); }
+                    }
+                    Some(0)
+                }
                 ANIMATE_FOLD => {
                     let mut enabled = 1i32;
                     unsafe {
@@ -607,6 +653,7 @@ where
                 }
                 WM_DESTROY => {
                     unsafe { KillTimer(hwnd, 5); }
+                    unsafe { KillTimer(hwnd, BACKDROP_TIMER); }
                     if pane_moved { event(Event::FinishPaneMove(false)); }
                     // The supervisor can recreate a surface destroyed with Explorer.
                     Some(0)
@@ -720,6 +767,36 @@ where
                                 );
                             }
                             model.borrow_mut().native_material = surface.native;
+                            {
+                                let inputs = {
+                                    let m = model.borrow();
+                                    (m.backdrop, m.native_material)
+                                };
+                                let needed = backdrop_sample::needed(inputs.0, inputs.1);
+                                if needed && !behind_timer {
+                                    behind_timer = true;
+                                    unsafe { SetTimer(hwnd, BACKDROP_TIMER, BACKDROP_REFRESH_MS, None); }
+                                }
+                                if !needed {
+                                    if behind_timer {
+                                        behind_timer = false;
+                                        unsafe { KillTimer(hwnd, BACKDROP_TIMER); }
+                                    }
+                                    // A transparent color is the only case that reads it,
+                                    // and an opaque plate hides the desktop anyway.
+                                    if model.borrow().behind.is_some() {
+                                        model.borrow_mut().behind = None;
+                                    }
+                                }
+                                if behind_inputs != Some(inputs) {
+                                    behind_inputs = Some(inputs);
+                                    if needed {
+                                        // The screen still shows the previous frame, so
+                                        // measure once the new material is presented.
+                                        unsafe { SetTimer(hwnd, BACKDROP_TIMER, BACKDROP_SETTLE_MS, None); }
+                                    }
+                                }
+                            }
                             let Some(target) =
                                 surface.try_begin_frame(r.right as u32, r.bottom as u32)?
                             else {

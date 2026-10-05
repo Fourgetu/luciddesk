@@ -28,9 +28,9 @@ pub(in crate::pane) fn status() -> String {
     STATUS.with(|s| s.borrow().clone())
 }
 pub(in crate::pane) fn valid(value: Shortcut) -> bool {
-    // Require Ctrl or Alt; reserve system/menu combinations and the debugger's F12.
-    value.modifiers <= 7
-        && value.modifiers & 5 != 0
+    // Require Ctrl, Alt or Win; reserve system/menu combinations and the debugger's F12.
+    value.modifiers <= 15
+        && value.modifiers & 0xd != 0
         && value.key != VK_F12
         && peek::valid_shortcut(value.key, value.modifiers)
 }
@@ -87,12 +87,16 @@ fn flags(value: Shortcut) -> u32 {
             0
         }
         | if value.modifiers & 4 != 0 { MOD_ALT } else { 0 }
+        | if value.modifiers & 8 != 0 { MOD_WIN } else { 0 }
 }
 pub(in crate::pane) struct Registration {
     id: i32,
     hwnd: isize,
     desired: Option<Shortcut>,
     registered: bool,
+    /// True when this binding is served by the listen-only keyboard hook
+    /// instead of `RegisterHotKey` (Windows-reserved combinations).
+    hooked: bool,
     attempted: Option<std::time::Instant>,
 }
 impl Default for Registration {
@@ -100,13 +104,13 @@ impl Default for Registration {
 }
 impl Registration {
     pub fn with_id(id: i32) -> Self {
-        Self { id, hwnd: 0, desired: None, registered: false, attempted: None }
+        Self { id, hwnd: 0, desired: None, registered: false, hooked: false, attempted: None }
     }
-    pub fn ready(&self) -> bool { self.desired.is_none() || self.registered }
+    pub fn ready(&self) -> bool { self.desired.is_none() || self.registered || self.hooked }
     pub fn message(&self) -> String {
         if self.desired.is_none() {
             crate::i18n::text(if self.id == ID { "ui-search-is-disabled-global-shortcut-is-not-registered" } else { "show-panels-disabled" }).into()
-        } else if self.registered {
+        } else if self.registered || self.hooked {
             crate::i18n::text("ui-works-globally-esc-cancels-recording").into()
         } else {
             crate::i18n::format("ui-is-unavailable-choose-another-shortcut", &[("arg0", label(self.desired.unwrap()))])
@@ -114,12 +118,13 @@ impl Registration {
     }
 
     pub fn retry_deadline(&self) -> Option<std::time::Instant> {
-        self.attempted.filter(|_| self.desired.is_some() && !self.registered)
+        self.attempted.filter(|_| self.desired.is_some() && !self.registered && !self.hooked)
             .map(|time| time + std::time::Duration::from_secs(10))
     }
     pub fn update(&mut self, hwnd: isize, desired: Option<Shortcut>) {
         if self.desired == desired
             && (self.registered
+                || self.hooked
                 || desired.is_none()
                 || self.attempted.is_some_and(|t| t.elapsed().as_secs() < 10))
         {
@@ -130,9 +135,22 @@ impl Registration {
         self.desired = desired;
         self.attempted = Some(std::time::Instant::now());
         self.registered = desired.is_some_and(|value| unsafe { RegisterHotKey(hwnd as _, self.id, flags(value), u32::from(value.key)) } != 0);
+        // Windows reserves a few combinations (notably the `Win + Space`
+        // input-method switch) that `RegisterHotKey` can never claim. Only Win
+        // combinations take the listen-only keyboard-hook fallback, so the
+        // ordinary conflict-and-retry path for other bindings is unchanged.
+        self.hooked = !self.registered
+            && desired.is_some_and(|value| {
+                value.modifiers & 8 != 0
+                    && crate::pane::key_hook::watch(hwnd as windows_sys::Win32::Foundation::HWND, self.id as usize, value.key, value.modifiers)
+            });
         if self.id == ID { STATUS.with(|s| *s.borrow_mut() = self.message()); }
     }
     fn clear(&mut self) {
+        if self.hooked {
+            crate::pane::key_hook::clear(self.id as usize);
+            self.hooked = false;
+        }
         if self.registered {
             unsafe {
                 UnregisterHotKey(self.hwnd as _, self.id);

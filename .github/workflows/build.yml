@@ -51,7 +51,7 @@ jobs:
           $metadata = cargo metadata --no-deps --format-version 1 --locked | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0) { throw 'Could not read package version.' }
           $version = ($metadata.packages | Where-Object name -eq 'luciddesk').version
-          if (@($version, "v$version") -cnotcontains $env:GITHUB_REF_NAME) { throw 'Tag must match the app version: <version> or v<version>.' }
+          if (@($version, "v$version") -cnotcontains $env:GITHUB_REF_NAME -and $env:GITHUB_REF_NAME -notmatch ('^v?' + [regex]::Escape($version) + '[+-][0-9A-Za-z.-]+$')) { throw 'Tag must match the app version: <version> or v<version>, optionally with a build suffix.' }
       - name: Cache Cargo dependencies and build outputs
         uses: Swatinem/rust-cache@v2
         with:

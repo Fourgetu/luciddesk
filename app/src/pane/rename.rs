@@ -727,6 +727,7 @@ mod tests {
             pressed_button: None,
             backdrop: luciddesk_core::Backdrop::Acrylic,
             native_material: false,
+            behind: None,
             title: "测试".into(),
             items: vec![super::super::Item {
                 details: Default::default(),

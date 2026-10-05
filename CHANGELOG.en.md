@@ -2,10 +2,24 @@
 
 [简体中文](CHANGELOG.md) · English
 
-Current version: **0.20.2**. Features and fixes by release.
+Current version: **0.20.2+FG**. Features and fixes by release; the `+FG` suffix marks the local patch build published by the Fourgetu fork at the upstream version number.
 
 Exit the app before upgrading a portable installation and preserve its `data` folder. See the [portable guide](docs/portable.md) (Chinese).
 
+
+## 0.20.2+FG · 2026-10-05
+
+Local patch build at the same version number as upstream 0.20.2. The changes cover the global shortcut, pane reveal and retract, and text contrast.
+
+### feat
+
+- Support Win combinations for global shortcuts: when `RegisterHotKey` is taken by the system or another program, fall back to a listen-only low-level keyboard hook that never swallows keys, so IME switching keeps working. `show_panels.shortcut` accepts `Win+Space` and similar.
+- Add a retract action: pressing Win+Space again returns the panes to the desktop layer instead of covering other windows, and hands the foreground back to the window that was active before they were raised. Switching to another program retracts them too, while focus changes inside the app do not.
+
+### fix
+
+- Fix needing two presses before the panes appear: raise every pane, activate the first one, then raise them again so the foreground rule cannot push them back into the desktop band.
+- Fix invisible panel text when a solid material is almost fully transparent: pick white or black ink from the desktop brightness sampled behind the pane header, instead of following the material colour alone. Text protection keeps its existing behaviour.
 ## 0.20.2 · 2026-10-05
 
 ### fix

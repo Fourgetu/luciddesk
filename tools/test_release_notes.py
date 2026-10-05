@@ -49,7 +49,7 @@ class ReleaseNotesTests(unittest.TestCase):
     def test_repository_versions_and_history_match(self):
         zh = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8-sig")
         en = (ROOT / "CHANGELOG.en.md").read_text(encoding="utf-8-sig")
-        versions = lambda text: re.findall(r"^## (\d+\.\d+\.\d+)\b", text, re.M)
+        versions = lambda text: re.findall(r"^## (\d+\.\d+\.\d+(?:[+-][0-9A-Za-z.-]+)?)\b", text, re.M)
         self.assertEqual(versions(zh), versions(en))
         version = tomllib.loads((ROOT / "app/Cargo.toml").read_text())["package"]["version"]
         self.assertEqual(versions(zh)[0], version)
@@ -59,7 +59,7 @@ class ReleaseNotesTests(unittest.TestCase):
         self.assertEqual(cli_version, version, "GUI and CLI versions must match")
         self.assertEqual(next(p["version"] for p in lock["package"] if p["name"] == "luciddesk-cli"), version)
         for name in ["README.md", "README.en.md"]:
-            badges = re.findall(r"badge/version-([0-9]+\.[0-9]+\.[0-9]+)-", (ROOT / name).read_text(encoding="utf-8"))
+            badges = re.findall(r"badge/version-([0-9]+\.[0-9]+\.[0-9]+(?:[+-][0-9A-Za-z.-]+)?)-", (ROOT / name).read_text(encoding="utf-8"))
             self.assertEqual(badges, [version])
         self.assertIn(f"**{version}**", zh.split("\n## ")[0])
         self.assertIn(f"**{version}**", en.split("\n## ")[0])

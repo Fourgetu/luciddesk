@@ -444,11 +444,12 @@ impl Renderer {
             let mut brushes = self.brushes.borrow_mut();
             canvas::draw(target, scale, |target| {
                 let (w, h) = (width as f32 / scale, height as f32 / scale);
-                let contrast = super::theme::panel_contrast(
+                let contrast = super::theme::panel_contrast_behind(
                     model.backdrop,
                     model.dark,
                     model.options.text,
                     model.native_material,
+                    model.behind,
                 );
                 let opacity = if model.native_material {
                     if model.options.text_protection {

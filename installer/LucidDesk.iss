@@ -2,6 +2,11 @@
 #ifndef AppVersion
   #error AppVersion is required
 #endif
+; Windows version resources and Setup's own version fields must be numeric, so
+; the display version may carry a suffix such as 0.20.2+FG while these stay 0.20.2.
+#ifndef AppVersionNumeric
+  #define AppVersionNumeric AppVersion
+#endif
 #ifndef ProductName
   #define ProductName "LucidDesk"
 #endif
@@ -56,7 +61,7 @@ CloseApplications=no
 RestartApplications=no
 RestartIfNeededByRun=no
 WizardStyle=modern
-Compression=lzma2/{#InstallerCompression}
+VersionInfoVersion={#AppVersionNumeric}
 SolidCompression=yes
 SetupIconFile=..\app\assets\luciddesk.ico
 OutputDir={#OutputPath}

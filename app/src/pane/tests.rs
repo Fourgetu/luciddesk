@@ -241,6 +241,7 @@ pub(super) fn test_model(title: &str) -> GroupModel {
         reveal: 1.0,
         backdrop: luciddesk_core::Backdrop::Mica,
         native_material: false,
+        behind: None,
         title: title.into(),
         items: vec![],
         icon_size: 48.0,

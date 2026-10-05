@@ -314,6 +314,8 @@ pub(super) fn reload(state: &Rc<RefCell<PaneApp>>) -> Result<(), String> {
 }
 
 pub(super) const REFRESH_HOTKEYS: u32 = WM_APP + 0x4c4;
+/// Posted by `reveal_guard` when another application takes the foreground.
+pub(super) const FOREGROUND_LEFT: u32 = WM_APP + 0x4c6;
 
 pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window::Window, String> {
     let weak = Rc::downgrade(state);
@@ -331,6 +333,7 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
     let mut language_dirty = false;
     let mut layout_dirty = false;
     let mut reconnect_hint = false;
+    let retract = Rc::downgrade(state);
     let window = windows_window::Window::new("LucidDesk Runtime")
         .size(1, 1)
         .style(WS_POPUP)
@@ -353,6 +356,13 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
                 received.unbind();
                 hotkey.update(raw as isize, None);
                 reveal_hotkey.update(raw as isize, None);
+                reveal_guard::remove();
+                return Some(0);
+            }
+            if msg == FOREGROUND_LEFT {
+                if let Some(state) = retract.upgrade() {
+                    quick_reveal::retract_if_revealed(&state);
+                }
                 return Some(0);
             }
             if msg == WM_HOTKEY && wp == show_hotkey::ID as usize {
@@ -499,6 +509,7 @@ pub(super) fn supervisor(state: &Rc<RefCell<PaneApp>>) -> Result<windows_window:
         })
         .create()
         .map_err(|e| e.to_string())?;
+    reveal_guard::install(window.hwnd().cast(), FOREGROUND_LEFT);
     wake.bind(window.hwnd() as isize);
     Ok(window)
 }

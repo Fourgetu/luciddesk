@@ -113,6 +113,7 @@ fn select_impl(state: &Rc<RefCell<PaneApp>>, from: PanelId, to: PanelId, persist
         let view = s.views.iter_mut().find(|v| v.id == from).unwrap();
         next.focused = view.model.borrow().focused;
         next.native_material = view.model.borrow().native_material;
+        next.behind = view.model.borrow().behind;
         let old = std::mem::replace(&mut *view.model.borrow_mut(), next);
         view.id = to;
         view.target.set(to);
@@ -382,6 +383,7 @@ pub(super) fn restore_cached_model(s: &mut PaneApp, id: PanelId) {
         cached.reveal = fresh.reveal;
         cached.options = fresh.options;
         cached.native_material = fresh.native_material;
+        cached.behind = fresh.behind;
         drop(fresh);
         cached.focused = view.model.borrow().focused;
         cached.merge_preview.clear();
