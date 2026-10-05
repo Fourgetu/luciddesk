@@ -13,8 +13,8 @@ $repo = Split-Path -Parent $PSScriptRoot
 $wixTools = Get-WixTooling
 $wix = $wixTools.Compiler
 $extension = $wixTools.Extension
-if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'MSI requires a three-part numeric version.' }
-$numericVersion = [version]$Version
+if ($Version -notmatch '^\d+\.\d+\.\d+([+-][0-9A-Za-z.-]+)?$') { throw 'MSI requires a three-part numeric version, optionally with a build suffix.' }
+$numericVersion = [version](($Version -split '[+-]')[0])
 if ($numericVersion.Major -gt 255 -or $numericVersion.Minor -gt 255 -or $numericVersion.Build -gt 65535) {
     throw 'MSI version limits are 255.255.65535.'
 }
@@ -72,7 +72,7 @@ $payload = Join-Path $work 'payload.wxs'
 $output = Join-Path $OutputPath "LucidDesk-$Version-windows-x64.msi"
 & $wix build (Join-Path $repo 'installer/LucidDesk.wxs') $payload -arch x64 -culture zh-CN -ext $extension `
     -cabcache (Join-Path $cache 'cabinets') -pdbtype none `
-    -d "AppVersion=$Version" -d "ProductName=$ProductName" -d "UpgradeCode=$UpgradeCode" -d "RepoRoot=$repo" -d "ActionsDll=$actions" -o $output | Out-Host
+    -d "AppVersion=$numericVersion" -d "ProductName=$ProductName" -d "UpgradeCode=$UpgradeCode" -d "RepoRoot=$repo" -d "ActionsDll=$actions" -o $output | Out-Host
 if ($LASTEXITCODE -ne 0) { throw 'MSI compilation failed.' }
 if (-not (Test-Path -LiteralPath $output -PathType Leaf)) { throw 'WiX did not produce the installer.' }
 Write-Output $output

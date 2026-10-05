@@ -539,15 +539,15 @@ pub(super) fn about_updates(s: &mut Scene, width: f32, status: &str, copied: boo
         crate::i18n::text("ui-developer-license"),
         concat!(env!("CARGO_PKG_AUTHORS"), " · ", env!("CARGO_PKG_LICENSE")),
         crate::i18n::text("ui-project-website"),
-        Action::ProjectLink("https://github.com/Yuch3nE/luciddesk"),
+        Action::ProjectLink("https://github.com/Fourgetu/luciddesk"),
     );
     form.actions(
         crate::i18n::text("ui-project-resources"),
-        "GitHub · Yuch3nE/luciddesk",
+        "GitHub · Fourgetu/luciddesk",
         vec![
-            (crate::i18n::text("ui-download-releases"), Action::ProjectLink("https://github.com/Yuch3nE/luciddesk/releases")),
+            (crate::i18n::text("ui-download-releases"), Action::ProjectLink("https://github.com/Fourgetu/luciddesk/releases")),
             (crate::i18n::text("ui-release-history"), Action::ProjectLink(crate::i18n::text("ui-changelog-url"))),
-            (crate::i18n::text("ui-report-an-issue"), Action::ProjectLink("https://github.com/Yuch3nE/luciddesk/issues")),
+            (crate::i18n::text("ui-report-an-issue"), Action::ProjectLink("https://github.com/Fourgetu/luciddesk/issues")),
         ],
     );
     form.section(crate::i18n::text("ui-status"));

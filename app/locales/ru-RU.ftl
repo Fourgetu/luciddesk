@@ -1167,7 +1167,7 @@ ui-release-history = { "История изменений" }
 
 ui-report-an-issue = { "Сообщить об ошибке" }
 
-ui-changelog-url = { "https://github.com/Yuch3nE/luciddesk/blob/main/CHANGELOG.en.md" }
+ui-changelog-url = { "https://github.com/Fourgetu/luciddesk/blob/main/CHANGELOG.en.md" }
 
 font-fallback = Резервный шрифт
 font-preview = Панели · Просмотр файлов  Ёё 0123

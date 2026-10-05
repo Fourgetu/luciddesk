@@ -1167,7 +1167,7 @@ ui-release-history = { "변경 기록" }
 
 ui-report-an-issue = { "문제 신고" }
 
-ui-changelog-url = { "https://github.com/Yuch3nE/luciddesk/blob/main/CHANGELOG.en.md" }
+ui-changelog-url = { "https://github.com/Fourgetu/luciddesk/blob/main/CHANGELOG.en.md" }
 
 font-fallback = 기본 대체 글꼴
 font-preview = 바탕 화면 · 파일 미리 보기  Aa 0123

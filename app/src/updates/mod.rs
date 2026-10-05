@@ -9,8 +9,8 @@ use std::sync::{
     mpsc,
 };
 
-const API: &str = "https://api.github.com/repos/Yuch3nE/luciddesk/releases/latest";
-pub const PAGE: &str = "https://github.com/Yuch3nE/luciddesk/releases/latest";
+const API: &str = "https://api.github.com/repos/Fourgetu/luciddesk/releases/latest";
+pub const PAGE: &str = "https://github.com/Fourgetu/luciddesk/releases/latest";
 
 #[derive(Deserialize)]
 struct Release {
@@ -140,6 +140,26 @@ mod tests {
             assert_eq!(parse_release(&release(tag), "0.10.0").unwrap(), None);
             assert_eq!(parse_release(&release(tag), "0.11.0").unwrap(), None);
         }
+    }
+
+    #[test]
+    fn fork_release_tags_with_build_suffixes_are_understood() {
+        // The fork publishes <upstream version>+FG builds, so the check must offer a
+        // newer patch release, never the running build itself, and target the fork.
+        assert_eq!(
+            parse_release(&release("v0.20.3+FG"), "0.20.2+FG").unwrap(),
+            Some("0.20.3+FG".into())
+        );
+        assert_eq!(
+            parse_release(&release("v0.20.2+FG"), "0.20.2+FG").unwrap(),
+            None
+        );
+        assert_eq!(
+            parse_release(&release("v0.20.2+FG"), "0.20.1+FG").unwrap(),
+            Some("0.20.2+FG".into())
+        );
+        assert!(API.contains("Fourgetu/luciddesk"), "update API must target the fork");
+        assert!(PAGE.contains("Fourgetu/luciddesk"), "release page must target the fork");
     }
     #[test]
     fn rejects_preview_releases_and_invalid_metadata() {

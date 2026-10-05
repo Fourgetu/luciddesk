@@ -11,12 +11,12 @@
 桌面面板 · 文件夹面板 · Everything 搜索 · 空格预览 · Agent 联动
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
-[![Build CI](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml/badge.svg)](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml)
-[![版本](https://img.shields.io/badge/version-0.20.2+FG-087EA4?style=flat-square)](CHANGELOG.md)
+[![Build CI](https://github.com/Fourgetu/luciddesk/actions/workflows/build.yml/badge.svg)](https://github.com/Fourgetu/luciddesk/actions/workflows/build.yml)
+[![版本](https://img.shields.io/badge/version-0.20.3+FG-087EA4?style=flat-square)](CHANGELOG.md)
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square)](#系统与兼容性)
 [![架构](https://img.shields.io/badge/arch-x64-475569?style=flat-square)](docs/portable.md)
 
-[⬇️ 下载](https://github.com/Yuch3nE/luciddesk/releases) · [📸 截图](#界面截图) · [🚀 开始使用](#开始使用) · [📖 使用指南](docs/usage.md) · [📋 更新记录](CHANGELOG.md) · [🤝 参与开发](#参与开发)
+[⬇️ 下载](https://github.com/Fourgetu/luciddesk/releases) · [📸 截图](#界面截图) · [🚀 开始使用](#开始使用) · [📖 使用指南](docs/usage.md) · [📋 更新记录](CHANGELOG.md) · [🤝 参与开发](#参与开发)
 
 LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。把零散图标收进面板，把常用目录放到桌面，再用 Everything 搜索快速找到文件。通过 CLI 与配套 Skill，还可以让 Agent 按你的要求整理图标、调整面板布局、管理文件夹和设置，先预览改动，再应用到桌面。
 
@@ -65,7 +65,7 @@ LucidDesk 是使用 Rust 开发的 Windows 桌面整理工具。把零散图标�
 
 ### 选择下载版本
 
-在 [GitHub Releases](https://github.com/Yuch3nE/luciddesk/releases) 下载。日常使用推荐安装版；三种发布包功能相同。
+在 [GitHub Releases](https://github.com/Fourgetu/luciddesk/releases) 下载。日常使用推荐安装版；三种发布包功能相同。
 
 | 版本 | 如何识别发布包 | 默认配置位置 | 适合场景 |
 | --- | --- | --- | --- |
@@ -190,7 +190,7 @@ EXE 与 DLL 必须来自同次构建。安装版卸载时默认勾选“保留�
 先获取公开仓库：
 
 ```powershell
-git clone https://github.com/Yuch3nE/luciddesk.git
+git clone https://github.com/Fourgetu/luciddesk.git
 cd luciddesk
 ```
 

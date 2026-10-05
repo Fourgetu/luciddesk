@@ -1167,7 +1167,7 @@ ui-release-history = { "Änderungsprotokoll" }
 
 ui-report-an-issue = { "Problem melden" }
 
-ui-changelog-url = { "https://github.com/Yuch3nE/luciddesk/blob/main/CHANGELOG.en.md" }
+ui-changelog-url = { "https://github.com/Fourgetu/luciddesk/blob/main/CHANGELOG.en.md" }
 
 font-fallback = Standard-Ersatzschrift
 font-preview = Desktoppanels · Dateivorschau  ÄÖÜ 0123

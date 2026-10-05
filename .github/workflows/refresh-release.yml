@@ -21,7 +21,7 @@ permissions:
   contents: read
 jobs:
   refresh:
-    if: github.repository == 'Yuch3nE/luciddesk'
+    if: github.repository == 'Fourgetu/luciddesk'
     runs-on: ubuntu-latest
     permissions:
       actions: read

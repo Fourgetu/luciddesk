@@ -51,7 +51,7 @@ def verify_packages(root, tag, sha):
 
 def main():
     tag, run_id, sha = (os.environ[name] for name in ("RELEASE_TAG", "SOURCE_RUN_ID", "SOURCE_SHA"))
-    assert re.fullmatch(r"v?[0-9]+\.[0-9]+\.[0-9]+", tag), "Invalid version tag"
+    assert re.fullmatch(r"v?[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?", tag), "Invalid version tag"
     assert run_id.isdecimal() and re.fullmatch(r"[0-9a-f]{40}", sha), "Invalid source build"
     run = json.loads(gh("api", f"repos/{{owner}}/{{repo}}/actions/runs/{run_id}"))
     assert run["status"] == "completed" and run["conclusion"] == "success"

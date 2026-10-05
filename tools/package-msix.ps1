@@ -12,10 +12,10 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $source = (Resolve-Path -LiteralPath $SourcePath).ProviderPath
 $build = Get-Content -LiteralPath (Join-Path $source 'build.json') -Raw | ConvertFrom-Json
 if ($build.portable -or $build.renderingDiagnostics) { throw 'MSIX requires a normal production package.' }
-if ($build.version -notmatch '^\d+\.\d+\.\d+$') { throw 'MSIX requires a numeric release version.' }
+if ($build.version -notmatch '^\d+\.\d+\.\d+([+-][0-9A-Za-z.-]+)?$') { throw 'MSIX requires a numeric release version, optionally with a build suffix.' }
 if (-not $PackageVersion) {
     # Store requires a nonzero major; offset every app major to preserve update ordering.
-    $appVersion = [version]$build.version
+    $appVersion = [version](($build.version -split '[+-]')[0])
     $PackageVersion = "$($appVersion.Major + 1).$($appVersion.Minor).$($appVersion.Build).0"
 }
 if ($PackageVersion -notmatch '^\d+\.\d+\.\d+\.0$') { throw 'Store package version must have four numeric parts and end in .0.' }

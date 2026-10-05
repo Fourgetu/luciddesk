@@ -11,12 +11,12 @@
 Desktop panels · Folder panels · Everything search · Spacebar preview · Agent integration
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
-[![Build CI](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml/badge.svg)](https://github.com/Yuch3nE/luciddesk/actions/workflows/build.yml)
-[![Version](https://img.shields.io/badge/version-0.20.2+FG-087EA4?style=flat-square)](CHANGELOG.en.md)
+[![Build CI](https://github.com/Fourgetu/luciddesk/actions/workflows/build.yml/badge.svg)](https://github.com/Fourgetu/luciddesk/actions/workflows/build.yml)
+[![Version](https://img.shields.io/badge/version-0.20.3+FG-087EA4?style=flat-square)](CHANGELOG.en.md)
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square)](#compatibility)
 [![Architecture](https://img.shields.io/badge/arch-x64-475569?style=flat-square)](docs/portable.md)
 
-[⬇️ Download](https://github.com/Yuch3nE/luciddesk/releases) · [📸 Screenshots](#screenshots) · [🚀 Get started](#getting-started) · [📋 Changelog](CHANGELOG.en.md) · [🤝 Contribute](#contributing)
+[⬇️ Download](https://github.com/Fourgetu/luciddesk/releases) · [📸 Screenshots](#screenshots) · [🚀 Get started](#getting-started) · [📋 Changelog](CHANGELOG.en.md) · [🤝 Contribute](#contributing)
 
 LucidDesk is a Windows desktop organizer built with Rust. Group icons into panels, browse your favorite folders, and find files with Everything. With the CLI and companion skill, agents can organize icons, adjust panel layouts, and manage folders and settings at your request—previewing changes before applying them to the desktop.
 
@@ -65,7 +65,7 @@ Panels can move, resize, collapse, auto-hide, snap to edges, lock, or stay on to
 
 ### Choose a package
 
-Download from [GitHub Releases](https://github.com/Yuch3nE/luciddesk/releases). The installer is recommended for everyday use. All three packages have the same features.
+Download from [GitHub Releases](https://github.com/Fourgetu/luciddesk/releases). The installer is recommended for everyday use. All three packages have the same features.
 
 | Package | File name | Default settings location | Best suited for |
 | --- | --- | --- | --- |
@@ -189,7 +189,7 @@ When Windows disables background effects, LucidDesk uses a theme-aware solid fal
 Requires Windows x64, rustup, Visual Studio C++ Build Tools and the Windows SDK. The repository selects Rust through `rust-toolchain.toml`; the setup script selects an installed x64 MSVC toolchain and SDK that meet the minimum versions. See the [build guide](docs/development/build.md) for details.
 
 ```powershell
-git clone https://github.com/Yuch3nE/luciddesk.git
+git clone https://github.com/Fourgetu/luciddesk.git
 cd luciddesk
 .\tools\use-windows-toolchain.ps1
 cargo build -p luciddesk -p luciddesk-cli -p luciddesk-explorer --locked

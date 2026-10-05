@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   sync:
-    if: github.repository == 'Yuch3nE/luciddesk'
+    if: github.repository == 'Fourgetu/luciddesk'
     runs-on: ubuntu-latest
     permissions:
       contents: write

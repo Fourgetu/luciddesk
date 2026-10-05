@@ -1167,7 +1167,7 @@ ui-release-history = { "更新履歴" }
 
 ui-report-an-issue = { "問題を報告" }
 
-ui-changelog-url = { "https://github.com/Yuch3nE/luciddesk/blob/main/CHANGELOG.en.md" }
+ui-changelog-url = { "https://github.com/Fourgetu/luciddesk/blob/main/CHANGELOG.en.md" }
 
 font-fallback = 既定の代替フォント
 font-preview = デスクトップ · ファイル  Aa 0123

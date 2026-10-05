@@ -1167,7 +1167,7 @@ ui-release-history = { "更新记录" }
 
 ui-report-an-issue = { "问题反馈" }
 
-ui-changelog-url = { "https://github.com/Yuch3nE/luciddesk/blob/main/CHANGELOG.md" }
+ui-changelog-url = { "https://github.com/Fourgetu/luciddesk/blob/main/CHANGELOG.md" }
 
 font-fallback = 默认回退字体
 font-preview = 桌面面板 · 文件预览  Aa 0123

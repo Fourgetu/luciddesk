@@ -2,10 +2,23 @@
 
 [简体中文](CHANGELOG.md) · English
 
-Current version: **0.20.2+FG**. Features and fixes by release; the `+FG` suffix marks the local patch build published by the Fourgetu fork at the upstream version number.
+Current version: **0.20.3+FG**. Features and fixes by release; the `+FG` suffix marks the patch builds published by the Fourgetu fork.
 
 Exit the app before upgrading a portable installation and preserve its `data` folder. See the [portable guide](docs/portable.md) (Chinese).
 
+## 0.20.3+FG · 2026-10-05
+
+Point the update check and the About page at this fork, and publish suffixed versions from the repository's own CI.
+
+### feat
+
+- Target `Fourgetu/luciddesk` from the update check and from the About page download, changelog and issue links. The check compares semantic versions, so `0.20.3+FG` is offered while the running `0.20.2+FG` is not.
+- Point the installer publisher, support and update URLs at this fork.
+
+### build
+
+- Accept build suffixes in the tag check (for example `v0.20.3+FG`) and run Build CI's release job on this fork, so pushing a tag publishes the Release directly.
+- Derive the numeric version for the installer, MSI and MSIX from a suffixed version, and accept suffixed tags in the Refresh release packages flow.
 
 ## 0.20.2+FG · 2026-10-05
 
