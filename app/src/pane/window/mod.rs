@@ -1100,8 +1100,12 @@ where
                             unsafe {
                                 ClientToScreen(hwnd, &raw mut screen);
                             }
+                            // Folder panes always drag out; desktop panes hand the drag to
+                            // OLE as soon as the pointer leaves them for another program.
+                            // Requiring an Explorer window here made dropping onto Mail,
+                            // IM or chat clients impossible.
                             if model.borrow().folder.is_some()
-                                || super::drag_drop::over_explorer(screen)
+                                || super::drag_drop::over_foreign_window(hwnd, screen)
                             {
                                 let preview = drag_preview(hwnd, &model.borrow(), *index)
                                     .map(|(pixels, origin)| luciddesk_shell::FileDragImage {

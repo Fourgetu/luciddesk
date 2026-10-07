@@ -158,7 +158,7 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
     // its pane was deleted, and new items must still be filed automatically.
     let inbox_title = crate::i18n::text("ui-inbox-pane").to_string();
     let inbox_repair = inbox::ensure_pane(&mut state.borrow_mut(), &inbox_title)?;
-    if let Some((id, created)) = inbox_repair.filter(|(_, created)| *created) {
+    if let Some((id, _created)) = inbox_repair.filter(|(_, created)| *created) {
         let mut s = state.borrow_mut();
         let workspace = s.workspace.clone();
         s.store

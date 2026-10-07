@@ -2,9 +2,18 @@
 
 [简体中文](CHANGELOG.md) · English
 
-Current version: **0.20.4+FG**. Features and fixes by release; the `+FG` suffix marks the patch builds published by the Fourgetu fork.
+Current version: **0.20.5+FG**. Features and fixes by release; the `+FG` suffix marks the patch builds published by the Fourgetu fork.
 
 Exit the app before upgrading a portable installation and preserve its `data` folder. See the [portable guide](docs/portable.md) (Chinese).
+
+## 0.20.5+FG · 2026-10-07
+
+Fixes dragging files out of a pane into other programs such as WeChat or a mail client.
+
+### fix
+
+- The hand-off no longer requires an Explorer window: once the pointer leaves every pane and lands on another program's window, the drag is passed to the system's own drag loop, so files can be dropped straight into WeChat, QQ, mail clients, browsers and anything else that accepts a file drop.
+- The desktop and the taskbar stay internal (the desktop still receives pane-to-pane membership drops); floating overlays such as screenshot tools and HUDs no longer hijack a drag that is merely passing over them; reordering and regrouping inside a pane are unchanged.
 
 ## 0.20.4+FG · 2026-10-07
 

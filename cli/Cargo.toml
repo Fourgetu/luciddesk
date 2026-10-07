@@ -1,6 +1,6 @@
 [package]
 name = "luciddesk-cli"
-version = "0.20.4+FG"
+version = "0.20.5+FG"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
