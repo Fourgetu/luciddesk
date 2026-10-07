@@ -118,6 +118,9 @@ pub(super) fn apply(
                 window::set_layer(view.window.hwnd().cast(), enabled);
             }
         }
+        Event::ToggleInbox => {
+            unreachable!("Handled before borrowing PaneApp")
+        }
         Event::Refresh => {
             if let Some(source) = s.folders.get(&id) {
                 source.refresh();

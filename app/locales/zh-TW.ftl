@@ -128,6 +128,8 @@ ui-auto-collapse = { "自動收合" }
 
 # 始终置顶
 ui-always-on-top = { "一律置頂" }
+ui-inbox-collect = { "自動收納新項目" }
+ui-inbox-pane = { "臨時收納" }
 
 # 新建普通面板
 ui-new-group-panel = { "新增一般面板" }

@@ -128,6 +128,8 @@ ui-auto-collapse = { "自動で折りたたむ" }
 
 # 始终置顶
 ui-always-on-top = { "常に手前に表示" }
+ui-inbox-collect = { "新しい項目を自動でまとめる" }
+ui-inbox-pane = { "新しい項目" }
 
 # 新建普通面板
 ui-new-group-panel = { "新しいデスクトップパネル" }

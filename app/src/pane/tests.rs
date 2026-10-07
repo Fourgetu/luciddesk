@@ -304,6 +304,113 @@ pub(super) fn test_state() -> PaneApp {
 }
 
 #[test]
+fn enabling_the_temporary_inbox_creates_its_pane_and_collects_new_items() {
+    let _sta = luciddesk_shell::ShellApartment::initialize_sta().unwrap();
+    crate::i18n::with_locale(0, || {
+        let state = Rc::new(RefCell::new(test_state()));
+        create_view(&state, PanelId::new(1)).unwrap();
+        let before: Vec<_> = state
+            .borrow()
+            .workspace
+            .panels()
+            .iter()
+            .map(Panel::id)
+            .collect();
+        // Off by default, so new items keep staying loose on the desktop.
+        assert!(!inbox::enabled());
+        let fresh = [ShellIdentity::Namespace {
+            parsing_name: "test:added".into(),
+        }];
+        assert!(fresh.iter().all(|identity| {
+            state
+                .borrow()
+                .workspace
+                .desktop_item(identity)
+                .is_none()
+        }));
+
+        // Enabling designates a pane and creates the temporary one when absent.
+        handle(&state, PanelId::new(1), Event::ToggleInbox).unwrap();
+        assert!(inbox::enabled());
+        let inbox_id = inbox::remembered();
+        assert!(
+            state.borrow().workspace.panel(inbox_id).is_some(),
+            "the temporary pane must exist"
+        );
+        assert!(state.borrow().views.iter().any(|view| view.id == inbox_id));
+        let expected = crate::i18n::text("ui-inbox-pane").to_string();
+        assert_eq!(
+            state.borrow().workspace.panel(inbox_id).unwrap().title(),
+            expected
+        );
+        assert_ne!(before, state.borrow().workspace.panels().iter().map(Panel::id).collect::<Vec<_>>());
+        // The choice survives a restart because it lives in the database.
+        assert_eq!(
+            state.borrow().store.preference("pane_inbox_pane").unwrap().as_deref(),
+            Some(inbox_id.get().to_string().as_str())
+        );
+        assert_eq!(
+            state.borrow().store.preference("pane_inbox_enabled").unwrap().as_deref(),
+            Some("true")
+        );
+
+        // A full Shell inventory: the three existing items plus one new identity. Only
+        // the identity the workspace had never seen may move into the inbox.
+        let before_placements: Vec<_> = state
+            .borrow()
+            .workspace
+            .desktop_items()
+            .iter()
+            .map(|item| item.placement().clone())
+            .collect();
+        let inventory = ["A", "B", "C"]
+            .into_iter()
+            .map(|name| {
+                DesktopItem::new(
+                    ShellIdentity::Namespace {
+                        parsing_name: format!("test:{name}"),
+                    },
+                    name,
+                )
+            })
+            .chain(std::iter::once(DesktopItem::new(fresh[0].clone(), "Added")));
+        let fresh_now = state
+            .borrow_mut()
+            .workspace
+            .reconcile_desktop_items(inventory);
+        assert_eq!(fresh_now, fresh.to_vec(), "only the new identity is fresh");
+        assert_eq!(inbox::collect(&mut state.borrow_mut(), &fresh_now), 1);
+        assert!(
+            matches!(
+                state
+                    .borrow()
+                    .workspace
+                    .desktop_item(&fresh[0])
+                    .unwrap()
+                    .placement(),
+                DesktopPlacement::Pane { pane_id, .. } if *pane_id == inbox_id
+            ),
+            "the new item must be filed in the temporary pane"
+        );
+        assert_eq!(
+            state
+                .borrow()
+                .workspace
+                .desktop_items()
+                .iter()
+                .take(3)
+                .map(|item| item.placement().clone())
+                .collect::<Vec<_>>(),
+            before_placements,
+            "collecting must not disturb items that were already placed"
+        );
+
+        handle(&state, PanelId::new(1), Event::ToggleInbox).unwrap();
+        assert!(!inbox::enabled());
+    });
+}
+
+#[test]
 fn mapped_folder_never_takes_desktop_membership() {
     let mut state = test_state();
     normalize_pane_orders(&mut state);

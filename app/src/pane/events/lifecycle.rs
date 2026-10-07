@@ -215,3 +215,46 @@ pub(super) fn create(state: &Rc<RefCell<PaneApp>>, event: Event) -> Result<bool,
     }
     return Ok(false);
 }
+
+/// Turns the temporary-inbox collection on or off.
+///
+/// One pane collects for the whole workspace. Enabling reuses the remembered pane, or a
+/// pane the user already named after the feature, and creates the temporary pane
+/// otherwise, so a first-time enable never rewrites an unrelated pane's contents.
+pub(super) fn toggle_inbox(
+    state: &Rc<RefCell<PaneApp>>,
+    _id: PanelId,
+    create: impl FnOnce(&Rc<RefCell<PaneApp>>, PanelId) -> Result<(), String>,
+) -> Result<bool, String> {
+    let on = !inbox::enabled();
+    // Resolve before mutating: `state.borrow()` in a match scrutinee lives for the
+    // whole match, which would panic on the `borrow_mut()` below.
+    let (target, created) = if on {
+        let title = crate::i18n::text("ui-inbox-pane").to_string();
+        let resolved = inbox::resolve(&state.borrow(), &title);
+        match resolved {
+            Some(existing) => (existing, None),
+            None => {
+                let new = inbox::create_pane(&mut state.borrow_mut(), &title)?;
+                (new, Some(new))
+            }
+        }
+    } else {
+        (inbox::remembered(), None)
+    };
+    {
+        let mut s = state.borrow_mut();
+        let old = s.workspace.clone();
+        if let Err(error) = inbox::save(&s.store, Some(target), on).and_then(|()| save(&mut s)) {
+            s.workspace = old;
+            return Err(error);
+        }
+    }
+    if let Some(new) = created {
+        create(state, new)?;
+    }
+    let mut s = state.borrow_mut();
+    refresh_changed_views(&mut s, true);
+    s.wake.notify();
+    Ok(false)
+}

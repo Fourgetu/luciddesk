@@ -97,6 +97,7 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
     title_emoji::load(&store)?;
     search_hotkey::load(&store)?;
     everything_settings::load(&store)?;
+    inbox::load(&store)?;
     let mut workspace = store.load_workspace().map_err(|e| e.to_string())?;
     // Migrate older workspaces that allowed multiple search panes.
     let duplicates: Vec<_> = workspace
@@ -152,6 +153,19 @@ pub fn run(path: &Path, title: Option<String>) -> Result<(), String> {
         s.store
             .save_workspace(&workspace)
             .map_err(|e| e.to_string())?;
+    }
+    // Repair a missing collector before views are created: the switch may be on while
+    // its pane was deleted, and new items must still be filed automatically.
+    let inbox_title = crate::i18n::text("ui-inbox-pane").to_string();
+    let inbox_repair = inbox::ensure_pane(&mut state.borrow_mut(), &inbox_title)?;
+    if let Some((id, created)) = inbox_repair.filter(|(_, created)| *created) {
+        let mut s = state.borrow_mut();
+        let workspace = s.workspace.clone();
+        s.store
+            .save_workspace(&workspace)
+            .map_err(|e| e.to_string())?;
+        drop(s);
+        crate::pane::create_view(&state, id)?;
     }
     runtime::reconnect(&state);
     let search_enabled = everything_settings::enabled(&state.borrow().store)?;
@@ -527,13 +541,31 @@ fn reconcile_inventory(s: &mut PaneApp) -> Result<(), String> {
         .image_retention
         .invalidate(&mut s.images);
     normalize_pane_orders(s);
-    let snapshot = &s.session.as_ref().unwrap().snapshot;
-    s.workspace.reconcile_desktop_items(
-        snapshot
+    let (live, fresh) = {
+        let snapshot = &s.session.as_ref().unwrap().snapshot;
+        let live: std::collections::HashSet<_> = snapshot
             .items
             .iter()
-            .map(|item| DesktopItem::new(item.identity.clone(), item.display_name.clone())),
-    );
+            .map(|item| item.identity.persistent_key())
+            .collect();
+        let fresh = s.workspace.reconcile_desktop_items(
+            snapshot
+                .items
+                .iter()
+                .map(|item| DesktopItem::new(item.identity.clone(), item.display_name.clone())),
+        );
+        (live, fresh)
+    };
+    if !fresh.is_empty() {
+        let moved = super::inbox::collect(s, &fresh);
+        if moved > 0 {
+            luciddesk_diagnostics::log(
+                luciddesk_diagnostics::Level::Info,
+                "pane.inbox",
+                &format!("Collected {moved} new desktop items as temporary entries"),
+            );
+        }
+    }
     let valid: Vec<_> = s.workspace.panels().iter().map(Panel::id).collect();
     for item in s.workspace.desktop_items_mut() {
         if matches!(item.placement(), DesktopPlacement::Pane { pane_id, .. } if !valid.contains(pane_id))
@@ -541,11 +573,6 @@ fn reconcile_inventory(s: &mut PaneApp) -> Result<(), String> {
             item.set_placement(DesktopPlacement::default());
         }
     }
-    let live: std::collections::HashSet<_> = snapshot
-        .items
-        .iter()
-        .map(|item| item.identity.persistent_key())
-        .collect();
     s.images.retain(|key, _| live.contains(key));
     let h = s.session.as_mut().unwrap();
     h.requested.retain(|key| live.contains(key));

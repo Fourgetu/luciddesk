@@ -128,6 +128,8 @@ ui-auto-collapse = { "자동 접기" }
 
 # 始终置顶
 ui-always-on-top = { "항상 위에 표시" }
+ui-inbox-collect = { "새 항목 자동 모으기" }
+ui-inbox-pane = { "새 항목" }
 
 # 新建普通面板
 ui-new-group-panel = { "새 바탕 화면 패널" }

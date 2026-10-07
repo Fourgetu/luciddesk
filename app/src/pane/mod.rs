@@ -39,6 +39,7 @@ mod reveal_guard;
 mod show_hotkey;
 mod key_hook;
 mod backdrop_sample;
+mod inbox;
 
 // Rendering and shared visual resources.
 mod render;
@@ -220,6 +221,7 @@ enum Event {
     Peek,
     FileCommand(luciddesk_shell::FileCommand),
     FileDrag(Option<luciddesk_shell::FileDragImage>),
+    ToggleInbox,
     ToggleListView,
     Drop { index: usize, point: POINT },
     Geometry(RectDip),

@@ -184,6 +184,9 @@ pub(super) fn show<F: FnMut(Event) -> bool>(
         let m = model.borrow();
         (m.auto_hide, m.locked, m.theme, m.backdrop, m.collapsed)
     };
+    // The check mark tells whether this pane is the one collecting new items.
+    let inbox = crate::pane::inbox::enabled()
+        && crate::pane::inbox::remembered() == model.borrow().active_tab;
     update_pointer(hwnd, &model, None);
     invalidate(hwnd);
     let is_folder = {
@@ -208,6 +211,7 @@ pub(super) fn show<F: FnMut(Event) -> bool>(
             is_folder,
             visible_columns,
             collapsed,
+            inbox,
         )
     };
     update_pointer(hwnd, &model, None);
@@ -261,6 +265,9 @@ pub(super) fn show<F: FnMut(Event) -> bool>(
         10 => {
             event(Event::ToggleLocked);
         }
+        60 => {
+            event(Event::ToggleInbox);
+        }
         25 | 26 => {
             if model.borrow().is_list() != (command == 26) {
                 event(Event::ToggleListView);
@@ -310,6 +317,7 @@ fn menu(
     folder: (bool, bool),
     visible_columns: u8,
     collapsed: bool,
+    inbox: bool,
 ) -> i32 {
     let anchored = lparam == -1;
     let mut anchor = point(lparam);
@@ -334,5 +342,6 @@ fn menu(
         folder,
         visible_columns,
         collapsed,
+        inbox,
     )
 }

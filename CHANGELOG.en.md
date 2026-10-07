@@ -2,10 +2,23 @@
 
 [简体中文](CHANGELOG.md) · English
 
-Current version: **0.20.3+FG**. Features and fixes by release; the `+FG` suffix marks the patch builds published by the Fourgetu fork.
+Current version: **0.20.4+FG**. Features and fixes by release; the `+FG` suffix marks the patch builds published by the Fourgetu fork.
 
 Exit the app before upgrading a portable installation and preserve its `data` folder. See the [portable guide](docs/portable.md) (Chinese).
 
+## 0.20.4+FG · 2026-10-07
+
+Adds a temporary inbox pane: files, shortcuts and folders that appear on the desktop are filed there instead of being left loose.
+
+### feat
+
+- New "Collect new items automatically" switch in the pane menu. Once on, items that appear on the desktop — created, copied, downloaded or extracted — are appended to the inbox pane in grid order. Items that are already filed are untouched.
+- The first enable creates the temporary pane in the bottom-right corner of the primary monitor's work area; it can be dragged or repositioned with the CLI afterwards. The switch and the chosen pane are stored in the workspace database and survive a restart.
+- A deleted inbox pane is recreated on the next start, so the switch never stays on without a target.
+
+### fix
+
+- Collecting applies only to identities never filed before: items that were already loose on the desktop stay where they are, and other panes keep their membership and order.
 ## 0.20.3+FG · 2026-10-05
 
 Point the update check and the About page at this fork, and publish suffixed versions from the repository's own CI.

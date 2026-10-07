@@ -271,6 +271,7 @@ pub(super) fn reload(state: &Rc<RefCell<PaneApp>>) -> Result<(), String> {
     title_emoji::load(&s.store)?;
         search_hotkey::load(&s.store)?;
         everything_settings::load(&s.store)?;
+        inbox::load(&s.store)?;
         s.session.take();
         s.drops.clear();
         s.folders.clear();

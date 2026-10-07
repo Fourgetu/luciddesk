@@ -1,5 +1,8 @@
 //! Workspace membership and appearance defaults.
-use crate::{Backdrop, DesktopItem, PaneOptions, Panel, PanelId, PanelTheme, ShellIdentity};
+use crate::{
+    Backdrop, DesktopItem, DesktopPlacement, GridPosition, PaneOptions, Panel, PanelId, PanelTheme,
+    ShellIdentity,
+};
 use std::collections::HashSet;
 use std::fmt;
 
@@ -93,9 +96,17 @@ impl Workspace {
             .find(|item| item.identity().equivalent_to(identity))
     }
 
-    /// Reconciles a fresh Shell inventory while preserving placement for surviving identities.
-    pub fn reconcile_desktop_items(&mut self, inventory: impl IntoIterator<Item = DesktopItem>) {
+    /// Reconciles a fresh Shell inventory while preserving placement for surviving
+    /// identities.
+    ///
+    /// Returns the identities that were not known before, in inventory order: newly
+    /// created, copied or downloaded entries.
+    pub fn reconcile_desktop_items(
+        &mut self,
+        inventory: impl IntoIterator<Item = DesktopItem>,
+    ) -> Vec<ShellIdentity> {
         let previous = std::mem::take(&mut self.desktop_items);
+        let mut fresh = Vec::new();
         self.desktop_items = inventory
             .into_iter()
             .map(|mut incoming| {
@@ -104,10 +115,94 @@ impl Workspace {
                     .find(|existing| existing.identity().equivalent_to(incoming.identity()))
                 {
                     incoming.set_placement(existing.placement().clone());
+                } else {
+                    fresh.push(incoming.identity().clone());
                 }
                 incoming
             })
             .collect();
+        fresh
+    }
+
+    /// Appends `identities` after the items already filed in `inbox`.
+    ///
+    /// Identities already placed in any pane are left alone, so an item can never be
+    /// counted twice. Returns how many items were moved.
+    pub fn append_to_pane(&mut self, inbox: PanelId, identities: &[ShellIdentity]) -> usize {
+        if self
+            .panel(inbox)
+            .is_none_or(|panel| !panel.supports_tabs())
+        {
+            return 0;
+        }
+        let mut at = self
+            .desktop_items
+            .iter()
+            .filter_map(|item| match item.placement() {
+                DesktopPlacement::Pane { pane_id, position } if *pane_id == inbox => {
+                    Some(u64::from(position.column) + 1)
+                }
+                _ => None,
+            })
+            .max()
+            .unwrap_or(0);
+        let mut moved = 0;
+        for identity in identities {
+            let Some(item) = self
+                .desktop_items
+                .iter_mut()
+                .find(|item| item.identity().equivalent_to(identity))
+            else {
+                continue;
+            };
+            if matches!(item.placement(), DesktopPlacement::Pane { .. }) {
+                continue;
+            }
+            item.set_placement(DesktopPlacement::Pane {
+                pane_id: inbox,
+                position: GridPosition::new(u32::try_from(at).unwrap_or(u32::MAX), 0),
+            });
+            at += 1;
+            moved += 1;
+        }
+        moved
+    }
+
+    /// Moves every item that has never been filed into a pane into `inbox`.
+    ///
+    /// Reconcile keeps the previous placement of identities it already knows, so an
+    /// item that still sits in its default [`DesktopPlacement::FreeDesktop`] is one
+    /// the user never filed away: freshly created, copied or downloaded entries.
+    /// Each is appended after the items already in the pane, in inventory order.
+    ///
+    /// Returns how many items were moved.
+    pub fn collect_new_items(&mut self, inbox: PanelId) -> usize {
+        if self
+            .panel(inbox)
+            .is_none_or(|panel| !panel.supports_tabs())
+        {
+            return 0;
+        }
+        let mut at = self
+            .desktop_items
+            .iter()
+            .filter(|item| {
+                matches!(item.placement(), DesktopPlacement::Pane { pane_id, .. } if *pane_id == inbox)
+            })
+            .count();
+        let mut moved = 0;
+        for item in &mut self.desktop_items {
+            if !matches!(item.placement(), DesktopPlacement::FreeDesktop { .. }) {
+                continue;
+            }
+            item.set_placement(DesktopPlacement::Pane {
+                pane_id: inbox,
+                position: GridPosition::new(at as u32, 0),
+            });
+            at += 1;
+            moved += 1;
+        }
+        moved
     }
 
     /// Adds a panel to this workspace.

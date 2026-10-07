@@ -70,14 +70,15 @@ pub fn show(
     folder: (bool, bool),
     visible_columns: u8,
     collapsed: bool,
+    inbox: bool,
 ) -> i32 {
     let topmost = super::quick_reveal::permanent_topmost(owner);
     show_entries(owner, anchor, anchored, theme, backdrop,
-        pane_entries(folder, visible_columns, auto_hide, locked, topmost, collapsed))
+        pane_entries(folder, visible_columns, auto_hide, locked, topmost, collapsed, inbox))
 }
 
 fn pane_entries(folder: (bool, bool), visible_columns: u8,
-    auto_hide: bool, locked: bool, topmost: bool, collapsed: bool) -> Vec<Entry> {
+    auto_hide: bool, locked: bool, topmost: bool, collapsed: bool, inbox: bool) -> Vec<Entry> {
     let mut rows = Vec::new();
     if folder.0 {
         rows.push(entry(20, crate::i18n::text("ui-open-in-file-explorer"), "", ""));
@@ -117,6 +118,10 @@ fn pane_entries(folder: (bool, bool), visible_columns: u8,
         entry(12, crate::i18n::text("ui-always-on-top"), if topmost { "✓" } else { "" }, ""),
         entry(0, "", "", ""),
     ]);
+    // Collecting new desktop items is meaningless for a folder pane's own contents.
+    if !folder.0 {
+        rows.push(entry(60, crate::i18n::text("ui-inbox-collect"), if inbox { "✓" } else { "" }, ""));
+    }
     let mut create = entry(50, crate::i18n::text("ui-new-group"), "", "");
     create.children = vec![
         entry(1, crate::i18n::text("ui-new-group-panel"), "", ""),
@@ -137,12 +142,31 @@ fn pane_entries(folder: (bool, bool), visible_columns: u8,
 
 #[test]
 fn ordinary_sort_menu_is_available_only_when_unlocked() {
-    let rows = pane_entries((false,false),15,false,false,false,false);
+    let rows = pane_entries((false,false),15,false,false,false,false,false);
     let sort = rows.iter().find(|e|e.id==51).unwrap();
     assert_eq!(sort.children.iter().map(|e|e.id).collect::<Vec<_>>(), vec![52,53]);
     for (folder,locked) in [(true,false),(false,true)] {
-        assert!(!pane_entries((folder,false),15,false,locked,false,false).iter().any(|e|e.id==51));
+        assert!(!pane_entries((folder,false),15,false,locked,false,false,false).iter().any(|e|e.id==51));
     }
+}
+
+#[test]
+fn inbox_entry_is_checkable_and_absent_from_folder_panes() {
+    // The switch is offered on ordinary desktop panes, with its state in the check mark.
+    for (inbox, mark) in [(false, ""), (true, "✓")] {
+        let rows = pane_entries((false, false), 15, false, false, false, false, inbox);
+        let entry = rows
+            .iter()
+            .find(|row| row.id == 60)
+            .expect("desktop panes offer the temporary-inbox switch");
+        assert_eq!(entry.icon, mark);
+    }
+    // Folder panes carry their own menu, so they never expose the desktop switch.
+    assert!(
+        !pane_entries((true, false), 15, false, false, false, false, true)
+            .iter()
+            .any(|row| row.id == 60)
+    );
 }
 
 pub(super) fn tab_entries() -> Vec<Entry> {
@@ -162,7 +186,8 @@ pub(super) fn tab_entries() -> Vec<Entry> {
 pub(super) fn tab_context_entries(model: &super::GroupModel, topmost: bool) -> Vec<Entry> {
     // Keep every ordinary pane command directly accessible from a tab.
     let mut entries = pane_entries((model.folder.is_some(), model.is_list()),
-        model.folder_visible_columns, model.auto_hide, model.locked, topmost, model.collapsed);
+        model.folder_visible_columns, model.auto_hide, model.locked, topmost, model.collapsed,
+        crate::pane::inbox::enabled() && crate::pane::inbox::remembered() == model.active_tab);
     entries.retain(|row| row.id != 43);
     let mut tab_actions = vec![entry(49, crate::i18n::text("ui-detach-as-panel"), "", "")];
     if !model.locked {
@@ -557,8 +582,8 @@ mod tests {
 
     #[test]
     fn pane_actions_follow_state_and_keep_exit_in_tray() {
-        let open = pane_entries((false, false), 7, false, false, false, false);
-        let locked = pane_entries((false, false), 7, true, true, true, true);
+        let open = pane_entries((false, false), 7, false, false, false, false, false);
+        let locked = pane_entries((false, false), 7, true, true, true, true, false);
         assert!(open.iter().any(|row| row.id == 9));
         assert!(open.iter().any(|row| row.id == 43));
         assert!(!locked.iter().any(|row| row.id == 43));
@@ -575,8 +600,8 @@ mod tests {
 
     #[test]
     fn folder_menus_exclude_tabs_and_ordinary_tabs_exclude_folders() {
-        assert!(!pane_entries((true, false), 7, false, false, false, false).iter().any(|r| r.id == 39));
-        assert!(pane_entries((false, false), 7, false, false, false, false).iter().any(|r| r.id == 39));
+        assert!(!pane_entries((true, false), 7, false, false, false, false, false).iter().any(|r| r.id == 39));
+        assert!(pane_entries((false, false), 7, false, false, false, false, false).iter().any(|r| r.id == 39));
         assert!(!tab_entries().iter().any(|r| r.id == 41));
     }
 
@@ -733,7 +758,7 @@ mod tests {
                 false,
                 luciddesk_core::PanelTheme::Dark,
                 Backdrop::Acrylic,
-                (false, false), 15, false
+                (false, false), 15, false, false
             ),
             0
         );
@@ -791,7 +816,7 @@ mod tests {
                         false,
                         luciddesk_core::PanelTheme::Dark,
                         Backdrop::Mica,
-                        (false, false), 15, false
+                        (false, false), 15, false, false
                     ),
                     0
                 );

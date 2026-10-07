@@ -128,6 +128,8 @@ ui-auto-collapse = { "Auto-collapse" }
 
 # 始终置顶
 ui-always-on-top = { "Always on top" }
+ui-inbox-collect = { "Collect new items automatically" }
+ui-inbox-pane = { "New items" }
 
 # 新建普通面板
 ui-new-group-panel = { "New desktop panel" }

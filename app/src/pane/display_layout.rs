@@ -19,6 +19,36 @@ pub(super) fn new_pane(workspace: &Workspace, search: bool) -> RectDip {
     rect
 }
 
+/// Bounds for an automatically created pane, placed inside the free space at the
+/// bottom right of the primary monitor's work area.
+///
+/// The pane is created without a pointer gesture, so it lands where the user is
+/// likely to notice it and can drag it anywhere afterwards.
+pub(super) fn corner_pane(workspace: &Workspace) -> RectDip {
+    let (width, height) = (480.0, 360.0);
+    let Some(monitor) = luciddesk_window::enumerate_monitors()
+        .into_iter()
+        .find(|monitor| monitor.primary)
+    else {
+        return new_pane(workspace, false);
+    };
+    let scale = if monitor.dpi == 0 {
+        1.0
+    } else {
+        monitor.dpi as f32 / 96.0
+    };
+    let area = monitor.work_area;
+    let margin = (24.0 * scale).round() as i32;
+    let x = area.x + area.width - margin - (width * scale).round() as i32;
+    let y = area.y + area.height - margin - (height * scale).round() as i32;
+    RectDip::from_bounds(
+        x.max(area.x) as f32 / scale,
+        y.max(area.y) as f32 / scale,
+        width,
+        height,
+    )
+}
+
 pub(super) struct Layouts {
     monitors: Vec<MonitorDescriptor>,
     pending: Option<(Vec<MonitorDescriptor>, Instant)>,

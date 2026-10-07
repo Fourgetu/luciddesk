@@ -234,6 +234,9 @@ pub(super) fn handle(
     if matches!(event, Event::ToggleSearch) {
         return lifecycle::toggle_search(state, id);
     }
+    if matches!(event, Event::ToggleInbox) {
+        return lifecycle::toggle_inbox(state, id, create_view);
+    }
     if matches!(
         event,
         Event::New | Event::EnableSearch | Event::MapFolder(_)

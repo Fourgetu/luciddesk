@@ -128,6 +128,8 @@ ui-auto-collapse = { "Automatisch einklappen" }
 
 # 始终置顶
 ui-always-on-top = { "Immer im Vordergrund" }
+ui-inbox-collect = { "Neue Elemente automatisch sammeln" }
+ui-inbox-pane = { "Neue Elemente" }
 
 # 新建普通面板
 ui-new-group-panel = { "Neues Desktoppanel" }
